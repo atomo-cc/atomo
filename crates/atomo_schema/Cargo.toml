@@ -1,0 +1,25 @@
+[package]
+name = "atomo_schema"
+version = "0.1.0"
+edition = "2021"
+description = "Atomo Schema Parser - Parse TypeScript schema definitions"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+# Workspace dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Schema parsing dependencies
+regex = "1.10"
+swc_common = "0.33"
+swc_ecma_ast = "0.110"
+swc_ecma_parser = "0.141"
+swc_ecma_visit = "0.96"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Template generation
+handlebars = "4.5"
+convert_case = "0.6"

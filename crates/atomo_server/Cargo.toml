@@ -1,0 +1,39 @@
+[package]
+name = "atomo_server"
+version = "0.1.0"
+edition = "2021"
+description = "Atomo Server - Web server with GraphQL API using the Atomo library"
+license = "AGPL-3.0-or-later"
+
+# Library and binary configuration
+[lib]
+name = "atomo_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "atomo-server"
+path = "src/main.rs"
+
+[dependencies]
+# Main Atomo library (our new unified API)
+atomo = { path = "../atomo" }
+
+# Workspace dependencies
+atomo_core = { path = "../atomo_core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+async-graphql = { workspace = true }
+async-graphql-axum = { workspace = true }
+
+# CLI argument parsing
+clap = { version = "4.0", features = ["derive"] }
+
+# Environment variables
+dotenvy = "0.15"

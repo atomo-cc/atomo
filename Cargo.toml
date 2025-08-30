@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/atomo",
+    "crates/atomo_cli",
+    "crates/atomo_core", 
+    "crates/atomo_server",
+    "crates/atomo_projectors",
+    "crates/atomo_wasm_runtime",
+    "crates/atomo_schema",
+]
+
+# Shared dependencies for all workspace members
+[workspace.dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+ulid = { version = "1.0", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+async-trait = "0.1"
+
+# Validation
+validator = "0.16"
+email_address = "0.2"
+
+# Database dependencies
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-uuid", "with-chrono", "with-json"] }
+
+# Web framework dependencies
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# GraphQL dependencies  
+async-graphql = { version = "7.0", features = ["uuid", "chrono", "dataloader"] }
+async-graphql-axum = "7.0"
+
+# CLI dependencies
+clap = { version = "4.0", features = ["derive"] }

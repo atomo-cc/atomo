@@ -1,0 +1,30 @@
+{
+  "name": "atomo-crm-service",
+  "version": "1.0.0",
+  "description": "CRM service configuration for Atomo platform",
+  "private": true,
+  "scripts": {
+    "dev": "atomo dev --service crm",
+    "build": "atomo build --service crm",
+    "deploy": "atomo deploy --service crm",
+    "migrate": "atomo migrate --service crm",
+    "seed": "atomo seed --service crm",
+    "test": "atomo test --service crm"
+  },
+  "dependencies": {
+    "@atomo/core": "workspace:*",
+    "@atomo/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "atomo": {
+    "service": "crm",
+    "configFile": "./atomo.config.ts",
+    "schemaFile": "./schema.ts",
+    "pluginsDir": "./plugins",
+    "workflowsDir": "./workflows",
+    "adminDir": "./admin"
+  }
+}

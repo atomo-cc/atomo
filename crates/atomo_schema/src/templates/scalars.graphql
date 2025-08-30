@@ -1,0 +1,18 @@
+# Scalar types for Atomo GraphQL schema
+
+# Date scalar (YYYY-MM-DD)
+scalar Date
+
+# DateTime scalar (ISO 8601)
+scalar DateTime
+
+# JSON scalar for complex data
+scalar JSON
+
+# PageInfo for cursor-based pagination
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}

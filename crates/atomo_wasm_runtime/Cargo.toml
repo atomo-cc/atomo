@@ -1,0 +1,20 @@
+[package]
+name = "atomo_wasm_runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Atomo WASM Runtime - WebAssembly plugin execution environment"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+# WASM runtime dependencies
+wasmtime = "16.0"
+
+# Local dependencies
+atomo_core = { path = "../atomo_core" }

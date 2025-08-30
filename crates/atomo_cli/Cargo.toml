@@ -1,0 +1,40 @@
+[package]
+name = "atomo_cli"
+version = "0.1.0"
+edition = "2021"
+description = "Atomo CLI - Command line interface for Atomo development"
+license = "AGPL-3.0-or-later"
+
+[[bin]]
+name = "atomo-cli"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+
+# CLI specific dependencies
+console = "0.15"
+dialoguer = "0.11"
+indicatif = "0.17"
+colored = "2.0"
+
+# Database dependencies
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
+md5 = "0.7"
+dotenv = "0.15"
+
+# Web server dependencies for dev command
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+async-graphql = { version = "7.0", features = ["chrono"] }
+async-graphql-axum = "7.0"
+
+# Local dependencies
+atomo_core = { path = "../atomo_core" }
+atomo_schema = { path = "../atomo_schema" }

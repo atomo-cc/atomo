@@ -1,0 +1,56 @@
+[package]
+name = "atomo"
+version = "0.1.0"
+edition = "2021"
+description = "The next-generation Content Core - your business's Arc Reactor"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/atomoapp/atomo"
+keywords = ["cms", "content", "rust", "graphql", "event-sourcing"]
+
+# Library configuration
+[lib]
+name = "atomo"
+path = "src/lib.rs"
+
+# CLI binary
+[[bin]]
+name = "atomo"
+path = "src/main.rs"
+
+[dependencies]
+# Core async runtime
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+
+# GraphQL
+async-graphql = { version = "7.0", features = ["uuid", "chrono"] }
+async-graphql-axum = "7.0"
+
+# Web framework
+axum = { version = "0.8", features = ["macros", "tokio"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "compression-gzip"] }
+
+# Time and IDs
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+ulid = "1.0"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+colored = "2.0"
+console = "0.15"
+
+# Internal crates
+atomo_core = { path = "../atomo_core" }
+atomo_schema = { path = "../atomo_schema" }
+
+# Utilities
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
