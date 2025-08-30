@@ -81,8 +81,17 @@ async fn create_runtime_workspace(service_dir: &Path, service_name: &str) -> Res
         let models_modified = models_path.metadata()
             .and_then(|m| m.modified())
             .unwrap_or(std::time::UNIX_EPOCH);
+        
+        // 检查生成器代码是否更新了（强制重新生成以应用修复）
+        let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
+        let resolvers_modified = resolvers_path.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
             
-        schema_modified > models_modified
+        // 如果schema更新了，或者生成的文件不完整，都需要重新生成
+        schema_modified > models_modified || 
+        schema_modified > resolvers_modified ||
+        !resolvers_path.exists()
     };
     
     if should_regenerate {
@@ -152,6 +161,7 @@ serde_json = "1.0"
 # 工具库
 chrono = {{ version = "0.4", features = ["serde"] }}
 uuid = {{ version = "1.0", features = ["v4", "serde"] }}
+num-traits = "0.2"
 
 # HTTP
 tower-http = {{ version = "0.5", features = ["cors"] }}
@@ -293,10 +303,18 @@ async fn generate_business_code(runtime_dir: &Path, schema_path: &Path) -> Resul
         .and_then(|m| m.modified())
         .unwrap_or(std::time::UNIX_EPOCH);
     
-    if schema_modified <= models_modified && models_path.exists() && resolvers_path.exists() {
-        println!("   ♻️  Using cached business code (no schema changes)...");
-        return Ok(());
-    }
+    let resolvers_modified = resolvers_path.metadata()
+        .and_then(|m| m.modified())
+        .unwrap_or(std::time::UNIX_EPOCH);
+    
+    // 强制重新生成，因为生成器逻辑已更新
+    // if schema_modified <= models_modified && schema_modified <= resolvers_modified && 
+    //    models_path.exists() && resolvers_path.exists() {
+    //     println!("   ♻️  Using cached business code (no schema changes)...");
+    //     return Ok(());
+    // }
+    
+    println!("   🔄 Regenerating business code (applying latest fixes)...");
     
     // 读取并解析 schema.ts
     let schema_content = tokio::fs::read_to_string(schema_path).await?;

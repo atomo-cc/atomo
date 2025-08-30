@@ -83,20 +83,29 @@ impl GraphQLGenerator {
         // Create input
         output.push_str(&format!("input Create{}Input {{\n", model.name));
         for (field_name, field) in &model.fields {
-            if field_name == "id" { continue; } // Skip ID for creation
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" { 
+                continue; // Skip auto-generated fields
+            }
             let graphql_type = self.map_field_type_to_graphql(&field.field_type, !field.optional)?;
             output.push_str(&format!("  {}: {}\n", field_name, graphql_type));
         }
         output.push_str("}\n\n");
         
-        // Update input
-        output.push_str(&format!("input Update{}Input {{\n", model.name));
-        output.push_str("  id: ID!\n");
+        // Update data input (nested structure)
+        output.push_str(&format!("input Update{}DataInput {{\n", model.name));
         for (field_name, field) in &model.fields {
-            if field_name == "id" { continue; } // Skip ID for updates
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" { 
+                continue; // Skip non-updatable fields
+            }
             let graphql_type = self.map_field_type_to_graphql(&field.field_type, false)?; // All optional for updates
             output.push_str(&format!("  {}: {}\n", field_name, graphql_type));
         }
+        output.push_str("}\n\n");
+        
+        // Update input (with ID and data)
+        output.push_str(&format!("input Update{}Input {{\n", model.name));
+        output.push_str("  id: ID!\n");
+        output.push_str(&format!("  data: Update{}DataInput!\n", model.name));
         output.push_str("}\n\n");
         
         Ok(output)

@@ -51,6 +51,7 @@ impl ResolverGenerator {
 
 use async_graphql::{{Context, Object, FieldResult, ID, EmptySubscription}};
 use sqlx::PgPool;
+use num_traits::ToPrimitive;
 
 use super::models::*;
 
@@ -85,13 +86,13 @@ pub struct Mutation;
     ) -> FieldResult<Vec<{model_name}>> {{
         let pool = ctx.data::<PgPool>()?;
         
-        let entities = sqlx::query_as::<_, {model_name}>(
+        let entities = sqlx::query_as::<_, {model_name}Row>(
             "SELECT * FROM {model_lower} LIMIT 100"
         )
         .fetch_all(pool)
         .await?;
-        
-        Ok(entities)
+
+        Ok(entities.into_iter().map(|e| e.into()).collect())
     }}
 
     /// Find a single {model_name} by ID
@@ -102,14 +103,14 @@ pub struct Mutation;
     ) -> FieldResult<Option<{model_name}>> {{
         let pool = ctx.data::<PgPool>()?;
         
-        let entity = sqlx::query_as::<_, {model_name}>(
+        let entity = sqlx::query_as::<_, {model_name}Row>(
             "SELECT * FROM {model_lower} WHERE id = $1"
         )
         .bind(id.to_string())
         .fetch_optional(pool)
         .await?;
-        
-        Ok(entity)
+
+        Ok(entity.map(|e| e.into()))
     }}
 "#,
                 model_name = model_name,
@@ -136,22 +137,374 @@ pub struct Mutation;
             let model_name = &model.name;
             let model_lower = model_name.to_lowercase();
             
-            // Generate create resolver (simplified version)
-            mutation_impl.push_str(&format!(
-                r#"    /// Create a new {model_name}
+            // Generate create resolver
+            mutation_impl.push_str(&self.generate_create_resolver(model)?);
+            
+            // Generate update resolver
+            mutation_impl.push_str(&self.generate_update_resolver(model)?);
+            
+            // Generate delete resolver
+            mutation_impl.push_str(&self.generate_delete_resolver(model)?);
+        }
+        
+        mutation_impl.push_str("}\n\n");
+        Ok(mutation_impl)
+    }
+    
+    /// Generate create resolver for a model
+    fn generate_create_resolver(&self, model: &Model) -> Result<String> {
+        let model_name = &model.name;
+        let model_lower = model_name.to_lowercase();
+        
+        // Generate field list for INSERT
+        let mut insert_fields = Vec::new();
+        let mut insert_placeholders = Vec::new();
+        let mut bind_statements = Vec::new();
+        let mut param_count = 2; // $1 is for id
+        
+        for (field_name, field) in &model.fields {
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" {
+                continue; // Skip auto-generated fields
+            }
+            
+            // Convert camelCase to snake_case for database columns
+            let db_field_name = self.camel_to_snake_case(field_name);
+            insert_fields.push(db_field_name);
+            insert_placeholders.push(format!("${}", param_count));
+            
+            match &field.field_type {
+                crate::types::FieldType::String => {
+                    if !field.optional {
+                        bind_statements.push(format!("        .bind(input.{})", field_name));
+                    } else {
+                        bind_statements.push(format!("        .bind(input.{}.as_ref().map(|s| s.as_str()))", field_name));
+                    }
+                }
+                crate::types::FieldType::Number => {
+                    bind_statements.push(format!("        .bind(sqlx::types::BigDecimal::try_from(input.{}).unwrap_or_default())", field_name));
+                }
+                crate::types::FieldType::Boolean => {
+                    bind_statements.push(format!("        .bind(input.{})", field_name));
+                }
+                crate::types::FieldType::Date | crate::types::FieldType::DateTime => {
+                    bind_statements.push(format!("        .bind(input.{})", field_name));
+                }
+                crate::types::FieldType::EntityId => {
+                    if !field.optional {
+                        bind_statements.push(format!("        .bind(input.{})", field_name));
+                    } else {
+                        bind_statements.push(format!("        .bind(input.{}.as_ref().map(|s| s.as_str()))", field_name));
+                    }
+                }
+                crate::types::FieldType::Json | crate::types::FieldType::Blocks => {
+                    bind_statements.push(format!("        .bind(serde_json::to_value(&input.{}).unwrap_or(serde_json::Value::Null))", field_name));
+                }
+                crate::types::FieldType::Array(_) => {
+                    // For arrays, wrap in sqlx::types::Json for database storage
+                    if field.optional {
+                        bind_statements.push(format!("        .bind(input.{}.as_ref().map(|v| sqlx::types::Json(v.clone())).unwrap_or_else(|| sqlx::types::Json(Vec::new())))", field_name));
+                    } else {
+                        bind_statements.push(format!("        .bind(sqlx::types::Json(input.{}.clone()))", field_name));
+                    }
+                }
+                crate::types::FieldType::Custom(_) => {
+                    // For enums, convert to string using serde JSON serialization and remove quotes
+                    if !field.optional {
+                        bind_statements.push(format!("        .bind(serde_json::to_string(&input.{}).unwrap_or_default().trim_matches('\"').to_string())", field_name));
+                    } else {
+                        bind_statements.push(format!("        .bind(input.{}.as_ref().map(|e| serde_json::to_string(e).unwrap_or_default().trim_matches('\"').to_string()))", field_name));
+                    }
+                }
+                crate::types::FieldType::Reference(_) => {
+                    // For references, treat as string
+                    if !field.optional {
+                        bind_statements.push(format!("        .bind(input.{})", field_name));
+                    } else {
+                        bind_statements.push(format!("        .bind(input.{}.as_ref().map(|s| s.as_str()))", field_name));
+                    }
+                }
+            }
+            param_count += 1;
+        }
+        
+        let insert_fields_str = insert_fields.join(", ");
+        let insert_placeholders_str = insert_placeholders.join(", ");
+        let bind_statements_str = bind_statements.join("\n");
+        let now_param = param_count;
+        let now_param_2 = param_count + 1;
+        
+        // Generate field mappings for the return struct
+        let mut field_mappings = Vec::new();
+        for (field_name, field) in &model.fields {
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" || field_name == "version" {
+                continue; // Skip fields already handled
+            }
+            
+            let db_field_name = self.camel_to_snake_case(field_name);
+            let rust_field_name = self.camel_to_snake_case(field_name);  // Use snake_case for Rust struct fields
+            
+            match &field.field_type {
+                crate::types::FieldType::String => {
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                    }
+                }
+                crate::types::FieldType::Number => {
+                    field_mappings.push(format!("            {}: row.{}.to_f64().unwrap_or(0.0)", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Boolean => {
+                    field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Date | crate::types::FieldType::DateTime => {
+                    field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::EntityId => {
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                    }
+                }
+                crate::types::FieldType::Json | crate::types::FieldType::Blocks => {
+                    field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Array(_) => {
+                    // For JSON arrays stored as JSONB in database, extract the inner value
+                    field_mappings.push(format!("            {}: row.{}.0", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Custom(_) => {
+                    // For enums, parse from string value
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}.as_ref().and_then(|s| serde_json::from_str(&format!(\"\\\"{{}}\\\"\", s)).ok())", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: serde_json::from_str(&format!(\"\\\"{{}}\\\"\", row.{}.as_str())).ok().unwrap_or_else(|| panic!(\"Failed to parse enum from: {{}}\", row.{}.as_str()))", rust_field_name, db_field_name, db_field_name));
+                    }
+                }
+                crate::types::FieldType::Reference(_) => {
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                    }
+                }
+            }
+        }
+        
+        let field_mappings_str = if field_mappings.is_empty() {
+            String::new()
+        } else {
+            format!(",\n{}", field_mappings.join(",\n"))
+        };
+        
+        Ok(format!(
+            r#"    /// Create a new {model_name}
     async fn create_{model_lower}(
         &self,
         ctx: &Context<'_>,
-        _input: Create{model_name}Input,
+        input: Create{model_name}Input,
     ) -> FieldResult<{model_name}> {{
-        let _pool = ctx.data::<PgPool>()?;
+        let pool = ctx.data::<PgPool>()?;
         
-        // TODO: Implement dynamic field insertion
-        // For now, return an error
-        Err("Create {model_name} not yet implemented".into())
+        // Generate UUID for new record
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now();
+        
+        // Insert new record and fetch it back
+        let row = sqlx::query_as::<_, {model_name}Row>(
+            "INSERT INTO {model_lower} (id, {insert_fields_str}, created_at, updated_at) 
+             VALUES ($1, {insert_placeholders_str}, ${now_param}, ${now_param_2})
+             RETURNING *"
+        )
+        .bind(id)
+{bind_statements_str}
+        .bind(now)
+        .bind(now)
+        .fetch_one(pool)
+        .await?;
+        
+        // Convert database row to GraphQL model
+        Ok(row.into())
     }}
 
-    /// Delete a {model_name}
+"#,
+            model_name = model_name,
+            model_lower = model_lower,
+            insert_fields_str = insert_fields_str,
+            insert_placeholders_str = insert_placeholders_str,
+            bind_statements_str = bind_statements_str,
+            now_param = now_param,
+            now_param_2 = now_param_2,
+        ))
+    }
+    
+    /// Generate update resolver for a model
+    fn generate_update_resolver(&self, model: &Model) -> Result<String> {
+        let model_name = &model.name;
+        let model_lower = model_name.to_lowercase();
+        
+        // Generate field updates
+        // Generate UPDATE statement using COALESCE to keep existing values for NULL inputs
+        let mut update_fields = Vec::new();
+        let mut bind_statements = Vec::new();
+        let mut param_count = 1;
+        
+        // Always update updated_at
+        update_fields.push("updated_at = $2".to_string());
+        bind_statements.push("        .bind(chrono::Utc::now())".to_string());
+        param_count = 3;
+        
+        for (field_name, field) in &model.fields {
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" {
+                continue; // Skip non-updatable fields
+            }
+            
+            // Convert camelCase to snake_case for database columns
+            let db_field_name = self.camel_to_snake_case(field_name);
+            
+            // Use COALESCE to keep existing value if new value is NULL
+            update_fields.push(format!("{} = COALESCE(${}, {})", db_field_name, param_count, db_field_name));
+            
+            match &field.field_type {
+                crate::types::FieldType::String => {
+                    bind_statements.push(format!("        .bind(input.data.{}.as_ref().map(|s| s.as_str()))", field_name));
+                }
+                crate::types::FieldType::Number => {
+                    bind_statements.push(format!("        .bind(input.data.{}.map(|v| sqlx::types::BigDecimal::try_from(v).unwrap_or_default()))", field_name));
+                }
+                crate::types::FieldType::Boolean => {
+                    bind_statements.push(format!("        .bind(input.data.{})", field_name));
+                }
+                crate::types::FieldType::Date | crate::types::FieldType::DateTime => {
+                    bind_statements.push(format!("        .bind(input.data.{})", field_name));
+                }
+                crate::types::FieldType::EntityId => {
+                    bind_statements.push(format!("        .bind(input.data.{}.as_ref().map(|s| s.as_str()))", field_name));
+                }
+                crate::types::FieldType::Json | crate::types::FieldType::Blocks => {
+                    bind_statements.push(format!("        .bind(input.data.{}.as_ref().map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null)))", field_name));
+                }
+                crate::types::FieldType::Array(_) => {
+                    bind_statements.push(format!("        .bind(input.data.{}.as_ref().map(|v| sqlx::types::Json(v.clone())))", field_name));
+                }
+                crate::types::FieldType::Custom(_) => {
+                    bind_statements.push(format!("        .bind(input.data.{}.as_ref().map(|e| serde_json::to_string(e).unwrap_or_default().trim_matches('\"').to_string()))", field_name));
+                }
+                crate::types::FieldType::Reference(_) => {
+                    bind_statements.push(format!("        .bind(input.data.{}.as_ref().map(|s| s.as_str()))", field_name));
+                }
+            }
+            param_count += 1;
+        }
+        
+        let update_fields_str = update_fields.join(", ");
+        let bind_statements_str = bind_statements.join("\n");
+        
+        let update_fields_str = update_fields.join(", ");
+        let bind_statements_str = bind_statements.join("\n");
+        
+        // Generate field mappings for the return struct (same as create)
+        let mut field_mappings = Vec::new();
+        for (field_name, field) in &model.fields {
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" || field_name == "version" {
+                continue; // Skip fields already handled
+            }
+            
+            let db_field_name = self.camel_to_snake_case(field_name);
+            let rust_field_name = self.camel_to_snake_case(field_name);  // Use snake_case for Rust struct fields
+            
+            match &field.field_type {
+                crate::types::FieldType::String => {
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                    }
+                }
+                crate::types::FieldType::Number => {
+                    field_mappings.push(format!("            {}: row.{}.to_f64().unwrap_or(0.0)", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Boolean => {
+                    field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Date | crate::types::FieldType::DateTime => {
+                    field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::EntityId => {
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                    }
+                }
+                crate::types::FieldType::Json | crate::types::FieldType::Blocks => {
+                    field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Array(_) => {
+                    // For JSON arrays stored as JSONB in database, extract the inner value
+                    field_mappings.push(format!("            {}: row.{}.0", rust_field_name, db_field_name));
+                }
+                crate::types::FieldType::Custom(_) => {
+                    // For enums, parse from string value
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}.as_ref().and_then(|s| serde_json::from_str(&format!(\"\\\"{{}}\\\"\", s)).ok())", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: serde_json::from_str(&format!(\"\\\"{{}}\\\"\", row.{}.as_str())).ok().unwrap_or_else(|| panic!(\"Failed to parse enum from: {{}}\", row.{}.as_str()))", rust_field_name, db_field_name, db_field_name));
+                    }
+                }
+                crate::types::FieldType::Reference(_) => {
+                    if field.optional {
+                        field_mappings.push(format!("            {}: row.{}", rust_field_name, db_field_name));
+                    } else {
+                        field_mappings.push(format!("            {}: row.{}.clone()", rust_field_name, db_field_name));
+                    }
+                }
+            }
+        }
+        
+        let field_mappings_str = if field_mappings.is_empty() {
+            String::new()
+        } else {
+            format!(",\n{}", field_mappings.join(",\n"))
+        };
+        
+        Ok(format!(
+            r#"    /// Update a {model_name}
+    async fn update_{model_lower}(
+        &self,
+        ctx: &Context<'_>,
+        input: Update{model_name}Input,
+    ) -> FieldResult<{model_name}> {{
+        let pool = ctx.data::<PgPool>()?;
+        
+        // Update only provided fields using COALESCE to keep existing values for NULL inputs
+        let row = sqlx::query_as::<_, {model_name}Row>(
+            "UPDATE {model_lower} SET {update_fields_str} WHERE id = $1 RETURNING *")
+        .bind(input.id.as_str())
+{bind_statements_str}
+        .fetch_one(pool)
+        .await?;
+        
+        // Convert database row to GraphQL model
+        Ok(row.into())
+    }}
+
+"#,
+            model_name = model_name,
+            model_lower = model_lower,
+            update_fields_str = update_fields_str,
+            bind_statements_str = bind_statements_str,
+        ))
+    }
+    
+    /// Generate delete resolver for a model
+    fn generate_delete_resolver(&self, model: &Model) -> Result<String> {
+        let model_name = &model.name;
+        let model_lower = model_name.to_lowercase();
+        
+        Ok(format!(
+            r#"    /// Delete a {model_name}
     async fn delete_{model_lower}(
         &self,
         ctx: &Context<'_>,
@@ -159,23 +512,20 @@ pub struct Mutation;
     ) -> FieldResult<bool> {{
         let pool = ctx.data::<PgPool>()?;
         
-        let result = sqlx::query(
-            "DELETE FROM {model_lower} WHERE id = $1"
+        let result = sqlx::query!(
+            "DELETE FROM {model_lower} WHERE id = $1",
+            id.as_str()
         )
-        .bind(id.to_string())
         .execute(pool)
         .await?;
         
         Ok(result.rows_affected() > 0)
     }}
+
 "#,
-                model_name = model_name,
-                model_lower = model_lower
-            ));
-        }
-        
-        mutation_impl.push_str("}\n\n");
-        Ok(mutation_impl)
+            model_name = model_name,
+            model_lower = model_lower
+        ))
     }
     
     /// Generate resolver registration code

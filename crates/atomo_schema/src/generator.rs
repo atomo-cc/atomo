@@ -396,8 +396,9 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
     fn generate_model_struct(model: &Model) -> Result<String> {
         let mut code = String::new();
         
-        code.push_str(&format!("#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject, sqlx::FromRow)]\n"));
-        code.push_str(&format!("pub struct {} {{\n", model.name));
+        // Generate database model (for sqlx FromRow)
+        code.push_str(&format!("#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]\n"));
+        code.push_str(&format!("pub struct {}Row {{\n", model.name));
         
         // Check if the model already has standard fields
         let has_created_at = model.fields.iter().any(|(_, field)| field.name == "createdAt");
@@ -405,35 +406,103 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
         let has_version = model.fields.iter().any(|(_, field)| field.name == "version");
         
         for (_name, field) in &model.fields {
-            let rust_type = Self::convert_field_type(&field.field_type);
-            // Use the original camelCase field name for Rust struct
-            let field_name = &field.name;
-            // Convert to snake_case for database column mapping
-            let db_column = Self::camel_to_snake_case(field_name);
+            let rust_type = Self::convert_field_type_for_database(&field.field_type);
+            // Use snake_case field name for Rust struct to match database columns
+            let field_name = Self::camel_to_snake_case(&field.name);
             
             if field.optional {
-                code.push_str(&format!("    #[serde(rename = \"{}\")]\n", db_column));
                 code.push_str(&format!("    pub {}: Option<{}>,\n", field_name, rust_type));
             } else {
-                code.push_str(&format!("    #[serde(rename = \"{}\")]\n", db_column));
                 code.push_str(&format!("    pub {}: {},\n", field_name, rust_type));
             }
         }
         
         // Add standard Atomo fields only if they don't already exist
         if !has_created_at {
-            code.push_str("    #[serde(rename = \"created_at\")]\n");
-            code.push_str("    pub createdAt: DateTime<Utc>,\n");
+            code.push_str("    pub created_at: DateTime<Utc>,\n");
         }
         if !has_updated_at {
-            code.push_str("    #[serde(rename = \"updated_at\")]\n");
-            code.push_str("    pub updatedAt: DateTime<Utc>,\n");
+            code.push_str("    pub updated_at: DateTime<Utc>,\n");
         }
         if !has_version {
             code.push_str("    pub version: i32,\n");
         }
         
+        code.push_str("}\n\n");
+        
+        // Generate GraphQL model (for SimpleObject)
+        code.push_str(&format!("#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]\n"));
+        code.push_str(&format!("pub struct {} {{\n", model.name));
+        
+        for (_name, field) in &model.fields {
+            let rust_type = Self::convert_field_type_for_graphql(&field.field_type);
+            // Use snake_case field name for Rust struct to match database columns
+            let field_name = Self::camel_to_snake_case(&field.name);
+            // Store original name for GraphQL field mapping
+            let graphql_field = &field.name;
+            
+            if field.optional {
+                code.push_str(&format!("    #[graphql(name = \"{}\")]\n", graphql_field));
+                code.push_str(&format!("    pub {}: Option<{}>,\n", field_name, rust_type));
+            } else {
+                code.push_str(&format!("    #[graphql(name = \"{}\")]\n", graphql_field));
+                code.push_str(&format!("    pub {}: {},\n", field_name, rust_type));
+            }
+        }
+        
+        // Add standard Atomo fields only if they don't already exist
+        if !has_created_at {
+            code.push_str("    #[graphql(name = \"createdAt\")]\n");
+            code.push_str("    pub created_at: DateTime<Utc>,\n");
+        }
+        if !has_updated_at {
+            code.push_str("    #[graphql(name = \"updatedAt\")]\n");
+            code.push_str("    pub updated_at: DateTime<Utc>,\n");
+        }
+        if !has_version {
+            code.push_str("    pub version: i32,\n");
+        }
+        
+        code.push_str("}\n\n");
+        
+        // Generate conversion between Row and GraphQL model
+        code.push_str(&format!("impl From<{}Row> for {} {{\n", model.name, model.name));
+        code.push_str(&format!("    fn from(row: {}Row) -> Self {{\n", model.name));
+        code.push_str(&format!("        {} {{\n", model.name));
+        
+        for (_name, field) in &model.fields {
+            let field_name = Self::camel_to_snake_case(&field.name);
+            
+            match &field.field_type {
+                FieldType::Array(_) => {
+                    // Convert from sqlx::types::Json<Vec<T>> to Vec<T>
+                    if field.optional {
+                        code.push_str(&format!("            {}: row.{}.map(|v| v.0),\n", field_name, field_name));
+                    } else {
+                        code.push_str(&format!("            {}: row.{}.0,\n", field_name, field_name));
+                    }
+                },
+                _ => {
+                    code.push_str(&format!("            {}: row.{},\n", field_name, field_name));
+                }
+            }
+        }
+        
+        // Add standard fields
+        if !has_created_at {
+            code.push_str("            created_at: row.created_at,\n");
+        }
+        if !has_updated_at {
+            code.push_str("            updated_at: row.updated_at,\n");
+        }
+        if !has_version {
+            code.push_str("            version: row.version,\n");
+        }
+        
+        code.push_str("        }\n");
+        code.push_str("    }\n");
         code.push_str("}\n");
+        
         Ok(code)
     }
     
@@ -465,9 +534,9 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
                 continue;
             }
             
-            let rust_type = Self::convert_field_type(&field.field_type);
-            // Use camelCase field name to match struct
-            let field_name = &field.name;
+            let rust_type = Self::convert_field_type_for_graphql(&field.field_type);
+            // Use snake_case field name to match struct
+            let field_name = Self::camel_to_snake_case(&field.name);
             
             if field.optional {
                 constructor_params.push(format!("{}: Option<{}>", field_name, rust_type));
@@ -481,8 +550,8 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
         code.push_str("        Self {\n");
         
         for (_name, field) in &model.fields {
-            // Use camelCase field name to match struct
-            let field_name = &field.name;
+            // Use snake_case field name to match struct
+            let field_name = Self::camel_to_snake_case(&field.name);
             
             if field.attributes.iter().any(|attr| matches!(attr, crate::types::FieldAttribute::Primary)) {
                 code.push_str(&format!("            {}: new_entity_id(),\n", field_name));
@@ -490,10 +559,11 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
                 code.push_str(&format!("            {}: Utc::now(),\n", field_name));
             } else if field.name == "createdAt" || field.name == "updatedAt" {
                 // Handle schema-defined timestamp fields
-                code.push_str(&format!("            {}: Utc::now(),\n", field_name));
+                let snake_field_name = Self::camel_to_snake_case(&field.name);
+                code.push_str(&format!("            {}: Utc::now(),\n", snake_field_name));
             } else if field.name == "version" {
                 // Handle schema-defined version field
-                code.push_str(&format!("            {}: 1,\n", field_name));
+                code.push_str(&format!("            version: 1,\n"));
             } else {
                 code.push_str(&format!("            {},\n", field_name));
             }
@@ -501,10 +571,10 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
         
         // Add Atomo standard fields only if they don't already exist in schema
         if !has_created_at {
-            code.push_str("            createdAt: Utc::now(),\n");
+            code.push_str("            created_at: Utc::now(),\n");
         }
         if !has_updated_at {
-            code.push_str("            updatedAt: Utc::now(),\n");
+            code.push_str("            updated_at: Utc::now(),\n");
         }
         if !has_version {
             code.push_str("            version: 1,\n");
@@ -553,16 +623,55 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
     }
     
     fn convert_field_type(field_type: &FieldType) -> String {
+        Self::convert_field_type_for_database(field_type)
+    }
+
+    // For database models (FromRow)
+    fn convert_field_type_for_database(field_type: &FieldType) -> String {
         match field_type {
             FieldType::String => "String".to_string(),
-            FieldType::Number => "f64".to_string(), // Use f64 for better compatibility
+            FieldType::Number => "f64".to_string(), // Use f64 for GraphQL compatibility
             FieldType::Boolean => "bool".to_string(),
             FieldType::Date => "chrono::NaiveDate".to_string(),
             FieldType::DateTime => "DateTime<Utc>".to_string(),
             FieldType::EntityId => "EntityId".to_string(),
             FieldType::Json => "serde_json::Value".to_string(),
             FieldType::Reference(name) => format!("EntityId /* Reference to {} */", name),
-            FieldType::Array(inner_type) => format!("Vec<{}>", Self::convert_field_type(inner_type)),
+            FieldType::Array(inner_type) => {
+                // For arrays, use sqlx::types::Json wrapper for database compatibility
+                let inner = Self::convert_field_type_for_graphql(inner_type);
+                format!("sqlx::types::Json<Vec<{}>>", inner)
+            },
+            FieldType::Blocks => "serde_json::Value /* Composable Content Blocks */".to_string(),
+            FieldType::Custom(name) => {
+                // Handle enum types and other custom types
+                if name.starts_with('"') && name.ends_with('"') {
+                    // String literal type like "call_log"
+                    name.clone()
+                } else {
+                    // Regular custom type like CompanySize, DealStage
+                    name.clone()
+                }
+            },
+        }
+    }
+
+    // For GraphQL models (SimpleObject, InputObject)
+    fn convert_field_type_for_graphql(field_type: &FieldType) -> String {
+        match field_type {
+            FieldType::String => "String".to_string(),
+            FieldType::Number => "f64".to_string(), // Use f64 for GraphQL compatibility
+            FieldType::Boolean => "bool".to_string(),
+            FieldType::Date => "chrono::NaiveDate".to_string(),
+            FieldType::DateTime => "DateTime<Utc>".to_string(),
+            FieldType::EntityId => "EntityId".to_string(),
+            FieldType::Json => "serde_json::Value".to_string(),
+            FieldType::Reference(name) => format!("EntityId /* Reference to {} */", name),
+            FieldType::Array(inner_type) => {
+                // For GraphQL arrays, use plain Vec<T>
+                let inner = Self::convert_field_type_for_graphql(inner_type);
+                format!("Vec<{}>", inner)
+            },
             FieldType::Blocks => "serde_json::Value /* Composable Content Blocks */".to_string(),
             FieldType::Custom(name) => {
                 // Handle enum types and other custom types
@@ -602,7 +711,7 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
                     continue; // Skip type field - handled separately
                 }
                 
-                let rust_type = Self::convert_field_type(&field.field_type);
+                let rust_type = Self::convert_field_type_for_graphql(&field.field_type);
                 let field_name = Self::to_snake_case(&field.name);
                 
                 if field.optional {
@@ -657,7 +766,7 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
                     continue;
                 }
                 
-                let rust_type = Self::convert_field_type(&field.field_type);
+                let rust_type = Self::convert_field_type_for_graphql(&field.field_type);
                 let field_def = if field.optional {
                     format!("    pub {}: Option<{}>,\n", field.name, rust_type)
                 } else {
@@ -666,6 +775,33 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
                 code.push_str(&field_def);
             }
             
+            code.push_str("}\n\n");
+            
+            // Generate Update Data Input (nested structure)
+            code.push_str(&format!("/// Input type for updating {} data\n", model.name));
+            code.push_str("#[derive(InputObject, Debug, Clone)]\n");
+            code.push_str(&format!("pub struct Update{}DataInput {{\n", model.name));
+            
+            for (_field_name, field) in &model.fields {
+                // Skip base entity fields for update data input
+                if Self::is_base_entity_field(&field.name) {
+                    continue;
+                }
+                
+                let rust_type = Self::convert_field_type_for_graphql(&field.field_type);
+                // All fields are optional in update
+                let field_def = format!("    pub {}: Option<{}>,\n", field.name, rust_type);
+                code.push_str(&field_def);
+            }
+            
+            code.push_str("}\n\n");
+            
+            // Generate Update Input
+            code.push_str(&format!("/// Input type for updating {}\n", model.name));
+            code.push_str("#[derive(InputObject, Debug, Clone)]\n");
+            code.push_str(&format!("pub struct Update{}Input {{\n", model.name));
+            code.push_str("    pub id: ID,\n");
+            code.push_str(&format!("    pub data: Update{}DataInput,\n", model.name));
             code.push_str("}\n\n");
         }
         
