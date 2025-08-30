@@ -4,7 +4,7 @@
  * 这个文件由 atomo CLI 从 schema.ts 自动生成
  * 请勿手动编辑 - 所有更改将被覆盖
  * 
- * 生成时间: 2025-08-30T03:45:47.846525600+00:00
+ * 生成时间: 2025-08-30T08:56:18.928390+00:00
  * 源文件: packages/atomo-crm-app/atomo/schema.ts
  */
 
@@ -24,35 +24,56 @@ import {
 
 /** 销售机会实体 */
 export interface Deal extends BaseEntity {
+  value: number;
   stage: DealStage;
   description: Block[];
   title: string;
-  value: number;
+  expectedCloseDate?: string;
+  contactId: string;
   actualCloseDate?: string;
   companyId?: string;
-  contactId: string;
-  expectedCloseDate?: string;
-}
-
-/** 联系人实体 */
-export interface Contact extends BaseEntity {
-  notes: Block[];
-  lastName: string;
-  tags: string[];
-  firstName: string;
-  companyId?: string;
-  email: string;
-  phone?: string;
 }
 
 /** 公司实体 */
 export interface Company extends BaseEntity {
+  website?: string;
   size?: CompanySize;
-  notes: Block[];
   name: string;
   industry?: string;
+  notes: Block[];
   address?: string;
-  website?: string;
+}
+
+/** CompanySize实体 */
+export interface CompanySize extends BaseEntity {
+  _enum_type: string;
+  MEDIUM: string;
+  LARGE: string;
+  ENTERPRISE: string;
+  STARTUP: string;
+  SMALL: string;
+}
+
+/** DealStage实体 */
+export interface DealStage extends BaseEntity {
+  _enum_type: string;
+  QUALIFIED: string;
+  LEAD: string;
+  PROPOSAL: string;
+  NEGOTIATION: string;
+  WON: string;
+  LOST: string;
+}
+
+/** 联系人实体 */
+export interface Contact extends BaseEntity {
+  phone?: string;
+  email: string;
+  companyId?: string;
+  notes: Block[];
+  lastName: string;
+  firstName: string;
+  tags: string[];
 }
 
 // ================================
@@ -63,13 +84,21 @@ export type DealCreateInput = CreateInput<Deal>;
 export type DealUpdateInput = UpdateInput<Deal>;
 export type DealWhereInput = WhereCondition<Deal>;
 
-export type ContactCreateInput = CreateInput<Contact>;
-export type ContactUpdateInput = UpdateInput<Contact>;
-export type ContactWhereInput = WhereCondition<Contact>;
-
 export type CompanyCreateInput = CreateInput<Company>;
 export type CompanyUpdateInput = UpdateInput<Company>;
 export type CompanyWhereInput = WhereCondition<Company>;
+
+export type CompanySizeCreateInput = CreateInput<CompanySize>;
+export type CompanySizeUpdateInput = UpdateInput<CompanySize>;
+export type CompanySizeWhereInput = WhereCondition<CompanySize>;
+
+export type DealStageCreateInput = CreateInput<DealStage>;
+export type DealStageUpdateInput = UpdateInput<DealStage>;
+export type DealStageWhereInput = WhereCondition<DealStage>;
+
+export type ContactCreateInput = CreateInput<Contact>;
+export type ContactUpdateInput = UpdateInput<Contact>;
+export type ContactWhereInput = WhereCondition<Contact>;
 
 // ================================
 // API响应类型
@@ -78,11 +107,17 @@ export type CompanyWhereInput = WhereCondition<Company>;
 export type DealResponse = ApiResponse<Deal>;
 export type DealListResponse = ApiResponse<Deal[]>;
 
-export type ContactResponse = ApiResponse<Contact>;
-export type ContactListResponse = ApiResponse<Contact[]>;
-
 export type CompanyResponse = ApiResponse<Company>;
 export type CompanyListResponse = ApiResponse<Company[]>;
+
+export type CompanySizeResponse = ApiResponse<CompanySize>;
+export type CompanySizeListResponse = ApiResponse<CompanySize[]>;
+
+export type DealStageResponse = ApiResponse<DealStage>;
+export type DealStageListResponse = ApiResponse<DealStage[]>;
+
+export type ContactResponse = ApiResponse<Contact>;
+export type ContactListResponse = ApiResponse<Contact[]>;
 
 // ================================
 // 查询选项类型
@@ -94,14 +129,26 @@ export interface DealQueryOptions extends PaginationParams {
   };
 }
 
-export interface ContactQueryOptions extends PaginationParams {
-  where?: ContactWhereInput;
+export interface CompanyQueryOptions extends PaginationParams {
+  where?: CompanyWhereInput;
   include?: {
   };
 }
 
-export interface CompanyQueryOptions extends PaginationParams {
-  where?: CompanyWhereInput;
+export interface CompanySizeQueryOptions extends PaginationParams {
+  where?: CompanySizeWhereInput;
+  include?: {
+  };
+}
+
+export interface DealStageQueryOptions extends PaginationParams {
+  where?: DealStageWhereInput;
+  include?: {
+  };
+}
+
+export interface ContactQueryOptions extends PaginationParams {
+  where?: ContactWhereInput;
   include?: {
   };
 }
@@ -119,15 +166,29 @@ export interface DealStats {
   stageDistribution: Record<DealStage, number>;
 }
 
-export interface ContactStats {
-  totalContacts: number;
-  contactsWithoutCompany: number;
-  contactsWithDeals: number;
-}
-
 export interface CompanyStats {
   totalCompanys: number;
   sizeDistribution: Record<CompanySize, number>;
   topIndustries: Array<{ industry: string; count: number }>;
+}
+
+export interface CompanySizeStats {
+  totalCompanySizes: number;
+  createdToday: number;
+  createdThisWeek: number;
+  createdThisMonth: number;
+}
+
+export interface DealStageStats {
+  totalDealStages: number;
+  createdToday: number;
+  createdThisWeek: number;
+  createdThisMonth: number;
+}
+
+export interface ContactStats {
+  totalContacts: number;
+  contactsWithoutCompany: number;
+  contactsWithDeals: number;
 }
 

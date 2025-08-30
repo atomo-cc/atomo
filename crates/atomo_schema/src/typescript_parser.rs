@@ -92,6 +92,34 @@ impl TypeScriptParser {
             }
         }
         
+        // Also convert collected enums to models
+        for (enum_name, enum_values) in &self.enums {
+            let mut fields = HashMap::new();
+            
+            // Create a special marker field to identify this as an enum
+            fields.insert("_enum_type".to_string(), Field {
+                name: "_enum_type".to_string(),
+                field_type: FieldType::String,
+                optional: false,
+                attributes: vec![],
+            });
+            
+            // Add each enum value as metadata (we'll handle this specially in the generator)
+            for (i, value) in enum_values.iter().enumerate() {
+                fields.insert(format!("_enum_value_{}", i), Field {
+                    name: value.clone(),
+                    field_type: FieldType::String,
+                    optional: false,
+                    attributes: vec![],
+                });
+            }
+            
+            models.push(Model {
+                name: enum_name.clone(),
+                fields,
+            });
+        }
+        
         if models.is_empty() {
             anyhow::bail!("No valid interfaces found in schema");
         }

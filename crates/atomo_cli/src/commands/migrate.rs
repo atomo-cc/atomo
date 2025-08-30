@@ -371,8 +371,12 @@ fn generate_create_table_sql(model: &Model) -> Result<String> {
         columns.push("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()".to_string());
     }
     
-    // Add model fields
+    // Add model fields (skip standard audit fields that will be added later)
     for (field_name, field) in &model.fields {
+        // Skip standard Atomo fields that are added automatically
+        if field_name == "createdAt" || field_name == "updatedAt" || field_name == "version" {
+            continue;
+        }
         let column_def = generate_column_definition(field_name, field)?;
         columns.push(format!("    {}", column_def));
     }
@@ -428,7 +432,9 @@ fn generate_column_definition(field_name: &str, field: &Field) -> Result<String>
         atomo_schema::FieldType::Custom(_) => "TEXT", // Default fallback
     };
     
-    let mut def = format!("{} {}", field_name, pg_type);
+    // Convert camelCase to snake_case for database columns
+    let db_field_name = camel_to_snake_case(field_name);
+    let mut def = format!("{} {}", db_field_name, pg_type);
     
     if field_name == "id" {
         def.push_str(" PRIMARY KEY DEFAULT gen_random_uuid()");
@@ -437,6 +443,21 @@ fn generate_column_definition(field_name: &str, field: &Field) -> Result<String>
     }
     
     Ok(def)
+}
+
+// Convert camelCase to snake_case
+fn camel_to_snake_case(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        if ch.is_uppercase() && !result.is_empty() {
+            result.push('_');
+        }
+        result.push(ch.to_lowercase().next().unwrap());
+    }
+    
+    result
 }
 
 fn is_system_table(table_name: &str) -> bool {

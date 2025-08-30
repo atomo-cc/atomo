@@ -405,6 +405,7 @@ name = "atomo_schema"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-graphql",
  "chrono",
  "convert_case 0.6.0",
  "handlebars 4.5.0",

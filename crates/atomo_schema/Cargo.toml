@@ -23,3 +23,6 @@ chrono = { version = "0.4", features = ["serde"] }
 # Template generation
 handlebars = "4.5"
 convert_case = "0.6"
+
+# GraphQL dependencies for resolver generation
+async-graphql = "7.0"
