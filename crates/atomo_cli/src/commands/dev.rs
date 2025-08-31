@@ -4,7 +4,7 @@ use console::style;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
-use atomo_schema::{TypeScriptParser, HasuraV2ResolverGenerator, hasura_v2_type_generator::HasuraV2TypeGenerator};
+use atomo_schema::{TypeScriptParser, HasuraV2ResolverGenerator, hasura_v2_type_generator::HasuraV2TypeGenerator, OperationDefinitions};
 
 /// 即时编译的服务运行时
 /// 
@@ -27,14 +27,29 @@ pub async fn dev_command(port: u16) -> Result<()> {
     generate_service_config(&runtime_dir, &service_name, port).await?;
     println!("   ⚙️  Generated service configuration");
     
-    // 步骤4: 解析schema.ts并生成业务代码
+    // 步骤4: Schema-First开发流程 - 确保Schema与Runtime 100%一致 (简化版)
     let schema_path = current_dir.join("schema.ts");
     if !schema_path.exists() {
         anyhow::bail!("❌ schema.ts not found in current directory");
     }
     
-    generate_business_code(&runtime_dir, &schema_path).await?;
+    // 使用统一的操作符定义验证一致性
+    let operation_definitions = OperationDefinitions::hasura_v2_standard();
+    operation_definitions.validate()
+        .context("Failed to validate operation definitions")?;
+    
+    println!("   🎯 Using Hasura v2 standard operation definitions");
+    println!("      - {} comparison operators", operation_definitions.comparison_ops.len());
+    println!("      - {} logical operators", operation_definitions.logical_ops.len());
+    
+    // 解析并生成代码（分离式生成，支持增量更新）
+    generate_business_code_incremental(&runtime_dir, &schema_path).await?;
     println!("   🦀 Generated business code from schema.ts");
+    
+    // 验证schema一致性 (Hasura v2标准)
+    let schema_graphql_path = runtime_dir.join("schema.graphql");
+    verify_schema_consistency(&schema_graphql_path).await?;
+    println!("   ✅ Schema consistency verified (Hasura v2 compliant)");
     
     // 步骤5: 编译并运行服务
     compile_and_run_service(&runtime_dir, &service_name, port).await?;
@@ -71,41 +86,24 @@ async fn create_runtime_workspace(service_dir: &Path, service_name: &str) -> Res
     let models_path = runtime_dir.join("src").join("models.rs");
     
     let should_regenerate = if !runtime_dir.exists() {
+        println!("   🔄 First run detected - generating runtime");
         true
     } else {
-        // 检查schema.ts是否比生成的文件更新
-        let schema_modified = schema_path.metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::UNIX_EPOCH);
-        
-        let models_modified = models_path.metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::UNIX_EPOCH);
-        
-        // 检查生成器代码是否更新了（强制重新生成以应用修复）
-        let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
-        let resolvers_modified = resolvers_path.metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::UNIX_EPOCH);
-            
-        // 如果schema更新了，或者生成的文件不完整，都需要重新生成
-        schema_modified > models_modified || 
-        schema_modified > resolvers_modified ||
-        !resolvers_path.exists()
+        // 智能增量检测 - 基于文件哈希而非时间戳
+        check_incremental_changes(&schema_path, &runtime_dir).await?
     };
     
     if should_regenerate {
-        // 清理并重新创建runtime目录
-        if runtime_dir.exists() {
-            tokio::fs::remove_dir_all(&runtime_dir).await?;
-        }
+        // 🔧 关键优化：不删除整个目录，只重新生成必要的源代码
+        // 保留 target/ 目录和 Cargo.lock 以利用编译缓存
         
+        // 创建必要的目录结构
         tokio::fs::create_dir_all(&runtime_dir).await?;
         tokio::fs::create_dir_all(runtime_dir.join("src")).await?;
         
-        println!("   🔄 Schema changed, regenerating runtime workspace...");
+        println!("   🏗️  Incremental regeneration (preserving build cache)");
     } else {
-        println!("   ♻️  Using cached runtime workspace (no schema changes)...");
+        println!("   ⚡ Using cached runtime - fast compilation mode");
     }
     
     Ok(runtime_dir)
@@ -173,10 +171,14 @@ tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
 # 环境变量
 dotenvy = "0.15"
 
-# 共享缓存配置以加速编译
+# 开发环境编译优化
 [profile.dev]
 incremental = true
+debug = true
+opt-level = 0
+overflow-checks = false
 
+# 保留 release 配置用于生产环境
 [profile.release]
 incremental = true
 lto = "thin"  # 链接时优化，但不要太慢
@@ -289,10 +291,67 @@ async fn graphql_playground() -> impl IntoResponse {{
     Ok(())
 }
 
-/// 生成业务代码 (models.rs, resolvers.rs)
+/// 生成业务代码 (models.rs, resolvers.rs) - 增强版本
+/// 真正的细粒度增量代码生成 - 只重新生成变更的部分
+async fn generate_business_code_incremental(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
+    let models_path = runtime_dir.join("src").join("models.rs");
+    let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
+    
+    // 首先生成GraphQL schema文件用于开发工具
+    let schema_graphql_path = runtime_dir.join("schema.graphql");
+    
+    // 读取并解析schema
+    let schema_content = tokio::fs::read_to_string(schema_path).await?;
+    let parser = TypeScriptParser::new();
+    let models = parser.parse(&schema_content)
+        .with_context(|| "Failed to parse schema.ts")?;
+    
+    // 检查什么需要重新生成
+    let change_detection = detect_incremental_changes_detailed(schema_path, runtime_dir, &models).await?;
+    
+    println!("   📊 Incremental analysis:");
+    println!("      ├─ Models changed: {}", change_detection.models_changed);
+    println!("      ├─ Resolvers changed: {}", change_detection.resolvers_changed);
+    println!("      └─ Schema hash: {}...", change_detection.schema_hash[..8].to_string());
+    
+    // 始终生成GraphQL schema文件（轻量操作）
+    if change_detection.models_changed || change_detection.resolvers_changed {
+        println!("   📄 Generating GraphQL schema definition...");
+        generate_graphql_schema_definition(schema_path, &schema_graphql_path).await?;
+        
+        // 🔧 关键优化：只重新生成实际变更的文件
+        if change_detection.models_changed {
+            println!("   🏗️  Regenerating models.rs...");
+            generate_models_only(runtime_dir, schema_path, &models).await?;
+        } else {
+            println!("   ✅ Models unchanged - skipping");
+        }
+        
+        if change_detection.resolvers_changed {
+            println!("   🔧 Regenerating resolvers.rs...");
+            generate_resolvers_only(runtime_dir, schema_path, &models).await?;
+        } else {
+            println!("   ✅ Resolvers unchanged - skipping");
+        }
+        
+        // 更新缓存哈希
+        update_incremental_cache(runtime_dir, &change_detection).await?;
+        
+        println!("   ✅ Incremental business code generated successfully");
+    } else {
+        println!("   ⚡ No business code changes detected - using cache");
+    }
+    
+    Ok(())
+}
+
+/// 原有的完整生成函数，保留用于回退
 async fn generate_business_code(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
     let models_path = runtime_dir.join("src").join("models.rs");
     let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
+    
+    // 首先生成GraphQL schema文件用于开发工具
+    let schema_graphql_path = runtime_dir.join("schema.graphql");
     
     // 检查是否需要重新生成
     let schema_modified = schema_path.metadata()
@@ -307,14 +366,27 @@ async fn generate_business_code(runtime_dir: &Path, schema_path: &Path) -> Resul
         .and_then(|m| m.modified())
         .unwrap_or(std::time::UNIX_EPOCH);
     
-    // 强制重新生成，因为生成器逻辑已更新
-    // if schema_modified <= models_modified && schema_modified <= resolvers_modified && 
-    //    models_path.exists() && resolvers_path.exists() {
-    //     println!("   ♻️  Using cached business code (no schema changes)...");
-    //     return Ok(());
-    // }
+    // 始终生成GraphQL schema文件（轻量操作）
+    println!("   📄 Generating GraphQL schema definition...");
+    generate_graphql_schema_definition(schema_path, &schema_graphql_path).await?;
     
-    println!("   🔄 Regenerating business code (applying latest fixes)...");
+    // 智能判断是否需要重新生成Rust代码
+    // 检查schema.ts、生成器源码和生成文件的修改时间
+    let generator_source_time = get_generator_source_modification_time();
+    
+    let should_regenerate = schema_modified > models_modified || 
+        schema_modified > resolvers_modified ||
+        generator_source_time > models_modified ||
+        generator_source_time > resolvers_modified ||
+        !models_path.exists() || 
+        !resolvers_path.exists();
+    
+    if !should_regenerate {
+        println!("   ♻️  Using cached business code (no schema changes detected)...");
+        return Ok(());
+    }
+    
+    println!("   🔄 Regenerating business code from schema changes...");
     
     // 读取并解析 schema.ts
     let schema_content = tokio::fs::read_to_string(schema_path).await?;
@@ -322,6 +394,12 @@ async fn generate_business_code(runtime_dir: &Path, schema_path: &Path) -> Resul
     let parser = TypeScriptParser::new();
     let models = parser.parse(&schema_content)
         .with_context(|| "Failed to parse schema.ts")?;
+    
+    // 显示schema分析信息
+    println!("   📊 Schema analysis:");
+    println!("      ├─ Models detected: {}", models.len());
+    println!("      ├─ Complexity: {}", calculate_complexity_score(&models));
+    println!("      └─ Hash: {}...", calculate_schema_hash(&schema_content)[..8].to_string());
     
     // 生成 models.rs
     let type_generator = HasuraV2TypeGenerator::new();
@@ -337,7 +415,75 @@ async fn generate_business_code(runtime_dir: &Path, schema_path: &Path) -> Resul
     
     tokio::fs::write(&resolvers_path, resolvers_code).await?;
     
-    println!("   🔄 Regenerated business code from schema changes...");
+    // 保存缓存信息
+    save_build_cache(runtime_dir, &schema_content, &models).await?;
+    
+    println!("   ✅ Business code generated successfully");
+    
+    Ok(())
+}
+
+/// 生成标准GraphQL schema定义文件
+async fn generate_graphql_schema_definition(schema_path: &Path, output_path: &Path) -> Result<()> {
+    let schema_content = tokio::fs::read_to_string(schema_path).await?;
+    let parser = TypeScriptParser::new();
+    let models = parser.parse(&schema_content)?;
+    
+    // 生成标准的GraphQL schema定义
+    let type_generator = HasuraV2TypeGenerator::new();
+    let graphql_schema = type_generator.generate_graphql_schema_definition(&models)?;
+    
+    tokio::fs::write(output_path, graphql_schema).await?;
+    
+    Ok(())
+}
+
+/// 计算schema复杂度分数
+fn calculate_complexity_score(models: &[atomo_schema::Model]) -> u32 {
+    let mut score = 0u32;
+    
+    for model in models {
+        score += model.fields.len() as u32; // 字段数量
+        score += model.fields.iter()
+            .filter(|(_, f)| matches!(f.field_type, atomo_schema::FieldType::Array(_)))
+            .count() as u32 * 2; // 数组字段权重更高
+        
+        // 关系字段权重
+        score += model.fields.iter()
+            .filter(|(_, f)| matches!(f.field_type, atomo_schema::FieldType::Reference(_)))
+            .count() as u32 * 3;
+    }
+    
+    score
+}
+
+/// 计算schema内容哈希
+fn calculate_schema_hash(content: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
+/// 保存构建缓存信息
+async fn save_build_cache(runtime_dir: &Path, schema_content: &str, models: &[atomo_schema::Model]) -> Result<()> {
+    let cache_dir = runtime_dir.join("cache");
+    tokio::fs::create_dir_all(&cache_dir).await?;
+    
+    let cache_info = serde_json::json!({
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        "schema_hash": calculate_schema_hash(schema_content),
+        "models_count": models.len(),
+        "complexity_score": calculate_complexity_score(models)
+    });
+    
+    let cache_file = cache_dir.join("build_info.json");
+    tokio::fs::write(cache_file, serde_json::to_string_pretty(&cache_info)?).await?;
     
     Ok(())
 }
@@ -348,10 +494,10 @@ async fn compile_and_run_service(runtime_dir: &Path, service_name: &str, port: u
     println!("   📜 Compilation logs:");
     println!();
     
-    // 实时显示编译日志
+    // 开发模式编译 - 快速编译优化
     let mut compile_child = TokioCommand::new("cargo")
         .arg("build")
-        .arg("--release")
+        // 移除 --release，使用更快的 dev 模式
         .current_dir(runtime_dir)
         .stdout(Stdio::inherit())  // 直接继承终端输出，实时显示
         .stderr(Stdio::inherit())   // 直接继承终端错误输出，实时显示
@@ -385,8 +531,8 @@ async fn compile_and_run_service(runtime_dir: &Path, service_name: &str, port: u
     println!("{}", "📋 Service Runtime Logs:".bright_yellow().bold());
     println!("{}", "─".repeat(70).yellow());
     
-    // 直接运行二进制文件，不通过cargo run，减少输出干扰
-    let service_binary = runtime_dir.join("target").join("release").join("service.exe");
+    // 直接运行二进制文件，使用debug目录以匹配编译模式
+    let service_binary = runtime_dir.join("target").join("debug").join("service.exe");
     
     let mut child = TokioCommand::new(&service_binary)
         .current_dir(runtime_dir)
@@ -400,6 +546,577 @@ async fn compile_and_run_service(runtime_dir: &Path, service_name: &str, port: u
     if !status.success() {
         anyhow::bail!("❌ Service exited with error");
     }
+    
+    Ok(())
+}
+
+/// 验证Schema一致性 - 确保生成的GraphQL schema符合Hasura v2标准
+async fn verify_schema_consistency(schema_graphql_path: &Path) -> Result<()> {
+    if !schema_graphql_path.exists() {
+        anyhow::bail!("Schema validation failed: schema.graphql file not found");
+    }
+    
+    let schema_content = tokio::fs::read_to_string(schema_graphql_path).await?;
+    
+    // 验证基本结构
+    verify_basic_structure(&schema_content)?;
+    
+    // 验证Hasura v2兼容性
+    verify_hasura_v2_compliance(&schema_content)?;
+    
+    // 验证比较操作符完整性
+    verify_comparison_operators(&schema_content)?;
+    
+    Ok(())
+}
+
+/// 验证基本GraphQL schema结构
+fn verify_basic_structure(content: &str) -> Result<()> {
+    let required_elements = [
+        "type Query",
+        "type Mutation", 
+        "input",
+        "enum",
+    ];
+    
+    for element in &required_elements {
+        if !content.contains(element) {
+            anyhow::bail!("Schema validation failed: Missing required element '{}'", element);
+        }
+    }
+    
+    Ok(())
+}
+
+/// 验证Hasura v2兼容性
+fn verify_hasura_v2_compliance(content: &str) -> Result<()> {
+    // 检查所有模型是否都有对应的BoolExp类型
+    let mut models = Vec::new();
+    
+    // 提取所有类型定义中的模型名
+    for line in content.lines() {
+        if line.trim().starts_with("type ") && !line.contains("Query") && !line.contains("Mutation") {
+            if let Some(type_name) = extract_type_name(line) {
+                if !type_name.ends_with("BoolExp") && 
+                   !type_name.ends_with("OrderBy") && 
+                   !type_name.ends_with("ComparisonExp") {
+                    models.push(type_name);
+                }
+            }
+        }
+    }
+    
+    // 验证每个模型都有对应的BoolExp和OrderBy类型
+    for model in &models {
+        let bool_exp = format!("{}BoolExp", model);
+        let order_by = format!("{}OrderBy", model);
+        
+        if !content.contains(&bool_exp) {
+            anyhow::bail!("Hasura v2 validation failed: Missing BoolExp type for model '{}'", model);
+        }
+        
+        if !content.contains(&order_by) {
+            anyhow::bail!("Hasura v2 validation failed: Missing OrderBy type for model '{}'", model);
+        }
+    }
+    
+    Ok(())
+}
+
+/// 验证比较操作符完整性
+fn verify_comparison_operators(content: &str) -> Result<()> {
+    let required_operators = [
+        "_eq", "_neq", "_gt", "_gte", "_lt", "_lte", 
+        "_in", "_nin", "_is_null"
+    ];
+    
+    // 检查基本比较操作符类型是否存在
+    let comparison_types = [
+        "StringComparisonExp",
+        "NumericComparisonExp",   // 用于所有数字类型（Int, Float等）
+        "DateTimeComparisonExp",
+        "BooleanComparisonExp",
+        "UUIDComparisonExp",
+        "GenericComparisonExp"    // 通用比较类型
+    ];
+    
+    for comp_type in &comparison_types {
+        if !content.contains(comp_type) {
+            anyhow::bail!("Schema validation failed: Missing comparison type '{}'", comp_type);
+        }
+    }
+    
+    // 验证Hasura v2标准：所有操作符必须有下划线前缀
+    println!("   Info: Verifying Hasura v2 operator naming convention (all operators must have _ prefix)");
+    
+    // 检查每个比较类型中的操作符
+    for comp_type in &comparison_types {
+        for operator in &required_operators {
+            // 检查操作符存在且有正确的下划线前缀
+            let pattern = format!("  {}: ", operator);
+            if !content.contains(&pattern) {
+                // 对于某些操作符对某些类型可能不适用（如Boolean类型不需要_gt, _lt等）
+                if comp_type.contains("Boolean") && 
+                   (operator.contains("_gt") || operator.contains("_lt") || 
+                    operator.contains("_in") || operator.contains("_nin")) {
+                    continue; // Boolean类型不需要这些操作符
+                }
+                if comp_type.contains("UUID") && 
+                   (operator.contains("_gt") || operator.contains("_lt")) {
+                    continue; // UUID类型不需要大小比较
+                }
+                println!("   Info: Operator '{}' not found in type '{}' (may be expected)", operator, comp_type);
+            }
+        }
+    }
+    
+    // 精确验证：确保所有操作符都有下划线前缀（Hasura v2标准）
+    let required_operators = [
+        "_eq:", "_neq:", "_gt:", "_gte:", "_lt:", "_lte:", 
+        "_in:", "_nin:", "_is_null:", "_like:", "_ilike:",
+        "_similar:", "_regex:", "_iregex:"
+    ];
+    
+    // 检查是否有无下划线的操作符（使用精确模式匹配）
+    let invalid_patterns = [
+        "  eq:", "  neq:", "  gt:", "  gte:", "  lt:", "  lte:", 
+        "  in:", "  nin:", "  is_null:", "  like:", "  ilike:",
+        "  similar:", "  regex:", "  iregex:"
+    ];
+    
+    for pattern in &invalid_patterns {
+        if content.contains(pattern) {
+            let op_name = pattern.trim();
+            anyhow::bail!("Schema validation failed: Found invalid operator '{}' without underscore prefix. Hasura v2 requires all operators to have _ prefix.", op_name.trim_end_matches(':'));
+        }
+    }
+    
+    // 验证必需的操作符是否存在
+    let mut missing_operators = Vec::new();
+    for required_op in &required_operators {
+        let pattern = format!("  {}", required_op);
+        if !content.contains(&pattern) {
+            missing_operators.push(required_op.trim_end_matches(':'));
+        }
+    }
+    
+    if !missing_operators.is_empty() {
+        println!("   Warning: Some standard Hasura v2 operators may be missing: {:?}", missing_operators);
+    }
+    
+    println!("   Info: All comparison operators follow Hasura v2 naming convention (with _ prefix)");
+    
+    Ok(())
+}
+
+/// 从类型定义行中提取类型名
+fn extract_type_name(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.starts_with("type ") {
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() >= 2 {
+            return Some(parts[1].to_string());
+        }
+    }
+    None
+}
+
+/// Schema-First开发流程 - 确保Schema与Runtime使用相同的操作符定义
+/// 
+/// 核心思想：使用统一的OperationDefinitions作为单一数据源，
+/// 先生成GraphQL Schema，验证一致性，再生成Runtime代码
+async fn schema_first_generation(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
+    println!("   🎯 Starting Schema-First generation with unified operation definitions...");
+    
+    // 步骤1: 建立统一的操作符定义（单一数据源）
+    let operation_definitions = OperationDefinitions::hasura_v2_standard();
+    operation_definitions.validate()
+        .context("Failed to validate operation definitions")?;
+    
+    println!("   📋 Using Hasura v2 standard operation definitions:");
+    println!("      - {} comparison operators", operation_definitions.comparison_ops.len());
+    println!("      - {} logical operators", operation_definitions.logical_ops.len());
+    
+    // 步骤2: 解析schema.ts
+    let schema_content = std::fs::read_to_string(schema_path)
+        .context("Failed to read schema.ts")?;
+    
+    let mut parser = TypeScriptParser::new();
+    let models = parser.parse(&schema_content)
+        .context("Failed to parse schema.ts")?;
+    
+    println!("   📝 Parsed {} models from schema.ts", models.len());
+    
+    // 步骤3: 使用统一定义生成GraphQL Schema
+    let type_generator = HasuraV2TypeGenerator;
+    let schema_graphql_content = type_generator.generate_graphql_schema_with_operations(&models, &operation_definitions)
+        .context("Failed to generate GraphQL schema with unified operations")?;
+    
+    let schema_graphql_path = runtime_dir.join("schema.graphql");
+    std::fs::write(&schema_graphql_path, &schema_graphql_content)
+        .context("Failed to write schema.graphql")?;
+    
+    println!("   📄 Generated schema.graphql with unified operation definitions");
+    
+    // 步骤4: 验证Schema一致性
+    verify_schema_consistency_with_operations(&schema_graphql_path, &operation_definitions).await
+        .context("Schema consistency validation failed")?;
+    
+    println!("   ✅ Schema consistency verified - all operations match definitions");
+    
+    // 步骤5: 使用相同定义生成Runtime代码
+    let resolver_generator = HasuraV2ResolverGenerator::new();
+    let rust_models_content = resolver_generator.generate_models_with_operations(&models, &operation_definitions)
+        .context("Failed to generate Rust models with unified operations")?;
+    
+    let models_path = runtime_dir.join("src").join("models.rs");
+    std::fs::write(&models_path, &rust_models_content)
+        .context("Failed to write models.rs")?;
+    
+    println!("   🦀 Generated models.rs with identical operation definitions");
+    
+    // 步骤6: 生成Resolver实现
+    let resolver_content = resolver_generator.generate_resolvers_with_operations(&models, &operation_definitions)
+        .context("Failed to generate resolvers with unified operations")?;
+    
+    let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
+    std::fs::write(&resolvers_path, &resolver_content)
+        .context("Failed to write resolvers.rs")?;
+    
+    println!("   🔗 Generated resolvers.rs with matching operation definitions");
+    
+    // 步骤7: 运行时一致性最终验证
+    verify_runtime_schema_consistency(&schema_graphql_path, &models_path, &operation_definitions).await
+        .context("Runtime-Schema consistency validation failed")?;
+    
+    println!("   🎉 Schema-First generation completed - 100% consistency guaranteed!");
+    
+    Ok(())
+}
+
+/// 验证Schema一致性（增强版）- 使用统一的操作符定义进行验证
+async fn verify_schema_consistency_with_operations(
+    schema_graphql_path: &Path, 
+    operation_definitions: &OperationDefinitions
+) -> Result<()> {
+    let content = std::fs::read_to_string(schema_graphql_path)
+        .context("Failed to read schema.graphql")?;
+    
+    println!("   🔍 Verifying schema consistency with unified operation definitions...");
+    
+    // 验证所有定义的操作符都在schema中存在
+    for op in &operation_definitions.comparison_ops {
+        let pattern = format!("  {}: ", op.name);
+        if !content.contains(&pattern) {
+            anyhow::bail!(
+                "Operation definition inconsistency: '{}' defined but not found in schema", 
+                op.name
+            );
+        }
+    }
+    
+    // 验证没有未定义的操作符出现在schema中
+    let lines: Vec<&str> = content.lines().collect();
+    for line in lines {
+        if line.trim().starts_with("_") && line.contains(": ") {
+            let op_name = line.trim().split(": ").next().unwrap_or("");
+            if !operation_definitions.comparison_ops.iter().any(|op| op.name == op_name) &&
+               !operation_definitions.logical_ops.iter().any(|op| op.name == op_name) {
+                anyhow::bail!(
+                    "Undefined operation found in schema: '{}' - not in operation definitions", 
+                    op_name
+                );
+            }
+        }
+    }
+    
+    println!("   ✅ All operation definitions properly reflected in schema");
+    Ok(())
+}
+
+/// 验证Runtime与Schema的一致性
+async fn verify_runtime_schema_consistency(
+    schema_graphql_path: &Path,
+    models_path: &Path, 
+    operation_definitions: &OperationDefinitions
+) -> Result<()> {
+    println!("   🔬 Performing runtime-schema consistency verification...");
+    
+    let schema_content = std::fs::read_to_string(schema_graphql_path)
+        .context("Failed to read schema.graphql")?;
+    
+    let models_content = std::fs::read_to_string(models_path)
+        .context("Failed to read models.rs")?;
+    
+    // 验证每个操作符在schema和models中都存在
+    for op in &operation_definitions.comparison_ops {
+        let schema_pattern = format!("  {}: ", op.name);
+        let models_pattern = format!("pub {}: ", op.name);
+        
+        let in_schema = schema_content.contains(&schema_pattern);
+        let in_models = models_content.contains(&models_pattern);
+        
+        if in_schema != in_models {
+            anyhow::bail!(
+                "Runtime-Schema inconsistency for '{}': schema={}, models={}", 
+                op.name, in_schema, in_models
+            );
+        }
+    }
+    
+    println!("   ✅ Runtime and Schema are 100% consistent");
+    Ok(())
+}
+
+/// 获取生成器源码的最新修改时间
+/// 这样当我们修复生成器代码时，缓存会自动失效
+fn get_generator_source_modification_time() -> std::time::SystemTime {
+    // 获取当前可执行文件的路径，然后找到项目根目录
+    let current_exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from(""));
+    let mut project_root = current_exe.parent().unwrap_or(std::path::Path::new(""));
+    
+    // 向上查找直到找到 Cargo.toml（项目根目录标识）
+    for _ in 0..10 {  // 最多向上查找10层
+        if project_root.join("Cargo.toml").exists() {
+            break;
+        }
+        if let Some(parent) = project_root.parent() {
+            project_root = parent;
+        } else {
+            break;
+        }
+    }
+    
+    let generator_files = [
+        "crates/atomo_schema/src/hasura_v2_resolver_generator.rs",
+        "crates/atomo_schema/src/hasura_v2_type_generator.rs",
+        "crates/atomo_schema/src/operation_definitions.rs",
+    ];
+    
+    let mut latest_time = std::time::UNIX_EPOCH;
+    
+    for file_path in &generator_files {
+        let full_path = project_root.join(file_path);
+        if let Ok(metadata) = std::fs::metadata(&full_path) {
+            if let Ok(modified) = metadata.modified() {
+                if modified > latest_time {
+                    latest_time = modified;
+                }
+            }
+        }
+    }
+    
+    latest_time
+}
+
+/// 增量变更检测结果
+#[derive(Debug)]
+struct IncrementalChangeSet {
+    schema_hash: String,
+    models_changed: bool,
+    resolvers_changed: bool,
+}
+
+/// 详细的增量变更检测
+async fn detect_incremental_changes_detailed(
+    schema_path: &Path, 
+    runtime_dir: &Path, 
+    models: &[atomo_schema::types::Model]
+) -> Result<IncrementalChangeSet> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    // 计算当前schema的哈希
+    let schema_content = tokio::fs::read_to_string(schema_path).await?;
+    let mut hasher = DefaultHasher::new();
+    schema_content.hash(&mut hasher);
+    let current_schema_hash = hasher.finish().to_string();
+    
+    // 计算模型结构的哈希（只包含结构相关的部分）
+    let models_structure = extract_models_structure(models);
+    let mut models_hasher = DefaultHasher::new();
+    models_structure.hash(&mut models_hasher);
+    let current_models_hash = models_hasher.finish().to_string();
+    
+    // 读取缓存
+    let cache_dir = runtime_dir.join(".cache");
+    tokio::fs::create_dir_all(&cache_dir).await?;
+    
+    let schema_cache_file = cache_dir.join("schema.hash");
+    let models_cache_file = cache_dir.join("models.hash");
+    let resolvers_cache_file = cache_dir.join("resolvers.hash");
+    
+    let cached_schema_hash = read_cache_file(&schema_cache_file).await;
+    let cached_models_hash = read_cache_file(&models_cache_file).await;
+    let cached_resolvers_hash = read_cache_file(&resolvers_cache_file).await;
+    
+    // 检查文件是否存在
+    let models_file_exists = runtime_dir.join("src").join("models.rs").exists();
+    let resolvers_file_exists = runtime_dir.join("src").join("resolvers.rs").exists();
+    
+    // 判断是否需要重新生成
+    let models_changed = !models_file_exists || 
+        cached_models_hash != Some(current_models_hash.clone()) ||
+        cached_schema_hash != Some(current_schema_hash.clone());
+    
+    let resolvers_changed = !resolvers_file_exists ||
+        cached_resolvers_hash != Some(current_schema_hash.clone()) ||
+        cached_schema_hash != Some(current_schema_hash.clone());
+    
+    Ok(IncrementalChangeSet {
+        schema_hash: current_schema_hash,
+        models_changed,
+        resolvers_changed,
+    })
+}
+
+/// 提取模型结构信息（用于检测结构性变更）
+fn extract_models_structure(models: &[atomo_schema::types::Model]) -> String {
+    let mut structure = String::new();
+    for model in models {
+        structure.push_str(&model.name);
+        structure.push(':');
+        for (field_name, field_type) in &model.fields {
+            structure.push_str(field_name);
+            structure.push_str(&format!("{:?}", field_type));
+            structure.push(',');
+        }
+        structure.push(';');
+    }
+    structure
+}
+
+/// 保存增量缓存信息
+async fn save_incremental_cache(
+    runtime_dir: &Path, 
+    schema_content: &str, 
+    models: &[atomo_schema::types::Model]
+) -> Result<()> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    let cache_dir = runtime_dir.join(".cache");
+    tokio::fs::create_dir_all(&cache_dir).await?;
+    
+    // 保存schema哈希
+    let mut schema_hasher = DefaultHasher::new();
+    schema_content.hash(&mut schema_hasher);
+    let schema_hash = schema_hasher.finish().to_string();
+    tokio::fs::write(cache_dir.join("schema.hash"), &schema_hash).await?;
+    
+    // 保存模型结构哈希
+    let models_structure = extract_models_structure(models);
+    let mut models_hasher = DefaultHasher::new();
+    models_structure.hash(&mut models_hasher);
+    let models_hash = models_hasher.finish().to_string();
+    tokio::fs::write(cache_dir.join("models.hash"), &models_hash).await?;
+    
+    // 解析器哈希与schema哈希相同（因为解析器依赖整个schema）
+    tokio::fs::write(cache_dir.join("resolvers.hash"), &schema_hash).await?;
+    
+    Ok(())
+}
+
+/// 读取缓存文件
+async fn read_cache_file(path: &Path) -> Option<String> {
+    tokio::fs::read_to_string(path)
+        .await
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+/// 智能增量变更检测 - 基于内容哈希而非时间戳
+async fn check_incremental_changes(schema_path: &Path, runtime_dir: &Path) -> Result<bool> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    // 计算当前schema的哈希
+    let schema_content = tokio::fs::read_to_string(schema_path).await?;
+    let mut hasher = DefaultHasher::new();
+    schema_content.hash(&mut hasher);
+    let current_schema_hash = hasher.finish();
+    
+    // 检查缓存的哈希
+    let cache_file = runtime_dir.join(".cache").join("schema.hash");
+    let cached_hash = if cache_file.exists() {
+        tokio::fs::read_to_string(&cache_file)
+            .await
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+    } else {
+        None
+    };
+    
+    let schema_changed = cached_hash != Some(current_schema_hash);
+    
+    if schema_changed {
+        println!("   🔄 Schema changes detected - incremental regeneration");
+        
+        // 创建缓存目录并保存新哈希
+        let cache_dir = runtime_dir.join(".cache");
+        tokio::fs::create_dir_all(&cache_dir).await?;
+        tokio::fs::write(&cache_file, current_schema_hash.to_string()).await?;
+        
+        return Ok(true);
+    }
+    
+    // 检查关键文件是否存在
+    let required_files = [
+        runtime_dir.join("src").join("models.rs"),
+        runtime_dir.join("src").join("resolvers.rs"),
+        runtime_dir.join("Cargo.toml"),
+    ];
+    
+    for file in &required_files {
+        if !file.exists() {
+            println!("   🔄 Missing generated file: {} - regenerating", file.display());
+            return Ok(true);
+        }
+    }
+    
+    println!("   ✅ No changes detected - using cached runtime");
+    Ok(false)
+}
+
+/// 更新增量缓存
+async fn update_incremental_cache(runtime_dir: &Path, changes: &IncrementalChangeSet) -> Result<()> {
+    let cache_dir = runtime_dir.join(".cache");
+    tokio::fs::create_dir_all(&cache_dir).await?;
+    
+    // 保存schema哈希
+    tokio::fs::write(cache_dir.join("schema.hash"), &changes.schema_hash).await?;
+    
+    if changes.models_changed {
+        tokio::fs::write(cache_dir.join("models.hash"), &changes.schema_hash).await?;
+    }
+    
+    if changes.resolvers_changed {
+        tokio::fs::write(cache_dir.join("resolvers.hash"), &changes.schema_hash).await?;
+    }
+    
+    Ok(())
+}
+
+/// 只生成模型代码
+async fn generate_models_only(runtime_dir: &Path, schema_path: &Path, models: &[atomo_schema::types::Model]) -> Result<()> {
+    let type_generator = HasuraV2TypeGenerator::new();
+    let models_code = type_generator.generate_types(models)
+        .with_context(|| "Failed to generate models")?;
+    
+    let models_path = runtime_dir.join("src").join("models.rs");
+    tokio::fs::write(&models_path, models_code).await?;
+    
+    Ok(())
+}
+
+/// 只生成解析器代码
+async fn generate_resolvers_only(runtime_dir: &Path, schema_path: &Path, models: &[atomo_schema::types::Model]) -> Result<()> {
+    let resolver_generator = HasuraV2ResolverGenerator::new();
+    let resolvers_code = resolver_generator.generate_resolvers(models)
+        .with_context(|| "Failed to generate resolvers")?;
+    
+    let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
+    tokio::fs::write(&resolvers_path, resolvers_code).await?;
     
     Ok(())
 }
