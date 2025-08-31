@@ -44,19 +44,34 @@ async fn main() -> Result<()> {
     
     match cli.command {
         Commands::Generate { schema } => {
-            // Use the atomo_schema crate directly for code generation
-            println!("🔧 Generating Rust code from schema: {}", schema);
+            // Use Hasura v2 generators for code generation
+            println!("🔧 Generating Hasura v2 GraphQL code from schema: {}", schema);
             
             // Read and parse schema
             let schema_content = tokio::fs::read_to_string(&schema).await?;
-            let parsed_schema = atomo::schema::parse_typescript_schema(&schema_content)?;
-            let rust_code = atomo_schema::CodeGenerator::generate_rust_models(&parsed_schema)?;
+            let parser = atomo_schema::TypeScriptParser::new();
+            let models = parser.parse(&schema_content)?;
             
-            // Write to output file
-            let output_path = "generated/models.rs";
-            tokio::fs::write(output_path, rust_code).await?;
+            // Generate Hasura v2 types
+            let type_generator = atomo_schema::hasura_v2_type_generator::HasuraV2TypeGenerator::new();
+            let types_code = type_generator.generate_types(&models)?;
             
-            println!("✅ Code generated successfully at: {}", output_path);
+            // Generate Hasura v2 resolvers
+            let resolver_generator = atomo_schema::hasura_v2_resolver_generator::HasuraV2ResolverGenerator::new();
+            let resolvers_code = resolver_generator.generate_resolvers(&models)?;
+            
+            // Write to output files
+            let types_output_path = "generated/models.rs";
+            let resolvers_output_path = "generated/resolvers.rs";
+            
+            // Ensure output directory exists
+            tokio::fs::create_dir_all("generated").await?;
+            
+            tokio::fs::write(types_output_path, types_code).await?;
+            tokio::fs::write(resolvers_output_path, resolvers_code).await?;
+            
+            println!("✅ Hasura v2 types generated at: {}", types_output_path);
+            println!("✅ Hasura v2 resolvers generated at: {}", resolvers_output_path);
             Ok(())
         }
         Commands::Serve { port, schema } => {

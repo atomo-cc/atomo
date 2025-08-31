@@ -221,6 +221,12 @@ pub struct {model_name} {{
                 FieldType::Number => {
                     format!("            {}: row.{}.to_string().parse::<f64>().unwrap_or(0.0)", field_name, db_field_name)
                 },
+                FieldType::Array(_) if field.optional => {
+                    format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                },
+                FieldType::Array(_) => {
+                    format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                },
                 FieldType::Custom(custom_type) if field.optional => {
                     format!("            {}: row.{}.map(|s| s.parse().unwrap_or_default())", field_name, db_field_name)
                 },
@@ -614,7 +620,8 @@ pub struct IdComparisonExp {{
             FieldType::EntityId => "String".to_string(),
             FieldType::Json => "serde_json::Value".to_string(),
             FieldType::Blocks => "serde_json::Value".to_string(),
-            FieldType::Array(inner) => format!("Vec<{}>", self.convert_field_type_for_db(inner, false)),
+            // Store arrays as JSONB in database for better compatibility
+            FieldType::Array(_) => "serde_json::Value".to_string(),
             FieldType::Custom(_) => "String".to_string(), // Store custom types as strings in DB
             FieldType::Reference(_) => "String".to_string(), // Store references as strings in DB
         };

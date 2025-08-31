@@ -4,7 +4,7 @@ use console::style;
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::collections::HashMap;
-use atomo_schema::{TypeScriptParser, CodeGenerator, Schema, GraphQLGenerator};
+use atomo_schema::{TypeScriptParser, hasura_v2_type_generator::HasuraV2TypeGenerator, hasura_v2_resolver_generator::HasuraV2ResolverGenerator};
 
 /// Smart schema file discovery
 /// Tries to find schema.ts in multiple locations
@@ -86,15 +86,8 @@ pub async fn generate_command(schema_path: String) -> Result<()> {
     let models = parser.parse(&schema_content)
         .with_context(|| "Failed to parse TypeScript schema")?;
     
-    // Convert Vec<Model> to Schema
-    let mut schema_models = HashMap::new();
-    for model in models {
-        schema_models.insert(model.name.clone(), model);
-    }
-    let schema = Schema { models: schema_models };
-    
-    println!("   🦀 Generating {} Rust models...", schema.models.len());
-    for (_name, model) in &schema.models {
+    println!("   🦀 Generating {} models for Hasura v2...", models.len());
+    for model in &models {
         // Skip block types in output
         if model.name.ends_with("Block") {
             continue;
@@ -108,127 +101,47 @@ pub async fn generate_command(schema_path: String) -> Result<()> {
             println!("      │  └─ {}{}: {:?}", field_name, optional_marker, field.field_type);
         }
     }
-    
-    // Generate Rust code
-    println!("   🔧 Generating Rust code...");
-    let rust_code = CodeGenerator::generate_rust_models(&schema)
-        .with_context(|| "Failed to generate Rust code")?;
-    
-    // Determine output path - should be in the CRM crate
-    let output_path = "generated/models.rs";
-    
-    // Ensure output directory exists
-    if let Some(parent) = Path::new(output_path).parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create output directory: {:?}", parent))?;
-    }
-    
-    // Write generated code
-    fs::write(output_path, rust_code)
-        .with_context(|| format!("Failed to write generated code to: {}", output_path))?;
-    
-    println!("   📝 Generated Rust code written to: {}", output_path.bright_cyan());
-    
-    // Generate TypeScript types for SDK
-    println!("   🔧 Generating TypeScript types for SDK...");
-    let typescript_code = CodeGenerator::generate_typescript_types(&schema)
-        .with_context(|| "Failed to generate TypeScript types")?;
-    
-    // SDK output path
-    let sdk_output_path = "packages/atomo-client-sdk/types.ts";
-    
-    // Ensure SDK output directory exists
-    if let Some(parent) = Path::new(sdk_output_path).parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create SDK output directory: {:?}", parent))?;
-    }
-    
-    // Write SDK types
-    fs::write(sdk_output_path, typescript_code)
-        .with_context(|| format!("Failed to write SDK types to: {}", sdk_output_path))?;
-    
-    println!("   📝 Generated TypeScript types written to: {}", sdk_output_path.bright_cyan());
-    
-    // Generate GraphQL schema
-    println!("   🔧 Generating GraphQL schema...");
-    let models = parser.parse(&schema_content)
-        .with_context(|| "Failed to re-parse TypeScript schema for GraphQL")?;
-    
-    let graphql_generator = GraphQLGenerator::new();
-    let graphql_schema = graphql_generator.generate_schema(&models)
-        .with_context(|| "Failed to generate GraphQL schema")?;
-    
-    // GraphQL schema output path
-    let graphql_output_path = "generated/schema.graphql";
-    
-    // Ensure output directory exists
-    if let Some(parent) = Path::new(graphql_output_path).parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create GraphQL output directory: {:?}", parent))?;
-    }
-    
-    // Write GraphQL schema
-    fs::write(graphql_output_path, graphql_schema)
-        .with_context(|| format!("Failed to write GraphQL schema to: {}", graphql_output_path))?;
-    
-    println!("   📝 Generated GraphQL schema written to: {}", graphql_output_path.bright_cyan());
-    
-    // Generate GraphQL resolvers
+
+    // Generate Hasura v2 GraphQL types
+    println!("   🔧 Generating Hasura v2 GraphQL types...");
+    let type_generator = HasuraV2TypeGenerator::new();
+    let hasura_types_code = type_generator.generate_types(&models)
+        .with_context(|| "Failed to generate Hasura v2 GraphQL types")?;
+
+    // Generate Hasura v2 GraphQL resolvers
     println!("   🔧 Generating Hasura v2 GraphQL resolvers...");
-    let hasura_resolver_generator = atomo_schema::hasura_v2_resolver_generator::HasuraV2ResolverGenerator::new();
+    let hasura_resolver_generator = HasuraV2ResolverGenerator::new();
     let resolver_code = hasura_resolver_generator.generate_resolvers(&models)
         .with_context(|| "Failed to generate Hasura v2 GraphQL resolvers")?;
     
-    // Generate Hasura v2 GraphQL types
-    println!("   🔧 Generating Hasura v2 GraphQL types...");
-    let type_generator = atomo_schema::hasura_v2_type_generator::HasuraV2TypeGenerator::new();
-    let hasura_types_code = type_generator.generate_types(&models)
-        .with_context(|| "Failed to generate Hasura v2 GraphQL types")?;
-    
-    // Resolver output path  
+    // Determine output paths
+    let types_output_path = "generated/models.rs";
     let resolver_output_path = "generated/resolvers.rs";
     
     // Ensure output directory exists
-    if let Some(parent) = Path::new(resolver_output_path).parent() {
+    if let Some(parent) = Path::new(types_output_path).parent() {
         fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create resolver output directory: {:?}", parent))?;
+            .with_context(|| format!("Failed to create output directory: {:?}", parent))?;
     }
-    
-    // Combine types and resolvers
-    let combined_code = format!("{}\n\n{}", hasura_types_code, resolver_code);
-    
-    // Write resolver code
-    fs::write(resolver_output_path, combined_code)
-        .with_context(|| format!("Failed to write resolvers to: {}", resolver_output_path))?;
-    
-    println!("   📝 Generated modern GraphQL resolvers written to: {}", resolver_output_path.bright_cyan());
-    
-    // Generate mod.rs to organize the generated modules
-    println!("   🔧 Generating module organization...");
-    let mod_content = r#"//! Auto-generated modules for service
-//! DO NOT EDIT - This file is automatically generated
 
-pub mod models;
-pub mod resolvers;
+    // Write Hasura v2 types
+    fs::write(types_output_path, &hasura_types_code)
+        .with_context(|| format!("Failed to write Hasura v2 types to: {}", types_output_path))?;
 
-// Re-export for convenience
-pub use models::*;
-pub use resolvers::*;
-"#;
+    println!("   � Generated Hasura v2 types written to: {}", types_output_path.bright_cyan());
+
+    // Write Hasura v2 resolvers
+    fs::write(resolver_output_path, &resolver_code)
+        .with_context(|| format!("Failed to write Hasura v2 resolvers to: {}", resolver_output_path))?;
+
+    println!("   📝 Generated Hasura v2 resolvers written to: {}", resolver_output_path.bright_cyan());
     
-    let mod_output_path = "generated/mod.rs";
-    fs::write(mod_output_path, mod_content)
-        .with_context(|| format!("Failed to write mod.rs to: {}", mod_output_path))?;
-    
-    println!("   📝 Generated module organization written to: {}", mod_output_path.bright_cyan());
-    
-    println!("   ✓ {}", "Code generation completed successfully!".bright_green());
+    println!("   ✓ {}", "Hasura v2 code generation completed successfully!".bright_green());
     println!("   💡 {}", "Next steps:".bright_blue());
-    println!("      • Run `atomo migrate` to apply database changes");
+    println!("      • Run `atomo dev` to start development server");
     println!("      • Run `cargo build` to compile Rust models");
-    println!("      • GraphQL schema is ready for API development");
-    println!("      • SDK types are ready for frontend development");
-    println!("      • Include generated_models.rs in your lib.rs file");
+    println!("      • Hasura v2 GraphQL API is ready for development");
+    println!("      • Access GraphQL Playground at http://localhost:3000/playground");
     
     Ok(())
 }

@@ -4,7 +4,7 @@ use console::style;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
-use atomo_schema::{TypeScriptParser, CodeGenerator, HasuraV2ResolverGenerator, hasura_v2_type_generator::HasuraV2TypeGenerator};
+use atomo_schema::{TypeScriptParser, HasuraV2ResolverGenerator, hasura_v2_type_generator::HasuraV2TypeGenerator};
 
 /// 即时编译的服务运行时
 /// 
