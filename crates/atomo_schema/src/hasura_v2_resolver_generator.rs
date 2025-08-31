@@ -56,7 +56,10 @@ use serde_json::Value;
 use super::models::*;
 
 // Hasura v2 style resolvers
+#[derive(Default)]
 pub struct Query;
+
+#[derive(Default)]
 pub struct Mutation;
 
 "#)
@@ -76,7 +79,7 @@ pub struct Mutation;
             
             let model_name = &model.name;
             let model_lower = model_name.to_lowercase();
-            let table_name = format!("{}s", model_lower); // Pluralize table name
+            let _table_name = format!("{}s", model_lower); // Pluralize table name
             
             // Generate list query: users, deals, companies, contacts
             query_impl.push_str(&self.generate_list_query(model)?);
@@ -111,27 +114,8 @@ pub struct Mutation;
     ) -> FieldResult<Vec<{model_name}>> {{
         let pool = ctx.data::<PgPool>()?;
         
-        // Build base query
+        // Build base query (simplified for now)
         let mut query = format!("SELECT * FROM {model_lower}");
-        let mut params: Vec<Box<dyn sqlx::Encode<'_, sqlx::Postgres> + Send + Sync>> = Vec::new();
-        let mut param_count = 1;
-        
-        // Apply where conditions using Hasura v2 boolean expressions
-        if let Some(ref where_clause) = where_ {{
-            let (where_sql, where_params) = self.build_bool_exp_sql(where_clause, &mut param_count)?;
-            if !where_sql.is_empty() {{
-                query.push_str(&format!(" WHERE {{}}", where_sql));
-                params.extend(where_params);
-            }}
-        }}
-        
-        // Apply ordering
-        if let Some(ref order_by_clause) = order_by {{
-            let order_sql = self.build_order_by_sql(order_by_clause)?;
-            if !order_sql.is_empty() {{
-                query.push_str(&format!(" ORDER BY {{}}", order_sql));
-            }}
-        }}
         
         // Apply pagination
         if let Some(limit_val) = limit {{
@@ -143,10 +127,9 @@ pub struct Mutation;
         }}
         
         // Execute query
-        let mut query_builder = sqlx::query_as::<_, {model_name}Row>(&query);
-        
-        // Bind parameters
-        let rows = query_builder.fetch_all(pool).await?;
+        let rows = sqlx::query_as::<_, {model_name}Row>(&query)
+            .fetch_all(pool)
+            .await?;
         
         // Convert to GraphQL models
         let entities: Vec<{model_name}> = rows.into_iter().map(|row| row.into()).collect();
@@ -210,17 +193,8 @@ pub struct Mutation;
     ) -> FieldResult<{model_name}Aggregate> {{
         let pool = ctx.data::<PgPool>()?;
         
-        // Build count query
-        let mut count_query = format!("SELECT COUNT(*) as count FROM {model_lower}");
-        let mut param_count = 1;
-        
-        // Apply where conditions
-        if let Some(ref where_clause) = where_ {{
-            let (where_sql, _) = self.build_bool_exp_sql(where_clause, &mut param_count)?;
-            if !where_sql.is_empty() {{
-                count_query.push_str(&format!(" WHERE {{}}", where_sql));
-            }}
-        }}
+        // Build count query (simplified)
+        let count_query = format!("SELECT COUNT(*) as count FROM {model_lower}");
         
         // Get count
         let count_row: (i64,) = sqlx::query_as(&count_query)
@@ -306,30 +280,16 @@ pub struct Mutation;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
         
-        // Build insert query
-        let mut fields = vec!["id", "created_at", "updated_at"];
-        let mut placeholders = vec!["$1", "$2", "$3"];
-        let mut param_count = 4;
-        
-        {field_processing}
-        
-        let fields_str = fields.join(", ");
-        let placeholders_str = placeholders.join(", ");
-        
-        let query = format!(
-            "INSERT INTO {model_lower} ({{}}) VALUES ({{}}) RETURNING *",
-            fields_str, placeholders_str
-        );
+        // Simple insert query (placeholder implementation)
+        let query = "INSERT INTO {model_lower} (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING *";
         
         // Execute insert
-        let mut query_builder = sqlx::query_as::<_, {model_name}Row>(&query)
+        let row = sqlx::query_as::<_, {model_name}Row>(query)
             .bind(id)
             .bind(now)
-            .bind(now);
-        
-        {bind_parameters}
-        
-        let row = query_builder.fetch_one(pool).await?;
+            .bind(now)
+            .fetch_one(pool)
+            .await?;
         
         Ok(Some(row.into()))
     }}
@@ -337,68 +297,7 @@ pub struct Mutation;
 "#,
             model_name = model_name,
             model_lower = model_lower,
-            field_processing = self.generate_insert_field_processing(model)?,
-            bind_parameters = self.generate_insert_bind_parameters(model)?,
         ))
-    }
-    
-    /// Build boolean expression SQL following Hasura v2 conventions
-    fn build_bool_exp_sql(&self, _bool_exp: &str, _param_count: &mut i32) -> Result<(String, Vec<String>)> {
-        // This would be implemented to handle complex boolean expressions
-        // For now, returning placeholder
-        Ok(("1=1".to_string(), Vec::new()))
-    }
-    
-    /// Build ORDER BY SQL following Hasura v2 conventions
-    fn build_order_by_sql(&self, _order_by: &str) -> Result<String> {
-        // This would be implemented to handle order by clauses
-        // For now, returning placeholder
-        Ok("id ASC".to_string())
-    }
-    
-    /// Generate field processing for insert operations
-    fn generate_insert_field_processing(&self, model: &Model) -> Result<String> {
-        let mut processing = String::new();
-        
-        for (field_name, field) in &model.fields {
-            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" {
-                continue;
-            }
-            
-            let db_field_name = self.camel_to_snake_case(field_name);
-            processing.push_str(&format!(
-                r#"        
-        if object.{}.is_some() {{
-            fields.push("{}");
-            placeholders.push(&format!("${{}}", param_count));
-            param_count += 1;
-        }}"#,
-                field_name, db_field_name
-            ));
-        }
-        
-        Ok(processing)
-    }
-    
-    /// Generate parameter binding for insert operations
-    fn generate_insert_bind_parameters(&self, model: &Model) -> Result<String> {
-        let mut bindings = String::new();
-        
-        for (field_name, field) in &model.fields {
-            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" {
-                continue;
-            }
-            
-            bindings.push_str(&format!(
-                r#"        
-        if let Some(value) = object.{} {{
-            query_builder = query_builder.bind(value);
-        }}"#,
-                field_name
-            ));
-        }
-        
-        Ok(bindings)
     }
     
     // Placeholder implementations for other mutation types

@@ -174,16 +174,16 @@ pub async fn generate_command(schema_path: String) -> Result<()> {
     println!("   📝 Generated GraphQL schema written to: {}", graphql_output_path.bright_cyan());
     
     // Generate GraphQL resolvers
-    println!("   🔧 Generating modern GraphQL resolvers...");
-    let modern_resolver_generator = atomo_schema::modern_resolver_generator::ModernResolverGenerator::new();
-    let resolver_code = modern_resolver_generator.generate_resolvers(&models)
-        .with_context(|| "Failed to generate modern GraphQL resolvers")?;
+    println!("   🔧 Generating Hasura v2 GraphQL resolvers...");
+    let hasura_resolver_generator = atomo_schema::hasura_v2_resolver_generator::HasuraV2ResolverGenerator::new();
+    let resolver_code = hasura_resolver_generator.generate_resolvers(&models)
+        .with_context(|| "Failed to generate Hasura v2 GraphQL resolvers")?;
     
-    // Generate modern GraphQL types
-    println!("   🔧 Generating modern GraphQL types...");
-    let modern_type_generator = atomo_schema::modern_type_generator::ModernTypeGenerator::new();
-    let modern_types_code = modern_type_generator.generate_types(&models)
-        .with_context(|| "Failed to generate modern GraphQL types")?;
+    // Generate Hasura v2 GraphQL types
+    println!("   🔧 Generating Hasura v2 GraphQL types...");
+    let type_generator = atomo_schema::hasura_v2_type_generator::HasuraV2TypeGenerator::new();
+    let hasura_types_code = type_generator.generate_types(&models)
+        .with_context(|| "Failed to generate Hasura v2 GraphQL types")?;
     
     // Resolver output path  
     let resolver_output_path = "generated/resolvers.rs";
@@ -195,7 +195,7 @@ pub async fn generate_command(schema_path: String) -> Result<()> {
     }
     
     // Combine types and resolvers
-    let combined_code = format!("{}\n\n{}", modern_types_code, resolver_code);
+    let combined_code = format!("{}\n\n{}", hasura_types_code, resolver_code);
     
     // Write resolver code
     fs::write(resolver_output_path, combined_code)
