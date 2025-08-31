@@ -1,50 +1,5 @@
 # Atomo 开发路线图 (Development Roadmap)
 
-## 🎯 当前状态：Phase 1 - 奠定基石
-
-**目标**: 交付一个功能强大、体验惊艳的开源 Headless 核心，吸引首批技术信徒。
-
-### ✅ 已完成
-- [x] 基础项目结构搭建
-- [x] Rust workspace 配置
-- [x] 基础 CLI 框架 (`atomo_cli`)
-- [x] 核心类型定义 (`atomo_core`)
-- [x] 示例服务配置 (`services/crm-service`)
-- [x] **架构清理完成** - 平台与业务代码完全分离
-- [x] **TypeScript schema 解析器** - 支持接口、枚举、类型别名
-- [x] **Rust 代码生成器** - 自动生成模型和事件类型
-- [x] **GraphQL schema 生成器** - 完整的 CRUD 操作定义
-- [x] **CLI 工具链核心功能** - generate、migrate、dev 命令正常工作
-
-### ✅ 刚完成的重大成就
-- [x] **双模定义系统** (`schema.ts` -> Rust 代码生成) ✨ 完成
-- [x] **智能迁移 CLI** (`atomo generate` 和 `atomo migrate`) ✨ 完成  
-- [x] **动态 GraphQL API** 基础架构 ✨ **DONE! 解析器自动生成完成**
-- [x] **GraphQL 解析器自动生成** - 完整的 CRUD 操作 (863行代码) ✨ **DONE!**
-- [x] **完整的代码生成流水线** - TypeScript → Rust Models → GraphQL Schema → Resolvers ✨ **DONE!**
-- [x] **GraphQL Schema SDL 生成** - 从schema.ts动态生成完整GraphQL定义 ✨ **DONE!**
-- [x] **架构分离修正** - 移除硬编码CRM类型，实现平台/服务正确分离 ✨ **DONE!**
-- [x] **动态实体查询集成** - Phase 1 基础版本，支持动态查询CRM实体 ✨ **DONE!**
-
-### 🚧 下一步重点任务
-
-**立即开始的任务 (优先级排序):**
-
-1. **验证和测试动态GraphQL查询** 🚀 **<-- 当前重点**
-   - ✅ 集成完成：GraphQL现在包含schemaModels, entities等动态查询
-   - 🔧 需要测试：验证数据库查询是否正常工作
-   - 📊 需要数据：运行迁移创建测试数据进行验证
-
-2. **完善数据库字段映射** 🔧
-   - 修复生成代码中的数据类型映射
-   - 确保 SQL 查询与实际数据库表结构匹配
-   - 添加枚举类型支持
-
-3. **优化开发者体验** ✨
-   - 清理编译警告
-   - 改进错误处理和日志
-   - 增强 CLI 输出格式
-
 ### 📋 Phase 1 待办事项 (Priority Order)
 
 #### P0 - 核心基础设施
@@ -63,7 +18,7 @@
 3. **基础数据层**
    - [x] PostgreSQL 连接与配置
    - [x] 基础 CRUD 操作
-   - [x] Audit log 基础设施
+   - [ ] Audit log 基础设施
 
 #### P1 - API 与 Admin UI
 4. **GraphQL API**

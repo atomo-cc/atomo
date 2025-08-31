@@ -77,22 +77,131 @@ pub struct Mutation;
             let model_name = &model.name;
             let model_lower = model_name.to_lowercase();
             
-            // Generate findMany resolver
+            // Generate findMany resolver with full filtering support
             query_impl.push_str(&format!(
-                r#"    /// Find many {model_name} entities
+                r#"    /// Find many {model_name} entities with advanced filtering and pagination
     async fn {model_lower}s(
         &self,
         ctx: &Context<'_>,
-    ) -> FieldResult<Vec<{model_name}>> {{
+        where_: Option<{model_name}Filter>,
+        order_by: Option<Vec<{model_name}OrderBy>>,
+        first: Option<i32>,
+        after: Option<String>,
+        last: Option<i32>,
+        before: Option<String>,
+    ) -> FieldResult<{model_name}Connection> {{
         let pool = ctx.data::<PgPool>()?;
         
-        let entities = sqlx::query_as::<_, {model_name}Row>(
-            "SELECT * FROM {model_lower} LIMIT 100"
-        )
-        .fetch_all(pool)
-        .await?;
-
-        Ok(entities.into_iter().map(|e| e.into()).collect())
+        // Build base query
+        let mut query = format!("SELECT * FROM {model_lower}");
+        let mut conditions = Vec::new();
+        let mut param_count = 1;
+        
+        // Apply filters
+        if let Some(ref filter) = where_ {{
+            if let Some(id) = &filter.id {{
+                conditions.push(format!("id = ${{}}", param_count));
+                param_count += 1;
+            }}
+            
+            if let Some(ids) = &filter.ids {{
+                if !ids.is_empty() {{
+                    let placeholders: Vec<String> = (param_count..param_count + ids.len())
+                        .map(|i| format!("${{}}", i))
+                        .collect();
+                    conditions.push(format!("id IN ({{}})", placeholders.join(", ")));
+                    param_count += ids.len();
+                }}
+            }}
+            
+{filter_conditions}
+        }}
+        
+        if !conditions.is_empty() {{
+            query.push_str(&format!(" WHERE {{}}", conditions.join(" AND ")));
+        }}
+        
+        // Apply ordering
+        let mut order_clauses = Vec::new();
+        if let Some(orders) = order_by {{
+            for order in orders {{
+                match order {{
+                    {model_name}OrderBy::CreatedAtAsc => order_clauses.push("created_at ASC".to_string()),
+                    {model_name}OrderBy::CreatedAtDesc => order_clauses.push("created_at DESC".to_string()),
+                    {model_name}OrderBy::UpdatedAtAsc => order_clauses.push("updated_at ASC".to_string()),
+                    {model_name}OrderBy::UpdatedAtDesc => order_clauses.push("updated_at DESC".to_string()),
+{order_conditions}
+                }}
+            }}
+        }} else {{
+            order_clauses.push("created_at DESC".to_string()); // Default ordering
+        }}
+        
+        if !order_clauses.is_empty() {{
+            query.push_str(&format!(" ORDER BY {{}}", order_clauses.join(", ")));
+        }}
+        
+        // Apply pagination
+        let limit = first.or(last).unwrap_or(50).min(100); // Max 100 items
+        query.push_str(&format!(" LIMIT ${{}}", param_count));
+        param_count += 1;
+        
+        if let Some(offset) = after.as_ref().or(before.as_ref()) {{
+            if let Ok(_offset_num) = offset.parse::<i32>() {{
+                query.push_str(&format!(" OFFSET ${{}}", param_count));
+            }}
+        }}
+        
+        // Execute query with manual parameter binding
+        let mut sqlx_query = sqlx::query_as::<_, {model_name}Row>(&query);
+        
+        // Bind parameters in order
+        if let Some(ref filter) = where_ {{
+            if let Some(id) = &filter.id {{
+                sqlx_query = sqlx_query.bind(id.to_string());
+            }}
+            
+            if let Some(ids) = &filter.ids {{
+                for id in ids {{
+                    sqlx_query = sqlx_query.bind(id.to_string());
+                }}
+            }}
+            
+{bind_filter_params}
+        }}
+        
+        // Bind pagination parameters
+        sqlx_query = sqlx_query.bind(limit);
+        if let Some(offset) = after.as_ref().or(before.as_ref()) {{
+            if let Ok(offset_num) = offset.parse::<i32>() {{
+                sqlx_query = sqlx_query.bind(offset_num);
+            }}
+        }}
+        
+        let entities = sqlx_query.fetch_all(pool).await?;
+        
+        // Convert to connection format
+        let edges: Vec<{model_name}Edge> = entities
+            .into_iter()
+            .enumerate()
+            .map(|(index, entity)| {model_name}Edge {{
+                node: entity.into(),
+                cursor: index.to_string(), // Simple index-based cursor
+            }})
+            .collect();
+        
+        let page_info = PageInfo {{
+            has_next_page: edges.len() == limit as usize,
+            has_previous_page: after.as_ref().or(before.as_ref()).is_some(),
+            start_cursor: edges.first().map(|e| e.cursor.clone()),
+            end_cursor: edges.last().map(|e| e.cursor.clone()),
+        }};
+        
+        Ok({model_name}Connection {{
+            edges,
+            page_info,
+            total_count: 0, // TODO: Implement total count query
+        }})
     }}
 
     /// Find a single {model_name} by ID
@@ -114,7 +223,10 @@ pub struct Mutation;
     }}
 "#,
                 model_name = model_name,
-                model_lower = model_lower
+                model_lower = model_lower,
+                filter_conditions = self.generate_filter_conditions(model)?,
+                bind_filter_params = self.generate_bind_filter_params(model)?,
+                order_conditions = self.generate_order_conditions(model)?,
             ));
         }
         
@@ -540,5 +652,216 @@ pub fn build_schema() -> async_graphql::Schema<Query, Mutation, EmptySubscriptio
 "#);
         
         Ok(registration)
+    }
+    
+    /// Generate filter conditions for a model
+    fn generate_filter_conditions(&self, model: &Model) -> Result<String> {
+        let mut conditions = Vec::new();
+        
+        for (field_name, field) in &model.fields {
+            if field_name == "id" { continue; }
+            
+            let db_field_name = self.camel_to_snake_case(field_name);
+            
+            match &field.field_type {
+                crate::types::FieldType::String => {
+                    conditions.push(format!(
+                        r#"            if let Some(_) = filter.{} {{
+                conditions.push(format!("{} = ${{}}", param_count));
+                param_count += 1;
+            }}
+            
+            if let Some(_) = filter.{}Contains {{
+                conditions.push(format!("{} ILIKE ${{}}", param_count));
+                param_count += 1;
+            }}"#,
+                        field_name, db_field_name, field_name, db_field_name
+                    ));
+                }
+                crate::types::FieldType::Number => {
+                    conditions.push(format!(
+                        r#"            if let Some(_) = filter.{} {{
+                conditions.push(format!("{} = ${{}}", param_count));
+                param_count += 1;
+            }}
+            
+            if let Some(_) = filter.{}Gte {{
+                conditions.push(format!("{} >= ${{}}", param_count));
+                param_count += 1;
+            }}
+            
+            if let Some(_) = filter.{}Lte {{
+                conditions.push(format!("{} <= ${{}}", param_count));
+                param_count += 1;
+            }}"#,
+                        field_name, db_field_name, field_name, db_field_name, field_name, db_field_name
+                    ));
+                }
+                crate::types::FieldType::Boolean => {
+                    conditions.push(format!(
+                        r#"            if let Some(_) = filter.{} {{
+                conditions.push(format!("{} = ${{}}", param_count));
+                param_count += 1;
+            }}"#,
+                        field_name, db_field_name
+                    ));
+                }
+                crate::types::FieldType::Date | crate::types::FieldType::DateTime => {
+                    conditions.push(format!(
+                        r#"            if let Some(_) = filter.{}After {{
+                conditions.push(format!("{} > ${{}}", param_count));
+                param_count += 1;
+            }}
+            
+            if let Some(_) = filter.{}Before {{
+                conditions.push(format!("{} < ${{}}", param_count));
+                param_count += 1;
+            }}"#,
+                        field_name, db_field_name, field_name, db_field_name
+                    ));
+                }
+                _ => {
+                    // For other types, just basic equality
+                    conditions.push(format!(
+                        r#"            if let Some(_) = filter.{} {{
+                conditions.push(format!("{} = ${{}}", param_count));
+                param_count += 1;
+            }}"#,
+                        field_name, db_field_name
+                    ));
+                }
+            }
+        }
+        
+        // Add audit field filters
+        conditions.push(r#"            if let Some(_) = filter.createdAfter {
+                conditions.push(format!("created_at > ${}", param_count));
+                param_count += 1;
+            }
+            
+            if let Some(_) = filter.createdBefore {
+                conditions.push(format!("created_at < ${}", param_count));
+                param_count += 1;
+            }
+            
+            if let Some(_) = filter.updatedAfter {
+                conditions.push(format!("updated_at > ${}", param_count));
+                param_count += 1;
+            }
+            
+            if let Some(_) = filter.updatedBefore {
+                conditions.push(format!("updated_at < ${}", param_count));
+                param_count += 1;
+            }"#.to_string());
+        
+        Ok(conditions.join("\n"))
+    }
+    
+    /// Generate order conditions for a model
+    fn generate_order_conditions(&self, model: &Model) -> Result<String> {
+        let mut conditions = Vec::new();
+        
+        for (field_name, _field) in &model.fields {
+            if field_name == "id" { continue; }
+            
+            let db_field_name = self.camel_to_snake_case(field_name);
+            let enum_name_asc = format!("{}Asc", field_name);
+            let enum_name_desc = format!("{}Desc", field_name);
+            
+            conditions.push(format!(
+                r#"                    {}OrderBy::{} => order_clauses.push("{} ASC".to_string()),
+                    {}OrderBy::{} => order_clauses.push("{} DESC".to_string()),"#,
+                model.name, enum_name_asc, db_field_name,
+                model.name, enum_name_desc, db_field_name
+            ));
+        }
+        
+        Ok(conditions.join("\n"))
+    }
+    
+    fn generate_bind_filter_params(&self, model: &Model) -> Result<String> {
+        let mut bindings = Vec::new();
+        
+        for (field_name, field) in &model.fields {
+            if field_name == "id" { continue; }
+            
+            match &field.field_type {
+                crate::types::FieldType::String => {
+                    bindings.push(format!(
+                        r#"            if let Some(value) = &filter.{} {{
+                sqlx_query = sqlx_query.bind(value.clone());
+            }}
+            
+            if let Some(value) = &filter.{}Contains {{
+                sqlx_query = sqlx_query.bind(format!("%{{}}%", value));
+            }}"#,
+                        field_name, field_name
+                    ));
+                }
+                crate::types::FieldType::Number => {
+                    bindings.push(format!(
+                        r#"            if let Some(value) = &filter.{} {{
+                sqlx_query = sqlx_query.bind(sqlx::types::BigDecimal::try_from(*value).unwrap_or_default());
+            }}
+            
+            if let Some(value) = &filter.{}Gte {{
+                sqlx_query = sqlx_query.bind(sqlx::types::BigDecimal::try_from(*value).unwrap_or_default());
+            }}
+            
+            if let Some(value) = &filter.{}Lte {{
+                sqlx_query = sqlx_query.bind(sqlx::types::BigDecimal::try_from(*value).unwrap_or_default());
+            }}"#,
+                        field_name, field_name, field_name
+                    ));
+                }
+                crate::types::FieldType::Boolean => {
+                    bindings.push(format!(
+                        r#"            if let Some(value) = &filter.{} {{
+                sqlx_query = sqlx_query.bind(*value);
+            }}"#,
+                        field_name
+                    ));
+                }
+                crate::types::FieldType::Date | crate::types::FieldType::DateTime => {
+                    bindings.push(format!(
+                        r#"            if let Some(value) = &filter.{}After {{
+                sqlx_query = sqlx_query.bind(value.clone());
+            }}
+            
+            if let Some(value) = &filter.{}Before {{
+                sqlx_query = sqlx_query.bind(value.clone());
+            }}"#,
+                        field_name, field_name
+                    ));
+                }
+                _ => {
+                    bindings.push(format!(
+                        r#"            if let Some(value) = &filter.{} {{
+                sqlx_query = sqlx_query.bind(value.clone());
+            }}"#,
+                        field_name
+                    ));
+                }
+            }
+        }
+        
+        // Add audit field bindings
+        bindings.push(r#"            if let Some(value) = &filter.createdAfter {
+                sqlx_query = sqlx_query.bind(value.clone());
+            }
+            
+            if let Some(value) = &filter.createdBefore {
+                sqlx_query = sqlx_query.bind(value.clone());
+            }
+            
+            if let Some(value) = &filter.updatedAfter {
+                sqlx_query = sqlx_query.bind(value.clone());
+            }
+            
+            if let Some(value) = &filter.updatedBefore {
+                sqlx_query = sqlx_query.bind(value.clone());
+            }"#.to_string());
+        
+        Ok(bindings.join("\n"))
     }
 }

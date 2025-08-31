@@ -174,10 +174,16 @@ pub async fn generate_command(schema_path: String) -> Result<()> {
     println!("   📝 Generated GraphQL schema written to: {}", graphql_output_path.bright_cyan());
     
     // Generate GraphQL resolvers
-    println!("   🔧 Generating GraphQL resolvers...");
-    let resolver_generator = atomo_schema::ResolverGenerator::new();
-    let resolver_code = resolver_generator.generate_resolvers(&models)
-        .with_context(|| "Failed to generate GraphQL resolvers")?;
+    println!("   🔧 Generating modern GraphQL resolvers...");
+    let modern_resolver_generator = atomo_schema::modern_resolver_generator::ModernResolverGenerator::new();
+    let resolver_code = modern_resolver_generator.generate_resolvers(&models)
+        .with_context(|| "Failed to generate modern GraphQL resolvers")?;
+    
+    // Generate modern GraphQL types
+    println!("   🔧 Generating modern GraphQL types...");
+    let modern_type_generator = atomo_schema::modern_type_generator::ModernTypeGenerator::new();
+    let modern_types_code = modern_type_generator.generate_types(&models)
+        .with_context(|| "Failed to generate modern GraphQL types")?;
     
     // Resolver output path  
     let resolver_output_path = "generated/resolvers.rs";
@@ -188,11 +194,14 @@ pub async fn generate_command(schema_path: String) -> Result<()> {
             .with_context(|| format!("Failed to create resolver output directory: {:?}", parent))?;
     }
     
+    // Combine types and resolvers
+    let combined_code = format!("{}\n\n{}", modern_types_code, resolver_code);
+    
     // Write resolver code
-    fs::write(resolver_output_path, resolver_code)
+    fs::write(resolver_output_path, combined_code)
         .with_context(|| format!("Failed to write resolvers to: {}", resolver_output_path))?;
     
-    println!("   📝 Generated GraphQL resolvers written to: {}", resolver_output_path.bright_cyan());
+    println!("   📝 Generated modern GraphQL resolvers written to: {}", resolver_output_path.bright_cyan());
     
     // Generate mod.rs to organize the generated modules
     println!("   🔧 Generating module organization...");

@@ -4,7 +4,7 @@ use console::style;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
-use atomo_schema::{TypeScriptParser, CodeGenerator, ResolverGenerator};
+use atomo_schema::{TypeScriptParser, CodeGenerator, ModernResolverGenerator, ModernTypeGenerator};
 
 /// 即时编译的服务运行时
 /// 
@@ -324,19 +324,14 @@ async fn generate_business_code(runtime_dir: &Path, schema_path: &Path) -> Resul
         .with_context(|| "Failed to parse schema.ts")?;
     
     // 生成 models.rs
-    let mut schema_models = std::collections::HashMap::new();
-    for model in &models {
-        schema_models.insert(model.name.clone(), model.clone());
-    }
-    let schema = atomo_schema::Schema { models: schema_models };
-    
-    let models_code = CodeGenerator::generate_rust_models(&schema)
+    let type_generator = ModernTypeGenerator::new();
+    let models_code = type_generator.generate_types(&models)
         .with_context(|| "Failed to generate models")?;
     
     tokio::fs::write(&models_path, models_code).await?;
     
     // 生成 resolvers.rs
-    let resolver_generator = ResolverGenerator::new();
+    let resolver_generator = ModernResolverGenerator::new();
     let resolvers_code = resolver_generator.generate_resolvers(&models)
         .with_context(|| "Failed to generate resolvers")?;
     

@@ -35,6 +35,12 @@ impl CodeGenerator {
         // Generate input types for GraphQL mutations
         code.push_str(&Self::generate_rust_input_types(schema)?);
         
+        // Generate pagination types for GraphQL queries
+        code.push_str(&Self::generate_rust_pagination_types(schema)?);
+        
+        // Generate filter and order types
+        code.push_str(&Self::generate_rust_filter_types(schema)?);
+        
         // Generate Block union type for composable content
         code.push_str(&Self::generate_block_types(schema)?);
         
@@ -802,6 +808,132 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for {} {{
             code.push_str(&format!("pub struct Update{}Input {{\n", model.name));
             code.push_str("    pub id: ID,\n");
             code.push_str(&format!("    pub data: Update{}DataInput,\n", model.name));
+            code.push_str("}\n\n");
+        }
+        
+        Ok(code)
+    }
+    
+    /// Generate pagination types for GraphQL queries
+    fn generate_rust_pagination_types(schema: &Schema) -> Result<String> {
+        let mut code = String::new();
+        
+        code.push_str("// ================================\n");
+        code.push_str("// GraphQL Pagination Types\n");
+        code.push_str("// ================================\n\n");
+        
+        // Generate PageInfo type first
+        code.push_str("/// PageInfo for cursor-based pagination\n");
+        code.push_str("#[derive(SimpleObject, Debug, Clone)]\n");
+        code.push_str("pub struct PageInfo {\n");
+        code.push_str("    pub has_next_page: bool,\n");
+        code.push_str("    pub has_previous_page: bool,\n");
+        code.push_str("    pub start_cursor: Option<String>,\n");
+        code.push_str("    pub end_cursor: Option<String>,\n");
+        code.push_str("}\n\n");
+        
+        for (_name, model) in &schema.models {
+            // Skip enum and block types
+            if model.fields.contains_key("_enum_type") || model.name.ends_with("Block") {
+                continue;
+            }
+            
+            // Generate Edge type
+            code.push_str(&format!("/// Edge type for {} pagination\n", model.name));
+            code.push_str("#[derive(SimpleObject, Debug, Clone)]\n");
+            code.push_str(&format!("pub struct {}Edge {{\n", model.name));
+            code.push_str(&format!("    pub node: {},\n", model.name));
+            code.push_str("    pub cursor: String,\n");
+            code.push_str("}\n\n");
+            
+            // Generate Connection type
+            code.push_str(&format!("/// Connection type for {} pagination\n", model.name));
+            code.push_str("#[derive(SimpleObject, Debug, Clone)]\n");
+            code.push_str(&format!("pub struct {}Connection {{\n", model.name));
+            code.push_str(&format!("    pub edges: Vec<{}Edge>,\n", model.name));
+            code.push_str("    pub page_info: PageInfo,\n");
+            code.push_str("    pub total_count: i32,\n");
+            code.push_str("}\n\n");
+        }
+        
+        Ok(code)
+    }
+    
+    /// Generate filter and order types for GraphQL queries
+    fn generate_rust_filter_types(schema: &Schema) -> Result<String> {
+        let mut code = String::new();
+        
+        code.push_str("// ================================\n");
+        code.push_str("// GraphQL Filter and Order Types\n");
+        code.push_str("// ================================\n\n");
+        
+        for (_name, model) in &schema.models {
+            // Skip enum and block types
+            if model.fields.contains_key("_enum_type") || model.name.ends_with("Block") {
+                continue;
+            }
+            
+            // Generate Filter type
+            code.push_str(&format!("/// Filter type for {} queries\n", model.name));
+            code.push_str("#[derive(InputObject, Debug, Clone)]\n");
+            code.push_str(&format!("pub struct {}Filter {{\n", model.name));
+            code.push_str("    pub id: Option<ID>,\n");
+            code.push_str("    pub ids: Option<Vec<ID>>,\n");
+            
+            // Add field-specific filters
+            for (_field_name, field) in &model.fields {
+                if field.name == "id" { continue; }
+                
+                match &field.field_type {
+                    FieldType::String => {
+                        code.push_str(&format!("    pub {}: Option<String>,\n", field.name));
+                        code.push_str(&format!("    pub {}Contains: Option<String>,\n", field.name));
+                    }
+                    FieldType::Number => {
+                        code.push_str(&format!("    pub {}: Option<f64>,\n", field.name));
+                        code.push_str(&format!("    pub {}Gte: Option<f64>,\n", field.name));
+                        code.push_str(&format!("    pub {}Lte: Option<f64>,\n", field.name));
+                    }
+                    FieldType::Boolean => {
+                        code.push_str(&format!("    pub {}: Option<bool>,\n", field.name));
+                    }
+                    FieldType::Date | FieldType::DateTime => {
+                        code.push_str(&format!("    pub {}After: Option<chrono::DateTime<chrono::Utc>>,\n", field.name));
+                        code.push_str(&format!("    pub {}Before: Option<chrono::DateTime<chrono::Utc>>,\n", field.name));
+                    }
+                    _ => {
+                        // For other types, basic equality
+                        let rust_type = Self::convert_field_type_for_graphql(&field.field_type);
+                        code.push_str(&format!("    pub {}: Option<{}>,\n", field.name, rust_type));
+                    }
+                }
+            }
+            
+            // Add audit field filters
+            code.push_str("    pub createdAfter: Option<chrono::DateTime<chrono::Utc>>,\n");
+            code.push_str("    pub createdBefore: Option<chrono::DateTime<chrono::Utc>>,\n");
+            code.push_str("    pub updatedAfter: Option<chrono::DateTime<chrono::Utc>>,\n");
+            code.push_str("    pub updatedBefore: Option<chrono::DateTime<chrono::Utc>>,\n");
+            code.push_str("}\n\n");
+            
+            // Generate OrderBy enum
+            code.push_str(&format!("/// Order by enum for {} queries\n", model.name));
+            code.push_str("#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]\n");
+            code.push_str(&format!("pub enum {}OrderBy {{\n", model.name));
+            code.push_str("    CreatedAtAsc,\n");
+            code.push_str("    CreatedAtDesc,\n");
+            code.push_str("    UpdatedAtAsc,\n");
+            code.push_str("    UpdatedAtDesc,\n");
+            
+            // Add field-specific ordering
+            for (_field_name, field) in &model.fields {
+                if field.name == "id" { continue; }
+                let enum_name_asc = format!("{}Asc", field.name);
+                let enum_name_desc = format!("{}Desc", field.name);
+                code.push_str(&format!("    {},\n", enum_name_asc));
+                code.push_str(&format!("    {},\n", enum_name_desc));
+            }
+            
             code.push_str("}\n\n");
         }
         
