@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
 use atomo_schema::{TypeScriptParser, HasuraV2ResolverGenerator, hasura_v2_type_generator::HasuraV2TypeGenerator, OperationDefinitions};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::mpsc;
+use std::time::Duration;
 
 /// 即时编译的服务运行时
 /// 
@@ -51,8 +54,8 @@ pub async fn dev_command(port: u16) -> Result<()> {
     verify_schema_consistency(&schema_graphql_path).await?;
     println!("   ✅ Schema consistency verified (Hasura v2 compliant)");
     
-    // 步骤5: 编译并运行服务
-    compile_and_run_service(&runtime_dir, &service_name, port).await?;
+    // 步骤5: 编译并运行服务（带文件监听）
+    compile_and_run_service_with_watch(&runtime_dir, &service_name, port, &current_dir).await?;
     
     Ok(())
 }
@@ -174,9 +177,19 @@ dotenvy = "0.15"
 # 开发环境编译优化
 [profile.dev]
 incremental = true
-debug = true
+debug = 1  # 减少调试信息，加快编译
 opt-level = 0
 overflow-checks = false
+lto = false
+codegen-units = 256  # 增加并行编译单元
+
+# 快速开发配置 - 进一步优化编译速度
+[profile.fast-dev]
+inherits = "dev"
+debug = false  # 完全关闭调试信息
+opt-level = 0
+incremental = true
+codegen-units = 512  # 最大并行度
 
 # 保留 release 配置用于生产环境
 [profile.release]
@@ -319,19 +332,31 @@ async fn generate_business_code_incremental(runtime_dir: &Path, schema_path: &Pa
         println!("   📄 Generating GraphQL schema definition...");
         generate_graphql_schema_definition(schema_path, &schema_graphql_path).await?;
         
-        // 🔧 关键优化：只重新生成实际变更的文件
-        if change_detection.models_changed {
-            println!("   🏗️  Regenerating models.rs...");
-            generate_models_only(runtime_dir, schema_path, &models).await?;
-        } else {
-            println!("   ✅ Models unchanged - skipping");
-        }
-        
-        if change_detection.resolvers_changed {
-            println!("   🔧 Regenerating resolvers.rs...");
-            generate_resolvers_only(runtime_dir, schema_path, &models).await?;
-        } else {
-            println!("   ✅ Resolvers unchanged - skipping");
+        // 🔧 关键优化：只重新生成实际变更的文件，支持并行生成
+        match (change_detection.models_changed, change_detection.resolvers_changed) {
+            (true, true) => {
+                println!("   🏗️  Regenerating models.rs and resolvers.rs in parallel...");
+                let models_task = generate_models_only(runtime_dir, schema_path, &models);
+                let resolvers_task = generate_resolvers_only(runtime_dir, schema_path, &models);
+                
+                // 并行执行两个生成任务
+                let (models_result, resolvers_result) = tokio::try_join!(models_task, resolvers_task)?;
+                println!("   ✅ Parallel generation completed successfully");
+            },
+            (true, false) => {
+                println!("   🏗️  Regenerating models.rs...");
+                generate_models_only(runtime_dir, schema_path, &models).await?;
+                println!("   ✅ Resolvers unchanged - skipping");
+            },
+            (false, true) => {
+                println!("   🔧 Regenerating resolvers.rs...");
+                generate_resolvers_only(runtime_dir, schema_path, &models).await?;
+                println!("   ✅ Models unchanged - skipping");
+            },
+            (false, false) => {
+                // 这种情况已经在外层处理了，不应该到达这里
+                unreachable!("Both models and resolvers unchanged, should be caught earlier");
+            }
         }
         
         // 更新缓存哈希
@@ -488,16 +513,25 @@ async fn save_build_cache(runtime_dir: &Path, schema_content: &str, models: &[at
     Ok(())
 }
 
-/// 编译并运行服务
+/// 编译并运行服务 - 优化版本，支持依赖缓存
 async fn compile_and_run_service(runtime_dir: &Path, service_name: &str, port: u16) -> Result<()> {
     println!("   🔧 Compiling service runtime...");
-    println!("   📜 Compilation logs:");
+    
+    // 步骤1: 检查是否需要预编译依赖
+    let dependencies_cached = check_dependencies_cache(runtime_dir).await?;
+    if !dependencies_cached {
+        println!("   � Pre-compiling dependencies for faster future builds...");
+        precompile_dependencies(runtime_dir).await?;
+    }
+    
+    println!("   �📜 Compilation logs:");
     println!();
     
-    // 开发模式编译 - 快速编译优化
+    // 步骤2: 使用优化的编译配置
     let mut compile_child = TokioCommand::new("cargo")
         .arg("build")
-        // 移除 --release，使用更快的 dev 模式
+        .arg("--profile")
+        .arg("fast-dev")  // 使用我们的快速开发配置
         .current_dir(runtime_dir)
         .stdout(Stdio::inherit())  // 直接继承终端输出，实时显示
         .stderr(Stdio::inherit())   // 直接继承终端错误输出，实时显示
@@ -531,8 +565,8 @@ async fn compile_and_run_service(runtime_dir: &Path, service_name: &str, port: u
     println!("{}", "📋 Service Runtime Logs:".bright_yellow().bold());
     println!("{}", "─".repeat(70).yellow());
     
-    // 直接运行二进制文件，使用debug目录以匹配编译模式
-    let service_binary = runtime_dir.join("target").join("debug").join("service.exe");
+    // 直接运行二进制文件，使用fast-dev目录以匹配编译模式
+    let service_binary = runtime_dir.join("target").join("fast-dev").join("service.exe");
     
     let mut child = TokioCommand::new(&service_binary)
         .current_dir(runtime_dir)
@@ -959,9 +993,10 @@ async fn detect_incremental_changes_detailed(
         cached_models_hash != Some(current_models_hash.clone()) ||
         cached_schema_hash != Some(current_schema_hash.clone());
     
+    // Resolvers 依赖于整个 schema，任何 schema 变更都需要重新生成 resolvers
+    // 使用 cached_resolvers_hash 而不是 cached_schema_hash，因为我们需要检查 resolvers.hash 文件
     let resolvers_changed = !resolvers_file_exists ||
-        cached_resolvers_hash != Some(current_schema_hash.clone()) ||
-        cached_schema_hash != Some(current_schema_hash.clone());
+        cached_resolvers_hash != Some(current_schema_hash.clone());
     
     Ok(IncrementalChangeSet {
         schema_hash: current_schema_hash,
@@ -1083,13 +1118,15 @@ async fn update_incremental_cache(runtime_dir: &Path, changes: &IncrementalChang
     let cache_dir = runtime_dir.join(".cache");
     tokio::fs::create_dir_all(&cache_dir).await?;
     
-    // 保存schema哈希
+    // 保存schema哈希 - 这是检测变化的基础
     tokio::fs::write(cache_dir.join("schema.hash"), &changes.schema_hash).await?;
     
+    // 当 models 重新生成时，更新 models cache（使用 schema hash，因为 models 直接依赖 schema）
     if changes.models_changed {
         tokio::fs::write(cache_dir.join("models.hash"), &changes.schema_hash).await?;
     }
     
+    // 当 resolvers 重新生成时，更新 resolvers cache（使用 schema hash，因为 resolvers 完全依赖 schema）
     if changes.resolvers_changed {
         tokio::fs::write(cache_dir.join("resolvers.hash"), &changes.schema_hash).await?;
     }
@@ -1119,4 +1156,262 @@ async fn generate_resolvers_only(runtime_dir: &Path, schema_path: &Path, models:
     tokio::fs::write(&resolvers_path, resolvers_code).await?;
     
     Ok(())
+}
+
+/// 检查依赖缓存是否存在
+async fn check_dependencies_cache(runtime_dir: &Path) -> Result<bool> {
+    let target_dir = runtime_dir.join("target");
+    let deps_dir = target_dir.join("fast-dev").join("deps");
+    
+    // 检查是否存在编译好的依赖
+    if deps_dir.exists() {
+        // 检查依赖目录是否包含编译好的文件
+        let mut entries = tokio::fs::read_dir(&deps_dir).await?;
+        let mut has_deps = false;
+        
+        while let Some(entry) = entries.next_entry().await? {
+            let file_name = entry.file_name();
+            if let Some(name_str) = file_name.to_str() {
+                // 查找编译好的依赖文件（.rlib 或者可执行文件）
+                if name_str.contains("lib") && (name_str.ends_with(".rlib") || name_str.ends_with(".rmeta")) {
+                    has_deps = true;
+                    break;
+                }
+            }
+        }
+        
+        return Ok(has_deps);
+    }
+    
+    Ok(false)
+}
+
+/// 预编译依赖项
+async fn precompile_dependencies(runtime_dir: &Path) -> Result<()> {
+    // 创建一个临时的虚拟main.rs用于编译依赖
+    let temp_main = runtime_dir.join("src").join("temp_main.rs");
+    let original_main = runtime_dir.join("src").join("main.rs");
+    
+    // 备份原始main.rs
+    if original_main.exists() {
+        let backup_main = runtime_dir.join("src").join("main.rs.backup");
+        tokio::fs::copy(&original_main, &backup_main).await?;
+    }
+    
+    // 创建最小化的main.rs来编译依赖
+    let minimal_main = r#"
+// 临时文件，仅用于预编译依赖
+fn main() {
+    println!("Dependencies compiled successfully");
+}
+"#;
+    tokio::fs::write(&original_main, minimal_main).await?;
+    
+    // 编译依赖（这会编译所有依赖但不会构建我们的代码）
+    let mut deps_compile = TokioCommand::new("cargo")
+        .arg("build")
+        .arg("--profile")
+        .arg("fast-dev")
+        .arg("--lib")  // 只编译库依赖
+        .current_dir(runtime_dir)
+        .stdout(Stdio::null())  // 静默模式
+        .stderr(Stdio::null())
+        .spawn()?;
+    
+    let _deps_status = deps_compile.wait().await?;
+    
+    // 恢复原始main.rs
+    let backup_main = runtime_dir.join("src").join("main.rs.backup");
+    if backup_main.exists() {
+        tokio::fs::copy(&backup_main, &original_main).await?;
+        tokio::fs::remove_file(&backup_main).await?;
+    }
+    
+    // 清理临时文件
+    if temp_main.exists() {
+        tokio::fs::remove_file(&temp_main).await?;
+    }
+    
+    Ok(())
+}
+
+/// 编译并运行服务（带文件监听和热重载）
+async fn compile_and_run_service_with_watch(
+    runtime_dir: &Path, 
+    service_name: &str, 
+    port: u16,
+    service_dir: &Path
+) -> Result<()> {
+    println!("   🔧 Compiling service runtime...");
+    
+    // 步骤1: 检查是否需要预编译依赖
+    let dependencies_cached = check_dependencies_cache(runtime_dir).await?;
+    if !dependencies_cached {
+        println!("   📦 Pre-compiling dependencies for faster future builds...");
+        precompile_dependencies(runtime_dir).await?;
+    }
+    
+    println!("   📜 Compilation logs:");
+    println!();
+    
+    // 步骤2: 初始编译
+    let mut compile_child = TokioCommand::new("cargo")
+        .arg("build")
+        .arg("--profile")
+        .arg("fast-dev")  // 使用我们的快速开发配置
+        .current_dir(runtime_dir)
+        .stdout(Stdio::inherit())  // 直接继承终端输出，实时显示
+        .stderr(Stdio::inherit())   // 直接继承终端错误输出，实时显示
+        .spawn()?;
+    
+    let compile_status = compile_child.wait().await?;
+    if !compile_status.success() {
+        anyhow::bail!("❌ Failed to compile service runtime. Please check the compilation errors above.");
+    }
+    
+    println!("   ✅ Service compiled successfully");
+    println!();
+    
+    // 清屏并显示服务启动信息
+    println!("\x1B[2J\x1B[1;1H"); // ANSI清屏码
+    println!("{}", "-".repeat(50).bright_cyan());
+    println!("🎉 {} {} {}",
+        "".repeat(5),
+        format!("{} Started Successfully!", service_name).bright_green().bold(),
+        "".repeat(5)
+    );
+    println!("{}", "-".repeat(50).bright_cyan());
+    println!();
+    println!("   🌐 Access your service:");
+    println!("   ├─ 🏠 Homepage:           {}", format!("http://localhost:{}", port).bright_blue());
+    println!("   ├─ 🔍 GraphQL Playground: {}", format!("http://localhost:{}/playground", port).bright_blue());
+    println!("   ├─ 📊 GraphQL API:        {}", format!("http://localhost:{}/graphql", port).bright_blue());
+    println!("   └─ 💚 Health Check:      {}", format!("http://localhost:{}/health", port).bright_blue());
+    println!();
+    println!("{}", "🔥 Hot Reload: Watching for changes...".bright_yellow().bold());
+    println!("{}", "─".repeat(70).yellow());
+    
+    // 步骤3: 设置文件监听
+    let (tx, rx) = mpsc::channel();
+    let mut watcher = RecommendedWatcher::new(tx, notify::Config::default())?;
+    
+    // 监听 schema.ts 文件
+    let schema_path = service_dir.join("schema.ts");
+    watcher.watch(&schema_path, RecursiveMode::NonRecursive)?;
+    
+    println!("   👀 Watching: {}", schema_path.display().to_string().dimmed());
+    println!();
+    
+    // 步骤4: 启动带进程管理的热重载服务
+    let service_binary = runtime_dir.join("target").join("fast-dev").join("service.exe");
+    let service_dir_clone = service_dir.to_path_buf();
+    let runtime_dir_clone = runtime_dir.to_path_buf();
+    
+    start_service_with_hot_reload(&service_binary, runtime_dir, &service_dir_clone, &runtime_dir_clone, rx).await?;
+    
+    Ok(())
+}
+
+/// 热重载：当文件变更时快速重新生成和重编译
+async fn hot_reload_service(runtime_dir: &Path, service_dir: &Path) -> Result<()> {
+    let schema_path = service_dir.join("schema.ts");
+    
+    // 重新生成代码（只生成变更的部分）
+    generate_business_code_incremental(runtime_dir, &schema_path).await?;
+    
+    // 快速重新编译
+    let mut compile_child = TokioCommand::new("cargo")
+        .arg("build")
+        .arg("--profile")
+        .arg("fast-dev")
+        .current_dir(runtime_dir)
+        .stdout(Stdio::piped())  // 隐藏详细输出，保持界面简洁
+        .stderr(Stdio::piped())
+        .spawn()?;
+    
+    let compile_status = compile_child.wait().await?;
+    if !compile_status.success() {
+        // 获取编译错误信息
+        let output = compile_child.wait_with_output().await?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Compilation failed:\n{}", stderr);
+    }
+    
+    Ok(())
+}
+
+/// 启动服务并管理热重载进程重启
+async fn start_service_with_hot_reload(
+    service_binary: &Path,
+    runtime_dir: &Path, 
+    service_dir: &Path,
+    runtime_dir_clone: &Path,
+    rx: mpsc::Receiver<notify::Result<notify::Event>>
+) -> Result<()> {
+    use std::sync::{Arc, Mutex};
+    use tokio::process::Child;
+    
+    let current_process: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+    
+    // 启动初始服务进程
+    {
+        let mut process_guard = current_process.lock().unwrap();
+        let service_process = TokioCommand::new(service_binary)
+            .current_dir(runtime_dir)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()?;
+        *process_guard = Some(service_process);
+    }
+    
+    // 监听文件变更
+    loop {
+        if let Ok(event) = rx.recv_timeout(Duration::from_millis(100)) {
+            match event {
+                Ok(notify::Event { kind: notify::EventKind::Modify(_), .. }) => {
+                    println!("🔄 {}", "Schema change detected! Reloading...".bright_yellow());
+                    
+                    // 1. 停止当前服务进程
+                    {
+                        let mut process_guard = current_process.lock().unwrap();
+                        if let Some(mut process) = process_guard.take() {
+                            let _ = process.kill().await;
+                            let _ = process.wait().await;
+                            println!("   � Service stopped");
+                        }
+                    }
+                    
+                    // 2. 重新生成代码和编译
+                    if let Err(e) = hot_reload_service(runtime_dir_clone, service_dir).await {
+                        eprintln!("❌ Hot reload failed: {}", e);
+                        continue;
+                    }
+                    
+                    // 3. 重新启动服务进程
+                    {
+                        let mut process_guard = current_process.lock().unwrap();
+                        match TokioCommand::new(service_binary)
+                            .current_dir(runtime_dir)
+                            .stdout(Stdio::inherit())
+                            .stderr(Stdio::inherit())
+                            .spawn() {
+                            Ok(new_process) => {
+                                *process_guard = Some(new_process);
+                                println!("✅ {} {}", "Hot reload completed!".bright_green(), "Service restarted 🚀".bright_blue());
+                            },
+                            Err(e) => {
+                                eprintln!("❌ Failed to restart service: {}", e);
+                            }
+                        }
+                    }
+                },
+                _ => {
+                    // 忽略其他类型的事件
+                }
+            }
+        }
+        
+        // 检查服务进程是否还在运行
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
