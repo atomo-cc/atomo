@@ -1288,7 +1288,7 @@ async fn compile_and_run_service_with_watch(
     println!("   ├─ 📊 GraphQL API:        {}", format!("http://localhost:{}/graphql", port).bright_blue());
     println!("   └─ 💚 Health Check:      {}", format!("http://localhost:{}/health", port).bright_blue());
     println!();
-    println!("{}", "🔥 Hot Reload: Watching for changes...".bright_yellow().bold());
+    println!("{}", "   🔥 Hot Reload: Watching for changes...".bright_yellow().bold());
     println!("{}", "─".repeat(70).yellow());
     
     // 步骤3: 设置文件监听
@@ -1364,11 +1364,24 @@ async fn start_service_with_hot_reload(
         *process_guard = Some(service_process);
     }
     
-    // 监听文件变更
+    // 监听文件变更 - 添加事件去重机制
+    let mut last_reload_time = std::time::Instant::now();
+    
     loop {
         if let Ok(event) = rx.recv_timeout(Duration::from_millis(100)) {
             match event {
                 Ok(notify::Event { kind: notify::EventKind::Modify(_), .. }) => {
+                    // 事件去重：防止短时间内的重复触发（编辑器保存时通常产生多个事件）
+                    let now = std::time::Instant::now();
+                    let time_since_last = now.duration_since(last_reload_time);
+                    // println!("🔍 DEBUG: Event received, time since last reload: {:?}", time_since_last);
+                    
+                    if time_since_last < Duration::from_millis(10000) {  // 增加到10秒以捕获延迟事件
+                        // 如果距离上次重载不到10秒，跳过这次事件
+                        println!("   ⏭ Event ignored due to deduplication (< 10000ms)");
+                        continue;
+                    }
+                    last_reload_time = now;
                     println!("🔄 {}", "Schema change detected! Reloading...".bright_yellow());
                     
                     // 1. 停止当前服务进程
@@ -1383,7 +1396,7 @@ async fn start_service_with_hot_reload(
                     
                     // 2. 重新生成代码和编译
                     if let Err(e) = hot_reload_service(runtime_dir_clone, service_dir).await {
-                        eprintln!("❌ Hot reload failed: {}", e);
+                        eprintln!("   ❌ Hot reload failed: {}", e);
                         continue;
                     }
                     
@@ -1397,10 +1410,10 @@ async fn start_service_with_hot_reload(
                             .spawn() {
                             Ok(new_process) => {
                                 *process_guard = Some(new_process);
-                                println!("✅ {} {}", "Hot reload completed!".bright_green(), "Service restarted 🚀".bright_blue());
+                                println!("   ✅ {} {}", "Hot reload completed!".bright_green(), "Service restarted 🚀".bright_blue());
                             },
                             Err(e) => {
-                                eprintln!("❌ Failed to restart service: {}", e);
+                                eprintln!("   ❌ Failed to restart service: {}", e);
                             }
                         }
                     }
