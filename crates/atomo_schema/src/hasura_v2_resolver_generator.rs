@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crate::types::*;
+use crate::operation_definitions::OperationDefinitions;
 
 /// Hasura v2 Style GraphQL Resolver Generator
 /// Generates GraphQL resolvers following Hasura v2 conventions with full filtering and sorting support
@@ -55,6 +56,24 @@ use serde_json::Value;
 
 use super::models::*;
 
+/// Convert camelCase to snake_case for database field names
+fn camel_to_snake_case(s: &str) -> String {{
+    let mut snake = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {{
+        if c.is_uppercase() {{
+            if !snake.is_empty() {{
+                snake.push('_');
+            }}
+            snake.push(c.to_ascii_lowercase());
+        }} else {{
+            snake.push(c);
+        }}
+    }}
+    snake
+}}
+
 // Hasura v2 style resolvers
 #[derive(Default)]
 pub struct Query;
@@ -68,220 +87,297 @@ pub struct Mutation;
     /// Generate Query resolvers for all models following Hasura v2 conventions
     fn generate_query_resolvers(&self, models: &[Model]) -> Result<String> {
         let mut query_impl = String::new();
-        
+
         query_impl.push_str("#[Object]\nimpl Query {\n");
         
         for model in models {
-            // Skip Block types and enum types
             if model.name.ends_with("Block") || model.fields.contains_key("_enum_type") {
                 continue;
             }
             
-            let model_name = &model.name;
-            let model_lower = model_name.to_lowercase();
-            let _table_name = format!("{}s", model_lower); // Pluralize table name
-            
-            // Generate list query: users, deals, companies, contacts
             query_impl.push_str(&self.generate_list_query(model)?);
-            
-            // Generate single query by primary key: user_by_pk, deal_by_pk
             query_impl.push_str(&self.generate_by_pk_query(model)?);
-            
-            // Generate aggregate query: users_aggregate, deals_aggregate
             query_impl.push_str(&self.generate_aggregate_query(model)?);
         }
-        
-        // Add helper methods to Query impl
-        query_impl.push_str(&self.generate_query_helper_methods()?);
         
         query_impl.push_str("}\n\n");
         Ok(query_impl)
     }
-    
-    /// Generate helper methods for Query implementation
-    fn generate_query_helper_methods(&self) -> Result<String> {
-        Ok(r#""#.to_string())
-    }
-    
-    /// Generate list query following Hasura v2 conventions
+
+    /// Generate list query following Hasura v2 conventions using sqlx::QueryBuilder
     fn generate_list_query(&self, model: &Model) -> Result<String> {
         let model_name = &model.name;
-        let model_lower = model_name.to_lowercase();
-        let table_name = model_lower.clone();
-        let field_name = format!("{}s", model_lower); // GraphQL field name (plural)
+        let table_name = model_name.to_lowercase();
+        let field_name = format!("{}s", table_name);
+
+        let valid_columns: Vec<String> = model
+            .fields
+            .keys()
+            .map(|k| self.camel_to_snake_case(k))
+            .collect();
+        let valid_columns_str = valid_columns.iter().map(|c| format!("\"{}\"", c)).collect::<Vec<_>>().join(", ");
 
         Ok(format!(
-            r#"    /// Query {field_name} with Hasura v2 style filtering and ordering
-    async fn {field_name}(
-        &self,
-        ctx: &Context<'_>,
-        #[graphql(name = "where")]
-        where_: Option<{model_name}BoolExp>,
-        #[graphql(name = "orderBy")]
-        order_by: Option<Vec<{model_name}OrderBy>>,
-        limit: Option<i32>,
-        offset: Option<i32>,
-        #[graphql(name = "distinctOn")]
-        distinct_on: Option<Vec<{model_name}SelectColumn>>,
-    ) -> FieldResult<Vec<{model_name}>> {{
-        let pool = ctx.data::<PgPool>()?;
-        
-        // Start building the query
-        let mut query = "SELECT * FROM {table_name}".to_string();
-        let mut bind_count = 0;
-        let mut bind_values: Vec<String> = Vec::new();
-        
-        // Apply WHERE clause if provided
-        if let Some(where_exp) = where_ {{
-            // Simple filtering implementation for basic operations
-            // Convert the where expression to JSON for processing
-            if let Ok(where_json) = serde_json::to_value(&where_exp) {{
-                let mut conditions = Vec::new();
-                
-                if let Some(obj) = where_json.as_object() {{
-                    for (field, filter_exp) in obj {{
-                        if field == "_and" || field == "_or" || field == "_not" {{
-                            // Skip complex logical operators for now
-                            continue;
-                        }}
-                        
-                        // Convert camelCase to snake_case for database fields
-                        let db_field = field.chars().enumerate().map(|(i, c)| {{
-                            if i > 0 && c.is_uppercase() {{
-                                format!("_{{}}", c.to_lowercase())
-                            }} else {{
-                                c.to_lowercase().to_string()
+    r#"    /// Query {field_name} with Hasura v2 style filtering and ordering
+        async fn {field_name}(
+            &self,
+            ctx: &Context<'_>,
+            #[graphql(name = "where")]
+            where_: Option<{model_name}BoolExp>,
+            #[graphql(name = "orderBy")]
+            order_by: Option<Vec<{model_name}OrderBy>>,
+            limit: Option<i32>,
+            offset: Option<i32>,
+            #[graphql(name = "distinctOn")]
+            distinct_on: Option<Vec<{model_name}SelectColumn>>,
+        ) -> FieldResult<Vec<{model_name}>> {{
+            let pool = ctx.data::<PgPool>()?;
+            let valid_columns = &[{valid_columns_str}];
+
+            // Pre-serialize where condition to extend lifetime
+            let where_json = if let Some(ref where_exp) = where_ {{
+                Some(serde_json::to_value(where_exp)?)
+            }} else {{
+                None
+            }};
+
+            let mut query_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT * FROM {table_name}");
+
+            if let Some(ref json_value) = where_json {{
+                if let Some(obj) = json_value.as_object() {{
+                        let mut where_clause_started = false;
+                        for (field, filter_exp) in obj {{
+                            if field == "_and" || field == "_or" || field == "_not" {{
+                                continue;
                             }}
-                        }}).collect::<String>();
-                        
-                        if let Some(comparison) = filter_exp.as_object() {{
-                            for (op, value) in comparison {{
-                                bind_count += 1;
-                                let placeholder = format!("${{}}", bind_count);
-                                
-                                match op.as_str() {{
-                                    "_eq" => {{
-                                        conditions.push(format!("{table_name}.{{}} = {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                            let db_field = camel_to_snake_case(field);
+                            if let Some(comparison) = filter_exp.as_object() {{
+                                for (op, value) in comparison {{
+                                    if value.is_null() {{
+                                        continue;
                                     }}
-                                    "_ne" => {{
-                                        conditions.push(format!("{table_name}.{{}} != {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_gt" => {{
-                                        conditions.push(format!("{table_name}.{{}} > {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_gte" => {{
-                                        conditions.push(format!("{table_name}.{{}} >= {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_lt" => {{
-                                        conditions.push(format!("{table_name}.{{}} < {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_lte" => {{
-                                        conditions.push(format!("{table_name}.{{}} <= {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_like" => {{
-                                        conditions.push(format!("{table_name}.{{}} LIKE {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_ilike" => {{
-                                        conditions.push(format!("{table_name}.{{}} ILIKE {{}}", db_field, placeholder));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_is_null" => {{
-                                        if value.as_bool().unwrap_or(false) {{
-                                            conditions.push(format!("{table_name}.{{}} IS NULL", db_field));
-                                            bind_count -= 1; // No parameter for IS NULL
+
+                                    let (op_sql, is_jsonb_op) = match op.as_str() {{
+                                        "_contains" => (" @> ", true),
+                                        "_eq" => (" = ", false), "_neq" => (" != ", false), "_gt" => (" > ", false),
+                                        "_gte" => (" >= ", false), "_lt" => (" < ", false), "_lte" => (" <= ", false),
+                                        "_like" => (" LIKE ", false), "_ilike" => (" ILIKE ", false),
+                                        _ => ("", false),
+                                    }};
+
+                                    if !op_sql.is_empty() {{
+                                        if !where_clause_started {{
+                                            query_builder.push(" WHERE ");
+                                            where_clause_started = true;
                                         }} else {{
-                                            conditions.push(format!("{table_name}.{{}} IS NOT NULL", db_field));
-                                            bind_count -= 1; // No parameter for IS NOT NULL
+                                            query_builder.push(" AND ");
+                                        }}
+                                        query_builder.push("{table_name}.");
+                                        query_builder.push(&db_field);
+                                        query_builder.push(op_sql);
+                                        
+                                        // Type-aware parameter binding to avoid jsonb type errors
+                                        if let Some(str_value) = value.as_str() {{
+                                            query_builder.push_bind(str_value);
+                                        }} else if let Some(bool_value) = value.as_bool() {{
+                                            query_builder.push_bind(bool_value);
+                                        }} else if let Some(int_value) = value.as_i64() {{
+                                            query_builder.push_bind(int_value);
+                                        }} else if let Some(float_value) = value.as_f64() {{
+                                            query_builder.push_bind(float_value);
+                                        }} else {{
+                                            query_builder.push_bind(value.clone());
+                                        }}
+
+                                    }} else if op == "_is_null" {{
+                                        if !where_clause_started {{
+                                            query_builder.push(" WHERE ");
+                                            where_clause_started = true;
+                                        }} else {{
+                                            query_builder.push(" AND ");
+                                        }}
+                                        query_builder.push("{table_name}.");
+                                        query_builder.push(&db_field);
+                                        if value.as_bool().unwrap_or(false) {{
+                                            query_builder.push(" IS NULL");
+                                        }} else {{
+                                            query_builder.push(" IS NOT NULL");
                                         }}
                                     }}
-                                    _ => {{
-                                        bind_count -= 1; // Rollback bind count for unknown operators
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+
+            // ... ORDER BY and Pagination logic is correct and remains unchanged ...
+            if let Some(order_by_exp) = order_by {{
+                let mut order_parts = Vec::new();
+                for order_item in order_by_exp {{
+                    if let Ok(order_json) = serde_json::to_value(&order_item) {{
+                        if let Some(obj) = order_json.as_object() {{
+                            for (field, direction) in obj {{
+                                if direction.is_null() {{ continue; }}
+                                let db_field = camel_to_snake_case(field);
+                                if !valid_columns.contains(&db_field.as_str()) {{ continue; }}
+                                let dir = match direction.as_str().map(|s| s.to_lowercase()).as_deref() {{
+                                    Some("desc") => "DESC",
+                                    Some("asc_nulls_first") => "ASC NULLS FIRST",
+                                    Some("asc_nulls_last") => "ASC NULLS LAST",
+                                    Some("desc_nulls_first") => "DESC NULLS FIRST",
+                                    Some("desc_nulls_last") => "DESC NULLS LAST",
+                                    _ => "ASC",
+                                }};
+                                order_parts.push(format!("{table_name}.{{}} {{}}", db_field, dir));
+                            }}
+                        }}
+                    }}
+                }}
+                if !order_parts.is_empty() {{
+                    query_builder.push(" ORDER BY ");
+                    query_builder.push(order_parts.join(", "));
+                }} else {{
+                    query_builder.push(" ORDER BY {table_name}.id ASC");
+                }}
+            }} else {{
+                query_builder.push(" ORDER BY {table_name}.id ASC");
+            }}
+
+            if let Some(limit_val) = limit {{
+                query_builder.push(" LIMIT ");
+                query_builder.push_bind(limit_val);
+            }}
+            if let Some(offset_val) = offset {{
+                query_builder.push(" OFFSET ");
+                query_builder.push_bind(offset_val);
+            }}
+            
+            println!("[DEBUG] SQL for {field_name}: {{}}", query_builder.sql());
+            let query = query_builder.build_query_as::<{model_name}Row>();
+            let rows = query.fetch_all(pool).await?;
+            Ok(rows.into_iter().map(|row| row.into()).collect())
+        }}"#,
+            model_name = model_name,
+            table_name = table_name,
+            field_name = field_name,
+            valid_columns_str = valid_columns_str,
+        ))
+    }
+
+    /// Generate aggregate query following Hasura v2 conventions using sqlx::QueryBuilder
+    fn generate_aggregate_query(&self, model: &Model) -> Result<String> {
+        let model_name = &model.name;
+        let table_name = model_name.to_lowercase();
+        let field_name = format!("{}s", table_name);
+        
+        Ok(format!(
+    r#"    /// Query {field_name} aggregate with count and statistics
+        async fn {field_name}_aggregate(
+            &self,
+            ctx: &Context<'_>,
+            #[graphql(name = "where")]
+            where_: Option<{model_name}BoolExp>,
+            #[graphql(name = "orderBy")]
+            order_by: Option<Vec<{model_name}OrderBy>>,
+            limit: Option<i32>,
+            offset: Option<i32>,
+            #[graphql(name = "distinctOn")]
+            distinct_on: Option<Vec<{model_name}SelectColumn>>,
+        ) -> FieldResult<{model_name}Aggregate> {{
+            let pool = ctx.data::<PgPool>()?;
+            
+            // Pre-serialize where condition to extend lifetime
+            let where_json = if let Some(ref where_exp) = where_ {{
+                Some(serde_json::to_value(where_exp)?)
+            }} else {{
+                None
+            }};
+            
+            let mut count_query_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT COUNT(*) FROM {table_name}");
+            
+            if let Some(ref json_value) = where_json {{
+                if let Some(obj) = json_value.as_object() {{
+                        let mut where_clause_started = false;
+                        for (field, filter_exp) in obj {{
+                            if field == "_and" || field == "_or" || field == "_not" {{
+                                continue;
+                            }}
+                            let db_field = camel_to_snake_case(field);
+                            if let Some(comparison) = filter_exp.as_object() {{
+                                for (op, value) in comparison {{
+                                    if value.is_null() {{
+                                        continue;
+                                    }}
+                                    
+                                    let (op_sql, is_jsonb_op) = match op.as_str() {{
+                                        "_contains" => (" @> ", true),
+                                        "_eq" => (" = ", false), "_neq" => (" != ", false), "_gt" => (" > ", false),
+                                        "_gte" => (" >= ", false), "_lt" => (" < ", false), "_lte" => (" <= ", false),
+                                        "_like" => (" LIKE ", false), "_ilike" => (" ILIKE ", false),
+                                        _ => ("", false),
+                                    }};
+
+                                    if !op_sql.is_empty() {{
+                                        if !where_clause_started {{
+                                            count_query_builder.push(" WHERE ");
+                                            where_clause_started = true;
+                                        }} else {{
+                                            count_query_builder.push(" AND ");
+                                        }}
+                                        count_query_builder.push("{table_name}.");
+                                        count_query_builder.push(&db_field);
+                                        count_query_builder.push(op_sql);
+                                        
+                                        // Type-aware parameter binding to avoid jsonb type errors
+                                        if let Some(str_value) = value.as_str() {{
+                                            count_query_builder.push_bind(str_value);
+                                        }} else if let Some(bool_value) = value.as_bool() {{
+                                            count_query_builder.push_bind(bool_value);
+                                        }} else if let Some(int_value) = value.as_i64() {{
+                                            count_query_builder.push_bind(int_value);
+                                        }} else if let Some(float_value) = value.as_f64() {{
+                                            count_query_builder.push_bind(float_value);
+                                        }} else {{
+                                            count_query_builder.push_bind(value.clone());
+                                        }}
+
+                                    }} else if op == "_is_null" {{
+                                        if !where_clause_started {{
+                                            count_query_builder.push(" WHERE ");
+                                            where_clause_started = true;
+                                        }} else {{
+                                            count_query_builder.push(" AND ");
+                                        }}
+                                        count_query_builder.push("{table_name}.");
+                                        count_query_builder.push(&db_field);
+                                        if value.as_bool().unwrap_or(false) {{
+                                            count_query_builder.push(" IS NULL");
+                                        }} else {{
+                                            count_query_builder.push(" IS NOT NULL");
+                                        }}
                                     }}
                                 }}
                             }}
                         }}
                     }}
                 }}
-                
-                if !conditions.is_empty() {{
-                    query.push_str(&format!(" WHERE {{}}", conditions.join(" AND ")));
-                }}
-            }}
-        }}
-        
-        // Apply ORDER BY clause
-        if let Some(order_by_exp) = order_by {{
-            let mut order_parts = Vec::new();
             
-            for order_item in order_by_exp {{
-                if let Ok(order_json) = serde_json::to_value(&order_item) {{
-                    if let Some(obj) = order_json.as_object() {{
-                        for (field, direction) in obj {{
-                            // Convert camelCase to snake_case
-                            let db_field = field.chars().enumerate().map(|(i, c)| {{
-                                if i > 0 && c.is_uppercase() {{
-                                    format!("_{{}}", c.to_lowercase())
-                                }} else {{
-                                    c.to_lowercase().to_string()
-                                }}
-                            }}).collect::<String>();
-                            
-                            let dir = match direction.as_str() {{
-                                Some("asc") => "ASC",
-                                Some("desc") => "DESC",
-                                Some("asc_nulls_first") => "ASC NULLS FIRST",
-                                Some("asc_nulls_last") => "ASC NULLS LAST", 
-                                Some("desc_nulls_first") => "DESC NULLS FIRST",
-                                Some("desc_nulls_last") => "DESC NULLS LAST",
-                                _ => "ASC"
-                            }};
-                            
-                            order_parts.push(format!("{table_name}.{{}} {{}}", db_field, dir));
-                        }}
-                    }}
-                }}
-            }}
+            println!("[DEBUG] SQL for {field_name}_aggregate (COUNT): {{}}", count_query_builder.sql());
+            let count_query = count_query_builder.build_query_as::<(i64,)>();
+            let count_row = count_query.fetch_one(pool).await?;
             
-            if !order_parts.is_empty() {{
-                query.push_str(&format!(" ORDER BY {{}}", order_parts.join(", ")));
-            }} else {{
-                query.push_str(" ORDER BY {table_name}.id ASC");
-            }}
-        }} else {{
-            query.push_str(" ORDER BY {table_name}.id ASC");
-        }}
-        
-        // Apply pagination
-        if let Some(limit_val) = limit {{
-            query.push_str(&format!(" LIMIT {{}}", limit_val));
-        }}
-        if let Some(offset_val) = offset {{
-            query.push_str(&format!(" OFFSET {{}}", offset_val));
-        }}
-        
-        // Build and execute the sqlx query with parameters
-        let mut sqlx_query = sqlx::query_as::<_, {model_name}Row>(&query);
-        for bind_value in bind_values {{
-            sqlx_query = sqlx_query.bind(bind_value);
-        }}
-        
-        // Execute the query
-        let rows = sqlx_query.fetch_all(pool).await?;
-        
-        // Convert database rows to GraphQL models
-        Ok(rows.into_iter().map(|row| row.into()).collect())
-    }}
-
-"#,
+            let nodes = self.{field_name}(ctx, where_, order_by, limit, offset, distinct_on).await?;
+            
+            Ok({model_name}Aggregate {{
+                aggregate: Some({model_name}AggregateFields {{
+                    count: Some(count_row.0 as i32),
+                }}),
+                nodes,
+            }})
+        }}"#,
             model_name = model_name,
             table_name = table_name,
+            field_name = field_name,
         ))
     }
     
@@ -315,116 +411,7 @@ pub struct Mutation;
         ))
     }
     
-    /// Generate aggregate query following Hasura v2 conventions
-    fn generate_aggregate_query(&self, model: &Model) -> Result<String> {
-        let model_name = &model.name;
-        let model_lower = model_name.to_lowercase();
-        let table_name = model_lower.clone();
-        let field_name = format!("{}s", model_lower); // GraphQL field name (plural)
-        
-        Ok(format!(
-            r#"    /// Query {field_name} aggregate with count and statistics
-    async fn {field_name}_aggregate(
-        &self,
-        ctx: &Context<'_>,
-        #[graphql(name = "where")]
-        where_: Option<{model_name}BoolExp>,
-        #[graphql(name = "orderBy")]
-        order_by: Option<Vec<{model_name}OrderBy>>,
-        limit: Option<i32>,
-        offset: Option<i32>,
-        #[graphql(name = "distinctOn")]
-        distinct_on: Option<Vec<{model_name}SelectColumn>>,
-    ) -> FieldResult<{model_name}Aggregate> {{
-        let pool = ctx.data::<PgPool>()?;
-        
-        // Build count query - for now, use simple count
-        let mut count_query = "SELECT COUNT(*) as count FROM {model_lower}".to_string();
-        let mut bind_values: Vec<String> = Vec::new();
-        let mut bind_count = 0;
-        
-        // Apply WHERE clause for count if provided (simplified version)
-        if let Some(where_exp) = &where_ {{
-            if let Ok(where_json) = serde_json::to_value(where_exp) {{
-                let mut conditions = Vec::new();
-                
-                if let Some(obj) = where_json.as_object() {{
-                    for (field, filter_exp) in obj {{
-                        if field == "_and" || field == "_or" || field == "_not" {{
-                            continue;
-                        }}
-                        
-                        // Convert camelCase to snake_case
-                        let db_field = field.chars().enumerate().map(|(i, c)| {{
-                            if i > 0 && c.is_uppercase() {{
-                                format!("_{{}}", c.to_lowercase())
-                            }} else {{
-                                c.to_lowercase().to_string()
-                            }}
-                        }}).collect::<String>();
-                        
-                        if let Some(comparison) = filter_exp.as_object() {{
-                            for (op, value) in comparison {{
-                                match op.as_str() {{
-                                    "_eq" => {{
-                                        bind_count += 1;
-                                        conditions.push(format!("{table_name}.{{}} = ${{}}", db_field, bind_count));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_ne" => {{
-                                        bind_count += 1;
-                                        conditions.push(format!("{table_name}.{{}} != ${{}}", db_field, bind_count));
-                                        bind_values.push(value.to_string().trim_matches('"').to_string());
-                                    }}
-                                    "_is_null" => {{
-                                        if value.as_bool().unwrap_or(false) {{
-                                            conditions.push(format!("{table_name}.{{}} IS NULL", db_field));
-                                        }} else {{
-                                            conditions.push(format!("{table_name}.{{}} IS NOT NULL", db_field));
-                                        }}
-                                    }}
-                                    _ => {{}}
-                                }}
-                            }}
-                        }}
-                    }}
-                }}
-                
-                if !conditions.is_empty() {{
-                    count_query.push_str(&format!(" WHERE {{}}", conditions.join(" AND ")));
-                }}
-            }}
-        }}
-        
-        // Build and execute count query
-        let mut sqlx_count_query = sqlx::query_as::<_, (i64,)>(&count_query);
-        for bind_value in &bind_values {{
-            sqlx_count_query = sqlx_count_query.bind(bind_value.clone());
-        }}
-        
-        let count_row = sqlx_count_query.fetch_one(pool).await?;
-        
-        // Get nodes if requested (reuse the list query logic)
-        let nodes = if limit.unwrap_or(0) > 0 {{
-            self.{field_name}(ctx, where_, order_by, limit, offset, distinct_on).await?
-        }} else {{
-            Vec::new()
-        }};
-        
-        Ok({model_name}Aggregate {{
-            aggregate: Some({model_name}AggregateFields {{
-                count: Some(count_row.0 as i32),
-            }}),
-            nodes,
-        }})
-    }}
 
-"#,
-            model_name = model_name,
-            table_name = table_name,
-        ))
-    }
-    
     /// Generate Mutation resolvers following Hasura v2 conventions
     fn generate_mutation_resolvers(&self, models: &[Model]) -> Result<String> {
         let mut mutation_impl = String::new();
@@ -463,7 +450,7 @@ pub struct Mutation;
         Ok(mutation_impl)
     }
     
-    /// Generate insert_one mutation following Hasura v2 conventions
+    /// Generate insert_one mutation following Hasura v2 conventions using sqlx::QueryBuilder
     fn generate_insert_one_mutation(&self, model: &Model) -> Result<String> {
         let model_name = &model.name;
         let model_lower = model_name.to_lowercase();
@@ -471,7 +458,6 @@ pub struct Mutation;
         // Generate field mappings for the insert query
         let mut field_mappings = Vec::new();
         let mut field_bindings = Vec::new();
-        let mut bind_index = 4; // Start after id, created_at, updated_at
         
         // Add required fields
         field_mappings.push("id".to_string());
@@ -512,36 +498,44 @@ pub struct Mutation;
             };
             
             field_bindings.push((field_binding, field_name.clone(), field.clone()));
-            bind_index += 1;
         }
         
         // Generate the field bindings code
         let mut binding_code = String::new();
-        let mut bind_params = Vec::new();
+        let mut bind_fields = Vec::new();
         
         for (binding, field_name, field) in &field_bindings {
             binding_code.push_str("        ");
             binding_code.push_str(binding);
             binding_code.push('\n');
             
-            // Add to bind params
+            // Add to bind fields
             if field.field_type == crate::types::FieldType::Array(Box::new(crate::types::FieldType::String)) {
-                bind_params.push(format!("{}_json", field_name));
+                bind_fields.push(format!("{}_json", field_name));
             } else {
-                bind_params.push(field_name.clone());
+                bind_fields.push(field_name.clone());
             }
         }
         
         let fields_str = field_mappings.join(", ");
-        let placeholders: Vec<String> = (1..=field_mappings.len()).map(|i| format!("${}", i)).collect();
-        let placeholders_str = placeholders.join(", ");
         
-        let mut bind_calls = vec!["id".to_string(), "now".to_string(), "now".to_string()];
-        bind_calls.extend(bind_params);
-        let bind_calls_str = bind_calls.iter().map(|p| format!("            .bind({})", p)).collect::<Vec<_>>().join("\n");
+        // Create query builder code for inserting
+        let mut query_builder_code = String::new();
+        query_builder_code.push_str(&format!("        let mut query_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(\"INSERT INTO {} ({})\");\n", model_lower, fields_str));
+        query_builder_code.push_str("        query_builder.push_values([1], |mut b, _| {\n");
+        query_builder_code.push_str("            b.push_bind(&id)\n");
+        query_builder_code.push_str("             .push_bind(&now)\n");
+        query_builder_code.push_str("             .push_bind(&now)");
+        
+        for field_name in &bind_fields {
+            query_builder_code.push_str(&format!("\n             .push_bind(&{})", field_name));
+        }
+        
+        query_builder_code.push_str(";\n        });\n");
+        query_builder_code.push_str("        query_builder.push(\" RETURNING *\");\n");
 
         Ok(format!(
-            r#"    /// Insert a single {model_lower}
+            r#"    /// Insert a single {model_lower} using QueryBuilder
     async fn insert_{model_lower}_one(
         &self,
         ctx: &Context<'_>,
@@ -557,18 +551,12 @@ pub struct Mutation;
         // Process input fields
 {binding_code}
         
-        // Full insert query with all fields
-        let query = "
-            INSERT INTO {model_lower} ({fields_str}) 
-            VALUES ({placeholders_str}) 
-            RETURNING *
-        ";
+        // Build insert query using QueryBuilder
+{query_builder_code}
         
         // Execute insert
-        let row = sqlx::query_as::<_, {model_name}Row>(query)
-{bind_calls_str}
-            .fetch_one(pool)
-            .await?;
+        let query = query_builder.build_query_as::<{model_name}Row>();
+        let row = query.fetch_one(pool).await?;
         
         Ok(Some(row.into()))
     }}
@@ -577,9 +565,7 @@ pub struct Mutation;
             model_name = model_name,
             model_lower = model_lower,
             binding_code = binding_code,
-            fields_str = fields_str,
-            placeholders_str = placeholders_str,
-            bind_calls_str = bind_calls_str,
+            query_builder_code = query_builder_code,
         ))
     }
     
@@ -738,5 +724,19 @@ pub fn build_schema() -> async_graphql::Schema<Query, Mutation, EmptySubscriptio
 "#;
         
         Ok(registration.to_string())
+    }
+
+    /// Generate models using unified operation definitions (Schema-First approach)
+    pub fn generate_models_with_operations(&self, models: &[Model], _operation_definitions: &OperationDefinitions) -> Result<String> {
+        // Use the type generator to generate models
+        let type_generator = crate::hasura_v2_type_generator::HasuraV2TypeGenerator;
+        type_generator.generate_types(models)
+    }
+
+    /// Generate resolvers using unified operation definitions (Schema-First approach)  
+    pub fn generate_resolvers_with_operations(&self, models: &[Model], _operation_definitions: &OperationDefinitions) -> Result<String> {
+        // For now, use the existing resolvers generation
+        // In the future, this will use the unified operation definitions for query generation
+        self.generate_resolvers(models)
     }
 }

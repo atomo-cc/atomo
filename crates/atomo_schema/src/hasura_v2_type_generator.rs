@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crate::types::*;
+use crate::operation_definitions::OperationDefinitions;
 
 /// Hasura v2 Style Type Generator
 /// Generates GraphQL types following Hasura v2 conventions
@@ -277,7 +278,7 @@ impl From<{model_name}Row> for {model_name} {{
         // Add field-specific filters using snake_case names for database, camelCase for GraphQL
         for (field_name, field) in &model.fields {
             let snake_case_name = self.camel_to_snake_case(field_name);
-            let comparison_type = self.get_comparison_type(&field.field_type);
+            let comparison_type = self.get_field_comparison_type(&field.field_type);
             
             if snake_case_name != *field_name {
                 // If the field name changes from camelCase to snake_case, add GraphQL rename
@@ -530,79 +531,166 @@ pub enum OrderBy {{
 /// String comparison expression
 #[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct StringComparisonExp {{
+    #[graphql(name = "_eq")]
     pub _eq: Option<String>,
+    #[graphql(name = "_neq")]
     pub _neq: Option<String>,
+    #[graphql(name = "_gt")]
     pub _gt: Option<String>,
+    #[graphql(name = "_gte")]
     pub _gte: Option<String>,
+    #[graphql(name = "_lt")]
     pub _lt: Option<String>,
+    #[graphql(name = "_lte")]
     pub _lte: Option<String>,
+    #[graphql(name = "_like")]
     pub _like: Option<String>,
+    #[graphql(name = "_ilike")]
     pub _ilike: Option<String>,
+    #[graphql(name = "_similar")]
     pub _similar: Option<String>,
+    #[graphql(name = "_regex")]
     pub _regex: Option<String>,
+    #[graphql(name = "_iregex")]
     pub _iregex: Option<String>,
+    #[graphql(name = "_in")]
     pub _in: Option<Vec<String>>,
+    #[graphql(name = "_nin")]
     pub _nin: Option<Vec<String>>,
+    #[graphql(name = "_is_null")]
     pub _is_null: Option<bool>,
 }}
 
 /// Integer comparison expression
 #[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct IntComparisonExp {{
+    #[graphql(name = "_eq")]
     pub _eq: Option<i32>,
+    #[graphql(name = "_neq")]
     pub _neq: Option<i32>,
+    #[graphql(name = "_gt")]
     pub _gt: Option<i32>,
+    #[graphql(name = "_gte")]
     pub _gte: Option<i32>,
+    #[graphql(name = "_lt")]
     pub _lt: Option<i32>,
+    #[graphql(name = "_lte")]
     pub _lte: Option<i32>,
+    #[graphql(name = "_in")]
     pub _in: Option<Vec<i32>>,
+    #[graphql(name = "_nin")]
     pub _nin: Option<Vec<i32>>,
+    #[graphql(name = "_is_null")]
     pub _is_null: Option<bool>,
 }}
 
 /// Float comparison expression
 #[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct FloatComparisonExp {{
+    #[graphql(name = "_eq")]
     pub _eq: Option<f64>,
+    #[graphql(name = "_neq")]
     pub _neq: Option<f64>,
+    #[graphql(name = "_gt")]
     pub _gt: Option<f64>,
+    #[graphql(name = "_gte")]
     pub _gte: Option<f64>,
+    #[graphql(name = "_lt")]
     pub _lt: Option<f64>,
+    #[graphql(name = "_lte")]
     pub _lte: Option<f64>,
+    #[graphql(name = "_in")]
     pub _in: Option<Vec<f64>>,
+    #[graphql(name = "_nin")]
     pub _nin: Option<Vec<f64>>,
+    #[graphql(name = "_is_null")]
     pub _is_null: Option<bool>,
 }}
 
 /// Boolean comparison expression
 #[derive(InputObject, Debug, Clone)]
 pub struct BooleanComparisonExp {{
+    #[graphql(name = "_eq")]
     pub _eq: Option<bool>,
+    #[graphql(name = "_neq")]
     pub _neq: Option<bool>,
+    #[graphql(name = "_is_null")]
     pub _is_null: Option<bool>,
 }}
 
 /// DateTime comparison expression
 #[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct DateTimeComparisonExp {{
+    #[graphql(name = "_eq")]
     pub _eq: Option<DateTime<Utc>>,
+    #[graphql(name = "_neq")]
     pub _neq: Option<DateTime<Utc>>,
+    #[graphql(name = "_gt")]
     pub _gt: Option<DateTime<Utc>>,
+    #[graphql(name = "_gte")]
     pub _gte: Option<DateTime<Utc>>,
+    #[graphql(name = "_lt")]
     pub _lt: Option<DateTime<Utc>>,
+    #[graphql(name = "_lte")]
     pub _lte: Option<DateTime<Utc>>,
+    #[graphql(name = "_in")]
     pub _in: Option<Vec<DateTime<Utc>>>,
+    #[graphql(name = "_nin")]
     pub _nin: Option<Vec<DateTime<Utc>>>,
+    #[graphql(name = "_is_null")]
     pub _is_null: Option<bool>,
 }}
 
 /// ID comparison expression
 #[derive(InputObject, Debug, Clone)]
 pub struct IdComparisonExp {{
+    #[graphql(name = "_eq")]
     pub _eq: Option<ID>,
+    #[graphql(name = "_neq")]
     pub _neq: Option<ID>,
+    #[graphql(name = "_in")]
     pub _in: Option<Vec<ID>>,
+    #[graphql(name = "_nin")]
     pub _nin: Option<Vec<ID>>,
+    #[graphql(name = "_is_null")]
+    pub _is_null: Option<bool>,
+}}
+
+/// Numeric comparison expression (unified for all numeric types)
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
+pub struct NumericComparisonExp {{
+    #[graphql(name = "_eq")]
+    pub _eq: Option<f64>,
+    #[graphql(name = "_neq")]
+    pub _neq: Option<f64>,
+    #[graphql(name = "_gt")]
+    pub _gt: Option<f64>,
+    #[graphql(name = "_gte")]
+    pub _gte: Option<f64>,
+    #[graphql(name = "_lt")]
+    pub _lt: Option<f64>,
+    #[graphql(name = "_lte")]
+    pub _lte: Option<f64>,
+    #[graphql(name = "_in")]
+    pub _in: Option<Vec<f64>>,
+    #[graphql(name = "_nin")]
+    pub _nin: Option<Vec<f64>>,
+    #[graphql(name = "_is_null")]
+    pub _is_null: Option<bool>,
+}}
+
+/// Generic comparison expression (for flexible types)
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
+pub struct GenericComparisonExp {{
+    #[graphql(name = "_eq")]
+    pub _eq: Option<String>,
+    #[graphql(name = "_neq")]
+    pub _neq: Option<String>,
+    #[graphql(name = "_in")]
+    pub _in: Option<Vec<String>>,
+    #[graphql(name = "_nin")]
+    pub _nin: Option<Vec<String>>,
+    #[graphql(name = "_is_null")]
     pub _is_null: Option<bool>,
 }}
 
@@ -651,22 +739,6 @@ pub struct IdComparisonExp {{
             format!("Option<{}>", base_type)
         } else {
             base_type
-        }
-    }
-    
-    /// Get comparison type for field
-    fn get_comparison_type(&self, field_type: &FieldType) -> String {
-        match field_type {
-            FieldType::String => "StringComparisonExp".to_string(),
-            FieldType::Number => "FloatComparisonExp".to_string(),
-            FieldType::Boolean => "BooleanComparisonExp".to_string(),
-            FieldType::Date | FieldType::DateTime => "DateTimeComparisonExp".to_string(),
-            FieldType::EntityId => "IdComparisonExp".to_string(),
-            FieldType::Json => "StringComparisonExp".to_string(), // Treat JSON as string for comparison
-            FieldType::Blocks => "StringComparisonExp".to_string(),
-            FieldType::Array(_) => "StringComparisonExp".to_string(), // Arrays compared as strings
-            FieldType::Custom(_) => "StringComparisonExp".to_string(),
-            FieldType::Reference(_) => "StringComparisonExp".to_string(),
         }
     }
     
@@ -813,4 +885,393 @@ pub struct {model_name}AggregateFields {{
         ))
     }
     
+    /// Generate GraphQL schema definition (SDL) for IDE tools
+    pub fn generate_graphql_schema_definition(&self, models: &[Model]) -> Result<String> {
+        let mut schema = String::new();
+        
+        // Header comment
+        schema.push_str("# Auto-generated GraphQL Schema Definition\n");
+        schema.push_str("# This file is for IDE support and GraphQL tooling\n\n");
+        
+        // Generate scalar definitions
+        schema.push_str("scalar DateTime\n");
+        schema.push_str("scalar UUID\n");
+        schema.push_str("scalar JSON\n\n");
+        
+        // Generate comparison expression types (Hasura v2 style)
+        schema.push_str(&self.generate_comparison_types_definition()?);
+        
+        // Generate enum types
+        for model in models {
+            if model.fields.contains_key("_enum_type") {
+                schema.push_str(&self.generate_graphql_enum_definition(model)?);
+            }
+        }
+        
+        // Generate object types
+        for model in models {
+            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+                schema.push_str(&self.generate_graphql_object_definition(model)?);
+                schema.push_str(&self.generate_graphql_input_definition(model)?);
+                schema.push_str(&self.generate_graphql_bool_exp_definition(model)?);
+                schema.push_str(&self.generate_graphql_order_by_definition(model)?);
+            }
+        }
+        
+        // Generate root Query and Mutation types
+        schema.push_str(&self.generate_graphql_root_types(models)?);
+        
+        Ok(schema)
+    }
+
+    /// Generate GraphQL schema definition with unified operation definitions
+    /// This ensures 100% consistency between schema and runtime
+    pub fn generate_graphql_schema_with_operations(&self, models: &[Model], operation_definitions: &OperationDefinitions) -> Result<String> {
+        let mut schema = String::new();
+        
+        // Header comment
+        schema.push_str("# Auto-generated GraphQL Schema Definition (Schema-First)\n");
+        schema.push_str("# Generated with unified operation definitions for 100% consistency\n\n");
+        
+        // Generate scalar definitions
+        schema.push_str("scalar DateTime\n");
+        schema.push_str("scalar UUID\n");
+        schema.push_str("scalar JSON\n\n");
+        
+        // Generate comparison expression types using unified definitions
+        schema.push_str(&self.generate_comparison_types_with_operations(operation_definitions)?);
+        
+        // Generate enum types
+        for model in models {
+            if model.fields.contains_key("_enum_type") {
+                schema.push_str(&self.generate_graphql_enum_definition(model)?);
+            }
+        }
+        
+        // Generate object types
+        for model in models {
+            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+                schema.push_str(&self.generate_graphql_object_definition(model)?);
+                schema.push_str(&self.generate_graphql_input_definition(model)?);
+                schema.push_str(&self.generate_graphql_bool_exp_definition(model)?);
+                schema.push_str(&self.generate_graphql_order_by_definition(model)?);
+            }
+        }
+        
+        // Generate root Query and Mutation types
+        schema.push_str(&self.generate_graphql_root_types(models)?);
+        
+        Ok(schema)
+    }
+    
+    /// Generate GraphQL enum definition
+    fn generate_graphql_enum_definition(&self, model: &Model) -> Result<String> {
+        let enum_name = &model.name;
+        let enum_values = match enum_name.as_str() {
+            "DealStage" => vec!["LEAD", "QUALIFIED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"],
+            "CompanySize" => vec!["STARTUP", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE"],
+            _ => vec!["VALUE1", "VALUE2", "VALUE3"],
+        };
+        
+        let mut result = format!("enum {} {{\n", enum_name);
+        for value in enum_values {
+            result.push_str(&format!("  {}\n", value));
+        }
+        result.push_str("}\n\n");
+        
+        Ok(result)
+    }
+    
+    /// Generate GraphQL object type definition
+    fn generate_graphql_object_definition(&self, model: &Model) -> Result<String> {
+        let mut result = format!("type {} {{\n", model.name);
+        
+        for (field_name, field) in &model.fields {
+            let graphql_type = self.map_field_to_graphql_type(&field.field_type);
+            let non_null = if !field.optional { "!" } else { "" };
+            result.push_str(&format!("  {}: {}{}\n", field_name, graphql_type, non_null));
+        }
+        
+        result.push_str("}\n\n");
+        Ok(result)
+    }
+    
+    /// Generate GraphQL input type definition
+    fn generate_graphql_input_definition(&self, model: &Model) -> Result<String> {
+        let mut result = format!("input {}Input {{\n", model.name);
+        
+        for (field_name, field) in &model.fields {
+            if field_name == "id" { continue; } // Skip ID in input
+            
+            let graphql_type = self.map_field_to_graphql_type(&field.field_type);
+            result.push_str(&format!("  {}: {}\n", field_name, graphql_type));
+        }
+        
+        result.push_str("}\n\n");
+        Ok(result)
+    }
+    
+    /// Generate GraphQL BoolExp definition
+    fn generate_graphql_bool_exp_definition(&self, model: &Model) -> Result<String> {
+        let mut result = format!("input {}BoolExp {{\n", model.name);
+        
+        result.push_str(&format!("  _and: [{}BoolExp!]\n", model.name));
+        result.push_str(&format!("  _or: [{}BoolExp!]\n", model.name));
+        result.push_str(&format!("  _not: {}BoolExp\n", model.name));
+        
+        for (field_name, field) in &model.fields {
+            let comparison_type = self.get_field_comparison_type(&field.field_type);
+            result.push_str(&format!("  {}: {}\n", field_name, comparison_type));
+        }
+        
+        result.push_str("}\n\n");
+        Ok(result)
+    }
+    
+    /// Generate GraphQL OrderBy definition
+    fn generate_graphql_order_by_definition(&self, model: &Model) -> Result<String> {
+        let mut result = format!("input {}OrderBy {{\n", model.name);
+        
+        for (field_name, _) in &model.fields {
+            result.push_str(&format!("  {}: OrderByDirection\n", field_name));
+        }
+        
+        result.push_str("}\n\n");
+        
+        // Add OrderByDirection enum if not already added
+        if !result.contains("enum OrderByDirection") {
+            result.push_str("enum OrderByDirection {\n  ASC\n  DESC\n}\n\n");
+        }
+        
+        Ok(result)
+    }
+    
+    /// Generate root Query and Mutation types
+    fn generate_graphql_root_types(&self, models: &[Model]) -> Result<String> {
+        let mut result = String::new();
+        
+        // Query type
+        result.push_str("type Query {\n");
+        for model in models {
+            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+                let model_name_lower = model.name.to_lowercase();
+                let model_name_plural = format!("{}s", model_name_lower);
+                
+                result.push_str(&format!(
+                    "  {}(where: {}BoolExp, orderBy: [{}OrderBy!]): [{}!]!\n",
+                    model_name_plural, model.name, model.name, model.name
+                ));
+                
+                result.push_str(&format!(
+                    "  {}ById(id: UUID!): {}\n",
+                    model_name_lower, model.name
+                ));
+            }
+        }
+        result.push_str("}\n\n");
+        
+        // Mutation type
+        result.push_str("type Mutation {\n");
+        for model in models {
+            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+                result.push_str(&format!(
+                    "  insert{}(object: {}Input!): {}!\n",
+                    model.name, model.name, model.name
+                ));
+                
+                result.push_str(&format!(
+                    "  update{}(id: UUID!, object: {}Input!): {}!\n",
+                    model.name, model.name, model.name
+                ));
+                
+                result.push_str(&format!(
+                    "  delete{}(id: UUID!): Boolean!\n",
+                    model.name
+                ));
+            }
+        }
+        result.push_str("}\n");
+        
+        Ok(result)
+    }
+    
+    /// Map Rust type to GraphQL type
+    fn map_to_graphql_type(&self, rust_type: &str) -> String {
+        match rust_type {
+            "String" => "String".to_string(),
+            "i32" | "i64" => "Int".to_string(),
+            "f32" | "f64" => "Float".to_string(),
+            "bool" => "Boolean".to_string(),
+            "Uuid" => "UUID".to_string(),
+            "DateTime<Utc>" => "DateTime".to_string(),
+            "serde_json::Value" => "JSON".to_string(),
+            s if s.starts_with("Vec<") => {
+                let inner = s.trim_start_matches("Vec<").trim_end_matches(">");
+                format!("[{}]", self.map_to_graphql_type(inner))
+            },
+            s if s.starts_with("Option<") => {
+                let inner = s.trim_start_matches("Option<").trim_end_matches(">");
+                self.map_to_graphql_type(inner)
+            },
+            _ => rust_type.to_string(),
+        }
+    }
+    
+    /// Map FieldType to GraphQL type for schema generation
+    fn map_field_to_graphql_type(&self, field_type: &FieldType) -> String {
+        match field_type {
+            FieldType::String => "String".to_string(),
+            FieldType::Number => "Float".to_string(),
+            FieldType::Boolean => "Boolean".to_string(),
+            FieldType::Date | FieldType::DateTime => "DateTime".to_string(),
+            FieldType::EntityId => "UUID".to_string(),
+            FieldType::Json => "JSON".to_string(),
+            FieldType::Blocks => "JSON".to_string(),
+            FieldType::Array(inner) => {
+                format!("[{}]", self.map_field_to_graphql_type(inner))
+            },
+            FieldType::Custom(name) => name.clone(),
+            FieldType::Reference(name) => name.clone(),
+        }
+    }
+    
+    /// Get comparison type for GraphQL BoolExp generation
+    fn get_field_comparison_type(&self, field_type: &FieldType) -> String {
+        match field_type {
+            FieldType::String => "StringComparisonExp".to_string(),
+            FieldType::Number => "NumericComparisonExp".to_string(),
+            FieldType::Boolean => "BooleanComparisonExp".to_string(),
+            FieldType::Date | FieldType::DateTime => "DateTimeComparisonExp".to_string(),
+            FieldType::EntityId => "UUIDComparisonExp".to_string(),
+            _ => "GenericComparisonExp".to_string(),
+        }
+    }
+    
+    /// Get comparison type for field (legacy - for Rust generation)
+    fn get_comparison_type(&self, field_type: &str) -> String {
+        match field_type {
+            "String" => "StringComparisonExp".to_string(),
+            "i32" | "i64" | "f32" | "f64" => "NumericComparisonExp".to_string(),
+            "bool" => "BooleanComparisonExp".to_string(),
+            "Uuid" => "UUIDComparisonExp".to_string(),
+            "DateTime<Utc>" => "DateTimeComparisonExp".to_string(),
+            _ => "GenericComparisonExp".to_string(),
+        }
+    }
+
+    /// Generate comparison expression types definition for GraphQL schema
+    fn generate_comparison_types_definition(&self) -> Result<String> {
+        Ok(r#"# Comparison expression types (Hasura v2 compatible)
+
+input StringComparisonExp {
+  _eq: String
+  _neq: String
+  _gt: String
+  _gte: String
+  _lt: String
+  _lte: String
+  _like: String
+  _ilike: String
+  _similar: String
+  _regex: String
+  _iregex: String
+  _in: [String!]
+  _nin: [String!]
+  _is_null: Boolean
+}
+
+input NumericComparisonExp {
+  _eq: Float
+  _neq: Float
+  _gt: Float
+  _gte: Float
+  _lt: Float
+  _lte: Float
+  _in: [Float!]
+  _nin: [Float!]
+  _is_null: Boolean
+}
+
+input DateTimeComparisonExp {
+  _eq: DateTime
+  _neq: DateTime
+  _gt: DateTime
+  _gte: DateTime
+  _lt: DateTime
+  _lte: DateTime
+  _in: [DateTime!]
+  _nin: [DateTime!]
+  _is_null: Boolean
+}
+
+input BooleanComparisonExp {
+  _eq: Boolean
+  _neq: Boolean
+  _is_null: Boolean
+}
+
+input UUIDComparisonExp {
+  _eq: UUID
+  _neq: UUID
+  _in: [UUID!]
+  _nin: [UUID!]
+  _is_null: Boolean
+}
+
+input GenericComparisonExp {
+  _eq: String
+  _neq: String
+  _in: [String!]
+  _nin: [String!]
+  _is_null: Boolean
+}
+
+"#.to_string())
+    }
+
+    /// Generate comparison expression types using unified operation definitions
+    /// This ensures schema and runtime use identical operation definitions
+    fn generate_comparison_types_with_operations(&self, operation_definitions: &OperationDefinitions) -> Result<String> {
+        let mut result = String::new();
+        result.push_str("# Comparison expression types (unified operation definitions)\n\n");
+        
+        // Generate each comparison type using the unified definitions
+        let comparison_types = [
+            ("StringComparisonExp", "String", vec![FieldType::String]),
+            ("NumericComparisonExp", "Float", vec![FieldType::Number]),
+            ("DateTimeComparisonExp", "DateTime", vec![FieldType::Date, FieldType::DateTime]),
+            ("BooleanComparisonExp", "Boolean", vec![FieldType::Boolean]),
+            ("UUIDComparisonExp", "UUID", vec![FieldType::EntityId]),
+            ("GenericComparisonExp", "String", vec![]), // Applies to all
+        ];
+        
+        for (type_name, graphql_type, field_types) in comparison_types {
+            result.push_str(&format!("input {} {{\n", type_name));
+            
+            for op in &operation_definitions.comparison_ops {
+                // Check if this operation applies to this type
+                let applies = field_types.is_empty() || // GenericComparisonExp applies to all
+                    field_types.iter().any(|ft| op.applies_to.contains(ft));
+                
+                if applies {
+                    match op.name.as_str() {
+                        "_in" | "_nin" => {
+                            result.push_str(&format!("  {}: [{}!]\n", op.name, graphql_type));
+                        }
+                        "_is_null" => {
+                            result.push_str(&format!("  {}: Boolean\n", op.name));
+                        }
+                        _ => {
+                            result.push_str(&format!("  {}: {}\n", op.name, graphql_type));
+                        }
+                    }
+                }
+            }
+            
+            result.push_str("}\n\n");
+        }
+        
+        Ok(result)
+    }
+
 }
