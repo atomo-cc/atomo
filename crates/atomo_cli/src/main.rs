@@ -31,12 +31,6 @@ enum Commands {
         #[arg(short, long)]
         template: Option<String>,
     },
-    /// Generate Rust code from schema definitions
-    Generate {
-        /// Path to schema file
-        #[arg(short, long, default_value = "atomo/schema.ts")]
-        schema: String,
-    },
     /// Run database migrations
     Migrate {
         /// Database URL
@@ -55,7 +49,7 @@ enum Commands {
         #[arg(short, long, default_value = "generated")]
         output: String,
     },
-    /// Start development server
+    /// Start development server with auto code generation
     Dev {
         /// Port to run on
         #[arg(short, long, default_value = "3000")]
@@ -85,9 +79,6 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init { name, template } => {
             init_command(name, template).await?;
-        }
-        Commands::Generate { schema } => {
-            generate_command(schema).await?;
         }
         Commands::Migrate { database_url, generate, name } => {
             if generate {

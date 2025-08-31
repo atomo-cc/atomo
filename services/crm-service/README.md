@@ -2,6 +2,37 @@
 
 这是基于 Atomo 平台构建的客户关系管理(CRM)服务。它展示了如何使用 Atomo 作为底层平台来快速构建功能完整的业务应用。
 
+## 🚀 快速开始
+
+### ⚠️ 重要：启动位置要求
+
+**开发服务器必须在服务目录(`services/crm-service`)中启动，而不是项目根目录。**
+
+这是因为Atomo CLI需要：
+- 在当前目录找到`schema.ts`文件来加载数据模型
+- 读取`atomo.config.ts`来获取服务配置
+- 应用服务特定的设置和插件
+
+### 启动开发服务器
+
+```bash
+# ✅ 正确方式 - 修改相关代码后需要执行 以下即可，不要拆分，直接一行使用： 
+```
+cd C:\Users\Chris\Projects\atomo; cargo build --release; cd C:\Users\Chris\Projects\atomo\services\crm-service; C:\Users\Chris\Projects\atomo\target\release\atomo-cli.exe dev
+```
+
+# ❌ 错误方式 - 在项目根目录启动会失败
+cd ../../  # 项目根目录
+cargo run --bin atomo-cli -- dev  # 会报错：schema.ts not found
+```
+
+### 访问服务
+
+启动成功后可访问：
+- **GraphQL Playground**: http://localhost:3000/graphql
+- **管理后台**: http://localhost:3000/admin
+- **API文档**: http://localhost:3000/docs
+
 ## 🎯 架构概览
 
 ```

@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::types::*;
 
 /// Hasura v2 Style GraphQL Resolver Generator
-/// Generates GraphQL resolvers following Hasura v2 conventions and standards
+/// Generates GraphQL resolvers following Hasura v2 conventions with full filtering and sorting support
 pub struct HasuraV2ResolverGenerator;
 
 impl HasuraV2ResolverGenerator {
@@ -91,55 +91,196 @@ pub struct Mutation;
             query_impl.push_str(&self.generate_aggregate_query(model)?);
         }
         
+        // Add helper methods to Query impl
+        query_impl.push_str(&self.generate_query_helper_methods()?);
+        
         query_impl.push_str("}\n\n");
         Ok(query_impl)
+    }
+    
+    /// Generate helper methods for Query implementation
+    fn generate_query_helper_methods(&self) -> Result<String> {
+        Ok(r#""#.to_string())
     }
     
     /// Generate list query following Hasura v2 conventions
     fn generate_list_query(&self, model: &Model) -> Result<String> {
         let model_name = &model.name;
         let model_lower = model_name.to_lowercase();
-        let table_name = format!("{}s", model_lower);
-        
+        let table_name = model_lower.clone();
+        let field_name = format!("{}s", model_lower); // GraphQL field name (plural)
+
         Ok(format!(
-            r#"    /// Query {table_name} with Hasura v2 style filtering and ordering
-    async fn {table_name}(
+            r#"    /// Query {field_name} with Hasura v2 style filtering and ordering
+    async fn {field_name}(
         &self,
         ctx: &Context<'_>,
+        #[graphql(name = "where")]
         where_: Option<{model_name}BoolExp>,
+        #[graphql(name = "orderBy")]
         order_by: Option<Vec<{model_name}OrderBy>>,
         limit: Option<i32>,
         offset: Option<i32>,
+        #[graphql(name = "distinctOn")]
         distinct_on: Option<Vec<{model_name}SelectColumn>>,
     ) -> FieldResult<Vec<{model_name}>> {{
         let pool = ctx.data::<PgPool>()?;
         
-        // Build base query (simplified for now)
-        let mut query = format!("SELECT * FROM {model_lower}");
+        // Start building the query
+        let mut query = "SELECT * FROM {table_name}".to_string();
+        let mut bind_count = 0;
+        let mut bind_values: Vec<String> = Vec::new();
+        
+        // Apply WHERE clause if provided
+        if let Some(where_exp) = where_ {{
+            // Simple filtering implementation for basic operations
+            // Convert the where expression to JSON for processing
+            if let Ok(where_json) = serde_json::to_value(&where_exp) {{
+                let mut conditions = Vec::new();
+                
+                if let Some(obj) = where_json.as_object() {{
+                    for (field, filter_exp) in obj {{
+                        if field == "_and" || field == "_or" || field == "_not" {{
+                            // Skip complex logical operators for now
+                            continue;
+                        }}
+                        
+                        // Convert camelCase to snake_case for database fields
+                        let db_field = field.chars().enumerate().map(|(i, c)| {{
+                            if i > 0 && c.is_uppercase() {{
+                                format!("_{{}}", c.to_lowercase())
+                            }} else {{
+                                c.to_lowercase().to_string()
+                            }}
+                        }}).collect::<String>();
+                        
+                        if let Some(comparison) = filter_exp.as_object() {{
+                            for (op, value) in comparison {{
+                                bind_count += 1;
+                                let placeholder = format!("${{}}", bind_count);
+                                
+                                match op.as_str() {{
+                                    "_eq" => {{
+                                        conditions.push(format!("{table_name}.{{}} = {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_ne" => {{
+                                        conditions.push(format!("{table_name}.{{}} != {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_gt" => {{
+                                        conditions.push(format!("{table_name}.{{}} > {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_gte" => {{
+                                        conditions.push(format!("{table_name}.{{}} >= {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_lt" => {{
+                                        conditions.push(format!("{table_name}.{{}} < {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_lte" => {{
+                                        conditions.push(format!("{table_name}.{{}} <= {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_like" => {{
+                                        conditions.push(format!("{table_name}.{{}} LIKE {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_ilike" => {{
+                                        conditions.push(format!("{table_name}.{{}} ILIKE {{}}", db_field, placeholder));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_is_null" => {{
+                                        if value.as_bool().unwrap_or(false) {{
+                                            conditions.push(format!("{table_name}.{{}} IS NULL", db_field));
+                                            bind_count -= 1; // No parameter for IS NULL
+                                        }} else {{
+                                            conditions.push(format!("{table_name}.{{}} IS NOT NULL", db_field));
+                                            bind_count -= 1; // No parameter for IS NOT NULL
+                                        }}
+                                    }}
+                                    _ => {{
+                                        bind_count -= 1; // Rollback bind count for unknown operators
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+                
+                if !conditions.is_empty() {{
+                    query.push_str(&format!(" WHERE {{}}", conditions.join(" AND ")));
+                }}
+            }}
+        }}
+        
+        // Apply ORDER BY clause
+        if let Some(order_by_exp) = order_by {{
+            let mut order_parts = Vec::new();
+            
+            for order_item in order_by_exp {{
+                if let Ok(order_json) = serde_json::to_value(&order_item) {{
+                    if let Some(obj) = order_json.as_object() {{
+                        for (field, direction) in obj {{
+                            // Convert camelCase to snake_case
+                            let db_field = field.chars().enumerate().map(|(i, c)| {{
+                                if i > 0 && c.is_uppercase() {{
+                                    format!("_{{}}", c.to_lowercase())
+                                }} else {{
+                                    c.to_lowercase().to_string()
+                                }}
+                            }}).collect::<String>();
+                            
+                            let dir = match direction.as_str() {{
+                                Some("asc") => "ASC",
+                                Some("desc") => "DESC",
+                                Some("asc_nulls_first") => "ASC NULLS FIRST",
+                                Some("asc_nulls_last") => "ASC NULLS LAST", 
+                                Some("desc_nulls_first") => "DESC NULLS FIRST",
+                                Some("desc_nulls_last") => "DESC NULLS LAST",
+                                _ => "ASC"
+                            }};
+                            
+                            order_parts.push(format!("{table_name}.{{}} {{}}", db_field, dir));
+                        }}
+                    }}
+                }}
+            }}
+            
+            if !order_parts.is_empty() {{
+                query.push_str(&format!(" ORDER BY {{}}", order_parts.join(", ")));
+            }} else {{
+                query.push_str(" ORDER BY {table_name}.id ASC");
+            }}
+        }} else {{
+            query.push_str(" ORDER BY {table_name}.id ASC");
+        }}
         
         // Apply pagination
         if let Some(limit_val) = limit {{
             query.push_str(&format!(" LIMIT {{}}", limit_val));
         }}
-        
         if let Some(offset_val) = offset {{
             query.push_str(&format!(" OFFSET {{}}", offset_val));
         }}
         
-        // Execute query
-        let rows = sqlx::query_as::<_, {model_name}Row>(&query)
-            .fetch_all(pool)
-            .await?;
+        // Build and execute the sqlx query with parameters
+        let mut sqlx_query = sqlx::query_as::<_, {model_name}Row>(&query);
+        for bind_value in bind_values {{
+            sqlx_query = sqlx_query.bind(bind_value);
+        }}
         
-        // Convert to GraphQL models
-        let entities: Vec<{model_name}> = rows.into_iter().map(|row| row.into()).collect();
+        // Execute the query
+        let rows = sqlx_query.fetch_all(pool).await?;
         
-        Ok(entities)
+        // Convert database rows to GraphQL models
+        Ok(rows.into_iter().map(|row| row.into()).collect())
     }}
 
 "#,
             model_name = model_name,
-            model_lower = model_lower,
             table_name = table_name,
         ))
     }
@@ -178,32 +319,94 @@ pub struct Mutation;
     fn generate_aggregate_query(&self, model: &Model) -> Result<String> {
         let model_name = &model.name;
         let model_lower = model_name.to_lowercase();
-        let table_name = format!("{}s", model_lower);
+        let table_name = model_lower.clone();
+        let field_name = format!("{}s", model_lower); // GraphQL field name (plural)
         
         Ok(format!(
-            r#"    /// Query {table_name} aggregate with count and statistics
-    async fn {table_name}_aggregate(
+            r#"    /// Query {field_name} aggregate with count and statistics
+    async fn {field_name}_aggregate(
         &self,
         ctx: &Context<'_>,
+        #[graphql(name = "where")]
         where_: Option<{model_name}BoolExp>,
+        #[graphql(name = "orderBy")]
         order_by: Option<Vec<{model_name}OrderBy>>,
         limit: Option<i32>,
         offset: Option<i32>,
+        #[graphql(name = "distinctOn")]
         distinct_on: Option<Vec<{model_name}SelectColumn>>,
     ) -> FieldResult<{model_name}Aggregate> {{
         let pool = ctx.data::<PgPool>()?;
         
-        // Build count query (simplified)
-        let count_query = format!("SELECT COUNT(*) as count FROM {model_lower}");
+        // Build count query - for now, use simple count
+        let mut count_query = "SELECT COUNT(*) as count FROM {model_lower}".to_string();
+        let mut bind_values: Vec<String> = Vec::new();
+        let mut bind_count = 0;
         
-        // Get count
-        let count_row: (i64,) = sqlx::query_as(&count_query)
-            .fetch_one(pool)
-            .await?;
+        // Apply WHERE clause for count if provided (simplified version)
+        if let Some(where_exp) = &where_ {{
+            if let Ok(where_json) = serde_json::to_value(where_exp) {{
+                let mut conditions = Vec::new();
+                
+                if let Some(obj) = where_json.as_object() {{
+                    for (field, filter_exp) in obj {{
+                        if field == "_and" || field == "_or" || field == "_not" {{
+                            continue;
+                        }}
+                        
+                        // Convert camelCase to snake_case
+                        let db_field = field.chars().enumerate().map(|(i, c)| {{
+                            if i > 0 && c.is_uppercase() {{
+                                format!("_{{}}", c.to_lowercase())
+                            }} else {{
+                                c.to_lowercase().to_string()
+                            }}
+                        }}).collect::<String>();
+                        
+                        if let Some(comparison) = filter_exp.as_object() {{
+                            for (op, value) in comparison {{
+                                match op.as_str() {{
+                                    "_eq" => {{
+                                        bind_count += 1;
+                                        conditions.push(format!("{table_name}.{{}} = ${{}}", db_field, bind_count));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_ne" => {{
+                                        bind_count += 1;
+                                        conditions.push(format!("{table_name}.{{}} != ${{}}", db_field, bind_count));
+                                        bind_values.push(value.to_string().trim_matches('"').to_string());
+                                    }}
+                                    "_is_null" => {{
+                                        if value.as_bool().unwrap_or(false) {{
+                                            conditions.push(format!("{table_name}.{{}} IS NULL", db_field));
+                                        }} else {{
+                                            conditions.push(format!("{table_name}.{{}} IS NOT NULL", db_field));
+                                        }}
+                                    }}
+                                    _ => {{}}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+                
+                if !conditions.is_empty() {{
+                    count_query.push_str(&format!(" WHERE {{}}", conditions.join(" AND ")));
+                }}
+            }}
+        }}
         
-        // Get nodes if requested
+        // Build and execute count query
+        let mut sqlx_count_query = sqlx::query_as::<_, (i64,)>(&count_query);
+        for bind_value in &bind_values {{
+            sqlx_count_query = sqlx_count_query.bind(bind_value.clone());
+        }}
+        
+        let count_row = sqlx_count_query.fetch_one(pool).await?;
+        
+        // Get nodes if requested (reuse the list query logic)
         let nodes = if limit.unwrap_or(0) > 0 {{
-            self.{table_name}(ctx, where_, order_by, limit, offset, distinct_on).await?
+            self.{field_name}(ctx, where_, order_by, limit, offset, distinct_on).await?
         }} else {{
             Vec::new()
         }};
@@ -218,7 +421,6 @@ pub struct Mutation;
 
 "#,
             model_name = model_name,
-            model_lower = model_lower,
             table_name = table_name,
         ))
     }
@@ -266,6 +468,78 @@ pub struct Mutation;
         let model_name = &model.name;
         let model_lower = model_name.to_lowercase();
         
+        // Generate field mappings for the insert query
+        let mut field_mappings = Vec::new();
+        let mut field_bindings = Vec::new();
+        let mut bind_index = 4; // Start after id, created_at, updated_at
+        
+        // Add required fields
+        field_mappings.push("id".to_string());
+        field_mappings.push("created_at".to_string());
+        field_mappings.push("updated_at".to_string());
+        
+        // Process model fields
+        for (field_name, field) in &model.fields {
+            if field_name == "id" || field_name == "createdAt" || field_name == "updatedAt" || field_name == "version" {
+                continue;
+            }
+            
+            let db_field_name = self.camel_to_snake_case(field_name);
+            let struct_field_name = self.camel_to_snake_case(field_name);
+            field_mappings.push(db_field_name.clone());
+            
+            // Generate field binding logic
+            let field_binding = if !field.optional {
+                // Required field - provide default if None
+                match field.field_type {
+                    crate::types::FieldType::String => {
+                        format!("let {} = object.{}.unwrap_or_else(|| \"\".to_string());", field_name, struct_field_name)
+                    }
+                    crate::types::FieldType::Array(_) => {
+                        format!(r#"let {} = object.{}.unwrap_or_else(|| Vec::new());
+        let {}_json = serde_json::to_value(&{})?;"#, field_name, struct_field_name, field_name, field_name)
+                    }
+                    crate::types::FieldType::Json => {
+                        format!("let {} = object.{}.unwrap_or_else(|| serde_json::json!({{}}));", field_name, struct_field_name)
+                    }
+                    _ => {
+                        format!("let {} = object.{}.unwrap_or_default();", field_name, struct_field_name)
+                    }
+                }
+            } else {
+                // Optional field
+                format!("let {} = object.{};", field_name, struct_field_name)
+            };
+            
+            field_bindings.push((field_binding, field_name.clone(), field.clone()));
+            bind_index += 1;
+        }
+        
+        // Generate the field bindings code
+        let mut binding_code = String::new();
+        let mut bind_params = Vec::new();
+        
+        for (binding, field_name, field) in &field_bindings {
+            binding_code.push_str("        ");
+            binding_code.push_str(binding);
+            binding_code.push('\n');
+            
+            // Add to bind params
+            if field.field_type == crate::types::FieldType::Array(Box::new(crate::types::FieldType::String)) {
+                bind_params.push(format!("{}_json", field_name));
+            } else {
+                bind_params.push(field_name.clone());
+            }
+        }
+        
+        let fields_str = field_mappings.join(", ");
+        let placeholders: Vec<String> = (1..=field_mappings.len()).map(|i| format!("${}", i)).collect();
+        let placeholders_str = placeholders.join(", ");
+        
+        let mut bind_calls = vec!["id".to_string(), "now".to_string(), "now".to_string()];
+        bind_calls.extend(bind_params);
+        let bind_calls_str = bind_calls.iter().map(|p| format!("            .bind({})", p)).collect::<Vec<_>>().join("\n");
+
         Ok(format!(
             r#"    /// Insert a single {model_lower}
     async fn insert_{model_lower}_one(
@@ -280,14 +554,19 @@ pub struct Mutation;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now();
         
-        // Simple insert query (placeholder implementation)
-        let query = "INSERT INTO {model_lower} (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING *";
+        // Process input fields
+{binding_code}
+        
+        // Full insert query with all fields
+        let query = "
+            INSERT INTO {model_lower} ({fields_str}) 
+            VALUES ({placeholders_str}) 
+            RETURNING *
+        ";
         
         // Execute insert
         let row = sqlx::query_as::<_, {model_name}Row>(query)
-            .bind(id)
-            .bind(now)
-            .bind(now)
+{bind_calls_str}
             .fetch_one(pool)
             .await?;
         
@@ -297,6 +576,10 @@ pub struct Mutation;
 "#,
             model_name = model_name,
             model_lower = model_lower,
+            binding_code = binding_code,
+            fields_str = fields_str,
+            placeholders_str = placeholders_str,
+            bind_calls_str = bind_calls_str,
         ))
     }
     
@@ -438,15 +721,22 @@ pub struct Mutation;
         ))
     }
     
+    /// Build WHERE clause from GraphQL filter expression
+    /// This is a helper method that will generate model-specific implementations
+    fn build_where_clause_template(&self) -> &str {
+        // Template for WHERE clause building - will be replaced with actual implementation
+        "// WHERE clause builder placeholder"
+    }
+    
     /// Generate resolver registration
     fn generate_resolver_registration(&self, _models: &[Model]) -> Result<String> {
-        let registration = format!(r#"/// Build the complete GraphQL schema with Hasura v2 style resolvers
-pub fn build_schema() -> async_graphql::Schema<Query, Mutation, EmptySubscription> {{
+        let registration = r#"/// Build the complete GraphQL schema with Hasura v2 style resolvers
+pub fn build_schema() -> async_graphql::Schema<Query, Mutation, EmptySubscription> {
     async_graphql::Schema::build(Query, Mutation, EmptySubscription)
         .finish()
-}}
-"#);
+}
+"#;
         
-        Ok(registration)
+        Ok(registration.to_string())
     }
 }

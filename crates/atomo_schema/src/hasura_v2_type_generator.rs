@@ -269,22 +269,29 @@ impl From<{model_name}Row> for {model_name} {{
         let model_name = &model.name;
         let mut fields = Vec::new();
         
-        // Add logical operators
-        fields.push(format!("    pub _and: Option<Vec<{model_name}BoolExp>>"));
-        fields.push(format!("    pub _or: Option<Vec<{model_name}BoolExp>>"));
-        fields.push(format!("    pub _not: Option<Box<{model_name}BoolExp>>"));
+        // Add logical operators with GraphQL field renames
+        fields.push(format!("    #[graphql(name = \"_and\")]\n    pub and: Option<Vec<{model_name}BoolExp>>"));
+        fields.push(format!("    #[graphql(name = \"_or\")]\n    pub or: Option<Vec<{model_name}BoolExp>>"));
+        fields.push(format!("    #[graphql(name = \"_not\")]\n    pub not: Option<Box<{model_name}BoolExp>>"));
         
-        // Add field-specific filters
+        // Add field-specific filters using snake_case names for database, camelCase for GraphQL
         for (field_name, field) in &model.fields {
+            let snake_case_name = self.camel_to_snake_case(field_name);
             let comparison_type = self.get_comparison_type(&field.field_type);
-            fields.push(format!("    pub {}: Option<{}>", field_name, comparison_type));
+            
+            if snake_case_name != *field_name {
+                // If the field name changes from camelCase to snake_case, add GraphQL rename
+                fields.push(format!("    #[graphql(name = \"{}\")]\n    pub {}: Option<{}>", field_name, snake_case_name, comparison_type));
+            } else {
+                fields.push(format!("    pub {}: Option<{}>", snake_case_name, comparison_type));
+            }
         }
         
         let fields_str = fields.join(",\n");
         
         Ok(format!(
             r#"/// Boolean expression for filtering {model_name}
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct {model_name}BoolExp {{
 {fields_str},
 }}
@@ -300,15 +307,23 @@ pub struct {model_name}BoolExp {{
         let model_name = &model.name;
         let mut fields = Vec::new();
         
+        // Use GraphQL field renames to maintain camelCase for GraphQL but snake_case for Rust
         for (field_name, _) in &model.fields {
-            fields.push(format!("    pub {}: Option<OrderBy>", field_name));
+            let snake_case_name = self.camel_to_snake_case(field_name);
+            
+            if snake_case_name != *field_name {
+                // If the field name changes from camelCase to snake_case, add GraphQL rename
+                fields.push(format!("    #[graphql(name = \"{}\")]\n    pub {}: Option<OrderBy>", field_name, snake_case_name));
+            } else {
+                fields.push(format!("    pub {}: Option<OrderBy>", snake_case_name));
+            }
         }
         
         let fields_str = fields.join(",\n");
         
         Ok(format!(
             r#"/// Order by input for {model_name}
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct {model_name}OrderBy {{
 {fields_str},
 }}
@@ -324,8 +339,10 @@ pub struct {model_name}OrderBy {{
         let model_name = &model.name;
         let mut variants = Vec::new();
         
+        // Use snake_case field names for Hasura v2 compatibility
         for (field_name, _) in &model.fields {
-            variants.push(field_name.clone());
+            let snake_case_name = self.camel_to_snake_case(field_name);
+            variants.push(snake_case_name);
         }
         
         let variants_str = variants.join(",\n    ");
@@ -354,8 +371,10 @@ pub enum {model_name}SelectColumn {{
                 continue;
             }
             
+            // Use snake_case field names for Hasura v2 compatibility
+            let snake_case_name = self.camel_to_snake_case(field_name);
             let field_type = self.convert_field_type(&field.field_type, false); // Get base type without Option
-            fields.push(format!("    pub {}: Option<{}>", field_name, field_type));
+            fields.push(format!("    pub {}: Option<{}>", snake_case_name, field_type));
         }
         
         let fields_str = fields.join(",\n");
@@ -384,8 +403,10 @@ pub struct {model_name}InsertInput {{
                 continue;
             }
             
+            // Use snake_case field names for Hasura v2 compatibility
+            let snake_case_name = self.camel_to_snake_case(field_name);
             let field_type = self.convert_field_type(&field.field_type, false); // Get base type without Option
-            fields.push(format!("    pub {}: Option<{}>", field_name, field_type));
+            fields.push(format!("    pub {}: Option<{}>", snake_case_name, field_type));
         }
         
         let fields_str = fields.join(",\n");
@@ -496,7 +517,7 @@ pub struct {model_name}AggregateFields {{
     /// Generate comparison operators
     fn generate_comparison_operators(&self) -> String {
         format!(r#"/// Order by enum
-#[derive(Enum, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Enum, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrderBy {{
     Asc,
     AscNullsFirst,
@@ -507,7 +528,7 @@ pub enum OrderBy {{
 }}
 
 /// String comparison expression
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct StringComparisonExp {{
     pub _eq: Option<String>,
     pub _neq: Option<String>,
@@ -526,7 +547,7 @@ pub struct StringComparisonExp {{
 }}
 
 /// Integer comparison expression
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct IntComparisonExp {{
     pub _eq: Option<i32>,
     pub _neq: Option<i32>,
@@ -540,7 +561,7 @@ pub struct IntComparisonExp {{
 }}
 
 /// Float comparison expression
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct FloatComparisonExp {{
     pub _eq: Option<f64>,
     pub _neq: Option<f64>,
@@ -562,7 +583,7 @@ pub struct BooleanComparisonExp {{
 }}
 
 /// DateTime comparison expression
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct DateTimeComparisonExp {{
     pub _eq: Option<DateTime<Utc>>,
     pub _neq: Option<DateTime<Utc>>,
