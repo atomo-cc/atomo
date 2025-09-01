@@ -3,6 +3,7 @@ use colored::*;
 use console::style;
 use std::fs;
 use std::path::Path;
+use atomo_schema::{TypeScriptParser, HookAccessGenerator};
 
 pub async fn codegen_command(output_dir: String) -> Result<()> {
     println!("📝 {}", style("Generating client code...").cyan());
@@ -13,6 +14,18 @@ pub async fn codegen_command(output_dir: String) -> Result<()> {
     if !Path::new(&output_dir).exists() {
         fs::create_dir_all(&output_dir)
             .with_context(|| format!("Failed to create output directory: {}", output_dir))?;
+    }
+    
+    // Look for schema.ts file
+    let schema_path = "schema.ts";
+    let enhanced_schema_path = "examples/enhanced_commerce_schema.ts";
+    
+    if Path::new(enhanced_schema_path).exists() {
+        println!("   🔧 Generating Hook and Access Control code...");
+        generate_hook_access_code(enhanced_schema_path, &output_dir)?;
+    } else if Path::new(schema_path).exists() {
+        println!("   🔧 Generating Hook and Access Control code...");
+        generate_hook_access_code(schema_path, &output_dir)?;
     }
     
     println!("   📦 Generating TypeScript types...");
@@ -490,4 +503,176 @@ fn _generate_package_json(output_dir: &str) -> Result<()> {
     println!("      ✅ Generated: {}", package_file.bright_cyan());
     
     Ok(())
+}
+
+fn generate_hook_access_code(schema_path: &str, output_dir: &str) -> Result<()> {
+    // Read the schema file
+    let schema_content = fs::read_to_string(schema_path)
+        .with_context(|| format!("Failed to read schema file: {}", schema_path))?;
+    
+    // Parse the schema
+    let parser = TypeScriptParser::new();
+    let models = parser.parse(&schema_content)
+        .with_context(|| "Failed to parse TypeScript schema")?;
+    
+    // Generate hook and access control code
+    let generator = HookAccessGenerator::new();
+    let rust_code = generator.generate_module(&models)
+        .with_context(|| "Failed to generate hook and access control code")?;
+    
+    // Write the generated Rust code
+    let rust_output_path = format!("{}/hooks_access.rs", output_dir);
+    fs::write(&rust_output_path, rust_code)
+        .with_context(|| format!("Failed to write hooks and access control file: {}", rust_output_path))?;
+    
+    println!("      ✅ Generated Hook & Access Control: {}", rust_output_path.bright_cyan());
+    
+    // Generate TypeScript type definitions for the DSL
+    let ts_dsl_types = generate_typescript_dsl_types(&models)?;
+    let ts_dsl_path = format!("{}/dsl-types.ts", output_dir);
+    fs::write(&ts_dsl_path, ts_dsl_types)
+        .with_context(|| format!("Failed to write TypeScript DSL types: {}", ts_dsl_path))?;
+    
+    println!("      ✅ Generated TypeScript DSL Types: {}", ts_dsl_path.bright_cyan());
+    
+    Ok(())
+}
+
+fn generate_typescript_dsl_types(models: &[atomo_schema::Model]) -> Result<String> {
+    let mut code = String::new();
+    
+    code.push_str(r#"// Auto-generated TypeScript DSL Types for Atomo Hooks and Access Control
+// This provides type-safe interfaces for the DSL shown in the user request
+
+export namespace access {
+  export interface Context<TUser = any> {
+    user?: TUser;
+    operation: string;
+    resourceId?: string;
+  }
+  
+  export interface QueryBuilder {
+    equals(value: any): QueryCondition;
+    notEquals(value: any): QueryCondition;
+    in(values: any[]): QueryCondition;
+    like(pattern: string): QueryCondition;
+    greaterThan(value: any): QueryCondition;
+    lessThan(value: any): QueryCondition;
+  }
+  
+  export interface QueryCondition {
+    field: string;
+    operator: string;
+    value: any;
+  }
+  
+  export function where(field: string): QueryBuilder;
+  export function or(...conditions: QueryCondition[]): QueryCondition;
+  export function and(...conditions: QueryCondition[]): QueryCondition;
+}
+
+export namespace hooks {
+  export interface OperationContext<TModel = any, TUser = any> {
+    operation: 'create' | 'update' | 'delete';
+    data: Partial<TModel>;
+    originalDoc?: TModel;
+    user?: TUser;
+    result?: TModel;
+  }
+  
+  export interface ChangeContext<TValue = any, TModel = any> {
+    field: string;
+    value: TValue;
+    originalValue?: TValue;
+    originalDoc: TModel;
+    user?: any;
+    addValidationError(message: string, field?: string): void;
+  }
+  
+  export function create<TModel, TUser>(
+    fn: (context: OperationContext<TModel, TUser>) => Promise<void> | void
+  ): Hook;
+  
+  export function update<TModel, TUser>(
+    fn: (context: OperationContext<TModel, TUser>) => Promise<void> | void
+  ): Hook;
+  
+  export function delete<TModel, TUser>(
+    fn: (context: OperationContext<TModel, TUser>) => Promise<void> | void
+  ): Hook;
+  
+  export function change<TValue, TModel>(
+    field: keyof TModel,
+    fn: (context: ChangeContext<TValue, TModel>) => Promise<void> | void
+  ): FieldHook;
+  
+  export function read<TModel>(
+    fn: (doc: TModel) => Promise<Partial<TModel>> | Partial<TModel>
+  ): ReadHook;
+  
+  interface Hook {
+    type: 'operation';
+    operation?: 'create' | 'update' | 'delete';
+  }
+  
+  interface FieldHook {
+    type: 'field';
+    field: string;
+  }
+  
+  interface ReadHook {
+    type: 'read';
+  }
+}
+
+export interface DefineModelConfig {
+  access?: {
+    create?: (context: access.Context) => boolean | access.QueryCondition;
+    read?: (context: access.Context) => boolean | access.QueryCondition;
+    update?: (context: access.Context) => boolean | access.QueryCondition;
+    delete?: (context: access.Context) => boolean | access.QueryCondition;
+  };
+  
+  hooks?: {
+    beforeOperation?: any[];
+    afterOperation?: any[];
+    beforeChange?: any[];
+    afterRead?: any[];
+  };
+}
+
+export function defineModel(config: DefineModelConfig): any;
+
+"#);
+    
+    // Add type definitions for each model
+    for model in models {
+        if !model.name.ends_with("Block") && !model.fields.contains_key("_enum_type") {
+            code.push_str(&format!(
+                "\n// Types for {} model\nexport interface {} {{\n",
+                model.name, model.name
+            ));
+            
+            for (field_name, field) in &model.fields {
+                let ts_type = match &field.field_type {
+                    atomo_schema::FieldType::String => "string",
+                    atomo_schema::FieldType::Number => "number",
+                    atomo_schema::FieldType::Boolean => "boolean",
+                    atomo_schema::FieldType::Date | atomo_schema::FieldType::DateTime => "Date",
+                    atomo_schema::FieldType::EntityId => "string",
+                    atomo_schema::FieldType::Json => "any",
+                    atomo_schema::FieldType::Array(_) => "any[]",
+                    atomo_schema::FieldType::Custom(type_name) => type_name,
+                    _ => "any",
+                };
+                
+                let optional = if field.optional { "?" } else { "" };
+                code.push_str(&format!("  {}{}: {};\n", field_name, optional, ts_type));
+            }
+            
+            code.push_str("}\n");
+        }
+    }
+    
+    Ok(code)
 }

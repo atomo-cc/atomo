@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crate::types::*;
+use crate::dsl_parser::DslParser;
 use std::collections::HashMap;
 use regex::Regex;
 
@@ -12,11 +13,14 @@ use regex::Regex;
 /// - Comprehensive field attribute detection
 /// - Relationship inference
 /// - Generic type handling
+/// - Hook and Access Control DSL parsing
 pub struct TypeScriptParser {
     /// Cache for parsed enum types
     pub enums: HashMap<String, Vec<String>>,
     /// Cache for parsed type aliases
     pub type_aliases: HashMap<String, String>,
+    /// DSL parser for hooks and access control
+    pub dsl_parser: DslParser,
 }
 
 impl TypeScriptParser {
@@ -24,6 +28,7 @@ impl TypeScriptParser {
         Self {
             enums: HashMap::new(),
             type_aliases: HashMap::new(),
+            dsl_parser: DslParser::new(),
         }
     }
     
@@ -35,7 +40,22 @@ impl TypeScriptParser {
         parser.collect_type_definitions(content)?;
         
         // Second pass: parse interfaces with full type context
-        parser.parse_interfaces(content)
+        let mut models = parser.parse_interfaces(content)?;
+        
+        // Third pass: parse DSL models (defineModel calls) and merge with interfaces
+        let dsl_models = parser.dsl_parser.parse_define_model(content)?;
+        for dsl_model in dsl_models {
+            // Find the corresponding interface model and merge
+            if let Some(interface_model) = models.iter_mut().find(|m| m.name == dsl_model.name) {
+                interface_model.access = dsl_model.access;
+                interface_model.hooks = dsl_model.hooks;
+            } else {
+                // If no corresponding interface, add the DSL model as-is
+                models.push(dsl_model);
+            }
+        }
+        
+        Ok(models)
     }
     
     /// Collect enum and type alias definitions
@@ -63,7 +83,7 @@ impl TypeScriptParser {
     }
     
     /// Parse interface definitions with full type context
-    fn parse_interfaces(&self, content: &str) -> Result<Vec<Model>> {
+    fn parse_interfaces(&mut self, content: &str) -> Result<Vec<Model>> {
         let mut models = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
@@ -81,7 +101,13 @@ impl TypeScriptParser {
                     }
                     
                     // Parse the complete interface
-                    let (model, lines_consumed) = parse_interface(&lines, i, interface_name)?;
+                    let (mut model, lines_consumed) = parse_interface(&lines, i, interface_name.clone())?;
+                    
+                    // Parse hooks and access control for this model
+                    let (access, hooks) = self.dsl_parser.parse_model_definition(content, &interface_name)?;
+                    model.access = access;
+                    model.hooks = hooks;
+                    
                     models.push(model);
                     i += lines_consumed;
                 } else {
@@ -117,6 +143,8 @@ impl TypeScriptParser {
             models.push(Model {
                 name: enum_name.clone(),
                 fields,
+                access: None,
+                hooks: None,
             });
         }
         
@@ -173,7 +201,12 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         i += 1;
     }
     
-    let model = Model { name, fields };
+    let model = Model { 
+        name, 
+        fields,
+        access: None, // Will be populated later by DSL parser
+        hooks: None,  // Will be populated later by DSL parser
+    };
     let lines_consumed = i - start_index + 1;
     
     Ok((model, lines_consumed))
