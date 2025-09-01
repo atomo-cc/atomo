@@ -29,6 +29,10 @@ async-trait = "0.1"
 validator = "0.16"
 email_address = "0.2"
 
+# Development dependencies
+dotenv = "0.15"
+notify = "6.1"
+
 # Database dependencies
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
 sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-uuid", "with-chrono", "with-json"] }
@@ -44,3 +48,20 @@ async-graphql-axum = "7.0"
 
 # CLI dependencies
 clap = { version = "4.0", features = ["derive"] }
+
+# Development optimization profiles
+[profile.dev]
+incremental = true
+debug = 1
+opt-level = 0
+overflow-checks = false
+lto = false
+codegen-units = 256
+
+# Fast development profile for workspace development
+[profile.fast-workspace-dev]
+inherits = "dev"
+debug = false
+codegen-units = 512
+incremental = true
+opt-level = 0

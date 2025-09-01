@@ -55,6 +55,15 @@ enum Commands {
         #[arg(short, long, default_value = "3000")]
         port: u16,
     },
+    /// Start development server with workspace context (faster for core development)
+    WorkspaceDev {
+        /// Port to run on
+        #[arg(short, long, default_value = "3000")]
+        port: u16,
+        /// Optional path to service directory
+        #[arg(long)]
+        service_path: Option<std::path::PathBuf>,
+    },
     /// Build project for production
     Build,
     /// Deploy project to Atomo Cloud
@@ -92,6 +101,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Dev { port } => {
             dev_command(port).await?;
+        }
+        Commands::WorkspaceDev { port, service_path } => {
+            workspace_dev_command(port, service_path).await?;
         }
         Commands::Build => {
             build_command().await?;
