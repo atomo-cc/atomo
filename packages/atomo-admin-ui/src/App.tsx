@@ -1,25 +1,28 @@
-import React from 'react'
-import { Routes, Route } from 'react-router-dom'
-import Layout from './components/Layout'
-import Dashboard from './pages/Dashboard'
-import EntityList from './pages/EntityList'
-import EntityDetail from './pages/EntityDetail'
+import { DynamicRenderer, useRouteParser } from './components/DynamicRenderer'
+import { Navigation } from './components/Navigation'
+import './index.css'
 
 /**
- * Atomo Admin UI - Universal admin interface
+ * Atomo Admin UI - 下一代动态管理界面
  * 
- * This component dynamically renders admin interfaces based on
- * the schema metadata from Atomo Core.
+ * 基于 Schema 驱动的动态渲染系统，实现：
+ * - 零配置的 CRUD 界面生成
+ * - 实时协作能力
+ * - 可扩展的组件系统
  */
 function App() {
+  const route = useRouteParser()
+
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/entities/:entityType" element={<EntityList />} />
-        <Route path="/entities/:entityType/:entityId" element={<EntityDetail />} />
-      </Routes>
-    </Layout>
+    <div className="min-h-screen bg-gray-50">
+      {/* 导航栏 */}
+      <Navigation />
+      
+      {/* 主内容区 */}
+      <main className="lg:pl-64">
+        <DynamicRenderer route={route} />
+      </main>
+    </div>
   )
 }
 
