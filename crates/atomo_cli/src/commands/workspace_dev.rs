@@ -7,12 +7,78 @@ use tokio::process::Command as TokioCommand;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
 use std::time::Duration;
+use tokio::signal;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// 进程管理器 - 管理Admin UI和后端服务的生命周期
+#[derive(Debug)]
+struct ProcessManager {
+    admin_ui_process: Option<tokio::process::Child>,
+    backend_process: Option<tokio::process::Child>,
+}
+
+impl ProcessManager {
+    fn new() -> Self {
+        Self {
+            admin_ui_process: None,
+            backend_process: None,
+        }
+    }
+
+    async fn start_admin_ui_dev(&mut self, workspace_root: &Path) -> Result<()> {
+        let admin_ui_dir = workspace_root.join("packages/atomo-admin-ui");
+        
+        if !admin_ui_dir.exists() {
+            println!("   ⚠️  Admin UI directory not found, skipping UI startup");
+            return Ok(());
+        }
+        
+        println!("   🎨 Starting Admin UI development server...");
+        
+        // 启动Admin UI开发服务器
+        let child = TokioCommand::new("pnpm")
+            .arg("dev")
+            .current_dir(&admin_ui_dir)
+            .stdout(Stdio::null()) // 避免干扰主服务日志
+            .stderr(Stdio::null())
+            .spawn()?;
+        
+        self.admin_ui_process = Some(child);
+        
+        // 等待Admin UI启动
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        println!("   ✅ Admin UI dev server started on http://localhost:5173");
+        println!("   🌐 Admin UI accessible via: http://localhost:3001/admin (proxied)");
+        
+        Ok(())
+    }
+
+    async fn stop_all(&mut self) {
+        println!("   🛑 Stopping all processes...");
+        
+        if let Some(mut child) = self.admin_ui_process.take() {
+            let _ = child.kill().await;
+            println!("   ✅ Admin UI stopped");
+        }
+        
+        if let Some(mut child) = self.backend_process.take() {
+            let _ = child.kill().await;
+            println!("   ✅ Backend service stopped");
+        }
+    }
+}
 
 /// Workspace-level development mode
 /// 
 /// Instead of creating isolated runtime, this mode runs the service directly
 /// in the workspace context, allowing for fast incremental compilation
 /// when atomo core changes.
+/// 
+/// 🎯 **符合项目架构：**
+/// - 同时启动Admin UI和后端服务
+/// - 提供优雅的停止机制
+/// - 管理所有相关进程的生命周期
 pub async fn workspace_dev_command(port: u16, service_path: Option<PathBuf>) -> Result<()> {
     println!("🚀 {}", style("Starting Atomo workspace development server...").cyan());
     
@@ -27,8 +93,27 @@ pub async fn workspace_dev_command(port: u16, service_path: Option<PathBuf>) -> 
     // Step 2: Setup workspace development environment
     setup_workspace_dev_environment(&service_dir).await?;
     
-    // Step 3: Run service with workspace context and hot reload
+    // Step 3: 创建进程管理器并启动所有服务
+    let process_manager = Arc::new(Mutex::new(ProcessManager::new()));
+    
+    // 🎯 启动Admin UI开发服务器 - 通过代理实现统一端口访问
+    let workspace_root = find_workspace_root(&service_dir)?;
+    process_manager.lock().await.start_admin_ui_dev(&workspace_root).await?;
+    
+    // Step 4: 设置信号处理 - 优雅停止所有进程
+    let manager_clone = Arc::clone(&process_manager);
+    tokio::spawn(async move {
+        signal::ctrl_c().await.expect("Failed to listen for ctrl_c");
+        println!("\n   📡 Received Ctrl+C, shutting down gracefully...");
+        manager_clone.lock().await.stop_all().await;
+        std::process::exit(0);
+    });
+    
+    // Step 5: Run service with workspace context and hot reload
     run_service_with_workspace_context(&service_dir, port).await?;
+    
+    // 如果到达这里，说明后端服务已停止，也停止Admin UI
+    process_manager.lock().await.stop_all().await;
     
     Ok(())
 }
@@ -269,7 +354,7 @@ async fn generate_service_runtime_code(service_dir: &Path, port: u16) -> Result<
 use anyhow::Result;
 use axum::{{
     extract::State,
-    response::{{Html, IntoResponse}},
+    response::{{Html, IntoResponse, Redirect}},
     routing::{{get, post}},
     Router,
 }};
@@ -319,6 +404,17 @@ async fn main() -> Result<()> {{
         .route("/health", get(health_check))
         .route("/graphql", post(graphql_handler))
         .route("/playground", get(graphql_playground))
+        .route("/schema.ts", get(serve_schema_file))
+        // 🎯 Admin UI 代理路由 - 统一端口访问，开发时代理到5173端口  
+        .route("/admin", get(admin_redirect))
+        .route("/admin/", get(admin_root_proxy))
+        .route("/admin/{{*path}}", get(admin_proxy))
+        // 🎯 Vite开发服务器资源代理 - 处理所有Vite相关资源
+        .route("/@vite/{{*path}}", get(vite_assets_proxy))
+        .route("/@fs/{{*path}}", get(fs_assets_proxy))
+        .route("/@react-refresh", get(react_refresh_proxy))
+        .route("/src/{{*path}}", get(src_assets_proxy))
+        .route("/node_modules/{{*path}}", get(node_modules_proxy))
         .layer(CorsLayer::permissive())
         .with_state(AppState {{ schema }});
     
@@ -342,7 +438,7 @@ struct AppState {{
 }}
 
 async fn health_check() -> impl IntoResponse {{
-    "{} Service is healthy! 🚀 (Workspace Dev)"
+    "CRM Service is healthy! 🚀 (Workspace Dev)"
 }}
 
 async fn graphql_handler(
@@ -357,11 +453,300 @@ async fn graphql_playground() -> impl IntoResponse {{
         .endpoint("/graphql")
         .finish())
 }}
+
+/// 🎯 符合架构原则：直接提供schema.ts文件供Admin UI解析
+/// 而不是在后端硬编码元数据
+async fn serve_schema_file() -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode}};
+    
+    // 读取当前服务目录的schema.ts文件
+    // 运行时在 .atomo/runtime/ 目录，所以需要向上两级到达 schema.ts
+    let schema_path = "../../schema.ts";
+    let absolute_schema_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join(schema_path);
+    
+    tracing::info!("尝试读取 schema.ts 文件");
+    tracing::info!("相对路径: {{}}", schema_path);
+    tracing::info!("绝对路径: {{:?}}", absolute_schema_path);
+    tracing::info!("当前工作目录: {{:?}}", std::env::current_dir());
+    
+    // 首先尝试相对路径，如果失败则尝试其他可能的路径
+    let schema_content = if let Ok(content) = tokio::fs::read_to_string(schema_path).await {{
+        tracing::info!("成功通过相对路径读取 schema.ts");
+        Ok(content)
+    }} else {{
+        // 尝试不同的可能路径
+        let alternative_paths = [
+            "../schema.ts",
+            "./schema.ts", 
+            "schema.ts",
+            "../../schema.ts",
+            "../../../schema.ts"
+        ];
+        
+        let mut last_error = None;
+        let mut found_content = None;
+        
+        for alt_path in alternative_paths {{
+            tracing::info!("尝试备用路径: {{}}", alt_path);
+            match tokio::fs::read_to_string(alt_path).await {{
+                Ok(content) => {{
+                    tracing::info!("成功通过路径 {{}} 读取到 schema.ts", alt_path);
+                    found_content = Some(content);
+                    break;
+                }}
+                Err(err) => {{
+                    tracing::warn!("路径 {{}} 失败: {{:?}}", alt_path, err);
+                    last_error = Some(err);
+                }}
+            }}
+        }}
+        
+        found_content.ok_or_else(|| last_error.unwrap())
+    }};
+    
+    match schema_content {{
+        Ok(content) => {{
+            tracing::info!("最终成功读取 schema.ts 文件，长度: {{}}", content.len());
+            let headers = [
+                (header::CONTENT_TYPE, "application/typescript"),
+                (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            ];
+            (StatusCode::OK, headers, content)
+        }}
+        Err(err) => {{
+            tracing::error!("所有路径都失败，无法读取 schema.ts 文件: {{:?}}", err);
+            let headers = [
+                (header::CONTENT_TYPE, "text/plain"),
+                (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            ];
+            (StatusCode::NOT_FOUND, headers, format!("Schema file not found after trying multiple paths: {{:?}}", err))
+        }}
+    }}
+}}
+
+/// 重定向 /admin 到 /admin/
+async fn admin_redirect() -> Redirect {{
+    Redirect::permanent("/admin/")
+}}
+
+/// Admin UI 根路径代理 - 专门处理 /admin/
+async fn admin_root_proxy() -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode}};
+    
+    // 直接代理到Admin UI根页面
+    match reqwest::get("http://localhost:5173/").await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let body = response.text().await.unwrap_or_default();
+            
+            // 转换为axum可理解的StatusCode
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            
+            let headers = [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            ];
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            let headers = [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            ];
+            (StatusCode::SERVICE_UNAVAILABLE, headers,
+             "<h1>Admin UI Unavailable</h1><p>Admin UI development server is not running. Please start it with <code>pnpm dev</code> in packages/atomo-admin-ui</p>".to_string())
+        }}
+    }}
+}}
+
+/// Admin UI 代理 - 转发请求到开发服务器
+async fn admin_proxy(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode}};
+    
+    // 构建目标URL
+    let target_url = if path.is_empty() {{
+        "http://localhost:5173/".to_string()
+    }} else {{
+        format!("http://localhost:5173/{{}}", path)
+    }};
+    
+    // 简单的代理实现
+    match reqwest::get(&target_url).await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let body = response.text().await.unwrap_or_default();
+            
+            // 转换为axum可理解的StatusCode
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            
+            let headers = [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            ];
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            let headers = [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            ];
+            (StatusCode::SERVICE_UNAVAILABLE, headers, 
+             "<h1>Admin UI Unavailable</h1><p>Admin UI development server is not running. Please start it with <code>pnpm dev</code> in packages/atomo-admin-ui</p>".to_string())
+        }}
+    }}
+}}
+
+/// Vite核心资源代理 - 处理/@vite/*路径
+async fn vite_assets_proxy(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode, HeaderMap}};
+    
+    let target_url = format!("http://localhost:5173/@vite/{{}}", path);
+    
+    match reqwest::get(&target_url).await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let content_type = response.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/javascript")
+                .to_string();
+            let body = response.bytes().await.unwrap_or_default();
+            
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+            (StatusCode::NOT_FOUND, headers, "Vite asset not found".as_bytes().into())
+        }}
+    }}
+}}
+
+/// 文件系统代理 - 处理/@fs/*路径
+async fn fs_assets_proxy(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode, HeaderMap}};
+    
+    let target_url = format!("http://localhost:5173/@fs/{{}}", path);
+    
+    match reqwest::get(&target_url).await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let content_type = response.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/javascript")
+                .to_string();
+            let body = response.bytes().await.unwrap_or_default();
+            
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            (StatusCode::NOT_FOUND, HeaderMap::new(), "File not found".into())
+        }}
+    }}
+}}
+
+/// React Refresh代理 - 处理/@react-refresh
+async fn react_refresh_proxy() -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode, HeaderMap}};
+    
+    let target_url = "http://localhost:5173/@react-refresh";
+    
+    match reqwest::get(target_url).await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let content_type = response.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/javascript")
+                .to_string();
+            let body = response.bytes().await.unwrap_or_default();
+            
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+            (StatusCode::NOT_FOUND, headers, "React refresh not found".as_bytes().into())
+        }}
+    }}
+}}
+
+/// 源代码资源代理 - 处理/src/*路径
+async fn src_assets_proxy(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode, HeaderMap}};
+    
+    let target_url = format!("http://localhost:5173/src/{{}}", path);
+    
+    match reqwest::get(&target_url).await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let content_type = response.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/javascript")
+                .to_string();
+            let body = response.bytes().await.unwrap_or_default();
+            
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+            (StatusCode::NOT_FOUND, headers, "Source file not found".as_bytes().into())
+        }}
+    }}
+}}
+
+/// Node模块代理 - 处理/node_modules/*路径
+async fn node_modules_proxy(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {{
+    use axum::http::{{header, StatusCode, HeaderMap}};
+    
+    let target_url = format!("http://localhost:5173/node_modules/{{}}", path);
+    
+    match reqwest::get(&target_url).await {{
+        Ok(response) => {{
+            let status_code = response.status().as_u16();
+            let content_type = response.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("application/javascript")
+                .to_string();
+            let body = response.bytes().await.unwrap_or_default();
+            
+            let axum_status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+            
+            (axum_status, headers, body)
+        }}
+        Err(_) => {{
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+            (StatusCode::NOT_FOUND, headers, "Node module not found".as_bytes().into())
+        }}
+    }}
+}}
 "#, 
         service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service"),
         service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service"),
         port,
-        service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service"),
         service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service")
     );
     
@@ -415,6 +800,7 @@ uuid = {{ version = "1.0", features = ["v4", "serde"] }}
 bigdecimal = "0.4"
 dotenvy = "0.15"
 sqlx = {{ version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "bigdecimal"] }}
+reqwest = {{ version = "0.11", features = ["json"] }}
 
 [profile.dev]
 # Optimized for fast incremental compilation

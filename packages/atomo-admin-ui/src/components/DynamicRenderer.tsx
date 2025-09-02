@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useLocation } from 'react-router-dom'
 import { apiClient } from '../lib/api'
 import { SchemaMetadata, ModelMetadata } from '../lib/types'
 import { EntityListView } from './views/EntityListView'
@@ -150,60 +151,44 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
  * Hook：根据当前 URL 解析路由信息
  */
 export function useRouteParser(): DynamicRendererProps['route'] {
-  const [route, setRoute] = useState<DynamicRendererProps['route']>({
-    type: 'dashboard'
-  })
+  const location = useLocation()
 
-  useEffect(() => {
-    const parseCurrentRoute = () => {
-      const path = window.location.pathname
-      
-      // Dashboard
-      if (path === '/' || path === '/dashboard') {
-        return { type: 'dashboard' as const }
-      }
-      
-      // Entity routes: /entities/:modelName
-      const entityListMatch = path.match(/^\/entities\/([^\/]+)$/)
-      if (entityListMatch) {
-        return {
-          type: 'list' as const,
-          modelName: entityListMatch[1]
-        }
-      }
-      
-      // Entity detail/edit: /entities/:modelName/:entityId
-      const entityDetailMatch = path.match(/^\/entities\/([^\/]+)\/([^\/]+)$/)
-      if (entityDetailMatch) {
-        return {
-          type: 'detail' as const,
-          modelName: entityDetailMatch[1],
-          entityId: entityDetailMatch[2]
-        }
-      }
-      
-      // Create new: /entities/:modelName/new
-      const entityCreateMatch = path.match(/^\/entities\/([^\/]+)\/new$/)
-      if (entityCreateMatch) {
-        return {
-          type: 'create' as const,
-          modelName: entityCreateMatch[1]
-        }
-      }
-      
+  const parseRoute = (path: string): DynamicRendererProps['route'] => {
+    // Dashboard
+    if (path === '/' || path === '/dashboard') {
       return { type: 'dashboard' as const }
     }
-
-    setRoute(parseCurrentRoute())
     
-    // 监听路由变化
-    const handlePopState = () => {
-      setRoute(parseCurrentRoute())
+    // Entity routes: /entities/:modelName
+    const entityListMatch = path.match(/^\/entities\/([^\/]+)$/)
+    if (entityListMatch) {
+      return {
+        type: 'list' as const,
+        modelName: entityListMatch[1]
+      }
     }
     
-    window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
-  }, [])
+    // Entity detail/edit: /entities/:modelName/:entityId
+    const entityDetailMatch = path.match(/^\/entities\/([^\/]+)\/([^\/]+)$/)
+    if (entityDetailMatch) {
+      return {
+        type: 'detail' as const,
+        modelName: entityDetailMatch[1],
+        entityId: entityDetailMatch[2]
+      }
+    }
+    
+    // Create new: /entities/:modelName/new
+    const entityCreateMatch = path.match(/^\/entities\/([^\/]+)\/new$/)
+    if (entityCreateMatch) {
+      return {
+        type: 'create' as const,
+        modelName: entityCreateMatch[1]
+      }
+    }
+    
+    return { type: 'dashboard' as const }
+  }
 
-  return route
+  return parseRoute(location.pathname)
 }
