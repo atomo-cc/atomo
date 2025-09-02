@@ -14,6 +14,8 @@ import { DatePicker } from '../ui/DatePicker'
 import { ReferenceSelect } from './ReferenceSelect'
 import { TagInput } from './TagInput'
 import { BlocksEditor } from './BlocksEditor'
+import { MediaUploader } from '../upload/MediaUploader'
+import { WasmPlugin, WasmPluginConfig } from '../plugins/WasmPluginSystem'
 import { getFieldLabel } from '../../lib/utils'
 
 interface FormFieldProps {
@@ -216,13 +218,62 @@ export function FormField({
 
       case 'custom':
         // 自定义字段类型，可以通过 fieldConfig.component 指定组件
+        if (fieldConfig.component === 'media-uploader') {
+          return (
+            <MediaUploader
+              value={value || []}
+              onChange={onChange}
+              disabled={disabled}
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+              maxFiles={10}
+              maxFileSize={10 * 1024 * 1024}
+              multiple={true}
+              showPreview={true}
+            />
+          )
+        }
+        
+        if (fieldConfig.component && fieldConfig.component.startsWith('wasm:')) {
+          // WASM 插件组件
+          const pluginId = fieldConfig.component.replace('wasm:', '')
+          const pluginConfig: WasmPluginConfig = {
+            id: pluginId,
+            name: `Field Plugin: ${field.name}`,
+            version: '1.0.0',
+            isDevelopment: process.env.NODE_ENV === 'development',
+            jsUrl: process.env.NODE_ENV === 'development' 
+              ? `/plugins/${pluginId}/index.js` 
+              : undefined,
+            wasmUrl: process.env.NODE_ENV === 'production' 
+              ? `/plugins/${pluginId}/index.wasm` 
+              : undefined
+          }
+          
+          return (
+            <WasmPlugin
+              config={pluginConfig}
+              props={{
+                field: field.name,
+                value: value,
+                disabled: disabled,
+                placeholder: placeholder
+              }}
+              onEvent={(event, data) => {
+                if (event === 'change') {
+                  onChange(data.value)
+                }
+              }}
+            />
+          )
+        }
+        
         if (fieldConfig.component) {
-          // TODO: 动态加载自定义组件或 WASM 插件
+          // 其他自定义组件
           return (
             <div className="p-4 border border-dashed border-gray-300 rounded-md text-center text-gray-500">
               自定义组件: {fieldConfig.component}
               <br />
-              <small>WASM 插件系统正在开发中</small>
+              <small>请确保组件已正确注册</small>
             </div>
           )
         }

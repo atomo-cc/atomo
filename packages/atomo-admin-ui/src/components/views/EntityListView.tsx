@@ -20,7 +20,10 @@ import {
   ChevronRight,
   RefreshCw,
   Download,
-  Trash2
+  Trash2,
+  Filter,
+  X,
+  Settings
 } from 'lucide-react'
 
 import { SchemaMetadata, ModelMetadata, EntityData, QueryOptions } from '../../lib/types'
@@ -29,7 +32,11 @@ import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { EntityTable } from '../tables/EntityTable'
+import { AdvancedFilterPanel, FilterCondition } from '../filters/AdvancedFilterPanel'
+import { TableSettings, TableColumn } from '../tables/TableSettings'
+import { Badge } from '../ui/Badge'
 import { formatDate, getFieldLabel } from '../../lib/utils'
+import { exportData } from '../../lib/export'
 
 interface EntityListViewProps {
   modelName: string
@@ -51,6 +58,10 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   })
   
   const [selectedRows, setSelectedRows] = useState<string[]>([])
+  const [showAdvancedFilter, setShowAdvancedFilter] = useState(false)
+  const [activeFilters, setActiveFilters] = useState<FilterCondition[]>([])
+  const [showTableSettings, setShowTableSettings] = useState(false)
+  const [tableColumns, setTableColumns] = useState<TableColumn[]>([])
   
   // 数据查询
   const { 
@@ -66,7 +77,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   })
 
   // 列配置（基于 schema 的 listView 配置）
-  const columns = useMemo(() => {
+  const baseColumns = useMemo(() => {
     return modelMetadata.ui.listView.map(fieldName => {
       const field = modelMetadata.fields[fieldName]
       return {
@@ -74,6 +85,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         label: getFieldLabel(fieldName, field?.ui?.label),
         type: field?.type || 'string',
         sortable: true,
+        visible: true,
         render: (value: any, row: EntityData) => {
           // 根据字段类型渲染不同的内容
           switch (field?.type) {
@@ -93,6 +105,16 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       }
     })
   }, [modelMetadata])
+
+  // 初始化表格列配置
+  useEffect(() => {
+    if (tableColumns.length === 0 && baseColumns.length > 0) {
+      setTableColumns(baseColumns)
+    }
+  }, [baseColumns, tableColumns.length])
+
+  // 当前可见的列
+  const visibleColumns = tableColumns.filter(col => col.visible)
 
   // 搜索处理
   const handleSearch = (searchTerm: string) => {
@@ -136,6 +158,26 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
     }
   }
 
+  // 导出数据
+  const handleExport = async (format: 'csv' | 'excel') => {
+    if (!data?.data || visibleColumns.length === 0) {
+      alert('没有数据可导出')
+      return
+    }
+
+    try {
+      await exportData(
+        data.data,
+        visibleColumns,
+        format,
+        `${modelName}_${new Date().toISOString().split('T')[0]}`
+      )
+    } catch (error) {
+      console.error('导出失败:', error)
+      alert('导出失败，请重试')
+    }
+  }
+
   if (error) {
     return (
       <Card className="m-6">
@@ -172,6 +214,14 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
             <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
             刷新
           </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => setShowTableSettings(true)}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            表格设置
+          </Button>
           
           <Button onClick={() => navigate(`/entities/${modelName}/new`)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -183,28 +233,95 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       {/* 搜索和筛选栏 */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex gap-4 items-center">
-            <div className="flex-1">
-              <Input
-                placeholder={`搜索 ${getFieldLabel(modelName)}...`}
-                value={queryOptions.search}
-                onChange={(e) => handleSearch(e.target.value)}
-                className="max-w-sm"
-              />
+          <div className="space-y-4">
+            {/* 搜索栏和工具按钮 */}
+            <div className="flex gap-4 items-center">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder={`搜索 ${getFieldLabel(modelName)}...`}
+                  value={queryOptions.search}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="pl-9 max-w-sm"
+                />
+              </div>
+              
+              <Button
+                variant="secondary"
+                onClick={() => setShowAdvancedFilter(true)}
+                className={activeFilters.length > 0 ? 'bg-primary-100 text-primary-700' : ''}
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                高级筛选
+                {activeFilters.length > 0 && (
+                  <Badge variant="default" className="ml-2 h-5 w-5 p-0 flex items-center justify-center">
+                    {activeFilters.length}
+                  </Badge>
+                )}
+              </Button>
+              
+              {selectedRows.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">
+                    已选择 {selectedRows.length} 个项目
+                  </span>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    删除选中
+                  </Button>
+                </div>
+              )}
             </div>
-            
-            {selectedRows.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">
-                  已选择 {selectedRows.length} 个项目
-                </span>
+
+            {/* 活跃筛选条件展示 */}
+            {activeFilters.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600">当前筛选:</span>
+                {activeFilters.map((filter, index) => (
+                  <Badge
+                    key={filter.id}
+                    variant="secondary"
+                    className="flex items-center gap-1"
+                  >
+                    {index > 0 && (
+                      <span className="text-xs opacity-70">
+                        {filter.logicalOperator || 'AND'}
+                      </span>
+                    )}
+                    <span>
+                      {modelMetadata.fields[filter.field]?.ui?.label || filter.field}
+                    </span>
+                    <span className="opacity-70">
+                      {filter.operator === 'equals' ? '=' : 
+                       filter.operator === 'contains' ? '包含' : 
+                       filter.operator}
+                    </span>
+                    {!['is_null', 'is_not_null', 'is_empty', 'is_not_empty'].includes(filter.operator) && (
+                      <span>{filter.value}</span>
+                    )}
+                    <button
+                      onClick={() => {
+                        const newFilters = activeFilters.filter(f => f.id !== filter.id)
+                        setActiveFilters(newFilters)
+                        // 这里应该触发实际的筛选逻辑
+                      }}
+                      className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
                 <Button
-                  variant="danger"
+                  variant="ghost"
                   size="sm"
-                  onClick={handleBulkDelete}
+                  onClick={() => setActiveFilters([])}
+                  className="text-gray-500 hover:text-gray-700"
                 >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  删除选中
+                  清空筛选
                 </Button>
               </div>
             )}
@@ -217,7 +334,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         <CardContent className="p-0">
           <EntityTable
             data={data?.data || []}
-            columns={columns}
+            columns={visibleColumns}
             loading={isLoading}
             selectedRows={selectedRows}
             onSelectionChange={setSelectedRows}
@@ -264,6 +381,24 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
           </div>
         </div>
       )}
+
+      {/* 高级筛选面板 */}
+      <AdvancedFilterPanel
+        modelMetadata={modelMetadata}
+        onFiltersChange={setActiveFilters}
+        initialConditions={activeFilters}
+        isOpen={showAdvancedFilter}
+        onClose={() => setShowAdvancedFilter(false)}
+      />
+
+      {/* 表格设置面板 */}
+      <TableSettings
+        columns={tableColumns}
+        onColumnsChange={setTableColumns}
+        onExport={handleExport}
+        isOpen={showTableSettings}
+        onClose={() => setShowTableSettings(false)}
+      />
     </div>
   )
 }
