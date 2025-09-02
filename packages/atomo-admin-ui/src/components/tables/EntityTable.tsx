@@ -4,7 +4,7 @@
  * 支持大量数据的高性能渲染，使用虚拟化技术
  */
 
-import React, { useRef } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { 
   ChevronUp, 
@@ -32,6 +32,9 @@ interface EntityTableProps {
   onRowClick?: (row: EntityData) => void
   enableVirtualization?: boolean
   maxHeight?: number
+  modelName?: string
+  onRowEdit?: (row: EntityData) => void
+  onRowDelete?: (row: EntityData) => void
 }
 
 export function EntityTable({ 
@@ -45,9 +48,30 @@ export function EntityTable({
   sortOrder,
   onRowClick,
   enableVirtualization = true,
-  maxHeight = 600
+  maxHeight = 600,
+  modelName,
+  onRowEdit,
+  onRowDelete
 }: EntityTableProps) {
   const tableRef = useRef<HTMLDivElement>(null)
+  const [openMenuRowId, setOpenMenuRowId] = useState<string | null>(null)
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuRowId) {
+        const target = event.target as Element
+        if (!target.closest('.row-action-menu')) {
+          setOpenMenuRowId(null)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [openMenuRowId])
   
   // 虚拟化配置
   const virtualizer = useVirtualizer({
@@ -88,6 +112,74 @@ export function EntityTable({
     return sortOrder === 'asc' 
       ? <ChevronUp className="w-4 h-4" />
       : <ChevronDown className="w-4 h-4" />
+  }
+
+  // 行操作菜单
+  const RowActionMenu = ({ row }: { row: EntityData }) => {
+    const isMenuOpen = openMenuRowId === row.id
+
+    return (
+      <div className="relative row-action-menu">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpenMenuRowId(isMenuOpen ? null : row.id)
+          }}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+        
+        {isMenuOpen && (
+          <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+            <div className="py-1">
+              <button
+                className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRowClick?.(row)
+                  setOpenMenuRowId(null)
+                }}
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                查看
+              </button>
+              
+              {onRowEdit && (
+                <button
+                  className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRowEdit(row)
+                    setOpenMenuRowId(null)
+                  }}
+                >
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  编辑
+                </button>
+              )}
+              
+              {onRowDelete && (
+                <button
+                  className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (confirm('确定要删除这个项目吗？')) {
+                      onRowDelete(row)
+                    }
+                    setOpenMenuRowId(null)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  删除
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   // 表格头部
@@ -166,16 +258,7 @@ export function EntityTable({
         
         {/* 操作列 */}
         <div className="col-span-1 px-4 py-4 text-right">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              // TODO: 显示操作菜单
-            }}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          <RowActionMenu row={row} />
         </div>
       </div>
     )

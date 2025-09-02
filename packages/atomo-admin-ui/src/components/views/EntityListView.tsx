@@ -8,18 +8,16 @@
  * - 批量操作
  */
 
-import React, { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { useVirtualizer } from '@tanstack/react-virtual'
+
 import { 
   Search, 
   Plus, 
-  MoreHorizontal, 
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  Download,
   Trash2,
   Filter,
   X,
@@ -28,7 +26,7 @@ import {
 
 import { SchemaMetadata, ModelMetadata, EntityData, QueryOptions } from '../../lib/types'
 import { apiClient } from '../../lib/api'
-import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
+import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { EntityTable } from '../tables/EntityTable'
@@ -73,11 +71,16 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   } = useQuery({
     queryKey: ['entities', modelName, queryOptions],
     queryFn: () => apiClient.listEntities(modelName, queryOptions),
-    keepPreviousData: true,
+    // 移除 keepPreviousData 以避免显示上一个模型的数据
+    staleTime: 5 * 1000, // 5秒内数据被认为是新鲜的
   })
 
   // 列配置（基于 schema 的 listView 配置）
   const baseColumns = useMemo(() => {
+    if (!modelMetadata?.ui?.listView || !modelMetadata?.fields) {
+      return []
+    }
+    
     return modelMetadata.ui.listView.map(fieldName => {
       const field = modelMetadata.fields[fieldName]
       return {
@@ -86,7 +89,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         type: field?.type || 'string',
         sortable: true,
         visible: true,
-        render: (value: any, row: EntityData) => {
+        render: (value: any, _row: EntityData) => {
           // 根据字段类型渲染不同的内容
           switch (field?.type) {
             case 'date':
@@ -98,20 +101,55 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
               return value?.name || value?.title || value || '-'
             case 'array':
               return Array.isArray(value) ? value.join(', ') : '-'
+            case 'json':
+              // JSON字段的显示处理
+              if (!value) return '-'
+              if (typeof value === 'string') {
+                try {
+                  const parsed = JSON.parse(value)
+                  return Array.isArray(parsed) ? `[${parsed.length} 项]` : `{${Object.keys(parsed).length} 个字段}`
+                } catch {
+                  return value.substring(0, 50) + (value.length > 50 ? '...' : '')
+                }
+              }
+              if (typeof value === 'object') {
+                return Array.isArray(value) ? `[${value.length} 项]` : `{${Object.keys(value).length} 个字段}`
+              }
+              return JSON.stringify(value).substring(0, 50) + '...'
             default:
               return value || '-'
           }
         }
       }
     })
-  }, [modelMetadata])
+  }, [modelMetadata, modelName])
+
+  // 🔧 模型切换时重置表格状态
+  useEffect(() => {
+    // 重置查询选项为默认值
+    setQueryOptions({
+      page: 1,
+      limit: schema.config.defaultPageSize || 20,
+      sort: 'createdAt',
+      order: 'desc',
+      filters: {},
+      search: ''
+    })
+    // 重置其他状态
+    setSelectedRows([])
+    setActiveFilters([])
+    setShowAdvancedFilter(false)
+    setShowTableSettings(false)
+    // 重置表格列配置，让baseColumns重新初始化
+    setTableColumns([])
+  }, [modelName, schema.config.defaultPageSize])
 
   // 初始化表格列配置
   useEffect(() => {
-    if (tableColumns.length === 0 && baseColumns.length > 0) {
+    if (baseColumns.length > 0) {
       setTableColumns(baseColumns)
     }
-  }, [baseColumns, tableColumns.length])
+  }, [baseColumns])
 
   // 当前可见的列
   const visibleColumns = tableColumns.filter(col => col.visible)
@@ -156,6 +194,22 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       console.error('批量删除失败:', error)
       alert('删除失败，请重试')
     }
+  }
+
+  // 单个删除
+  const handleRowDelete = async (row: EntityData) => {
+    try {
+      await apiClient.deleteEntity(modelName, row.id)
+      refetch()
+    } catch (error) {
+      console.error('删除失败:', error)
+      alert('删除失败，请重试')
+    }
+  }
+
+  // 编辑行
+  const handleRowEdit = (row: EntityData) => {
+    navigate(`/entities/${modelName}/${row.id}`)
   }
 
   // 导出数据
@@ -332,17 +386,23 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       {/* 数据表格 */}
       <Card>
         <CardContent className="p-0">
-          <EntityTable
-            data={data?.data || []}
-            columns={visibleColumns}
-            loading={isLoading}
-            selectedRows={selectedRows}
-            onSelectionChange={setSelectedRows}
-            onSort={handleSort}
-            sortField={queryOptions.sort}
-            sortOrder={queryOptions.order}
-            onRowClick={(row) => navigate(`/entities/${modelName}/${row.id}`)}
-          />
+          {visibleColumns.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              正在加载 {modelName} 列表配置...
+            </div>
+          ) : (
+            <EntityTable
+              data={data?.data || []}
+              columns={visibleColumns}
+              loading={isLoading}
+              selectedRows={selectedRows}
+              onSelectionChange={setSelectedRows}
+              onSort={handleSort}
+              sortField={queryOptions.sort}
+              sortOrder={queryOptions.order}
+              onRowClick={(row) => navigate(`/entities/${modelName}/${row.id}`)}
+            />
+          )}
         </CardContent>
       </Card>
 

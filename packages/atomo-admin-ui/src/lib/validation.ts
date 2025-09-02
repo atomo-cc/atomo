@@ -11,6 +11,11 @@ export function generateValidationSchema(modelMetadata: ModelMetadata): z.ZodSch
   const schemaFields: Record<string, z.ZodTypeAny> = {}
 
   Object.entries(modelMetadata.fields).forEach(([fieldName, field]) => {
+    // 跳过系统字段，它们不应该在表单验证中
+    if (['id', 'createdAt', 'updatedAt', 'created_at', 'updated_at'].includes(fieldName)) {
+      return
+    }
+    
     schemaFields[fieldName] = generateFieldSchema(field)
   })
 
@@ -26,33 +31,37 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
     case 'text':
     case 'email':
     case 'url':
-      schema = z.string()
+      // 创建一个可以处理null值的字符串schema
+      schema = z.union([z.string(), z.null()]).transform((val) => val === null ? '' : val)
       
       // 邮箱验证
       if (field.name.toLowerCase().includes('email') || field.type === 'email') {
-        schema = z.string().email('请输入有效的邮箱地址')
+        schema = z.union([z.string().email('请输入有效的邮箱地址'), z.null()]).transform((val) => val === null ? '' : val)
       }
       
       // URL验证
       if (field.name.toLowerCase().includes('url') || field.type === 'url') {
-        schema = z.string().url('请输入有效的URL')
+        schema = z.union([z.string().url('请输入有效的URL'), z.null()]).transform((val) => val === null ? '' : val)
       }
+      
+      // 对于已经transformed的schema，需要先检查是否为空字符串
+      const stringSchema = schema as z.ZodEffects<any, string, any>
       
       // 长度验证
       if (field.ui?.validation?.minLength) {
-        schema = (schema as z.ZodString).min(field.ui.validation.minLength, 
-          `最少需要 ${field.ui.validation.minLength} 个字符`)
+        schema = stringSchema.refine((val) => !val || val.length >= field.ui!.validation!.minLength!, 
+          `最少需要 ${field.ui!.validation!.minLength} 个字符`)
       }
       
       if (field.ui?.validation?.maxLength) {
-        schema = (schema as z.ZodString).max(field.ui.validation.maxLength, 
-          `最多允许 ${field.ui.validation.maxLength} 个字符`)
+        schema = stringSchema.refine((val) => !val || val.length <= field.ui!.validation!.maxLength!, 
+          `最多允许 ${field.ui!.validation!.maxLength} 个字符`)
       }
       
       // 模式验证
       if (field.ui?.validation?.pattern) {
         const regex = new RegExp(field.ui.validation.pattern)
-        schema = (schema as z.ZodString).regex(regex, '格式不正确')
+        schema = stringSchema.refine((val) => !val || regex.test(val), '格式不正确')
       }
       
       break
@@ -120,9 +129,39 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
       break
   }
 
-  // 处理可选字段
+  // 处理可选字段和必填验证
   if (field.optional) {
+    // 可选字段允许空值
     schema = schema.optional()
+  } else {
+    // 必填字段的特殊处理
+    switch (field.type) {
+      case 'json':
+      case 'array':
+        // JSON和数组字段即使必填也可以为空（空数组或空对象）
+        schema = schema.optional()
+        break
+      case 'string':
+      case 'text':
+      case 'email':
+      case 'url':
+        // 字符串字段：如果是某些特殊字段，允许为空
+        if (field.name === 'notes' || field.name.includes('description') || 
+            field.name === 'phone' || field.name === 'website' || 
+            field.name === 'address' || field.name === 'industry') {
+          schema = schema.optional()
+        } else {
+          // 必填字符串字段：不能为空字符串
+          schema = (schema as z.ZodEffects<any, string, any>).refine(
+            (val) => val && val.trim().length > 0, 
+            '此字段为必填项'
+          )
+        }
+        break
+      default:
+        // 其他类型的必填字段保持原样
+        break
+    }
   }
 
   return schema

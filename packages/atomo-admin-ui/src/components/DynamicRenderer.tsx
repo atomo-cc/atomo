@@ -168,6 +168,15 @@ export function useRouteParser(): DynamicRendererProps['route'] {
       }
     }
     
+    // Create new: /entities/:modelName/new (必须在详情路由之前匹配)
+    const entityCreateMatch = path.match(/^\/entities\/([^\/]+)\/new$/)
+    if (entityCreateMatch) {
+      return {
+        type: 'create' as const,
+        modelName: entityCreateMatch[1]
+      }
+    }
+    
     // Entity detail/edit: /entities/:modelName/:entityId
     const entityDetailMatch = path.match(/^\/entities\/([^\/]+)\/([^\/]+)$/)
     if (entityDetailMatch) {
@@ -175,15 +184,6 @@ export function useRouteParser(): DynamicRendererProps['route'] {
         type: 'detail' as const,
         modelName: entityDetailMatch[1],
         entityId: entityDetailMatch[2]
-      }
-    }
-    
-    // Create new: /entities/:modelName/new
-    const entityCreateMatch = path.match(/^\/entities\/([^\/]+)\/new$/)
-    if (entityCreateMatch) {
-      return {
-        type: 'create' as const,
-        modelName: entityCreateMatch[1]
       }
     }
     

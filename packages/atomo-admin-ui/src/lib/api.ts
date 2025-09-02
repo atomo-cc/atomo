@@ -8,6 +8,26 @@ import axios, { AxiosInstance } from 'axios'
 import { SchemaMetadata, EntityData, QueryOptions } from './types'
 import { loadSchemaMetadata } from './schema-parser'
 
+/**
+ * 将camelCase字段名转换为snake_case（用于GraphQL输入）
+ */
+function camelToSnakeCase(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {}
+  
+  for (const [key, value] of Object.entries(obj)) {
+    // 跳过ID字段和时间戳字段（它们已经是正确格式）
+    if (['id', 'createdAt', 'updatedAt', 'created_at', 'updated_at'].includes(key)) {
+      result[key] = value
+    } else {
+      // 将camelCase转换为snake_case
+      const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase()
+      result[snakeKey] = value
+    }
+  }
+  
+  return result
+}
+
 class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
@@ -87,21 +107,12 @@ class AtomoApiClient {
    * GraphQL 查询
    */
   async graphql(query: string, variables?: Record<string, any>): Promise<any> {
-    console.log('🔍 发送GraphQL查询:', {
-      query: query.trim(),
-      variables,
-      endpoint: `${this.baseUrl}/graphql`
-    })
-
     const response = await this.client.post('/graphql', {
       query,
       variables,
     })
     
-    console.log('📨 GraphQL响应:', response.data)
-    
     if (response.data.errors) {
-      console.error('❌ GraphQL错误:', response.data.errors)
       throw new Error(response.data.errors[0].message)
     }
     
@@ -248,7 +259,7 @@ class AtomoApiClient {
     
     const query = `
       query Get${modelName}($id: ID!) {
-        ${modelName.toLowerCase()}(id: $id) {
+        ${modelName.toLowerCase()}ByPk(id: $id) {
           id${fieldsSection}
           createdAt
           updatedAt
@@ -257,16 +268,21 @@ class AtomoApiClient {
     `
 
     const result = await this.graphql(query, { id })
-    return result[modelName.toLowerCase()]
+    return result[`${modelName.toLowerCase()}ByPk`]
   }
 
   /**
    * 创建实体
    */
   async createEntity(modelName: string, data: Partial<EntityData>): Promise<EntityData> {
+    const mutationName = `insert${modelName}One`
+    
+    // 转换字段名为snake_case
+    const snakeCaseData = camelToSnakeCase(data)
+    
     const query = `
-      mutation Create${modelName}($input: Create${modelName}Input!) {
-        create${modelName}(input: $input) {
+      mutation Create${modelName}($object: ${modelName}InsertInput!) {
+        ${mutationName}(object: $object) {
           id
           createdAt
           updatedAt
@@ -274,39 +290,51 @@ class AtomoApiClient {
       }
     `
 
-    const result = await this.graphql(query, { input: data })
-    return result[`create${modelName}`]
+    const result = await this.graphql(query, { object: snakeCaseData })
+    return result[mutationName]
   }
 
   /**
    * 更新实体
    */
   async updateEntity(modelName: string, id: string, data: Partial<EntityData>): Promise<EntityData> {
+    const mutationName = `update${modelName}ByPk`
+    
+    // 转换字段名为snake_case
+    const snakeCaseData = camelToSnakeCase(data)
+    
     const query = `
-      mutation Update${modelName}($id: ID!, $input: Update${modelName}Input!) {
-        update${modelName}(id: $id, input: $input) {
+      mutation Update${modelName}($pkColumns: ${modelName}PkColumnsInput!, $set: ${modelName}SetInput!) {
+        ${mutationName}(pkColumns: $pkColumns, set: $set) {
           id
           updatedAt
         }
       }
     `
 
-    const result = await this.graphql(query, { id, input: data })
-    return result[`update${modelName}`]
+    const result = await this.graphql(query, { 
+      pkColumns: { id },
+      set: snakeCaseData 
+    })
+    return result[mutationName]
   }
 
   /**
    * 删除实体
    */
   async deleteEntity(modelName: string, id: string): Promise<boolean> {
+    const mutationName = `delete${modelName}ByPk`
+    
     const query = `
       mutation Delete${modelName}($id: ID!) {
-        delete${modelName}(id: $id)
+        ${mutationName}(id: $id) {
+          id
+        }
       }
     `
 
     const result = await this.graphql(query, { id })
-    return result[`delete${modelName}`]
+    return !!result[mutationName]
   }
 
   /**
@@ -314,13 +342,15 @@ class AtomoApiClient {
    */
   async bulkDelete(modelName: string, ids: string[]): Promise<number> {
     const query = `
-      mutation BulkDelete${modelName}($ids: [ID!]!) {
-        bulkDelete${modelName}(ids: $ids)
+      mutation BulkDelete${modelName}($where: CompanyBoolExp!) {
+        delete${modelName}(where: $where) {
+          affectedRows
+        }
       }
     `
 
-    const result = await this.graphql(query, { ids })
-    return result[`bulkDelete${modelName}`]
+    const result = await this.graphql(query, { where: { id: { _in: ids } } })
+    return result[`affectedRows`]
   }
 }
 

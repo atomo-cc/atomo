@@ -75,7 +75,7 @@ export function EntityDetailView({
       apiClient.createEntity(modelName, data),
     onSuccess: (newEntity) => {
       queryClient.invalidateQueries(['entities', modelName])
-      navigate(`/entities/${modelName}/${newEntity.id}`)
+      navigate(`/entities/${modelName}`)
     },
   })
 

@@ -4,16 +4,17 @@
  * 根据字段类型自动选择合适的输入组件
  */
 
-import React from 'react'
+
 import { FieldMetadata, SchemaMetadata, ModelMetadata } from '../../lib/types'
 import { Input } from '../ui/Input'
 import { Textarea } from '../ui/Textarea'
-import { Select } from '../ui/Select'
+
 import { Switch } from '../ui/Switch'
 import { DatePicker } from '../ui/DatePicker'
 import { ReferenceSelect } from './ReferenceSelect'
 import { TagInput } from './TagInput'
 import { BlocksEditor } from './BlocksEditor'
+import { JsonEditor } from './JsonEditor'
 import { MediaUploader } from '../upload/MediaUploader'
 import { WasmPlugin, WasmPluginConfig } from '../plugins/WasmPluginSystem'
 import { getFieldLabel } from '../../lib/utils'
@@ -47,16 +48,15 @@ export function FormField({
     switch (field.type) {
       case 'string':
         if (field.name.toLowerCase().includes('email')) {
-          return (
-            <Input
-              type="email"
-              value={value || ''}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder={placeholder}
-              disabled={disabled}
-              error={error}
-            />
-          )
+                  return (
+          <Input
+            type="email"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+          />
+        )
         }
         
         if (field.name.toLowerCase().includes('url')) {
@@ -67,7 +67,6 @@ export function FormField({
               onChange={(e) => onChange(e.target.value)}
               placeholder={placeholder}
               disabled={disabled}
-              error={error}
             />
           )
         }
@@ -78,7 +77,6 @@ export function FormField({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -89,7 +87,6 @@ export function FormField({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -101,7 +98,6 @@ export function FormField({
             onChange={(e) => onChange(Number(e.target.value))}
             placeholder={placeholder}
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -120,7 +116,6 @@ export function FormField({
             value={value}
             onChange={onChange}
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -131,7 +126,6 @@ export function FormField({
             onChange={onChange}
             showTime
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -147,7 +141,6 @@ export function FormField({
               onChange={(e) => onChange(e.target.value)}
               placeholder={`${field.name} (关系未定义)`}
               disabled={disabled}
-              error={error}
             />
           )
         }
@@ -159,7 +152,6 @@ export function FormField({
             relationship={relationship}
             schema={schema}
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -171,7 +163,6 @@ export function FormField({
               value={value || []}
               onChange={onChange}
               disabled={disabled}
-              error={error}
             />
           )
         }
@@ -182,7 +173,6 @@ export function FormField({
             onChange={(e) => onChange(e.target.value.split('\n').filter(Boolean))}
             placeholder="每行一个项目"
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -193,26 +183,16 @@ export function FormField({
             value={value || []}
             onChange={onChange}
             disabled={disabled}
-            error={error}
           />
         )
 
       case 'json':
         return (
-          <Textarea
-            value={value ? JSON.stringify(value, null, 2) : ''}
-            onChange={(e) => {
-              try {
-                const parsed = JSON.parse(e.target.value)
-                onChange(parsed)
-              } catch {
-                // 暂时不处理解析错误，让用户继续编辑
-              }
-            }}
-            placeholder="JSON 格式"
+          <JsonEditor
+            value={value}
+            onChange={onChange}
             disabled={disabled}
-            error={error}
-            className="font-mono"
+            placeholder={placeholder || "请输入有效的JSON"}
           />
         )
 
@@ -240,11 +220,11 @@ export function FormField({
             id: pluginId,
             name: `Field Plugin: ${field.name}`,
             version: '1.0.0',
-            isDevelopment: process.env.NODE_ENV === 'development',
-            jsUrl: process.env.NODE_ENV === 'development' 
+            isDevelopment: (import.meta as any).env?.DEV || false,
+            jsUrl: (import.meta as any).env?.DEV 
               ? `/plugins/${pluginId}/index.js` 
               : undefined,
-            wasmUrl: process.env.NODE_ENV === 'production' 
+            wasmUrl: !(import.meta as any).env?.DEV 
               ? `/plugins/${pluginId}/index.wasm` 
               : undefined
           }
@@ -284,7 +264,6 @@ export function FormField({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder || '自定义字段'}
             disabled={disabled}
-            error={error}
           />
         )
 
@@ -295,7 +274,6 @@ export function FormField({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
-            error={error}
           />
         )
     }

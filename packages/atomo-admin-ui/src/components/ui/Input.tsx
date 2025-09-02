@@ -43,11 +43,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         
+        {/* 只显示error，不显示helpText，因为FormField会处理这些 */}
         {error && (
           <p className="text-sm text-danger-600">{error}</p>
         )}
         
-        {helpText && !error && (
+        {helpText && !error && !label && (
           <p className="text-sm text-gray-500">{helpText}</p>
         )}
       </div>
