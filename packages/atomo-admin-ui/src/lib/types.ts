@@ -22,6 +22,10 @@ export interface ModelMetadata {
   validation?: Record<string, string>
   ui: UIConfig
   fields: Record<string, FieldMetadata>
+  // Platform model specific properties
+  isPlatformModel?: boolean
+  queryEndpoint?: string
+  description?: string
 }
 
 export interface FieldMetadata {

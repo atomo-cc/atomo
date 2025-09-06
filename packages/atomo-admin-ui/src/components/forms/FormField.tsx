@@ -177,11 +177,82 @@ export function FormField({
         )
 
       case 'blocks':
-        // Atomo 的富文本块系统
+        // 🎯 Atomo 的富文本块系统 - 智能数据格式转换
+        // GraphQL返回的ContentBlock数据需要转换为FlowCanvas期望的格式
+        const normalizeBlocksValue = (rawValue: any) => {
+          // 空值处理
+          if (!rawValue) {
+            return { nodes: [], connections: [] }
+          }
+          
+          // 如果已经是正确的格式（包含nodes和connections）
+          if (rawValue.nodes && Array.isArray(rawValue.nodes)) {
+            return {
+              nodes: rawValue.nodes || [],
+              connections: rawValue.connections || []
+            }
+          }
+          
+          // 如果是数组格式的ContentBlock数据，转换为FlowCanvas格式
+          if (Array.isArray(rawValue)) {
+            return {
+              nodes: rawValue.map((block: any, index: number) => ({
+                id: block.metadata?.id || `block-${index}`,
+                type: (block.type || 'text') as any,
+                position: { x: 50, y: 50 + index * 100 },
+                size: { width: 200, height: 100 },
+                data: {
+                  content: block.content || '',
+                  properties: {
+                    ...block,
+                    order: block.metadata?.order || index
+                  }
+                }
+              })),
+              connections: []
+            }
+          }
+          
+          // 如果是单个ContentBlock对象
+          if (typeof rawValue === 'object') {
+            return {
+              nodes: [{
+                id: rawValue.metadata?.id || 'block-0',
+                type: (rawValue.type || 'text') as any,
+                position: { x: 50, y: 50 },
+                size: { width: 200, height: 100 },
+                data: {
+                  content: rawValue.content || '',
+                  properties: {
+                    ...rawValue,
+                    order: rawValue.metadata?.order || 0
+                  }
+                }
+              }],
+              connections: []
+            }
+          }
+          
+          // 默认返回空结构
+          console.warn('无法识别的ContentBlock数据格式:', rawValue)
+          return { nodes: [], connections: [] }
+        }
+        
         return (
           <BlocksEditor
-            value={value || []}
-            onChange={onChange}
+            value={normalizeBlocksValue(value)}
+            onChange={(newValue) => {
+              // 将FlowCanvas格式转换回ContentBlock格式以保存
+              const blocks = newValue.nodes.map(node => ({
+                type: node.type,
+                content: node.data.content || '',
+                metadata: {
+                  id: node.id,
+                  order: node.data.properties?.order || 0
+                }
+              }))
+              onChange(blocks)
+            }}
             disabled={disabled}
           />
         )
