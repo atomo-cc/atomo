@@ -11,6 +11,7 @@ use crate::query::{WhereClause, OrderDirection};
 use crate::events::{EventType, ModelEvent};
 
 /// Core Atomo client that handles all database operations
+#[derive(Clone)]
 pub struct AtomoClient {
     pool: PgPool,
     schema: Schema,
@@ -18,6 +19,11 @@ pub struct AtomoClient {
 }
 
 impl AtomoClient {
+    /// Get the database connection pool
+    pub fn db_pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     pub async fn new(schema: &Schema) -> Result<Self> {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string());

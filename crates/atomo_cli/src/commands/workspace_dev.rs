@@ -345,7 +345,7 @@ async fn generate_service_runtime_code(service_dir: &Path, port: u16) -> Result<
         println!("   📋 Copied .env configuration to runtime");
     }
     
-    // Generate main.rs using the same template as dev command for consistency
+    // Generate main.rs using the corrected template for workspace development
     let main_rs = format!(r#"//! {} Service Runtime - Workspace Development Mode
 //! 
 //! 这是一个由 Atomo CLI 自动生成的服务运行时。
@@ -363,14 +363,23 @@ use async_graphql_axum::{{GraphQLRequest, GraphQLResponse}};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tracing::info;
+use atomo_server::{{PlatformQuery, PlatformMutation}};
 
 mod models;
 mod resolvers;
 
 use resolvers::*;
 
-// GraphQL Schema 类型别名
-type ServiceSchema = Schema<Query, Mutation, EmptySubscription>;
+// GraphQL Schema 类型别名 - 使用合并的Query和Mutation
+type ServiceSchema = Schema<MergedQuery, MergedMutation, EmptySubscription>;
+
+// 合并服务查询和平台查询
+#[derive(async_graphql::MergedObject)]
+struct MergedQuery(Query, PlatformQuery);
+
+// 合并服务变更和平台变更
+#[derive(async_graphql::MergedObject)]
+struct MergedMutation(Mutation, PlatformMutation);
 
 #[tokio::main]
 async fn main() -> Result<()> {{
@@ -382,21 +391,32 @@ async fn main() -> Result<()> {{
     
     info!("🚀 Starting {} Service Runtime (Workspace Dev Mode)");
     
-    // 连接数据库
+    // 连接数据库 - 直接使用 .env 中的 DATABASE_URL
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://localhost/atomo_dev".to_string());
     
-    info!("📊 Connecting to database...");
+    info!("📊 Connecting to database directly from .env...");
     let db_pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
         .await?;
     
-    // 构建 GraphQL Schema
-    info!("🔧 Building GraphQL schema with generated resolvers...");
-    let schema = Schema::build(Query, Mutation, EmptySubscription)
+    // 构建合并的 GraphQL Schema - 包含服务特定的和平台级别的查询/变更
+    info!("🔧 Building merged GraphQL schema with platform integration...");
+    let merged_query = MergedQuery(
+        Query::default(),
+        PlatformQuery::new(db_pool.clone())
+    );
+    let merged_mutation = MergedMutation(
+        Mutation::default(),
+        PlatformMutation::new(db_pool.clone())
+    );
+    
+    let schema = Schema::build(merged_query, merged_mutation, EmptySubscription)
         .data(db_pool.clone())
         .finish();
+    
+    info!("✅ Platform models integrated: users, sessions, audit logs automatically available");
     
     // 创建应用路由
     let app = Router::new()
@@ -810,6 +830,19 @@ opt-level = 0
 overflow-checks = false
 lto = false
 codegen-units = 256
+
+# 快速开发配置 - 进一步优化编译速度
+[profile.fast-dev]
+inherits = "dev"
+debug = false  # 完全关闭调试信息
+opt-level = 0
+incremental = true
+codegen-units = 512  # 最大并行度
+
+# 保留 release 配置用于生产环境
+[profile.release]
+incremental = true
+lto = "thin"  # 链接时优化，但不要太慢
 "#, 
     service_name = service_name,
     workspace_path = workspace_root.canonicalize()?.display()

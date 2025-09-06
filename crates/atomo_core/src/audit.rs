@@ -1,27 +1,15 @@
+//! Audit Core Interfaces
+//! 
+//! This module provides the core interfaces for audit logging in the Atomo platform.
+//! Concrete implementations should be provided in the server layer.
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use crate::{EntityId, StreamId, Timestamp};
-
-/// Audit log entry for tracking all entity changes
-/// 
-/// This is Phase 1 implementation - we use audit_log to track changes
-/// before migrating to full Event Sourcing in Phase 2.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuditLogEntry {
-    pub id: EntityId,
-    pub entity_type: String,
-    pub entity_id: EntityId,
-    pub stream_id: StreamId,
-    pub operation: AuditOperation,
-    pub old_data: Option<serde_json::Value>,
-    pub new_data: Option<serde_json::Value>,
-    pub user_id: Option<String>,
-    pub ip_address: Option<String>,
-    pub user_agent: Option<String>,
-    pub created_at: Timestamp,
-}
+use async_graphql::{SimpleObject, Enum};
 
 /// Types of operations that can be audited
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Enum)]
 pub enum AuditOperation {
     Create,
     Update,
@@ -29,24 +17,38 @@ pub enum AuditOperation {
     Read, // For sensitive operations
 }
 
+/// Core audit log entry structure
+/// 
+/// This represents the minimal structure for audit entries.
+/// Implementations can extend this with additional fields.
+#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
+pub struct AuditLogEntry {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: EntityId,
+    pub operation: AuditOperation,
+    pub operation_details: String,
+    pub user_id: Option<String>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub created_at: Timestamp,
+}
+
 impl AuditLogEntry {
+    /// Create a new audit log entry
     pub fn new(
-        entity_type: String,
-        entity_id: EntityId,
-        stream_id: StreamId,
+        entity_type: impl Into<String>, 
+        entity_id: EntityId, 
         operation: AuditOperation,
-        old_data: Option<serde_json::Value>,
-        new_data: Option<serde_json::Value>,
-        user_id: Option<String>,
+        operation_details: impl Into<String>,
+        user_id: Option<String>
     ) -> Self {
         Self {
-            id: EntityId::new(),
-            entity_type,
+            id: ulid::Ulid::new().to_string(),
+            entity_type: entity_type.into(),
             entity_id,
-            stream_id,
             operation,
-            old_data,
-            new_data,
+            operation_details: operation_details.into(),
             user_id,
             ip_address: None,
             user_agent: None,
@@ -61,20 +63,72 @@ impl AuditLogEntry {
     }
 }
 
-/// Context for audit operations
-#[derive(Debug, Clone)]
-pub struct AuditContext {
+/// Search filters for audit logs
+#[derive(Debug, Clone, Default)]
+pub struct AuditSearchFilters {
+    pub entity_type: Option<String>,
+    pub entity_id: Option<EntityId>,
+    pub stream_id: Option<StreamId>,
+    pub operation: Option<AuditOperation>,
     pub user_id: Option<String>,
-    pub ip_address: Option<String>,
-    pub user_agent: Option<String>,
+    pub start_time: Option<Timestamp>,
+    pub end_time: Option<Timestamp>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
-impl Default for AuditContext {
-    fn default() -> Self {
-        Self {
-            user_id: None,
-            ip_address: None,
-            user_agent: None,
-        }
-    }
+/// Audit statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditStats {
+    pub total_entries: i64,
+    pub operations_by_type: std::collections::HashMap<AuditOperation, i64>,
+    pub top_users: Vec<UserAuditStats>,
+    pub date_range: Option<(Timestamp, Timestamp)>,
+}
+
+/// User audit statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserAuditStats {
+    pub user_id: String,
+    pub operation_count: i64,
+    pub last_activity: Timestamp,
+}
+
+/// Core audit service interface
+/// 
+/// This trait defines the audit operations that any audit implementation must provide.
+#[async_trait]
+pub trait AuditService<AuditEntry>: Send + Sync 
+where
+    AuditEntry: Send + Sync,
+{
+    type Error: Send + Sync + 'static;
+
+    /// Log an audit entry
+    async fn log_audit_entry(&self, entry: AuditEntry) -> Result<(), Self::Error>;
+
+    /// Search audit logs with filters
+    async fn search_audit_logs(
+        &self,
+        filters: &AuditSearchFilters,
+    ) -> Result<Vec<AuditEntry>, Self::Error>;
+
+    /// Get audit logs for a specific entity
+    async fn get_audit_logs_for_entity(
+        &self,
+        entity_type: &str,
+        entity_id: &EntityId,
+    ) -> Result<Vec<AuditEntry>, Self::Error>;
+
+    /// Get audit logs for a specific user
+    async fn get_audit_logs_for_user(
+        &self,
+        user_id: &EntityId,
+    ) -> Result<Vec<AuditEntry>, Self::Error>;
+
+    /// Get audit statistics
+    async fn get_audit_stats(
+        &self,
+        filters: &AuditSearchFilters,
+    ) -> Result<AuditStats, Self::Error>;
 }

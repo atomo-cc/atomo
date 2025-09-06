@@ -31,7 +31,7 @@ enum Commands {
         #[arg(short, long)]
         template: Option<String>,
     },
-    /// Run database migrations
+    /// Run database migrations (Note: run in service directory with .env file for DATABASE_URL)
     Migrate {
         /// Database URL
         #[arg(long)]

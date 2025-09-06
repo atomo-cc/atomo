@@ -232,6 +232,7 @@ fn parse_field_definition(line: &str) -> Option<Field> {
         "number" => FieldType::Number,
         "boolean" => FieldType::Boolean,
         "Date" => FieldType::DateTime,
+        "any" => FieldType::Json, // TypeScript any type maps to JSON
         "Block[]" => FieldType::Blocks, // Special handling for composable content
         t if t.ends_with("[]") => FieldType::Array(Box::new(parse_array_type(t)?)),
         t => FieldType::Custom(t.to_string()),

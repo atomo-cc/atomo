@@ -1,48 +1,26 @@
-//! Event Sourcing Core - "事件的河流"
+//! Event Sourcing Core Abstractions - "事件的河流"
 //! 
-//! This module implements the heart of Atomo's event sourcing architecture.
-//! All state changes flow through this immutable event stream.
+//! This module defines the fundamental abstractions for Atomo's event sourcing architecture.
+//! According to the whitepaper, this should contain only traits and basic types,
+//! with all concrete implementations in the server layer.
 
-use chrono::{DateTime, Utc};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::types::{EntityId, StreamId};
 
 pub mod event_store;
 pub mod stream;
+pub mod envelope;
 
 pub use event_store::*;
 pub use stream::*;
+pub use envelope::*;
 
-/// Core event structure - the atomic unit of change in Atomo
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Event {
-    /// Unique event identifier (ULID for time-ordered sorting)
-    pub event_id: String,
-    
-    /// Stream identifier - groups related events (e.g., all events for a specific Contact)
-    pub stream_id: Uuid,
-    
-    /// Event type identifier (e.g., "ContactCreated", "ContactEmailUpdated")
-    pub event_type: String,
-    
-    /// Event payload containing the actual data
-    pub payload: serde_json::Value,
-    
-    /// Event metadata (user info, request context, etc.)
-    pub metadata: EventMetadata,
-    
-    /// When this event occurred
-    pub timestamp: DateTime<Utc>,
-    
-    /// Event version within the stream (for optimistic concurrency)
-    pub version: i64,
-}
-
-/// Event metadata for audit and context
+/// Core event metadata for audit and context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventMetadata {
     /// User who triggered this event
-    pub user_id: Option<String>,
+    pub user_id: Option<EntityId>,
     
     /// IP address of the request
     pub ip_address: Option<String>,
@@ -50,11 +28,14 @@ pub struct EventMetadata {
     /// User agent string
     pub user_agent: Option<String>,
     
-    /// Request correlation ID
+    /// Request correlation ID for tracing
     pub correlation_id: Option<String>,
     
-    /// Additional context
-    pub context: serde_json::Value,
+    /// Causation ID (which event caused this event)
+    pub causation_id: Option<String>,
+    
+    /// Additional context data
+    pub context: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Default for EventMetadata {
@@ -64,50 +45,113 @@ impl Default for EventMetadata {
             ip_address: None,
             user_agent: None,
             correlation_id: None,
-            context: serde_json::Value::Null,
+            causation_id: None,
+            context: std::collections::HashMap::new(),
         }
     }
 }
 
-/// Event stream identifier and current position
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamInfo {
-    pub stream_id: Uuid,
-    pub current_version: i64,
-    pub event_count: i64,
-    pub created_at: DateTime<Utc>,
-    pub last_event_at: DateTime<Utc>,
+impl EventMetadata {
+    /// Create new metadata with user context
+    pub fn with_user(user_id: EntityId) -> Self {
+        Self {
+            user_id: Some(user_id),
+            ..Default::default()
+        }
+    }
+    
+    /// Add correlation ID for request tracing
+    pub fn with_correlation(mut self, correlation_id: String) -> Self {
+        self.correlation_id = Some(correlation_id);
+        self
+    }
+    
+    /// Add causation ID for event causality
+    pub fn with_causation(mut self, causation_id: String) -> Self {
+        self.causation_id = Some(causation_id);
+        self
+    }
+    
+    /// Add custom context data
+    pub fn with_context(mut self, key: String, value: serde_json::Value) -> Self {
+        self.context.insert(key, value);
+        self
+    }
 }
 
-/// Marker trait for domain events
-pub trait DomainEvent: Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static {
-    /// Event type name
-    fn event_type() -> &'static str;
-    
-    /// Convert to generic Event
-    fn to_event(&self, stream_id: Uuid, metadata: EventMetadata) -> Event;
-    
-    /// Create from generic Event
-    fn from_event(event: &Event) -> Result<Self, serde_json::Error>;
+/// Event type enumeration for domain events
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EventType {
+    /// Entity creation events
+    Created,
+    /// Entity update events
+    Updated,
+    /// Entity deletion events
+    Deleted,
+    /// Entity state transition events
+    StateChanged,
+    /// Integration events from external systems
+    Integration,
+    /// Custom domain-specific events
+    Custom(String),
 }
 
-/// Event sourcing error types
-#[derive(Debug, thiserror::Error)]
-pub enum EventError {
-    #[error("Stream not found: {stream_id}")]
-    StreamNotFound { stream_id: Uuid },
+impl EventType {
+    /// Check if this is a lifecycle event
+    pub fn is_lifecycle_event(&self) -> bool {
+        matches!(self, EventType::Created | EventType::Updated | EventType::Deleted)
+    }
     
-    #[error("Optimistic concurrency error: expected version {expected}, got {actual}")]
-    ConcurrencyError { expected: i64, actual: i64 },
+    /// Check if this is a state transition event
+    pub fn is_state_transition(&self) -> bool {
+        matches!(self, EventType::StateChanged)
+    }
     
-    #[error("Event serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
-    
-    #[error("Database error: {0}")]
-    DatabaseError(String),
-    
-    #[error("Invalid event data: {0}")]
-    InvalidEventData(String),
+    /// Check if this is an integration event
+    pub fn is_integration_event(&self) -> bool {
+        matches!(self, EventType::Integration)
+    }
 }
 
-pub type EventResult<T> = Result<T, EventError>;
+/// Core domain event trait
+/// 
+/// All domain events must implement this trait to be processable
+/// by the event sourcing infrastructure.
+pub trait DomainEvent: Send + Sync + Clone {
+    /// Get the stream ID this event belongs to
+    fn stream_id(&self) -> StreamId;
+    
+    /// Get the event type
+    fn event_type(&self) -> EventType;
+    
+    /// Get the event metadata
+    fn metadata(&self) -> &EventMetadata;
+    
+    /// Serialize the event payload
+    fn payload(&self) -> serde_json::Value;
+    
+    /// Get the aggregate ID this event affects
+    fn aggregate_id(&self) -> EntityId;
+    
+    /// Get the version of the aggregate after this event
+    fn aggregate_version(&self) -> i64;
+}
+
+/// Event sourcing snapshot interface
+/// 
+/// Snapshots are periodic captures of aggregate state used
+/// to optimize event replay performance.
+#[async_trait]
+pub trait Snapshot: Send + Sync + Clone {
+    /// Get the aggregate ID this snapshot represents
+    fn aggregate_id(&self) -> EntityId;
+    
+    /// Get the version this snapshot represents
+    fn version(&self) -> i64;
+    
+    /// Get when this snapshot was taken
+    fn taken_at(&self) -> crate::types::Timestamp;
+    
+    /// Serialize the snapshot data
+    fn data(&self) -> serde_json::Value;
+}

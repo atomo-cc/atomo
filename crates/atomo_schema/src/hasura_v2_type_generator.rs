@@ -115,6 +115,12 @@ use uuid::Uuid;
         // Add header
         types.push_str(&self.generate_header());
         
+        // Generate ContentBlock type alias
+        types.push_str(&self.generate_content_block_union()?);
+        
+        // Note: Platform models (AuditLogEntry, PlatformUser, UserSession) are already defined 
+        // in atomo_server::platform_models and included via GraphQL schema
+        
         // Generate enums first
         for model in models {
             if model.fields.contains_key("_enum_type") {
@@ -124,7 +130,8 @@ use uuid::Uuid;
         
         // Generate basic model types
         for model in models {
-            if model.name.ends_with("Block") || model.fields.contains_key("_enum_type") {
+            // Skip enum types and Block types as they are handled separately
+            if model.fields.contains_key("_enum_type") || model.name.ends_with("Block") {
                 continue;
             }
             
@@ -154,6 +161,289 @@ use uuid::Uuid;
         Ok(types)
     }
     
+    /// Generate ContentBlock union type for GraphQL
+    fn generate_content_block_union(&self) -> Result<String> {
+        Ok(format!(
+            r#"/// ContentBlock GraphQL Union Type
+#[derive(async_graphql::Union, Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "blockType")]
+pub enum ContentBlock {{
+    #[serde(rename = "paragraph")]
+    Paragraph(ParagraphBlock),
+    #[serde(rename = "call_log")]
+    CallLog(CallLogBlock), 
+    #[serde(rename = "meeting_note")]
+    MeetingNote(MeetingNoteBlock),
+    #[serde(rename = "task")]
+    Task(TaskBlock),
+}}
+
+/// Paragraph content block
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct ParagraphBlock {{
+    pub id: String,
+    pub content: String,
+    pub metadata: Option<serde_json::Value>,
+    pub order: i32,
+    pub is_visible: bool,
+}}
+
+/// Call log content block
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct CallLogBlock {{
+    pub id: String,
+    pub caller: String,
+    pub duration: i32,
+    pub notes: Option<String>,
+    pub outcome: Option<String>,
+    pub recorded_at: DateTime<Utc>,
+    pub metadata: Option<serde_json::Value>,
+    pub order: i32,
+    pub is_visible: bool,
+}}
+
+/// Meeting note content block
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct MeetingNoteBlock {{
+    pub id: String,
+    pub title: String,
+    pub agenda: Option<String>,
+    pub notes: String,
+    pub attendees: Vec<String>,
+    #[graphql(name = "actionItems")]
+    pub action_items: Vec<String>,
+    #[graphql(name = "meetingDate")]
+    pub meeting_time: DateTime<Utc>,
+    pub metadata: Option<serde_json::Value>,
+    pub order: i32,
+    pub is_visible: bool,
+}}
+
+/// Task content block
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct TaskBlock {{
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    #[graphql(name = "completed")]
+    pub is_completed: bool,
+    pub due_date: Option<DateTime<Utc>>,
+    pub assigned_to: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub order: i32,
+    pub is_visible: bool,
+}}
+
+// Conversion from atomo_core::ContentBlock to GraphQL ContentBlock union
+impl ContentBlock {{
+    pub fn from_core_block(core_block: &atomo_core::ContentBlock) -> Result<Self, Box<dyn std::error::Error>> {{
+        let content: serde_json::Value = serde_json::from_str(&core_block.content)?;
+        
+        // Use content metadata to determine the specific block type
+        let block_subtype = content.get("blockType").and_then(|v| v.as_str()).unwrap_or("text");
+        
+        match block_subtype {{
+            "paragraph" => {{
+                Ok(ContentBlock::Paragraph(ParagraphBlock {{
+                    id: core_block.id.clone(),
+                    content: content.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    metadata: core_block.metadata.clone().map(|s| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)),
+                    order: core_block.order,
+                    is_visible: core_block.is_visible,
+                }}))
+            }},
+            "call_log" => {{
+                Ok(ContentBlock::CallLog(CallLogBlock {{
+                    id: core_block.id.clone(),
+                    caller: content.get("caller").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    duration: content.get("duration").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                    notes: content.get("notes").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    outcome: content.get("outcome").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    recorded_at: chrono::Utc::now(), // TODO: Parse from content
+                    metadata: core_block.metadata.clone().map(|s| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)),
+                    order: core_block.order,
+                    is_visible: core_block.is_visible,
+                }}))
+            }},
+            "meeting_note" => {{
+                Ok(ContentBlock::MeetingNote(MeetingNoteBlock {{
+                    id: core_block.id.clone(),
+                    title: content.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    agenda: content.get("agenda").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    notes: content.get("notes").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    attendees: content.get("attendees").and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default(),
+                    action_items: content.get("actionItems").and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default(),
+                    meeting_time: chrono::Utc::now(), // TODO: Parse from content
+                    metadata: core_block.metadata.clone().map(|s| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)),
+                    order: core_block.order,
+                    is_visible: core_block.is_visible,
+                }}))
+            }},
+            "task" => {{
+                Ok(ContentBlock::Task(TaskBlock {{
+                    id: core_block.id.clone(),
+                    title: content.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    description: content.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    is_completed: content.get("isCompleted").and_then(|v| v.as_bool()).unwrap_or(false),
+                    due_date: None, // TODO: Parse from content
+                    assigned_to: content.get("assignedTo").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    metadata: core_block.metadata.clone().map(|s| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)),
+                    order: core_block.order,
+                    is_visible: core_block.is_visible,
+                }}))
+            }},
+            _ => {{
+                // Default to paragraph for unknown types
+                Ok(ContentBlock::Paragraph(ParagraphBlock {{
+                    id: core_block.id.clone(),
+                    content: content.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    metadata: core_block.metadata.clone().map(|s| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)),
+                    order: core_block.order,
+                    is_visible: core_block.is_visible,
+                }}))
+            }},
+        }}
+    }}
+    
+    pub fn from_core_blocks(core_blocks: &[atomo_core::ContentBlock]) -> Result<Vec<Self>, Box<dyn std::error::Error>> {{
+        core_blocks.iter().map(|block| Self::from_core_block(block)).collect()
+    }}
+}}
+
+"#))
+    }
+    
+    /// Generate platform models (AuditLogEntry, PlatformUser, UserSession)
+    fn generate_platform_models(&self) -> Result<String> {
+        Ok(format!(
+            r#"/// Platform User model
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct PlatformUser {{
+    pub id: String,
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub role: String,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}}
+
+/// Database row type for PlatformUser
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct PlatformUserRow {{
+    pub id: String,
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub role: String,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}}
+
+impl From<PlatformUserRow> for PlatformUser {{
+    fn from(row: PlatformUserRow) -> Self {{
+        Self {{
+            id: row.id,
+            email: row.email,
+            first_name: row.first_name,
+            last_name: row.last_name,
+            role: row.role,
+            is_active: row.is_active,
+            last_login_at: row.last_login_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }}
+    }}
+}}
+
+/// User Session model
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct UserSession {{
+    pub id: String,
+    pub user_id: String,
+    pub expires_at: DateTime<Utc>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub created_at: DateTime<Utc>,
+}}
+
+/// Database row type for UserSession
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct UserSessionRow {{
+    pub id: String,
+    pub user_id: String,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub created_at: DateTime<Utc>,
+}}
+
+impl From<UserSessionRow> for UserSession {{
+    fn from(row: UserSessionRow) -> Self {{
+        Self {{
+            id: row.id,
+            user_id: row.user_id,
+            expires_at: row.expires_at,
+            ip_address: row.ip_address,
+            user_agent: row.user_agent,
+            created_at: row.created_at,
+        }}
+    }}
+}}
+
+/// Audit Log Entry model
+#[derive(Debug, Clone, Serialize, Deserialize, async_graphql::SimpleObject)]
+pub struct AuditLogEntry {{
+    pub id: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub operation: String,
+    pub user_id: Option<String>,
+    pub changes: Option<serde_json::Value>,
+    pub metadata: Option<serde_json::Value>,
+    pub timestamp: DateTime<Utc>,
+}}
+
+/// Database row type for AuditLogEntry
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct AuditLogEntryRow {{
+    pub id: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub operation: String,
+    pub user_id: Option<String>,
+    pub changes: Option<String>,
+    pub metadata: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}}
+
+impl From<AuditLogEntryRow> for AuditLogEntry {{
+    fn from(row: AuditLogEntryRow) -> Self {{
+        Self {{
+            id: row.id,
+            entity_id: row.entity_id,
+            entity_type: row.entity_type,
+            operation: row.operation,
+            user_id: row.user_id,
+            changes: row.changes.and_then(|s| serde_json::from_str(&s).ok()),
+            metadata: row.metadata.and_then(|s| serde_json::from_str(&s).ok()),
+            timestamp: row.timestamp,
+        }}
+    }}
+}}
+
+"#))
+    }
+    
     /// Convert camelCase to snake_case for database field names
     fn camel_to_snake_case(&self, input: &str) -> String {
         let mut result = String::new();
@@ -172,6 +462,7 @@ use uuid::Uuid;
     /// Generate basic model type
     fn generate_model_type(&self, model: &Model) -> Result<String> {
         let model_name = &model.name;
+        
         let mut fields = Vec::new();
         
         for (field_name, field) in &model.fields {
@@ -195,9 +486,86 @@ pub struct {model_name} {{
         ))
     }
     
+    /// Generate wrapper type for Block types to avoid orphan rule violations
+    fn generate_block_wrapper_type(&self, model: &Model) -> Result<String> {
+        let model_name = &model.name;
+        let mut fields = Vec::new();
+        
+        for (field_name, field) in &model.fields {
+            let field_type = self.convert_field_type(&field.field_type, field.optional);
+            fields.push(format!("    pub {}: {}", field_name, field_type));
+        }
+        
+        let fields_str = fields.join(",\n");
+        let core_type = format!("atomo_core::{}", model_name);
+        
+        // Generate specific field mappings based on block type
+        let (from_fields_str, to_fields_str) = self.generate_block_field_mappings(model_name, &model.fields);
+        
+        Ok(format!(
+            r#"/// {model_name} GraphQL wrapper
+#[derive(SimpleObject, Debug, Clone)]
+pub struct {model_name} {{
+{fields_str},
+}}
+
+impl From<{core_type}> for {model_name} {{
+    fn from(core: {core_type}) -> Self {{
+        Self {{
+{from_fields_str},
+        }}
+    }}
+}}
+
+impl From<{model_name}> for {core_type} {{
+    fn from(wrapper: {model_name}) -> Self {{
+        Self {{
+{to_fields_str},
+        }}
+    }}
+}}
+
+"#,
+            model_name = model_name,
+            core_type = core_type,
+            fields_str = fields_str,
+            from_fields_str = from_fields_str,
+            to_fields_str = to_fields_str,
+        ))
+    }
+    
+    /// Generate field mappings for Block types
+    fn generate_block_field_mappings(&self, model_name: &str, fields: &std::collections::HashMap<String, Field>) -> (String, String) {
+        let mut from_fields = Vec::new();
+        let mut to_fields = Vec::new();
+        
+        for (field_name, field) in fields {
+            match field_name.as_str() {
+                // For optional string fields that need special handling
+                "text" if field.optional => {
+                    from_fields.push(format!("            {}: core.{}.unwrap_or_default()", field_name, field_name));
+                    to_fields.push(format!("            {}: wrapper.{}", field_name, field_name));
+                },
+                // For required string fields  
+                "text" => {
+                    from_fields.push(format!("            {}: core.{}", field_name, field_name));
+                    to_fields.push(format!("            {}: wrapper.{}", field_name, field_name));
+                },
+                // Handle other fields normally
+                _ => {
+                    from_fields.push(format!("            {}: core.{}", field_name, field_name));
+                    to_fields.push(format!("            {}: wrapper.{}", field_name, field_name));
+                }
+            }
+        }
+        
+        (from_fields.join(",\n"), to_fields.join(",\n"))
+    }
+    
     /// Generate database row type for sqlx
     fn generate_row_type(&self, model: &Model) -> Result<String> {
         let model_name = &model.name;
+        
         let mut fields = Vec::new();
         
         for (field_name, field) in &model.fields {
@@ -222,16 +590,34 @@ pub struct {model_name} {{
                 FieldType::Number => {
                     format!("            {}: row.{}.to_string().parse::<f64>().unwrap_or(0.0)", field_name, db_field_name)
                 },
-                FieldType::Array(_) if field.optional => {
+                FieldType::Blocks if field.optional => {
                     format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
                 },
-                FieldType::Array(_) => {
+                FieldType::Blocks => {
                     format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
                 },
-                FieldType::Custom(custom_type) if field.optional => {
+                FieldType::Array(inner) => {
+                    match inner.as_ref() {
+                        FieldType::Custom(name) if name == "ContentBlock" || name.contains("Block") => {
+                            if field.optional {
+                                format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                            } else {
+                                format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                            }
+                        },
+                        _ => {
+                            if field.optional {
+                                format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                            } else {
+                                format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                            }
+                        }
+                    }
+                },
+                FieldType::Custom(_custom_type) if field.optional => {
                     format!("            {}: row.{}.map(|s| s.parse().unwrap_or_default())", field_name, db_field_name)
                 },
-                FieldType::Custom(custom_type) => {
+                FieldType::Custom(_custom_type) => {
                     format!("            {}: row.{}.parse().unwrap_or_default()", field_name, db_field_name)
                 },
                 _ => {
@@ -262,6 +648,27 @@ impl From<{model_name}Row> for {model_name} {{
             model_name = model_name,
             fields_str = fields_str,
             from_fields_str = from_fields_str,
+        ))
+    }
+    
+    /// Generate row type for Block types - delegate to core types
+    fn generate_block_row_type(&self, model: &Model) -> Result<String> {
+        let model_name = &model.name;
+        let core_type = format!("atomo_core::{}", model_name);
+        
+        Ok(format!(
+            r#"/// Database row type for {model_name} (delegated to core type)
+pub type {model_name}Row = {core_type};
+
+impl From<{model_name}Row> for {model_name} {{
+    fn from(row: {model_name}Row) -> Self {{
+        Self::from(row)
+    }}
+}}
+
+"#,
+            model_name = model_name,
+            core_type = core_type,
         ))
     }
     
@@ -374,7 +781,7 @@ pub enum {model_name}SelectColumn {{
             
             // Use snake_case field names for Hasura v2 compatibility
             let snake_case_name = self.camel_to_snake_case(field_name);
-            let field_type = self.convert_field_type(&field.field_type, false); // Get base type without Option
+            let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
             fields.push(format!("    pub {}: Option<{}>", snake_case_name, field_type));
         }
         
@@ -406,7 +813,7 @@ pub struct {model_name}InsertInput {{
             
             // Use snake_case field names for Hasura v2 compatibility
             let snake_case_name = self.camel_to_snake_case(field_name);
-            let field_type = self.convert_field_type(&field.field_type, false); // Get base type without Option
+            let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
             fields.push(format!("    pub {}: Option<{}>", snake_case_name, field_type));
         }
         
@@ -608,7 +1015,7 @@ pub struct FloatComparisonExp {{
 }}
 
 /// Boolean comparison expression
-#[derive(InputObject, Debug, Clone)]
+#[derive(InputObject, Debug, Clone, Serialize, Deserialize)]
 pub struct BooleanComparisonExp {{
     #[graphql(name = "_eq")]
     pub _eq: Option<bool>,
@@ -706,9 +1113,62 @@ pub struct GenericComparisonExp {{
             FieldType::Date | FieldType::DateTime => "DateTime<Utc>".to_string(),
             FieldType::EntityId => "ID".to_string(),
             FieldType::Json => "serde_json::Value".to_string(),
-            FieldType::Blocks => "serde_json::Value".to_string(),
-            FieldType::Array(inner) => format!("Vec<{}>", self.convert_field_type(inner, false)),
-            FieldType::Custom(name) => name.clone(),
+            FieldType::Blocks => "Vec<ContentBlock>".to_string(),
+            FieldType::Array(inner) => {
+                // Check if the inner type is ContentBlock - if so, use proper union type
+                match inner.as_ref() {
+                    FieldType::Custom(name) if name == "ContentBlock" => "Vec<ContentBlock>".to_string(),
+                    FieldType::Custom(name) if name.contains("Block") => "Vec<ContentBlock>".to_string(),
+                    _ => format!("Vec<{}>", self.convert_field_type(inner, false))
+                }
+            },
+            FieldType::Custom(name) => {
+                // If it's ContentBlock, use the union type
+                if name == "ContentBlock" {
+                    "ContentBlock".to_string()
+                } else if name.contains("Block") {
+                    // For specific block types, use the wrapper types
+                    name.clone()
+                } else {
+                    name.clone()
+                }
+            },
+            FieldType::Reference(name) => name.clone(),
+        };
+        
+        if optional {
+            format!("Option<{}>", base_type)
+        } else {
+            base_type
+        }
+    }
+    
+    /// Convert field type to Rust type for input objects - use JSON for ContentBlock arrays
+    fn convert_field_type_for_input(&self, field_type: &FieldType, optional: bool) -> String {
+        let base_type = match field_type {
+            FieldType::String => "String".to_string(),
+            FieldType::Number => "f64".to_string(),
+            FieldType::Boolean => "bool".to_string(),
+            FieldType::Date | FieldType::DateTime => "DateTime<Utc>".to_string(),
+            FieldType::EntityId => "ID".to_string(),
+            FieldType::Json => "serde_json::Value".to_string(),
+            FieldType::Blocks => "serde_json::Value".to_string(), // Use JSON for input
+            FieldType::Array(inner) => {
+                // Check if the inner type is ContentBlock - for input use JSON
+                match inner.as_ref() {
+                    FieldType::Custom(name) if name == "ContentBlock" => "serde_json::Value".to_string(),
+                    FieldType::Custom(name) if name.contains("Block") => "serde_json::Value".to_string(),
+                    _ => format!("Vec<{}>", self.convert_field_type_for_input(inner, false))
+                }
+            },
+            FieldType::Custom(name) => {
+                // For input, use JSON for ContentBlock types
+                if name == "ContentBlock" || name.contains("Block") {
+                    "serde_json::Value".to_string()
+                } else {
+                    name.clone()
+                }
+            },
             FieldType::Reference(name) => name.clone(),
         };
         
@@ -910,7 +1370,7 @@ pub struct {model_name}AggregateFields {{
         
         // Generate object types
         for model in models {
-            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+            if !model.fields.contains_key("_enum_type") {
                 schema.push_str(&self.generate_graphql_object_definition(model)?);
                 schema.push_str(&self.generate_graphql_input_definition(model)?);
                 schema.push_str(&self.generate_graphql_bool_exp_definition(model)?);
@@ -950,7 +1410,7 @@ pub struct {model_name}AggregateFields {{
         
         // Generate object types
         for model in models {
-            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+            if !model.fields.contains_key("_enum_type") {
                 schema.push_str(&self.generate_graphql_object_definition(model)?);
                 schema.push_str(&self.generate_graphql_input_definition(model)?);
                 schema.push_str(&self.generate_graphql_bool_exp_definition(model)?);
@@ -1053,7 +1513,7 @@ pub struct {model_name}AggregateFields {{
         // Query type
         result.push_str("type Query {\n");
         for model in models {
-            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+            if !model.fields.contains_key("_enum_type") {
                 let model_name_lower = model.name.to_lowercase();
                 let model_name_plural = format!("{}s", model_name_lower);
                 
@@ -1073,7 +1533,7 @@ pub struct {model_name}AggregateFields {{
         // Mutation type
         result.push_str("type Mutation {\n");
         for model in models {
-            if !model.fields.contains_key("_enum_type") && !model.name.ends_with("Block") {
+            if !model.fields.contains_key("_enum_type") {
                 result.push_str(&format!(
                     "  insert{}(object: {}Input!): {}!\n",
                     model.name, model.name, model.name

@@ -20,3 +20,8 @@ async-graphql = { workspace = true }
 
 # Additional core dependencies
 derive_more = "0.99"
+sqlx = { workspace = true, optional = true }
+
+[features]
+default = []
+sqlx = ["dep:sqlx"]

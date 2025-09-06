@@ -122,13 +122,28 @@ impl Atomo {
         ModelClient::new(self.client.clone(), model_name, &self.schema)
     }
     
-    /// Generate GraphQL schema for integration
+    /// Get the client for direct database access (internal use)
+    pub fn client(&self) -> &AtomoClient {
+        &self.client
+    }
+    
+    /// Get the schema definition (internal use)
+    pub fn schema(&self) -> &Schema {
+        &self.schema
+    }
+    
+    /// Generate GraphQL schema for integration with platform models
     pub fn graphql_schema(&self) -> async_graphql::Schema<
         graphql::Query,
         graphql::Mutation, 
         graphql::Subscription
     > {
-        graphql::build_schema(self.client.clone(), &self.schema)
+        graphql::build_schema(self.client.clone(), &self.schema, self.db_pool().clone())
+    }
+    
+    /// Get the database connection pool for direct SQL operations
+    pub fn db_pool(&self) -> &sqlx::PgPool {
+        self.client.db_pool()
     }
 }
 

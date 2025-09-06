@@ -54,12 +54,18 @@ impl AtomoServer {
         info!("   Port: {}", self.config.port);
         info!("   Database: {}", self.config.database_url);
 
-        // Generate GraphQL schema from Atomo
-        let graphql_schema = self.atomo.graphql_schema();
-        info!("   ✓ GraphQL schema generated from TypeScript schema");
+        // Generate extended GraphQL schema that includes both service and platform queries
+        let graphql_schema = crate::handlers::build_extended_schema(&self.atomo);
+        info!("   ✓ Extended GraphQL schema generated (service + platform)");
 
-        // Create router with Atomo context
-        let app = create_router(graphql_schema, self.atomo)
+        // Initialize authentication and audit services
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "your-secret-key-change-in-production".to_string());
+        let auth_service = crate::auth::HttpAuthService::new(&jwt_secret, self.atomo.db_pool().clone());
+        let audit_service = crate::audit::HttpAuditService::new(self.atomo.db_pool().clone());
+
+        // Create router with Atomo context and services
+        let app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .layer(
                 ServiceBuilder::new()
                     .layer(TraceLayer::new_for_http())

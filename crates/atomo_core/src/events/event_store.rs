@@ -1,160 +1,166 @@
-//! Event Store - Storage and retrieval of events
-//! 
-//! This module provides the core event storage abstraction and implementations.
+//! Event Store Core Abstractions
+//!
+//! This module defines the core interfaces for event storage in Atomo's
+//! event sourcing architecture. Concrete implementations should be in
+//! the server layer.
 
-use super::{Event, EventError, EventResult, StreamInfo};
 use async_trait::async_trait;
-use uuid::Uuid;
+use crate::types::{EntityId, StreamId, Timestamp};
+use super::{EventType, EventEnvelope, Snapshot};
 
-/// Event store trait - abstract interface for event persistence
+/// Core event store interface
+/// 
+/// This trait defines the fundamental operations that any event store
+/// implementation must provide for Atomo's event sourcing architecture.
 #[async_trait]
 pub trait EventStore: Send + Sync {
-    /// Append events to a stream
-    /// Returns the new version number after append
+    type Error: Send + Sync + 'static;
+
+    /// Append events to a stream with optimistic concurrency control
     async fn append_events(
         &self,
-        stream_id: Uuid,
+        stream_id: StreamId,
         expected_version: Option<i64>,
-        events: Vec<Event>,
-    ) -> EventResult<i64>;
-    
+        events: Vec<EventEnvelope>,
+    ) -> Result<(), Self::Error>;
+
     /// Read events from a stream
     async fn read_stream(
         &self,
-        stream_id: Uuid,
+        stream_id: StreamId,
         from_version: Option<i64>,
         max_count: Option<usize>,
-    ) -> EventResult<Vec<Event>>;
-    
-    /// Read all events from all streams (for projections)
-    async fn read_all_events(
+    ) -> Result<Vec<EventEnvelope>, Self::Error>;
+
+    /// Read all events of a specific type across all streams
+    async fn read_events_by_type(
         &self,
-        from_position: Option<i64>,
+        event_type: EventType,
+        from_timestamp: Option<Timestamp>,
         max_count: Option<usize>,
-    ) -> EventResult<Vec<Event>>;
-    
-    /// Get stream information
-    async fn get_stream_info(&self, stream_id: Uuid) -> EventResult<Option<StreamInfo>>;
-    
-    /// Get global event position (for projection checkpoints)
-    async fn get_global_position(&self) -> EventResult<i64>;
+    ) -> Result<Vec<EventEnvelope>, Self::Error>;
+
+    /// Read events for a specific aggregate
+    async fn read_aggregate_events(
+        &self,
+        aggregate_id: EntityId,
+        from_version: Option<i64>,
+    ) -> Result<Vec<EventEnvelope>, Self::Error>;
+
+    /// Read events by global sequence number (for projections)
+    async fn read_events_from_sequence(
+        &self,
+        from_sequence: i64,
+        max_count: Option<usize>,
+    ) -> Result<Vec<EventEnvelope>, Self::Error>;
+
+    /// Get the current version of a stream
+    async fn get_stream_version(&self, stream_id: StreamId) -> Result<Option<i64>, Self::Error>;
+
+    /// Get the latest global sequence number
+    async fn get_latest_sequence(&self) -> Result<i64, Self::Error>;
+
+    /// Check if a stream exists
+    async fn stream_exists(&self, stream_id: StreamId) -> Result<bool, Self::Error>;
+
+    /// Delete a stream (if supported by implementation)
+    async fn delete_stream(&self, stream_id: StreamId) -> Result<(), Self::Error>;
 }
 
-/// In-memory event store for testing and development
-#[derive(Debug, Default)]
-pub struct InMemoryEventStore {
-    events: std::sync::Arc<std::sync::RwLock<Vec<Event>>>,
-    streams: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<Uuid, StreamInfo>>>,
-}
-
-impl InMemoryEventStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
+/// Snapshot store interface for aggregate state snapshots
+/// 
+/// Snapshots are used to optimize event replay by periodically
+/// capturing aggregate state.
 #[async_trait]
-impl EventStore for InMemoryEventStore {
-    async fn append_events(
-        &self,
-        stream_id: Uuid,
-        expected_version: Option<i64>,
-        mut events: Vec<Event>,
-    ) -> EventResult<i64> {
-        let mut all_events = self.events.write().unwrap();
-        let mut streams = self.streams.write().unwrap();
-        
-        // Get current stream info
-        let current_version = {
-            let streams = self.streams.read().unwrap();
-            streams.get(&stream_id).map(|s| s.current_version).unwrap_or(0)
-        };
-        
-        // Check optimistic concurrency
-        if let Some(expected) = expected_version {
-            if current_version != expected {
-                return Err(EventError::ConcurrencyError {
-                    expected,
-                    actual: current_version,
-                });
-            }
-        }
-        
-        // Assign versions and global positions
-        let start_version = current_version + 1;
-        let _global_position = all_events.len() as i64;
-        
-        for (i, event) in events.iter_mut().enumerate() {
-            event.version = start_version + i as i64;
-        }
-        
-        // Update stream info
-        let new_version = start_version + events.len() as i64 - 1;
-        let now = chrono::Utc::now();
-        
-        {
-            let mut streams = self.streams.write().unwrap();
-            let existing_info = streams.get(&stream_id).cloned();
-            
-            streams.insert(stream_id, StreamInfo {
-                stream_id,
-                current_version: new_version,
-                event_count: existing_info.as_ref().map(|s| s.event_count).unwrap_or(0) + events.len() as i64,
-                created_at: existing_info.as_ref().map(|s| s.created_at).unwrap_or(now),
-                last_event_at: now,
-            });
-        }
-        
-        // Append events
-        all_events.extend(events);
-        
-        Ok(new_version)
-    }
+pub trait SnapshotStore<S>: Send + Sync 
+where
+    S: Snapshot,
+{
+    type Error: Send + Sync + 'static;
+
+    /// Save a snapshot for an aggregate
+    async fn save_snapshot(&self, snapshot: S) -> Result<(), Self::Error>;
+
+    /// Load the latest snapshot for an aggregate
+    async fn load_snapshot(&self, aggregate_id: EntityId) -> Result<Option<S>, Self::Error>;
+
+    /// Load a snapshot at or before a specific version
+    async fn load_snapshot_at_version(
+        &self, 
+        aggregate_id: EntityId, 
+        version: i64
+    ) -> Result<Option<S>, Self::Error>;
+
+    /// Delete old snapshots, keeping only the most recent N
+    async fn cleanup_snapshots(
+        &self, 
+        aggregate_id: EntityId, 
+        keep_count: usize
+    ) -> Result<(), Self::Error>;
+}
+
+/// Event store statistics for monitoring and debugging
+#[derive(Debug, Clone)]
+pub struct EventStoreStats {
+    /// Total number of events in the store
+    pub total_events: i64,
     
-    async fn read_stream(
-        &self,
-        stream_id: Uuid,
-        from_version: Option<i64>,
-        max_count: Option<usize>,
-    ) -> EventResult<Vec<Event>> {
-        let events = self.events.read().unwrap();
-        let from_ver = from_version.unwrap_or(0);
-        
-        let stream_events: Vec<Event> = events
-            .iter()
-            .filter(|e| e.stream_id == stream_id && e.version >= from_ver)
-            .take(max_count.unwrap_or(usize::MAX))
-            .cloned()
-            .collect();
-            
-        Ok(stream_events)
-    }
+    /// Total number of streams
+    pub total_streams: i64,
     
-    async fn read_all_events(
-        &self,
-        from_position: Option<i64>,
-        max_count: Option<usize>,
-    ) -> EventResult<Vec<Event>> {
-        let events = self.events.read().unwrap();
-        let from_pos = from_position.unwrap_or(0) as usize;
-        
-        let result: Vec<Event> = events
-            .iter()
-            .skip(from_pos)
-            .take(max_count.unwrap_or(usize::MAX))
-            .cloned()
-            .collect();
-            
-        Ok(result)
-    }
+    /// Latest global sequence number
+    pub latest_sequence: i64,
     
-    async fn get_stream_info(&self, stream_id: Uuid) -> EventResult<Option<StreamInfo>> {
-        let streams = self.streams.read().unwrap();
-        Ok(streams.get(&stream_id).cloned())
-    }
+    /// Events by type
+    pub events_by_type: std::collections::HashMap<String, i64>,
     
-    async fn get_global_position(&self) -> EventResult<i64> {
-        let events = self.events.read().unwrap();
-        Ok(events.len() as i64)
-    }
+    /// Average events per stream
+    pub avg_events_per_stream: f64,
+    
+    /// Date range of events
+    pub date_range: Option<(Timestamp, Timestamp)>,
+}
+
+/// Extended event store interface with monitoring capabilities
+#[async_trait]
+pub trait EventStoreExt: EventStore {
+    /// Get statistics about the event store
+    async fn get_stats(&self) -> Result<EventStoreStats, Self::Error>;
+    
+    /// Get health status of the event store
+    async fn health_check(&self) -> Result<bool, Self::Error>;
+    
+    /// Compact/optimize the event store (if supported)
+    async fn compact(&self) -> Result<(), Self::Error>;
+}
+
+/// Event subscription interface for real-time event processing
+#[async_trait]
+pub trait EventSubscription: Send + Sync {
+    type Error: Send + Sync + 'static;
+    type Handle: EventSubscriptionHandle + Send + Sync;
+
+    /// Subscribe to all new events
+    async fn subscribe_all(&self) -> Result<Box<Self::Handle>, Self::Error>;
+
+    /// Subscribe to events of a specific type
+    async fn subscribe_to_type(&self, event_type: EventType) -> Result<Box<Self::Handle>, Self::Error>;
+
+    /// Subscribe to events from a specific stream
+    async fn subscribe_to_stream(&self, stream_id: StreamId) -> Result<Box<Self::Handle>, Self::Error>;
+}
+
+/// Handle for managing event subscriptions
+#[async_trait]
+pub trait EventSubscriptionHandle: Send + Sync {
+    type Error: Send + Sync + 'static;
+
+    /// Get the next batch of events
+    async fn next_events(&mut self) -> Result<Vec<EventEnvelope>, Self::Error>;
+
+    /// Acknowledge processing of events up to a sequence number
+    async fn acknowledge(&mut self, sequence: i64) -> Result<(), Self::Error>;
+
+    /// Close the subscription
+    async fn close(self: Box<Self>) -> Result<(), Self::Error>;
 }

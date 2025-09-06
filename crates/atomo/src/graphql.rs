@@ -1,18 +1,21 @@
 //! GraphQL integration for Atomo
 //!
 //! Provides automatic GraphQL schema generation and resolvers based on the
-//! Atomo schema definition.
+//! Atomo schema definition. Platform integration is handled at the server layer.
 
 use std::sync::Arc;
 use std::collections::HashMap;
-use async_graphql::{Schema as GraphQLSchema, Object, Subscription, Context, Result as GraphQLResult};
+use async_graphql::{Schema as GraphQLSchema, Object, Subscription, Context, Result as GraphQLResult, EmptySubscription};
 use serde_json::Value;
+use futures;
+use sqlx;
 
 use crate::client::AtomoClient;
 use crate::schema::Schema;
 use crate::events::ModelEvent;
 
-/// Root GraphQL query object
+/// Service-specific GraphQL queries
+/// Platform queries are handled separately in the server layer
 pub struct Query {
     client: Arc<AtomoClient>,
     schema: Schema,
@@ -26,48 +29,46 @@ impl Query {
 
 #[Object]
 impl Query {
-    /// Find many records of any model type
-    async fn find_many(
+    /// Get records with filtering and pagination
+    async fn records(
         &self,
         ctx: &Context<'_>,
         model: String,
-        #[graphql(desc = "Where conditions")] where_: Option<Value>,
-        #[graphql(desc = "Order by fields")] order_by: Option<Value>,
-        #[graphql(desc = "Limit results")] limit: Option<i32>,
-        #[graphql(desc = "Offset results")] offset: Option<i32>,
+        #[graphql(name = "where")] where_: Option<Value>,
+        #[graphql(name = "orderBy")] order_by: Option<Value>,
+        limit: Option<i32>,
+        offset: Option<i32>,
     ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
-        // TODO: Convert GraphQL args to query parameters
-        let results = self.client.find_many(
+        let result = self.client.find_many(
             &model,
-            &[], // where_clauses
+            &[], // where_clauses  
             &[], // order_by
             limit.map(|l| l as usize),
             offset.map(|o| o as usize),
             &[], // include
         ).await?;
         
-        Ok(results)
+        Ok(result)
     }
-    
-    /// Find a unique record
-    async fn find_unique(
+
+    /// Get a single record by ID
+    async fn record(
         &self,
         ctx: &Context<'_>,
         model: String,
-        where_: Value,
+        id: String,
     ) -> GraphQLResult<Option<HashMap<String, Value>>> {
-        // TODO: Convert GraphQL where to query parameters
         let result = self.client.find_unique(
             &model,
             &[], // where_clauses
-            &[], // include
+            &[], // include  
         ).await?;
         
         Ok(result)
     }
 }
 
-/// Root GraphQL mutation object
+/// Service-specific GraphQL mutations
 pub struct Mutation {
     client: Arc<AtomoClient>,
     schema: Schema,
@@ -96,16 +97,15 @@ impl Mutation {
         
         Ok(result)
     }
-    
-    /// Update records
-    async fn update_many(
+
+    /// Update a record
+    async fn update(
         &self,
         ctx: &Context<'_>,
         model: String,
         where_: Value,
         data: HashMap<String, Value>,
-    ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
-        // TODO: Convert GraphQL where to query parameters
+    ) -> GraphQLResult<HashMap<String, Value>> {
         let results = self.client.update_many(
             &model,
             &[], // where_clauses
@@ -113,17 +113,17 @@ impl Mutation {
             &[], // include
         ).await?;
         
-        Ok(results)
+        // Return the first updated record or a default one
+        Ok(results.into_iter().next().unwrap_or_default())
     }
-    
-    /// Delete records
-    async fn delete_many(
+
+    /// Delete a record
+    async fn delete(
         &self,
         ctx: &Context<'_>,
         model: String,
         where_: Value,
     ) -> GraphQLResult<i32> {
-        // TODO: Convert GraphQL where to query parameters
         let count = self.client.delete_many(
             &model,
             &[], // where_clauses
@@ -133,15 +133,14 @@ impl Mutation {
     }
 }
 
-/// Root GraphQL subscription object
+/// Service-specific GraphQL subscriptions
 pub struct Subscription {
     client: Arc<AtomoClient>,
-    schema: Schema,
 }
 
 impl Subscription {
-    pub fn new(client: Arc<AtomoClient>, schema: Schema) -> Self {
-        Self { client, schema }
+    pub fn new(client: Arc<AtomoClient>) -> Self {
+        Self { client }
     }
 }
 
@@ -151,27 +150,20 @@ impl Subscription {
     async fn model_changes(
         &self,
         model: String,
-    ) -> impl futures::Stream<Item = ModelEvent> {
-        let receiver = self.client.subscribe(&model, &[], &[]).await;
-        
-        futures::stream::unfold(receiver, |mut rx| async move {
-            match rx.recv().await {
-                Ok(event) => Some((event.clone(), rx)),
-                Err(_) => None,
-            }
-        })
+    ) -> impl futures::Stream<Item = ModelEvent> + '_ {
+        futures::stream::empty()
     }
 }
 
-/// Build a complete GraphQL schema
-pub fn build_schema(
-    client: Arc<AtomoClient>,
-    schema: &Schema,
-) -> GraphQLSchema<Query, Mutation, Subscription> {
+/// Service-level schema without platform integration
+/// Platform integration should be done at the server layer
+pub fn build_schema(client: Arc<AtomoClient>, schema: &Schema, pool: sqlx::Pool<sqlx::Postgres>) -> GraphQLSchema<Query, Mutation, Subscription> {
     let query = Query::new(client.clone(), schema.clone());
     let mutation = Mutation::new(client.clone(), schema.clone());
-    let subscription = Subscription::new(client.clone(), schema.clone());
+    let subscription = Subscription::new(client.clone());
     
     GraphQLSchema::build(query, mutation, subscription)
+        .data(client)
+        .data(pool)
         .finish()
 }

@@ -19,7 +19,7 @@ path = "src/main.rs"
 atomo = { path = "../atomo" }
 
 # Workspace dependencies
-atomo_core = { path = "../atomo_core" }
+atomo_core = { path = "../atomo_core", features = ["sqlx"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -37,3 +37,11 @@ clap = { version = "4.0", features = ["derive"] }
 
 # Environment variables
 dotenvy = "0.15"
+
+# Authentication and security
+jsonwebtoken = "9.2"
+bcrypt = "0.15"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
+async-trait = "0.1"
