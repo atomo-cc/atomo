@@ -1,6 +1,6 @@
 # GraphQL API
 
-Atomo services expose a generated GraphQL API. When running `atomo dev`, visit `/graphql` for the IDE.
+Atomo services expose a generated GraphQL API. When running `atomo dev`, visit `/graphql` for the IDE. The server merges service queries with platform queries (users, sessions, audit).
 
 ## Example Operations
 
@@ -24,6 +24,7 @@ mutation CreateContact($input: CreateContactInput!) {
 ```
 
 ## Local Endpoints
-- Dev server: `http://localhost:3000/graphql` (see service README for ports)
+- Dev server default: `http://localhost:3000/graphql`
+- Override with `atomo dev --port <n>` or `atomo-server --port <n>`
 
 See also: the `schema.ts` in each service (e.g., `services/crm-service/schema.ts`).

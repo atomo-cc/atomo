@@ -14,21 +14,33 @@ pnpm dev        # atomo dev --service crm
 pnpm migrate    # atomo migrate --service crm
 ```
 
-## Common Commands
+## Commands & Options
 
 ```bash
 # Start dev pipeline (codegen, server, admin UI)
-atomo dev --service <name>
+atomo dev [-p, --port 3000]
 
 # Build service for production
 atomo build --service <name>
 
 # Database operations
-atomo migrate --service <name>
-atomo seed --service <name>
+atomo migrate [--database-url <url>] [--generate --name <migration>]
 
-# Test service workflows and plugins
-atomo test --service <name>
+# Code generation
+atomo codegen [-o, --output generated]
+```
+
+### Workspace Dev
+For core contributors working on the core crates and a service together:
+```bash
+atomo workspace-dev [--service-path services/<name>] [-p 3000]
+```
+
+Init/build/deploy:
+```bash
+atomo init <project-name> [--template <name>]
+atomo build
+atomo deploy [-e, --env production]
 ```
 
 See also: `package.json` scripts at repo root and in `services/<name>/package.json`.

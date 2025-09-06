@@ -39,7 +39,8 @@ export default defineConfig({
             { text: 'Introduction', link: '/guide/introduction' },
             { text: 'Quick Start', link: '/guide/getting-started' },
             { text: 'Installation', link: '/guide/installation' },
-            { text: 'Your First Project', link: '/guide/first-project' }
+            { text: 'Your First Project', link: '/guide/first-project' },
+            { text: 'Architecture Overview', link: '/guide/architecture' }
           ]
         },
         {
@@ -48,6 +49,10 @@ export default defineConfig({
             { text: 'Event Sourcing', link: '/guide/event-sourcing' },
             { text: 'Schema-Driven Development', link: '/guide/schema-driven' },
             { text: 'Real-time Collaboration', link: '/guide/collaboration' },
+            { text: 'Dev Runtime & Workspace', link: '/guide/dev-runtime' },
+            { text: 'Server Routes in Dev', link: '/guide/server-routes-dev' },
+            { text: 'Modeling & Access', link: '/guide/modeling' },
+            { text: 'Configuration', link: '/guide/configuration' },
             { text: 'WASM Plugins', link: '/guide/plugins' },
             { text: 'Local-First Architecture', link: '/guide/local-first' }
           ]
@@ -78,6 +83,11 @@ export default defineConfig({
             { text: 'Overview', link: '/api/' },
             { text: 'CLI Commands', link: '/api/cli' },
             { text: 'GraphQL Schema', link: '/api/graphql' },
+            { text: 'Platform GraphQL', link: '/api/platform' },
+            { text: 'Auth (REST)', link: '/api/auth' },
+            { text: 'Audit (REST)', link: '/api/audit' },
+            { text: 'Schema Metadata', link: '/api/metadata' },
+            { text: 'Content Blocks', link: '/api/content-blocks' },
             { text: 'TypeScript SDK', link: '/api/typescript-sdk' },
             { text: 'Rust APIs', link: '/api/rust' },
             { text: 'Plugin APIs', link: '/api/plugins' }
