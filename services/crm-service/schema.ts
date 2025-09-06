@@ -7,7 +7,55 @@
  * - GraphQL types and resolvers
  * - Admin UI forms and views
  * - TypeScript types for the frontend
+ * 
+ * Note: Platform-level models (User, Session, UserRole) are now defined
+ * in atomo_core and will be automatically available in all services.
  */
+
+// Import platform-level types from atomo_core
+// These will be generated and made available by the Atomo platform
+type ContentBlock = any; // Placeholder for platform-generated ContentBlock type
+
+// =============================================================================
+// Specialized Content Block Types for CRM
+// =============================================================================
+
+export interface ParagraphBlock {
+  id: string;
+  text: string;
+  formatting?: any;
+  order: number;
+}
+
+export interface CallLogBlock {
+  id: string;
+  duration?: number;
+  call_time: Date;
+  notes: string;
+  outcome?: string;
+  order: number;
+}
+
+export interface MeetingNoteBlock {
+  id: string;
+  title: string;
+  meeting_time: Date;
+  attendees: string[];
+  notes: string;
+  action_items: string[];
+  order: number;
+}
+
+export interface TaskBlock {
+  id: string;
+  title: string;
+  description?: string;
+  due_date?: Date;
+  priority?: number;
+  is_completed: boolean;
+  assigned_to?: string;
+  order: number;
+}
 
 // =============================================================================
 // Core Customer Models
@@ -21,7 +69,7 @@ export interface Contact {
   phone?: string;
   companyId?: string;
   tags: string[];
-  notes: Block[];  // Rich content using Atomo's composable content system
+  notes: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,7 +81,7 @@ export interface Company {
   address?: string;
   industry?: string;
   size?: CompanySize;
-  notes: Block[];  // Rich content blocks
+  notes: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,7 +93,7 @@ export interface Deal {
   stage: DealStage;
   contactId: string;
   companyId?: string;
-  description: Block[];  // Rich content blocks
+  description: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
   expectedCloseDate?: Date;
   actualCloseDate?: Date;
   createdAt: Date;
@@ -74,61 +122,17 @@ export enum DealStage {
 }
 
 // =============================================================================
-// Atomo Composable Content Blocks
-// =============================================================================
-
-/**
- * Atomo's "流动的画布" - Composable content blocks that can be used
- * in any rich content field (notes, descriptions, etc.)
- */
-export type Block = 
-  | ParagraphBlock
-  | CallLogBlock  
-  | MeetingNoteBlock
-  | TaskBlock;
-
-export interface ParagraphBlock {
-  type: "paragraph";
-  content: string;
-}
-
-export interface CallLogBlock {
-  type: "call_log";
-  duration: number; // in minutes
-  outcome: string;
-  notes: string;
-  recordedAt: Date;
-}
-
-export interface MeetingNoteBlock {
-  type: "meeting_note";
-  title: string;
-  attendees: string[];
-  agenda: string;
-  notes: string;
-  actionItems: string[];
-  meetingDate: Date;
-}
-
-export interface TaskBlock {
-  type: "task";
-  title: string;
-  description?: string;
-  assignedTo?: string;
-  dueDate?: Date;
-  completed: boolean;
-}
-
-// =============================================================================
 // Schema Metadata for Atomo Platform
 // =============================================================================
 
 /**
- * This metadata tells Atomo how to handle the schema:
+ * This metadata tells Atomo how to handle the CRM business models:
  * - Relationships between models
  * - Validation rules
  * - UI generation hints
  * - Search and indexing configuration
+ * 
+ * Note: Platform-level models (User, Session) are configured in atomo_core
  */
 export const schema = {
   models: {
@@ -136,6 +140,12 @@ export const schema = {
       tableName: 'contacts',
       primaryKey: 'id',
       searchable: ['firstName', 'lastName', 'email'],
+      access: {
+        create: 'sales|manager|admin',
+        read: 'authenticated',
+        update: 'sales|manager|admin',
+        delete: 'manager|admin'
+      },
       relationships: {
         company: {
           type: 'belongsTo',
@@ -164,6 +174,12 @@ export const schema = {
       tableName: 'companies',
       primaryKey: 'id',
       searchable: ['name', 'website', 'industry'],
+      access: {
+        create: 'sales|manager|admin',
+        read: 'authenticated',
+        update: 'sales|manager|admin',
+        delete: 'manager|admin'
+      },
       relationships: {
         contacts: {
           type: 'hasMany',
@@ -192,6 +208,12 @@ export const schema = {
       tableName: 'deals',
       primaryKey: 'id',
       searchable: ['title'],
+      access: {
+        create: 'sales|manager|admin',
+        read: 'authenticated',
+        update: 'sales|manager|admin',
+        delete: 'manager|admin'
+      },
       relationships: {
         contact: {
           type: 'belongsTo',
