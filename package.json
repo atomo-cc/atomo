@@ -6,13 +6,18 @@
   "scripts": {
     "dev:admin": "pnpm --filter atomo-admin-ui dev", 
     "dev:service": "atomo dev",
+    "dev:docs": "pnpm --filter @atomo/docs dev",
     "build:core": "cargo build --workspace --release",
-    "build:all": "pnpm build:core && pnpm --filter \"./packages/*\" build",
+    "build:docs": "pnpm --filter @atomo/docs build",
+    "build:all": "pnpm build:core && pnpm --filter \"./packages/*\" build && pnpm build:docs",
     "atomo": "cargo run -p atomo_cli --",
     "test": "cargo test --workspace && pnpm --filter \"./packages/*\" test",
     "format": "cargo fmt --all && pnpm --filter \"./packages/*\" format",
     "lint": "cargo clippy --workspace -- -D warnings && pnpm --filter \"./packages/*\" lint",
-    "clean": "cargo clean && pnpm --filter \"./packages/*\" clean"
+    "clean": "cargo clean && pnpm --filter \"./packages/*\" clean",
+    "docs:api": "cargo doc --workspace --no-deps --document-private-items",
+    "docs:serve": "pnpm dev:docs",
+    "docs:deploy": "pnpm build:docs"
   },
   "engines": {
     "node": ">=18.0.0",

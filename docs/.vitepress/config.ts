@@ -1,0 +1,129 @@
+import { defineConfig } from 'vitepress'
+
+export default defineConfig({
+  title: 'Atomo',
+  description: 'The Next-Generation Content Core - Developer Documentation',
+  
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.ico' }],
+    ['meta', { name: 'theme-color', content: '#3c82f6' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:locale', content: 'en' }],
+    ['meta', { property: 'og:title', content: 'Atomo | Next-Generation Content Core' }],
+    ['meta', { property: 'og:site_name', content: 'Atomo Docs' }],
+    ['meta', { property: 'og:url', content: 'https://docs.atomo.cc/' }],
+  ],
+
+  themeConfig: {
+    logo: '/logo.svg',
+    
+    nav: [
+      { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'API', link: '/api/' },
+      { text: 'Examples', link: '/examples/' },
+      { text: 'Playground', link: 'https://playground.atomo.cc' },
+      {
+        text: 'v0.1.0',
+        items: [
+          { text: 'Changelog', link: '/changelog' },
+          { text: 'Roadmap', link: '/roadmap' }
+        ]
+      }
+    ],
+
+    sidebar: {
+      '/guide/': [
+        {
+          text: '🚀 Getting Started',
+          items: [
+            { text: 'Introduction', link: '/guide/introduction' },
+            { text: 'Quick Start', link: '/guide/getting-started' },
+            { text: 'Installation', link: '/guide/installation' },
+            { text: 'Your First Project', link: '/guide/first-project' }
+          ]
+        },
+        {
+          text: '🏗️ Core Concepts',
+          items: [
+            { text: 'Event Sourcing', link: '/guide/event-sourcing' },
+            { text: 'Schema-Driven Development', link: '/guide/schema-driven' },
+            { text: 'Real-time Collaboration', link: '/guide/collaboration' },
+            { text: 'WASM Plugins', link: '/guide/plugins' },
+            { text: 'Local-First Architecture', link: '/guide/local-first' }
+          ]
+        },
+        {
+          text: '📘 Tutorials',
+          items: [
+            { text: 'Building a CRM', link: '/guide/tutorials/crm' },
+            { text: 'Custom Content Types', link: '/guide/tutorials/content-types' },
+            { text: 'Plugin Development', link: '/guide/tutorials/plugin-dev' },
+            { text: 'Deployment Guide', link: '/guide/tutorials/deployment' }
+          ]
+        },
+        {
+          text: '🔧 Advanced',
+          items: [
+            { text: 'Custom Event Stores', link: '/guide/advanced/event-stores' },
+            { text: 'Multi-tenant Setup', link: '/guide/advanced/multi-tenant' },
+            { text: 'Security & Auth', link: '/guide/advanced/security' },
+            { text: 'Performance Tuning', link: '/guide/advanced/performance' }
+          ]
+        }
+      ],
+      '/api/': [
+        {
+          text: '📚 API Reference',
+          items: [
+            { text: 'Overview', link: '/api/' },
+            { text: 'CLI Commands', link: '/api/cli' },
+            { text: 'GraphQL Schema', link: '/api/graphql' },
+            { text: 'TypeScript SDK', link: '/api/typescript-sdk' },
+            { text: 'Rust APIs', link: '/api/rust' },
+            { text: 'Plugin APIs', link: '/api/plugins' }
+          ]
+        }
+      ],
+      '/examples/': [
+        {
+          text: '🎯 Examples',
+          items: [
+            { text: 'Overview', link: '/examples/' },
+            { text: 'CRM System', link: '/examples/crm' },
+            { text: 'Content Management', link: '/examples/cms' },
+            { text: 'Collaboration Tools', link: '/examples/collaboration' },
+            { text: 'E-commerce', link: '/examples/ecommerce' },
+            { text: 'Analytics Dashboard', link: '/examples/analytics' }
+          ]
+        }
+      ]
+    },
+
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/atomo-org/atomo' },
+      { icon: 'discord', link: 'https://discord.gg/atomo' }
+    ],
+
+    footer: {
+      message: 'Released under the AGPL-3.0 License.',
+      copyright: 'Copyright © 2024 Atomo Team'
+    },
+
+    search: {
+      provider: 'local'
+    },
+
+    editLink: {
+      pattern: 'https://github.com/atomo-org/atomo/edit/main/docs/:path',
+      text: 'Edit this page on GitHub'
+    }
+  },
+
+  markdown: {
+    theme: {
+      light: 'github-light',
+      dark: 'github-dark'
+    },
+    lineNumbers: true
+  }
+})

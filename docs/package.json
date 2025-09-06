@@ -1,0 +1,20 @@
+{
+  "name": "@atomo/docs",
+  "version": "0.1.0",
+  "description": "Atomo Developer Documentation",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "docs:api": "cargo doc --workspace --no-deps && cp -r target/doc docs/.vitepress/dist/api"
+  },
+  "dependencies": {
+    "vitepress": "^1.0.0-rc.31",
+    "vue": "^3.3.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.9.0",
+    "typescript": "^5.2.2"
+  }
+}

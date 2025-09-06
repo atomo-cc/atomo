@@ -12,8 +12,7 @@
     "test": "atomo test --service crm"
   },
   "dependencies": {
-    "@atomo/core": "workspace:*",
-    "@atomo/plugin-sdk": "workspace:*"
+    "@atomo/client-sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",

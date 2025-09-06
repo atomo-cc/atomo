@@ -39,3 +39,4 @@ tmp/
 .cache/
 .turbo/
 .atomo/
+docs/.vitepress/cache
