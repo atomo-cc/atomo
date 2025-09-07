@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '../../lib/api'
+import { apiClient } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 
 // Import CRM service types
-import { Deal, DealStage } from '../../../../../services/crm-service/generated/types'
+import { Deal, DealStage } from '../../packages/atomo-client-sdk/types'
 
 const STAGES: { key: string; title: string; color: string }[] = [
   { key: 'lead', title: '线索', color: '#e3f2fd' },
@@ -41,7 +41,7 @@ export function DealsKanban() {
       let stageKey = (d.stage || '').toLowerCase()
       
       // Handle enum values - if it's a DealStage enum, convert to lowercase
-      if (typeof d.stage === 'string' && Object.values(DealStage).includes(d.stage as DealStage)) {
+      if (typeof d.stage === 'string' && ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'].includes(d.stage)) {
         stageKey = d.stage.toLowerCase()
       }
       
@@ -85,7 +85,7 @@ export function DealsKanban() {
   const onDragStart = (id: string, stageKey: string) => { setDraggingId(id); setDraggingStage(stageKey) }
   const persistStageOrders = async (stageKey: string) => {
     const ids = localOrder[stageKey] || []
-    const updates = ids.map((id, idx) => ({ id, position: idx }))
+    const updates = ids.map((id, idx) => ({ id, position: idx, stage: stageKey }))
     try { await apiClient.updateDealPositions(updates) } catch {}
   }
 
@@ -121,8 +121,8 @@ export function DealsKanban() {
         // Batch persist: include the moved item stage change
         const updates = [
           { id: draggingId, stage: stageKey, position: idx },
-          ...srcIds.map((id, i) => ({ id, position: i })),
-          ...destIds.map((id, i) => ({ id, position: i }))
+          ...srcIds.map((id, i) => ({ id, position: i, stage: src })),
+          ...destIds.map((id, i) => ({ id, position: i, stage: stageKey }))
         ]
         try { await apiClient.updateDealPositions(updates) } catch (e) { console.warn('Batch update failed', e) }
       }

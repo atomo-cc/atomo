@@ -1,5 +1,8 @@
 /**
- * CRM Component Plugin
+ * CRM Component Plug      props: (match?: RegExpMatchArray | undefined): Record<string, any> => {
+        if (!match) return {};
+        return { contactId: match[1] };
+      },n
  *
  * This plugin registers CRM-specific components and routes
  * for the Atomo Admin UI.
@@ -17,13 +20,16 @@ export const crmComponentPlugin: ComponentPlugin = {
   routes: [
     {
       pattern: /^\/deals\/board$/,
-      component: React.lazy(() => import('../components/views/DealsKanban').then(module => ({ default: module.DealsKanban }))),
+      component: React.lazy(() => import('../components/DealsKanban').then(module => ({ default: module.DealsKanban }))),
       props: () => ({})
     },
     {
       pattern: /^\/contacts\/([^\/]+)\/timeline$/,
-      component: React.lazy(() => import('../components/views/ContactTimeline').then(module => ({ default: module.ContactTimeline }))),
-      props: (match: RegExpMatchArray) => ({ contactId: match[1] })
+      component: React.lazy(() => import('../components/ContactTimeline').then(module => ({ default: module.ContactTimeline }))),
+      props: (match?: RegExpMatchArray | undefined): Record<string, any> => {
+        if (!match) return {};
+        return { contactId: match[1] };
+      }
     }
   ],
   init: () => {

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
-import { apiClient } from '../../lib/api'
+import { apiClient } from '../lib/api'
 
 interface ContactTimelineProps {
   contactId: string

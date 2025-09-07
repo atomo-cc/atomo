@@ -42,29 +42,15 @@ export interface Deal extends BaseEntity {
   actualCloseDate?: string;
   description: Block[];
   stage: DealStage;
+  position: number;
   expectedCloseDate?: string;
 }
 
 /** DealStage实体 */
-export interface DealStage extends BaseEntity {
-  PROPOSAL: string;
-  NEGOTIATION: string;
-  QUALIFIED: string;
-  WON: string;
-  _enum_type: string;
-  LEAD: string;
-  LOST: string;
-}
+export type DealStage = 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
 
 /** CompanySize实体 */
-export interface CompanySize extends BaseEntity {
-  ENTERPRISE: string;
-  STARTUP: string;
-  LARGE: string;
-  MEDIUM: string;
-  SMALL: string;
-  _enum_type: string;
-}
+export type CompanySize = 'startup' | 'small' | 'medium' | 'large' | 'enterprise';
 
 /** 公司实体 */
 export interface Company extends BaseEntity {

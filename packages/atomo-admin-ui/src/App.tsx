@@ -1,10 +1,10 @@
 import { DynamicRenderer, useRouteParser } from './components/DynamicRenderer'
 import { Navigation } from './components/Navigation'
-import { initCrmPlugin } from './lib/crm-plugin'
+import { initializeServicePlugins } from './lib/service-plugin-loader'
 import './index.css'
 
-// Initialize plugins
-initCrmPlugin()
+// Initialize service plugins
+initializeServicePlugins()
 
 /**
  * Atomo Admin UI - 下一代动态管理界面

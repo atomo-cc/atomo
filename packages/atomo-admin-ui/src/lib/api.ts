@@ -33,14 +33,14 @@ class AtomoApiClient {
   private baseUrl: string
 
   constructor(baseUrl: string = '') {
-    // 🎯 新架构：智能检测API基础URL
-    // 在开发环境中自动适配到后端服务端口
-    this.baseUrl = baseUrl || this.detectApiBaseUrl()
+    // Simplified URL detection - more reliable than complex logic
+    this.baseUrl = baseUrl || this.getApiBaseUrl()
     this.client = axios.create({
       baseURL: this.baseUrl,
       headers: {
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // Add timeout for better error handling
     })
 
     // 请求拦截器 - 添加认证 token
@@ -67,31 +67,24 @@ class AtomoApiClient {
   }
 
   /**
-   * 智能检测API基础URL
-   * 🎯 解决开发环境中Admin UI和后端服务运行在不同端口的问题
+   * Simplified and more reliable API base URL detection
    */
-  private detectApiBaseUrl(): string {
-    const currentPort = window.location.port
-    const currentHost = window.location.hostname
-    
-    // 如果当前在5173端口（Vite开发服务器），需要重定向到后端服务
-    if (currentPort === '5173') {
-      // 首先检查环境变量中的后端端口配置
-      const envBackendPort = (window as any).__ATOMO_BACKEND_PORT__ || 
-                            (import.meta as any).env?.VITE_BACKEND_PORT ||
-                            (import.meta as any).env?.VITE_API_PORT
-      
-      if (envBackendPort) {
-        return `http://${currentHost}:${envBackendPort}`
-      }
-      
-      // 回退到默认端口（workspace dev的默认配置）
-      const defaultBackendPort = '3000'  // CRM service runs on port 3000
-      return `http://${currentHost}:${defaultBackendPort}`
+  private getApiBaseUrl(): string {
+    // Check for explicit environment variable first
+    const envUrl = (import.meta as any).env?.VITE_API_URL
+    if (envUrl) {
+      return envUrl
     }
-    
-    // 其他情况使用相对路径（通过代理访问）
-    return ''
+
+    // In development, try common backend ports
+    if ((import.meta as any).env?.DEV) {
+      const currentHost = window.location.hostname
+      // Try CRM service port first (most common)
+      return `http://${currentHost}:3000`
+    }
+
+    // In production, use relative URLs (should be proxied)
+    return '/api'
   }
 
   /**
@@ -104,19 +97,29 @@ class AtomoApiClient {
   }
 
   /**
-   * GraphQL 查询
+   * GraphQL 查询 with better error handling
    */
   async graphql(query: string, variables?: Record<string, any>): Promise<any> {
-    const response = await this.client.post('/graphql', {
-      query,
-      variables,
-    })
-    
-    if (response.data.errors) {
-      throw new Error(response.data.errors[0].message)
+    try {
+      const response = await this.client.post('/graphql', {
+        query,
+        variables,
+      })
+
+      if (response.data.errors) {
+        console.error('GraphQL errors:', response.data.errors)
+        throw new Error(response.data.errors[0].message)
+      }
+
+      return response.data.data
+    } catch (error: any) {
+      console.error('GraphQL request failed:', error)
+      // If it's a network error and we're in development, provide helpful message
+      if (error.code === 'ECONNREFUSED' && (import.meta as any).env?.DEV) {
+        throw new Error(`Cannot connect to API server. Make sure the backend service is running on ${this.baseUrl}`)
+      }
+      throw error
     }
-    
-    return response.data.data
   }
 
   /**
@@ -553,16 +556,66 @@ class AtomoApiClient {
   }
 
   /**
-   * 批量更新Deal位置（以及可选阶段）
+   * REST fallback methods for basic operations (inspired by CRM service)
    */
-  async updateDealPositions(updates: { id: string; position: number; stage?: string }[]): Promise<boolean> {
-    const query = `
-      mutation UpdateDealPositions($updates: [DealPositionInput!]!) {
-        updateDealPositions(updates: $updates)
+  async getEntityRest(entityType: string, id: string): Promise<any> {
+    try {
+      const response = await this.client.get(`/${entityType.toLowerCase()}s/${id}`)
+      return response.data
+    } catch (error) {
+      console.error(`Failed to fetch ${entityType}:`, error)
+      throw error
+    }
+  }
+
+  async listEntitiesRest(entityType: string, options: {
+    filters?: Record<string, any>
+    sort?: string
+    order?: 'asc' | 'desc'
+    limit?: number
+    offset?: number
+  } = {}): Promise<{ data: any[]; total: number }> {
+    try {
+      const params = new URLSearchParams()
+      if (options.filters) {
+        params.append('filters', JSON.stringify(options.filters))
       }
-    `
-    const result = await this.graphql(query, { updates })
-    return !!result.updateDealPositions
+      if (options.sort) params.append('sort', options.sort)
+      if (options.order) params.append('order', options.order)
+      if (options.limit) params.append('limit', options.limit.toString())
+      if (options.offset) params.append('offset', options.offset.toString())
+
+      const response = await this.client.get(`/${entityType.toLowerCase()}s?${params}`)
+      return response.data
+    } catch (error) {
+      console.error(`Failed to fetch ${entityType}s:`, error)
+      throw error
+    }
+  }
+
+  async createEntityRest(entityType: string, data: any): Promise<any> {
+    try {
+      const response = await this.client.post(`/${entityType.toLowerCase()}s`, data)
+      return response.data
+    } catch (error) {
+      console.error(`Failed to create ${entityType}:`, error)
+      throw error
+    }
+  }
+
+  async updateEntityRest(entityType: string, id: string, data: any): Promise<any> {
+    try {
+      const response = await this.client.put(`/${entityType.toLowerCase()}s/${id}`, data)
+      return response.data
+    } catch (error) {
+      console.error(`Failed to update ${entityType}:`, error)
+      throw error
+    }
+  }
+
+  // Extend method to allow extending the client with custom methods
+  extend<T>(methods: T): AtomoApiClient & T {
+    return Object.assign(this, methods)
   }
 }
 
