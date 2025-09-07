@@ -1,8 +1,11 @@
 -- Create Events table for Event Sourcing and Audit Log
 -- Generated at: 2025-09-03T02:45:00+00:00
 
+-- Ensure required extension for gen_random_uuid
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Create events table for event sourcing
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
     event_id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
     stream_id UUID NOT NULL,
     event_type TEXT NOT NULL,
@@ -14,17 +17,18 @@ CREATE TABLE events (
 );
 
 -- Indexes for efficient querying
-CREATE INDEX idx_events_stream_id ON events (stream_id);
-CREATE INDEX idx_events_timestamp ON events (timestamp);
-CREATE INDEX idx_events_event_type ON events (event_type);
-CREATE INDEX idx_events_user_id ON events USING GIN ((metadata->>'user_id'));
-CREATE INDEX idx_events_stream_version ON events (stream_id, version);
+CREATE INDEX IF NOT EXISTS idx_events_stream_id ON events (stream_id);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
+-- Index user_id extracted from JSONB as text; BTREE is appropriate for equality lookups
+CREATE INDEX IF NOT EXISTS idx_events_user_id ON events ((metadata->>'user_id'));
+CREATE INDEX IF NOT EXISTS idx_events_stream_version ON events (stream_id, version);
 
 -- Unique constraint on stream_id + version for optimistic concurrency
-CREATE UNIQUE INDEX idx_events_stream_version_unique ON events (stream_id, version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_stream_version_unique ON events (stream_id, version);
 
 -- Create event_streams table for tracking stream metadata
-CREATE TABLE event_streams (
+CREATE TABLE IF NOT EXISTS event_streams (
     stream_id UUID PRIMARY KEY,
     stream_type TEXT NOT NULL,
     current_version BIGINT NOT NULL DEFAULT 0,
@@ -34,33 +38,37 @@ CREATE TABLE event_streams (
 );
 
 -- Indexes for stream metadata
-CREATE INDEX idx_event_streams_type ON event_streams (stream_type);
-CREATE INDEX idx_event_streams_last_event ON event_streams (last_event_at);
+CREATE INDEX IF NOT EXISTS idx_event_streams_type ON event_streams (stream_type);
+CREATE INDEX IF NOT EXISTS idx_event_streams_last_event ON event_streams (last_event_at);
 
 -- Trigger to update stream metadata when events are inserted
 CREATE OR REPLACE FUNCTION update_event_stream_metadata()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $BODY$
 BEGIN
-    INSERT INTO event_streams (stream_id, stream_type, current_version, event_count, last_event_at)
-    VALUES (NEW.stream_id, 
-            -- Extract stream type from event type (e.g., ContactCreated -> Contact)
-            CASE WHEN position('Created' in NEW.event_type) > 0 
-                 THEN substring(NEW.event_type from 1 for position('Created' in NEW.event_type) - 1)
-                 WHEN position('Updated' in NEW.event_type) > 0 
-                 THEN substring(NEW.event_type from 1 for position('Updated' in NEW.event_type) - 1)
-                 WHEN position('Deleted' in NEW.event_type) > 0 
-                 THEN substring(NEW.event_type from 1 for position('Deleted' in NEW.event_type) - 1)
+    IF EXISTS (SELECT 1 FROM event_streams WHERE stream_id = NEW.stream_id) THEN
+        UPDATE event_streams
+        SET current_version = GREATEST(current_version, NEW.version),
+            event_count = event_streams.event_count + 1,
+            last_event_at = NEW.timestamp
+        WHERE stream_id = NEW.stream_id;
+    ELSE
+        INSERT INTO event_streams (stream_id, stream_type, current_version, event_count, last_event_at)
+        VALUES (
+            NEW.stream_id,
+            CASE WHEN position('Created' in NEW.event_type) > 0 THEN substring(NEW.event_type from 1 for position('Created' in NEW.event_type) - 1)
+                 WHEN position('Updated' in NEW.event_type) > 0 THEN substring(NEW.event_type from 1 for position('Updated' in NEW.event_type) - 1)
+                 WHEN position('Deleted' in NEW.event_type) > 0 THEN substring(NEW.event_type from 1 for position('Deleted' in NEW.event_type) - 1)
                  ELSE 'Unknown'
             END,
-            NEW.version, 1, NEW.timestamp)
-    ON CONFLICT (stream_id) DO UPDATE SET
-        current_version = GREATEST(event_streams.current_version, NEW.version),
-        event_count = event_streams.event_count + 1,
-        last_event_at = NEW.timestamp;
-    
+            NEW.version,
+            1,
+            NEW.timestamp
+        );
+    END IF;
+
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$BODY$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trigger_update_event_stream_metadata
     AFTER INSERT ON events
@@ -68,7 +76,7 @@ CREATE TRIGGER trigger_update_event_stream_metadata
     EXECUTE FUNCTION update_event_stream_metadata();
 
 -- Create projection tables for common queries (materialized views)
-CREATE TABLE audit_log_projections (
+CREATE TABLE IF NOT EXISTS audit_log_projections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_type TEXT NOT NULL,
     entity_id TEXT NOT NULL,
@@ -84,14 +92,14 @@ CREATE TABLE audit_log_projections (
 );
 
 -- Indexes for audit projections
-CREATE INDEX idx_audit_projections_entity ON audit_log_projections (entity_type, entity_id);
-CREATE INDEX idx_audit_projections_user ON audit_log_projections (user_id);
-CREATE INDEX idx_audit_projections_timestamp ON audit_log_projections (timestamp);
-CREATE INDEX idx_audit_projections_operation ON audit_log_projections (operation);
+CREATE INDEX IF NOT EXISTS idx_audit_projections_entity ON audit_log_projections (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_projections_user ON audit_log_projections (user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_projections_timestamp ON audit_log_projections (timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_projections_operation ON audit_log_projections (operation);
 
 -- Function to create audit projections from events
 CREATE OR REPLACE FUNCTION create_audit_projection()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $BODY$
 BEGIN
     INSERT INTO audit_log_projections (
         entity_type,
@@ -134,7 +142,7 @@ BEGIN
     
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$BODY$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trigger_create_audit_projection
     AFTER INSERT ON events

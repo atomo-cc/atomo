@@ -28,6 +28,9 @@ atomo migrate [--database-url <url>] [--generate --name <migration>]
 
 # Code generation
 atomo codegen [-o, --output generated]
+
+# Seed database (run inside a service directory)
+atomo seed [--file ./seed.sql]
 ```
 
 ### Workspace Dev
@@ -44,3 +47,18 @@ atomo deploy [-e, --env production]
 ```
 
 See also: `package.json` scripts at repo root and in `services/<name>/package.json`.
+
+### Seed Command
+- Runs from the service root (where `schema.ts` lives).
+- Reads `.env` in the current directory for `DATABASE_URL`.
+- Executes the given SQL file in a transaction (defaults to `./seed.sql`).
+
+Examples:
+```bash
+cd services/crm-service
+# Using .env DATABASE_URL and default seed file
+atomo seed
+
+# Specify a custom seed file
+atomo seed --file ./seed-demo.sql
+```

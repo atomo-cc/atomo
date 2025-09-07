@@ -12,6 +12,8 @@ import { SchemaMetadata, ModelMetadata } from '../lib/types'
 import { EntityListView } from './views/EntityListView'
 import { EntityDetailView } from './views/EntityDetailView'
 import { Dashboard } from './views/Dashboard'
+import { DealsKanban } from './views/DealsKanban'
+import { ContactTimeline } from './views/ContactTimeline'
 import { Card, CardContent } from './ui/Card'
 import { Spinner } from './ui/Spinner'
 
@@ -20,9 +22,10 @@ export interface DynamicRendererProps {
    * 当前路由信息
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline'
     modelName?: string
     entityId?: string
+    contactId?: string
   }
 }
 
@@ -141,6 +144,11 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
           mode="create"
         />
       )
+    case 'kanban':
+      return <DealsKanban />
+    case 'timeline':
+      if (!route.contactId) return <div>错误：缺少联系人ID</div>
+      return <ContactTimeline contactId={route.contactId} />
       
     default:
       return <div>错误：未知的路由类型</div>
@@ -187,6 +195,17 @@ export function useRouteParser(): DynamicRendererProps['route'] {
       }
     }
     
+    // Deals Kanban: /deals/board
+    if (path === '/deals/board') {
+      return { type: 'kanban' as const }
+    }
+
+    // Contact timeline: /contacts/:id/timeline
+    const contactTimeline = path.match(/^\/contacts\/([^\/]+)\/timeline$/)
+    if (contactTimeline) {
+      return { type: 'timeline' as const, contactId: contactTimeline[1] }
+    }
+
     return { type: 'dashboard' as const }
   }
 

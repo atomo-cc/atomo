@@ -142,6 +142,24 @@ export function CustomDealPipelineView() {
 
 组件会自动集成到后台界面中。
 
+## 📌 使用看板与时间线
+
+### 商机看板 (Kanban)
+- 导航到“商机看板”或访问 `http://localhost:3000/deals/board`
+- 将卡片拖到不同列以变更阶段；在同一列拖动可调整顺序
+- 看板顺序通过 `Deal.position` 字段持久化，跨列移动会批量更新
+
+### 联系人时间线
+- 在联系人详情中点击“查看时间线”，或访问 `/contacts/:id/timeline`
+- 顶部可快速添加“备注”或“活动”（通话、会议、邮件、任务）
+- 时间线合并显示联系人备注(Blocks)与 Activity 记录，并按时间倒序排列
+
+> 提示：你可以扩展 Activity 的 `metadata` 字段来存储结构化数据（例如通话时长、会议参与者）。
+
+<!-- 截图占位符：放置到 admin 截图目录 -->
+<!-- ![Deals Kanban](./admin/screenshots/deals-kanban.png) -->
+<!-- ![Contact Timeline](./admin/screenshots/contact-timeline.png) -->
+
 ## 🔄 工作流自动化
 
 在 `workflows/` 目录下定义业务流程：
@@ -169,11 +187,26 @@ steps:
 
 ### 种子数据
 
+有两种方式：
+
+1) 使用 Atomo CLI（读取当前服务目录 `.env` 的 `DATABASE_URL`）
+
 ```bash
-pnpm seed --service crm
+cd services/crm-service
+../../target/debug/atomo-cli seed           # 使用默认 ./seed.sql
+../../target/debug/atomo-cli seed --file ./seed-demo.sql
 ```
 
-自动创建示例的联系人、公司和商机数据。
+2) 使用 SQL 脚本（psql）（推荐用于演示数据）
+
+```bash
+export DATABASE_URL=postgresql://user:pass@localhost:5432/atomo_dev
+pnpm seed:sql --filter ./services/crm-service
+```
+
+脚本会插入示例公司、联系人、商机（包含看板位置）以及少量活动记录。
+
+> 提示：`deal.position` 为数值型（NUMERIC），与代码生成类型保持一致；看板拖拽后通过批量变更 mutation `updateDealPositions` 持久化顺序。
 
 ### 单元测试
 

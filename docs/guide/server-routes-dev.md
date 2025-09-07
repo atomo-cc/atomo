@@ -4,6 +4,7 @@ This page lists the routes available while developing locally and clarifies whic
 
 Common (both modes)
 - `/health` — health check
+- `/ready` — readiness probe; checks DB connectivity
 - `/graphql` — GraphQL endpoint (POST for operations)
 - GraphQL IDE
   - `atomo dev`: `GET /graphql` serves the playground
@@ -38,6 +39,9 @@ workspace-dev (service‑scoped hot reload server)
 - Vite asset proxies (workspace‑dev only)
   - `/@vite/*`, `/@react-refresh`
   - `/@fs/*`, `/src/*`, `/node_modules/*`
+
+Observability
+- `/metrics` — Prometheus metrics in text exposition format (both modes)
 
 Ports
 - Service/API default: `http://localhost:3000`

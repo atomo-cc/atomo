@@ -91,6 +91,8 @@ export interface Deal {
   title: string;
   value: number;
   stage: DealStage;
+  // Position within a stage for Kanban ordering
+  position: number;
   contactId: string;
   companyId?: string;
   description: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
@@ -98,6 +100,26 @@ export interface Deal {
   actualCloseDate?: Date;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Activity timeline for contacts (calls, meetings, notes, emails, tasks)
+export interface Activity {
+  id: string;
+  contactId: string;
+  activityType: ActivityType;
+  title?: string;
+  content?: string;
+  metadata?: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export enum ActivityType {
+  NOTE = "note",
+  CALL = "call",
+  MEETING = "meeting",
+  EMAIL = "email",
+  TASK = "task",
 }
 
 // =============================================================================
@@ -234,7 +256,35 @@ export const schema = {
       ui: {
         displayField: 'title',
         listView: ['title', 'value', 'stage', 'contact', 'company', 'expectedCloseDate'],
-        editForm: ['title', 'value', 'stage', 'contactId', 'companyId', 'description', 'expectedCloseDate']
+        editForm: ['title', 'value', 'stage', 'position', 'contactId', 'companyId', 'description', 'expectedCloseDate']
+      }
+    },
+
+    Activity: {
+      tableName: 'activity',
+      primaryKey: 'id',
+      searchable: ['title', 'content', 'activityType'],
+      access: {
+        create: 'sales|manager|admin',
+        read: 'authenticated',
+        update: 'sales|manager|admin',
+        delete: 'manager|admin'
+      },
+      relationships: {
+        contact: {
+          type: 'belongsTo',
+          model: 'Contact',
+          foreignKey: 'contactId'
+        }
+      },
+      validation: {
+        contactId: 'required|exists:contacts,id',
+        activityType: 'required|in:note,call,meeting,email,task'
+      },
+      ui: {
+        displayField: 'title',
+        listView: ['activityType', 'title', 'contact', 'createdAt'],
+        editForm: ['activityType', 'title', 'content', 'contactId']
       }
     }
   },

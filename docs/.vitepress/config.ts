@@ -21,6 +21,7 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'API', link: '/api/' },
       { text: 'Examples', link: '/examples/' },
+      { text: 'Services', link: '/services/' },
       { text: 'Playground', link: 'https://playground.atomo.cc' },
       {
         text: 'v0.1.0',
@@ -72,6 +73,7 @@ export default defineConfig({
             { text: 'Custom Event Stores', link: '/guide/advanced/event-stores' },
             { text: 'Multi-tenant Setup', link: '/guide/advanced/multi-tenant' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
+            { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },
             { text: 'Performance Tuning', link: '/guide/advanced/performance' }
           ]
         }
@@ -91,6 +93,14 @@ export default defineConfig({
             { text: 'TypeScript SDK', link: '/api/typescript-sdk' },
             { text: 'Rust APIs', link: '/api/rust' },
             { text: 'Plugin APIs', link: '/api/plugins' }
+          ]
+        }
+      ],
+      '/services/': [
+        {
+          text: '🧩 CRM Service',
+          items: [
+            { text: 'Release Checklist', link: '/services/crm/release-checklist' }
           ]
         }
       ],

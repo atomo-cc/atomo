@@ -157,6 +157,14 @@ export function EntityDetailView({
         </div>
         
         <div className="flex gap-3">
+          {modelName === 'Contact' && entity && isDetail && (
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/contacts/${entity.id}/timeline`)}
+            >
+              查看时间线
+            </Button>
+          )}
           {isDetail && (
             <>
               <Button

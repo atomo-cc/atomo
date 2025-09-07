@@ -551,6 +551,19 @@ class AtomoApiClient {
     const result = await this.graphql(query, { where: { id: { _in: ids } } })
     return result[`affectedRows`]
   }
+
+  /**
+   * 批量更新Deal位置（以及可选阶段）
+   */
+  async updateDealPositions(updates: { id: string; position: number; stage?: string }[]): Promise<boolean> {
+    const query = `
+      mutation UpdateDealPositions($updates: [DealPositionInput!]!) {
+        updateDealPositions(updates: $updates)
+      }
+    `
+    const result = await this.graphql(query, { updates })
+    return !!result.updateDealPositions
+  }
 }
 
 // 导出单例实例

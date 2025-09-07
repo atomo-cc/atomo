@@ -56,7 +56,7 @@ export function Navigation() {
     return location.pathname.startsWith(path)
   }
 
-  const navigationItems = [
+  let navigationItems = [
     {
       name: '仪表盘',
       href: '/',
@@ -70,6 +70,19 @@ export function Navigation() {
       active: isActive(`/entities/${modelName}`)
     })) : [])
   ]
+
+  // Add custom CRM links when relevant models exist
+  if (schema && schema.models['Deal']) {
+    navigationItems = [
+      ...navigationItems,
+      {
+        name: '商机看板',
+        href: '/deals/board',
+        icon: DollarSign,
+        active: isActive('/deals/board')
+      }
+    ]
+  }
 
   const sidebarContent = (
     <div className="flex flex-col h-full">

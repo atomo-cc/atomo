@@ -4,7 +4,7 @@
   "description": "Atomo Developer Documentation",
   "type": "module",
   "scripts": {
-    "dev": "vitepress dev",
+    "dev": "vitepress dev --port 25096",
     "build": "vitepress build",
     "preview": "vitepress preview",
     "docs:api": "cargo doc --workspace --no-deps && cp -r target/doc docs/.vitepress/dist/api"

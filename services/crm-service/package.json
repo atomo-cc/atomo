@@ -9,6 +9,7 @@
     "deploy": "atomo deploy --service crm",
     "migrate": "atomo migrate --service crm",
     "seed": "atomo seed --service crm",
+    "seed:sql": "psql $DATABASE_URL -f seed.sql",
     "test": "atomo test --service crm"
   },
   "dependencies": {
