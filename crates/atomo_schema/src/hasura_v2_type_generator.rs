@@ -30,8 +30,8 @@ use uuid::Uuid;
         
         // Get enum values from _enum_type field
         let enum_values = match enum_name.as_str() {
-            "DealStage" => vec!["LEAD", "QUALIFIED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"],
-            "CompanySize" => vec!["STARTUP", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE"],
+            // Platform core should not have knowledge of specific business domain enum values
+            // All domain-specific enums should be defined in their respective services
             _ => vec!["VALUE1", "VALUE2", "VALUE3"],
         };
         
@@ -1428,8 +1428,8 @@ pub struct {model_name}AggregateFields {{
     fn generate_graphql_enum_definition(&self, model: &Model) -> Result<String> {
         let enum_name = &model.name;
         let enum_values = match enum_name.as_str() {
-            "DealStage" => vec!["LEAD", "QUALIFIED", "PROPOSAL", "NEGOTIATION", "WON", "LOST"],
-            "CompanySize" => vec!["STARTUP", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE"],
+            // Platform core should not have knowledge of specific business domain enum values
+            // All domain-specific enums should be defined in their respective services
             _ => vec!["VALUE1", "VALUE2", "VALUE3"],
         };
         

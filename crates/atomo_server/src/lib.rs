@@ -18,6 +18,8 @@ pub mod platform_graphql;
 pub mod platform_models;
 pub mod models_ext;
 pub mod schema_metadata;
+pub mod model_registry;
+pub mod plugins;
 
 pub use config::*;
 pub use server::*;

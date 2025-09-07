@@ -483,37 +483,6 @@ impl PlatformMutation {
 
 #[Object]
 impl PlatformMutation {
-    /// Batch update deal positions (and optionally stages)
-    async fn update_deal_positions(
-        &self,
-        _ctx: &Context<'_>,
-        updates: Vec<DealPositionInput>,
-    ) -> FieldResult<bool> {
-        let mut tx = self.provider.pool().begin().await
-            .map_err(|e| GraphQLError::new(e.to_string()))?;
-
-        for upd in updates {
-            if let Some(stage) = upd.stage {
-                sqlx::query("UPDATE deal SET stage = $1, position = $2, updated_at = NOW() WHERE id = $3")
-                    .bind(stage)
-                    .bind(upd.position)
-                    .bind(&upd.id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| GraphQLError::new(e.to_string()))?;
-            } else {
-                sqlx::query("UPDATE deal SET position = $1, updated_at = NOW() WHERE id = $2")
-                    .bind(upd.position)
-                    .bind(&upd.id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| GraphQLError::new(e.to_string()))?;
-            }
-        }
-
-        tx.commit().await.map_err(|e| GraphQLError::new(e.to_string()))?;
-        Ok(true)
-    }
     /// Create a new user
     async fn create_user(
         &self,
@@ -545,16 +514,6 @@ impl PlatformMutation {
             .await
             .map_err(|e| GraphQLError::new(e.to_string()))
     }
-}
-
-#[derive(InputObject)]
-struct DealPositionInput {
-    /// Deal ID
-    id: String,
-    /// New position (0-based) within the stage
-    position: i32,
-    /// Optional new stage key
-    stage: Option<String>,
 }
 
 /// HTTP-based implementation of platform GraphQL mutations

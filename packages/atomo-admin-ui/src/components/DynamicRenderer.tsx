@@ -4,7 +4,7 @@
  * 这是整个 Admin UI 的"大脑"，负责根据 Schema 元数据动态生成界面
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { apiClient } from '../lib/api'
@@ -12,20 +12,20 @@ import { SchemaMetadata, ModelMetadata } from '../lib/types'
 import { EntityListView } from './views/EntityListView'
 import { EntityDetailView } from './views/EntityDetailView'
 import { Dashboard } from './views/Dashboard'
-import { DealsKanban } from './views/DealsKanban'
-import { ContactTimeline } from './views/ContactTimeline'
 import { Card, CardContent } from './ui/Card'
 import { Spinner } from './ui/Spinner'
+import { componentPluginManager } from '../lib/component-plugins'
 
 export interface DynamicRendererProps {
   /**
    * 当前路由信息
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin'
     modelName?: string
     entityId?: string
     contactId?: string
+    pluginHandler?: any
   }
 }
 
@@ -145,19 +145,73 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
         />
       )
     case 'kanban':
-      return <DealsKanban />
+      // Try to get component from plugin system
+      const kanbanHandler = componentPluginManager.getRouteHandler('/deals/board')
+      if (kanbanHandler) {
+        const Component = kanbanHandler.component
+        return (
+          <Suspense fallback={
+            <Card className="m-6">
+              <CardContent className="flex items-center justify-center py-8">
+                <div className="text-center">
+                  <Spinner className="mx-auto mb-4" />
+                  <p className="text-gray-600">正在加载看板组件...</p>
+                </div>
+              </CardContent>
+            </Card>
+          }>
+            <Component {...kanbanHandler.props} />
+          </Suspense>
+        )
+      }
+      return <div>错误：未找到看板组件</div>
     case 'timeline':
       if (!route.contactId) return <div>错误：缺少联系人ID</div>
-      return <ContactTimeline contactId={route.contactId} />
+      // Try to get component from plugin system
+      const timelinePath = `/contacts/${route.contactId}/timeline`
+      const timelineHandler = componentPluginManager.getRouteHandler(timelinePath)
+      if (timelineHandler) {
+        const Component = timelineHandler.component
+        return (
+          <Suspense fallback={
+            <Card className="m-6">
+              <CardContent className="flex items-center justify-center py-8">
+                <div className="text-center">
+                  <Spinner className="mx-auto mb-4" />
+                  <p className="text-gray-600">正在加载时间线组件...</p>
+                </div>
+              </CardContent>
+            </Card>
+          }>
+            <Component {...timelineHandler.props} />
+          </Suspense>
+        )
+      }
+      return <div>错误：未找到时间线组件</div>
       
+    case 'plugin':
+      if (!route.pluginHandler) return <div>错误：缺少插件处理器</div>
+      const PluginComponent = route.pluginHandler.component
+      return (
+        <Suspense fallback={
+          <Card className="m-6">
+            <CardContent className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <Spinner className="mx-auto mb-4" />
+                <p className="text-gray-600">正在加载插件组件...</p>
+              </div>
+            </CardContent>
+          </Card>
+        }>
+          <PluginComponent {...route.pluginHandler.props} />
+        </Suspense>
+      )
+
     default:
       return <div>错误：未知的路由类型</div>
   }
 }
 
-/**
- * Hook：根据当前 URL 解析路由信息
- */
 export function useRouteParser(): DynamicRendererProps['route'] {
   const location = useLocation()
 
@@ -195,17 +249,13 @@ export function useRouteParser(): DynamicRendererProps['route'] {
       }
     }
     
-    // Deals Kanban: /deals/board
-    if (path === '/deals/board') {
-      return { type: 'kanban' as const }
+    // Check for plugin-handled routes first
+    const pluginHandler = componentPluginManager.getRouteHandler(path)
+    if (pluginHandler) {
+      return { type: 'plugin' as const, pluginHandler }
     }
 
-    // Contact timeline: /contacts/:id/timeline
-    const contactTimeline = path.match(/^\/contacts\/([^\/]+)\/timeline$/)
-    if (contactTimeline) {
-      return { type: 'timeline' as const, contactId: contactTimeline[1] }
-    }
-
+    // Fallback to generic routes
     return { type: 'dashboard' as const }
   }
 

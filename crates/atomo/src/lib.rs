@@ -21,37 +21,37 @@
 //!         .await?;
 //!     
 //!     // Fluent Query API (like Prisma)
-//!     let contacts = atomo
-//!         .contact()
+//!     let posts = atomo
+//!         .model("Post")
 //!         .find_many()
-//!         .where_("name", Contains("John"))
-//!         .include("deals")
+//!         .where_("title", Contains("Rust"))
+//!         .include("author")
 //!         .order_by("created_at", Desc)
 //!         .limit(10)
 //!         .await?;
 //!     
 //!     // Create with type safety
-//!     let new_contact = atomo
-//!         .contact()
+//!     let new_post = atomo
+//!         .model("Post")
 //!         .create()
-//!         .data(ContactCreateData {
-//!             name: "Jane Doe".to_string(),
-//!             email: Some("jane@example.com".to_string()),
+//!         .data(PostCreateData {
+//!             title: "My First Post".to_string(),
+//!             content: Some("Hello World!".to_string()),
 //!             ..Default::default()
 //!         })
 //!         .await?;
 //!     
 //!     // Real-time subscriptions
-//!     let mut contact_stream = atomo
-//!         .contact()
+//!     let mut post_stream = atomo
+//!         .model("Post")
 //!         .subscribe()
 //!         .on_create()
-//!         .where_("company_id", Equals(company_id));
-//!         
-//!     while let Some(event) = contact_stream.next().await {
-//!         println!("New contact created: {:?}", event.data);
+//!         .where_("published", Equals(true));
+//!
+//!     while let Some(event) = post_stream.next().await {
+//!         println!("New post created: {:?}", event.data);
 //!     }
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -263,23 +263,5 @@ impl ModelClient {
     /// Subscribe to real-time events
     pub fn subscribe(&self) -> events::SubscriptionBuilder {
         events::SubscriptionBuilder::new(self.client.clone(), &self.model_name)
-    }
-}
-
-// Convenience methods for common models
-impl Atomo {
-    /// Access contact operations (generated based on schema)
-    pub fn contact(&self) -> ModelClient {
-        self.model("Contact")
-    }
-    
-    /// Access deal operations (generated based on schema)  
-    pub fn deal(&self) -> ModelClient {
-        self.model("Deal")
-    }
-    
-    /// Access company operations (generated based on schema)
-    pub fn company(&self) -> ModelClient {
-        self.model("Company")
     }
 }

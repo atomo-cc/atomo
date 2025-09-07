@@ -66,11 +66,9 @@ impl SchemaParser {
     }
     
     /// Check if a type name is a built-in custom type
-    fn is_builtin_type(type_name: &str) -> bool {
-        matches!(
-            type_name,
-            "DealStage" | "CompanySize" | "ContactStatus" | "TaskPriority" | 
-            "LeadSource" | "OpportunityStage" | "UserRole" | "PermissionLevel"
-        )
+    fn is_builtin_type(_type_name: &str) -> bool {
+        // Platform core should not have knowledge of specific business domain types
+        // All domain-specific types should be defined in their respective services
+        false
     }
 }
