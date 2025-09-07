@@ -5,13 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 
-type Deal = {
-  id: string
-  title: string
-  value: number
-  stage: string
-  expectedCloseDate?: string
-}
+// Import CRM service types
+import { Deal, DealStage } from '../../../../../services/crm-service/generated/types'
 
 const STAGES: { key: string; title: string; color: string }[] = [
   { key: 'lead', title: '线索', color: '#e3f2fd' },
@@ -42,9 +37,16 @@ export function DealsKanban() {
     const map: Record<string, Deal[]> = {}
     for (const s of STAGES) map[s.key] = []
     for (const d of (data || [])) {
-      const stage = (d.stage || '').toLowerCase()
-      if (!map[stage]) map[stage] = []
-      map[stage].push(d)
+      // Map DealStage enum to stage key, fallback to lowercase string
+      let stageKey = (d.stage || '').toLowerCase()
+      
+      // Handle enum values - if it's a DealStage enum, convert to lowercase
+      if (typeof d.stage === 'string' && Object.values(DealStage).includes(d.stage as DealStage)) {
+        stageKey = d.stage.toLowerCase()
+      }
+      
+      if (!map[stageKey]) map[stageKey] = []
+      map[stageKey].push(d)
     }
     return map
   }, [data])
@@ -170,7 +172,7 @@ export function DealsKanban() {
                 </div>
               </div>
               <div className="p-2 space-y-2 overflow-auto" style={{ minHeight: 300 }}>
-                {(localOrder[col.key] || items.map(i => i.id)).map(id => items.find(d => d.id === id)).filter(Boolean).map(deal => (
+                {(localOrder[col.key] || items.map(i => i.id)).map(id => items.find(d => d.id === id)).filter((deal): deal is Deal => deal !== undefined).map(deal => (
                   <div key={deal.id}
                        className="rounded-md border p-3 bg-white shadow-sm cursor-move"
                        draggable

@@ -12,9 +12,34 @@ const path = require('path');
 const schemaPath = path.join(__dirname, 'schema.ts');
 const schemaContent = fs.readFileSync(schemaPath, 'utf8');
 
-// Simple regex-based parser for TypeScript interfaces
+// Simple regex-based parser for TypeScript interfaces and enums
 function parseInterfaces(content) {
   const interfaces = [];
+  const enums = [];
+  
+  // Parse enums first
+  const enumRegex = /export enum (\w+) \{([^}]+)\}/g;
+  let enumMatch;
+  
+  while ((enumMatch = enumRegex.exec(content)) !== null) {
+    const name = enumMatch[1];
+    const body = enumMatch[2];
+    
+    const values = [];
+    const valueRegex = /(\w+)\s*=\s*["']([^"']+)["']/g;
+    let valueMatch;
+    
+    while ((valueMatch = valueRegex.exec(body)) !== null) {
+      values.push({
+        key: valueMatch[1],
+        value: valueMatch[2]
+      });
+    }
+    
+    enums.push({ name, values });
+  }
+  
+  // Parse interfaces
   const interfaceRegex = /export interface (\w+) \{([^}]+)\}/g;
   let match;
 
@@ -41,7 +66,7 @@ function parseInterfaces(content) {
     interfaces.push({ name, fields });
   }
 
-  return interfaces;
+  return { interfaces, enums };
 }
 
 function convertToTypeScript(rustType) {
@@ -55,11 +80,20 @@ function convertToTypeScript(rustType) {
   return rustType;
 }
 
-function generateTypes(interfaces) {
+function generateTypes(interfaces, enums) {
   let output = `// Auto-generated TypeScript types for Atomo CRM Service
 // Generated from schema.ts - DO NOT EDIT MANUALLY
 
 `;
+
+  // Generate enums first
+  for (const enumDef of enums) {
+    output += `export enum ${enumDef.name} {\n`;
+    for (const value of enumDef.values) {
+      output += `  ${value.key} = "${value.value}",\n`;
+    }
+    output += '}\n\n';
+  }
 
   // Generate interfaces
   for (const interface of interfaces) {
@@ -93,8 +127,8 @@ function generateTypes(interfaces) {
 }
 
 // Parse and generate
-const interfaces = parseInterfaces(schemaContent);
-const typesOutput = generateTypes(interfaces);
+const { interfaces, enums } = parseInterfaces(schemaContent);
+const typesOutput = generateTypes(interfaces, enums);
 
 // Write to file
 const outputPath = path.join(__dirname, 'generated', 'types.ts');

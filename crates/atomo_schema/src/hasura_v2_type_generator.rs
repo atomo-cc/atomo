@@ -28,12 +28,18 @@ use uuid::Uuid;
     fn generate_enum_type(&self, model: &Model) -> Result<String> {
         let enum_name = &model.name;
         
-        // Get enum values from _enum_type field
-        let enum_values = match enum_name.as_str() {
-            // Platform core should not have knowledge of specific business domain enum values
-            // All domain-specific enums should be defined in their respective services
-            _ => vec!["VALUE1", "VALUE2", "VALUE3"],
-        };
+        // Get enum values from model fields (stored as _enum_value_N)
+        let mut enum_values = Vec::new();
+        for (field_name, field) in &model.fields {
+            if field_name.starts_with("_enum_value_") {
+                enum_values.push(field.name.clone());
+            }
+        }
+        
+        // Fallback to placeholder values if no enum values found
+        if enum_values.is_empty() {
+            enum_values = vec!["VALUE1".to_string(), "VALUE2".to_string(), "VALUE3".to_string()];
+        }
         
         let mut result = String::new();
         
