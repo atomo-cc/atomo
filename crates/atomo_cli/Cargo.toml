@@ -29,6 +29,7 @@ notify = "6.1"  # File system watching
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
 md5 = "0.7"
 dotenv = "0.15"
+regex = "1.10"
 
 # Web server dependencies for dev command
 axum = "0.8"

@@ -5,6 +5,7 @@ mod dev;
 mod build;
 mod deploy;
 mod workspace_dev;
+mod seed;
 
 pub use init::*;
 pub use migrate::*;
@@ -13,3 +14,4 @@ pub use dev::*;
 pub use build::*;
 pub use deploy::*;
 pub use workspace_dev::*;
+pub use seed::*;

@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashSet;
 use uuid::Uuid;
+use chrono::DateTime;
 
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -56,6 +57,21 @@ pub struct HttpAuthService {
 pub type AuthError = anyhow::Error;
 
 impl HttpAuthService {
+    fn validate_password_policy(&self, password: &str) -> Result<(), anyhow::Error> {
+        let min_len: usize = std::env::var("PASSWORD_MIN_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(8);
+        let require_complexity = std::env::var("PASSWORD_REQUIRE_COMPLEXITY").map(|v| v == "true" || v == "1").unwrap_or(true);
+        if password.len() < min_len {
+            return Err(anyhow::anyhow!(format!("Password must be at least {} characters", min_len)));
+        }
+        if require_complexity {
+            let has_letter = password.chars().any(|c| c.is_ascii_alphabetic());
+            let has_number = password.chars().any(|c| c.is_ascii_digit());
+            if !(has_letter && has_number) {
+                return Err(anyhow::anyhow!("Password must contain letters and numbers"));
+            }
+        }
+        Ok(())
+    }
     pub fn new(secret: &str, db_pool: PgPool) -> Self {
         Self {
             encoding_key: EncodingKey::from_secret(secret.as_ref()),
@@ -69,9 +85,12 @@ impl HttpAuthService {
         &self.db_pool
     }
 
-    /// Generate JWT token for user
-    pub async fn generate_token(&self, user_id: &str, email: &str, role: &str) -> Result<String> {
-        let session_id = Uuid::new_v4().to_string();
+    /// Generate access token and refresh token for a user (rotates/creates session)
+    pub async fn issue_tokens(&self, user_id: &str, email: &str, role: &str) -> Result<(String, String)> {
+        // Create a real session via DB and use its ID as JWT jti
+        let entity_id = EntityId::from_string(user_id)?;
+        let session = self.create_session(&entity_id).await?;
+
         let now = Utc::now();
         let exp = now + Duration::hours(24); // Token expires in 24 hours
 
@@ -81,15 +100,11 @@ impl HttpAuthService {
             role: role.to_string(),
             exp: exp.timestamp(),
             iat: now.timestamp(),
-            jti: session_id.clone(),
+            jti: session.id.to_string(),
         };
 
-        // Store session in database using the core interface
-        let entity_id = EntityId::from_string(user_id)?;
-        self.create_session(&entity_id).await?;
-
         let token = encode(&Header::default(), &claims, &self.encoding_key)?;
-        Ok(token)
+        Ok((token, session.token))
     }
 
     /// Verify JWT token and extract user information
@@ -111,6 +126,80 @@ impl HttpAuthService {
         } else {
             Err(anyhow::anyhow!("Session expired or invalid"))
         }
+    }
+
+    /// Refresh access token using a refresh token (rotates refresh token and extends session)
+    pub async fn refresh_access_token(&self, refresh_token: &str) -> Result<(String, String, PlatformUser)> {
+        // Validate session by refresh token
+        let session = sqlx::query_as::<_, (String, String, chrono::DateTime<chrono::Utc>)>(
+            "SELECT id, user_id, expires_at FROM sessions WHERE token = $1 AND is_revoked = false"
+        )
+        .bind(refresh_token)
+        .fetch_optional(&self.db_pool)
+        .await?;
+
+        let (session_id, user_id, _expires_at) = match session {
+            Some(s) => s,
+            None => return Err(anyhow::anyhow!("Invalid refresh token")),
+        };
+
+        // Check session expiry
+        let still_valid = sqlx::query_as::<_, (bool,)>(
+            "SELECT expires_at > NOW() FROM sessions WHERE token = $1"
+        )
+        .bind(refresh_token)
+        .fetch_one(&self.db_pool)
+        .await?;
+        if !still_valid.0 { return Err(anyhow::anyhow!("Refresh token expired")); }
+
+        // Fetch user
+        let user_row = sqlx::query_as::<_, (String, String, String, String, String, bool, Option<chrono::DateTime<chrono::Utc>>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
+            "SELECT id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at FROM users WHERE id = $1"
+        )
+        .bind(&user_id)
+        .fetch_optional(&self.db_pool)
+        .await?;
+
+        let (id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at) = user_row
+            .ok_or_else(|| anyhow::anyhow!("User not found"))?;
+
+        let platform_user = PlatformUser {
+            id: EntityId::from_string(&id)?,
+            email: email.clone(),
+            password_hash: "".to_string(),
+            first_name: Some(first_name),
+            last_name: Some(last_name),
+            role: UserRole::from(role.clone()),
+            is_active,
+            last_login_at,
+            created_at,
+            updated_at,
+        };
+
+        // Create new access token with same session id
+        let now = Utc::now();
+        let exp = now + Duration::hours(24);
+        let claims = Claims {
+            sub: id.clone(),
+            email: email.clone(),
+            role: role.clone(),
+            exp: exp.timestamp(),
+            iat: now.timestamp(),
+            jti: session_id.clone(),
+        };
+        let access_token = encode(&Header::default(), &claims, &self.encoding_key)?;
+
+        // Rotate refresh token and extend expiry
+        let new_refresh = Uuid::new_v4().to_string();
+        let new_expires = now + Duration::hours(24);
+        sqlx::query("UPDATE sessions SET token = $1, expires_at = $2 WHERE id = $3")
+            .bind(&new_refresh)
+            .bind(new_expires)
+            .bind(&session_id)
+            .execute(&self.db_pool)
+            .await?;
+
+        Ok((access_token, new_refresh, platform_user))
     }
 }
 
@@ -260,16 +349,18 @@ impl HttpAuthService {
 
     /// Hash a password using bcrypt
     pub fn hash_password(&self, password: &str) -> Result<String, anyhow::Error> {
-        // TODO: Implement proper bcrypt hashing
-        // For development only - return plain text
-        Ok(password.to_string())
+        // Read cost from env or default to 12
+        let cost: u32 = std::env::var("BCRYPT_COST")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(12);
+        let hash = bcrypt::hash(password, cost)?;
+        Ok(hash)
     }
 
     /// Verify a password against its hash
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool, anyhow::Error> {
-        // TODO: Implement proper bcrypt verification
-        // For development only - compare plain text
-        Ok(password == hash)
+        Ok(bcrypt::verify(password, hash).unwrap_or(false))
     }
 }
 
@@ -331,12 +422,13 @@ impl AuthorizationService<PlatformUser> for HttpAuthService {
     }
 
     async fn create_user(&self, email: &str, password: &str, first_name: &str, last_name: &str, role: impl Send) -> Result<PlatformUser, Self::Error> {
+        // Enforce password policy
+        self.validate_password_policy(password)?;
         let user_id = EntityId::new();
         let now = Utc::now();
         let password_hash = self.hash_password(password)?;
         
-        // Since role is generic impl Send, we need to handle it carefully
-        // For now, default to Viewer role - this should be improved based on actual usage
+        // Role handling: default to viewer if unspecified/invalid
         let role_str = "viewer";
 
         sqlx::query(
@@ -458,6 +550,7 @@ pub struct LoginRequest {
 #[derive(Serialize)]
 pub struct LoginResponse {
     pub token: String,
+    pub refresh_token: Option<String>,
     pub user: UserInfo,
 }
 
@@ -477,7 +570,7 @@ pub mod handlers {
     use atomo_core::AuthCredentials;
     use axum::{extract::State, Json};
 
-    /// Login handler
+    /// Login handler (issues access and refresh tokens)
     pub async fn login(
         State(auth_service): State<HttpAuthService>,
         Json(request): Json<LoginRequest>,
@@ -489,9 +582,9 @@ pub mod handlers {
 
         match auth_service.authenticate(&credentials).await {
             Ok(Some(user)) => {
-                // Generate token
-                let token = auth_service
-                    .generate_token(&user.id.to_string(), &user.email, &user.role.to_string())
+                // Issue token pair
+                let (token, refresh_token) = auth_service
+                    .issue_tokens(&user.id.to_string(), &user.email, &user.role.to_string())
                     .await
                     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -506,6 +599,7 @@ pub mod handlers {
 
                 Ok(Json(LoginResponse {
                     token,
+                    refresh_token: Some(refresh_token),
                     user: UserInfo {
                         id: user.id.to_string(),
                         email: user.email,
@@ -555,5 +649,29 @@ pub mod handlers {
             first_name: "".to_string(), // TODO: Fetch from database
             last_name: "".to_string(),  // TODO: Fetch from database
         }))
+    }
+
+    /// Refresh handler
+    #[derive(Deserialize)]
+    pub struct RefreshRequest { pub refreshToken: String }
+
+    pub async fn refresh(
+        State(auth_service): State<HttpAuthService>,
+        Json(req): Json<RefreshRequest>,
+    ) -> Result<Json<LoginResponse>, StatusCode> {
+        match auth_service.refresh_access_token(&req.refreshToken).await {
+            Ok((token, new_refresh, user)) => Ok(Json(LoginResponse {
+                token,
+                refresh_token: Some(new_refresh),
+                user: UserInfo {
+                    id: user.id.to_string(),
+                    email: user.email,
+                    role: user.role.to_string(),
+                    first_name: user.first_name.unwrap_or_default(),
+                    last_name: user.last_name.unwrap_or_default(),
+                },
+            })),
+            Err(_) => Err(StatusCode::UNAUTHORIZED),
+        }
     }
 }

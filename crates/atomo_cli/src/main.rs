@@ -31,6 +31,12 @@ enum Commands {
         #[arg(short, long)]
         template: Option<String>,
     },
+    /// Seed database using SQL file (run in service dir; reads .env for DATABASE_URL)
+    Seed {
+        /// Optional path to seed SQL file (defaults to ./seed.sql)
+        #[arg(long)]
+        file: Option<String>,
+    },
     /// Run database migrations (Note: run in service directory with .env file for DATABASE_URL)
     Migrate {
         /// Database URL
@@ -110,6 +116,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Deploy { env } => {
             deploy_command(env).await?;
+        }
+        Commands::Seed { file } => {
+            seed_command(file).await?;
         }
     }
 

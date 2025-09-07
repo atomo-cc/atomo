@@ -3,7 +3,7 @@
 //! This module provides the concrete implementations of platform functionality 
 //! (users, sessions, audit logs) with actual database queries.
 
-use async_graphql::{Context, Object, FieldResult, Error as GraphQLError};
+use async_graphql::{Context, Object, FieldResult, Error as GraphQLError, InputObject};
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
 use chrono::{DateTime, Utc};
@@ -472,31 +472,59 @@ impl PlatformQuery {
 
 /// GraphQL Mutation resolver for platform mutations
 pub struct PlatformMutation {
-    provider: HttpPlatformQueryProvider,
+    provider: HttpPlatformMutationProvider,
 }
 
 impl PlatformMutation {
     pub fn new(db_pool: PgPool) -> Self {
-        Self {
-            provider: HttpPlatformQueryProvider::new(db_pool),
-        }
+        Self { provider: HttpPlatformMutationProvider::new(db_pool) }
     }
 }
 
 #[Object]
 impl PlatformMutation {
+    /// Batch update deal positions (and optionally stages)
+    async fn update_deal_positions(
+        &self,
+        _ctx: &Context<'_>,
+        updates: Vec<DealPositionInput>,
+    ) -> FieldResult<bool> {
+        let mut tx = self.provider.pool().begin().await
+            .map_err(|e| GraphQLError::new(e.to_string()))?;
+
+        for upd in updates {
+            if let Some(stage) = upd.stage {
+                sqlx::query("UPDATE deal SET stage = $1, position = $2, updated_at = NOW() WHERE id = $3")
+                    .bind(stage)
+                    .bind(upd.position)
+                    .bind(&upd.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| GraphQLError::new(e.to_string()))?;
+            } else {
+                sqlx::query("UPDATE deal SET position = $1, updated_at = NOW() WHERE id = $2")
+                    .bind(upd.position)
+                    .bind(&upd.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| GraphQLError::new(e.to_string()))?;
+            }
+        }
+
+        tx.commit().await.map_err(|e| GraphQLError::new(e.to_string()))?;
+        Ok(true)
+    }
     /// Create a new user
     async fn create_user(
         &self,
         _ctx: &Context<'_>,
         email: String,
-        password: String,
         first_name: Option<String>,
         last_name: Option<String>,
         role: UserRole,
     ) -> FieldResult<PlatformUser> {
         self.provider
-            .create_user(email, password, first_name, last_name, role)
+            .create_user(email, first_name, last_name, role)
             .await
             .map_err(|e| GraphQLError::new(e.to_string()))
     }
@@ -519,6 +547,16 @@ impl PlatformMutation {
     }
 }
 
+#[derive(InputObject)]
+struct DealPositionInput {
+    /// Deal ID
+    id: String,
+    /// New position (0-based) within the stage
+    position: i32,
+    /// Optional new stage key
+    stage: Option<String>,
+}
+
 /// HTTP-based implementation of platform GraphQL mutations
 /// 
 /// This implementation uses PostgreSQL as the backing store and provides
@@ -531,6 +569,8 @@ impl HttpPlatformMutationProvider {
     pub fn new(db_pool: PgPool) -> Self {
         Self { db_pool }
     }
+
+    pub fn pool(&self) -> &PgPool { &self.db_pool }
 }
 
 #[async_trait]

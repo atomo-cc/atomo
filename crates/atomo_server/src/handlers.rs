@@ -4,15 +4,19 @@ use async_graphql::{Schema as GraphQLSchema, MergedObject};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
     extract::{Extension, State},
+    http::StatusCode,
     response::{Html, Json},
     routing::{get, post},
     Router,
 };
 use atomo::prelude::*;
+use std::time::Instant;
 use atomo_core::types::EntityId;
 use atomo::graphql::{Query as ServiceQuery, Mutation as ServiceMutation, Subscription};
 use crate::platform_graphql::{PlatformQuery, PlatformMutation};
 use serde_json::{json, Value};
+use prometheus::{Encoder, TextEncoder};
+use axum::http::{header, HeaderMap};
 
 /// Combined query that merges service-level and platform-level queries
 #[derive(MergedObject)]
@@ -46,17 +50,48 @@ pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
     let query = Query(service_query, platform_query);
     let mutation = Mutation(service_mutation, platform_mutation);
     
-    GraphQLSchema::build(query, mutation, subscription)
+    let mut builder = GraphQLSchema::build(query, mutation, subscription)
         .data(client)
-        .data(pool)
-        .finish()
+        .data(pool);
+
+    // Apply GraphQL limits from env (with safe defaults)
+    let max_depth: Option<usize> = std::env::var("GRAPHQL_MAX_DEPTH").ok().and_then(|s| s.parse().ok());
+    let max_complexity: Option<usize> = std::env::var("GRAPHQL_MAX_COMPLEXITY").ok().and_then(|s| s.parse().ok());
+    if let Some(d) = max_depth.or(Some(20)) { builder = builder.limit_depth(d); }
+    if let Some(c) = max_complexity.or(Some(200)) { builder = builder.limit_complexity(c); }
+
+    builder.finish()
 }
 
 pub async fn graphql_handler(
     Extension(schema): Extension<AtomoGraphQLSchema>,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
-    schema.execute(req.into_inner()).await.into()
+    static GQL_COUNTER: once_cell::sync::Lazy<prometheus::IntCounterVec> = once_cell::sync::Lazy::new(|| {
+        prometheus::register_int_counter_vec!(
+            "graphql_requests_total",
+            "Total GraphQL requests",
+            &["operation", "status"]
+        ).expect("register graphql_requests_total")
+    });
+    static GQL_HISTO: once_cell::sync::Lazy<prometheus::HistogramVec> = once_cell::sync::Lazy::new(|| {
+        prometheus::register_histogram_vec!(
+            "graphql_request_duration_seconds",
+            "GraphQL request duration seconds",
+            &["operation"],
+            vec![0.005,0.01,0.025,0.05,0.1,0.25,0.5,1.0,2.5,5.0,10.0]
+        ).expect("register graphql_request_duration_seconds")
+    });
+
+    let mut inner = req.into_inner();
+    let op = inner.operation_name.clone().unwrap_or_else(|| "anonymous".to_string());
+    let start = Instant::now();
+    let resp = schema.execute(inner).await;
+    let status = if resp.errors.is_empty() { "ok" } else { "error" };
+    let elapsed = start.elapsed().as_secs_f64();
+    GQL_COUNTER.with_label_values(&[op.as_str(), status]).inc();
+    GQL_HISTO.with_label_values(&[op.as_str()]).observe(elapsed);
+    resp.into()
 }
 
 pub async fn graphql_playground() -> Html<String> {
@@ -68,6 +103,55 @@ pub async fn graphql_playground() -> Html<String> {
 
 pub async fn health_check() -> &'static str {
     "OK"
+}
+
+/// Readiness probe: checks DB connectivity
+pub async fn ready_check(Extension(atomo): Extension<Atomo>) -> StatusCode {
+    let pool = atomo.db_pool().clone();
+    match sqlx::query("SELECT 1").execute(&pool).await {
+        Ok(_) => StatusCode::OK,
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE,
+    }
+}
+
+/// Prometheus metrics endpoint
+pub async fn metrics(Extension(atomo): Extension<Atomo>) -> (StatusCode, HeaderMap, String) {
+    // Update DB health metrics
+    static DB_UP: once_cell::sync::Lazy<prometheus::IntGauge> = once_cell::sync::Lazy::new(|| {
+        prometheus::register_int_gauge!("db_up", "Database connection status (1=up,0=down)").expect("register db_up")
+    });
+    static DB_PING: once_cell::sync::Lazy<prometheus::Histogram> = once_cell::sync::Lazy::new(|| {
+        prometheus::register_histogram!(
+            "db_ping_duration_seconds",
+            "Database ping duration seconds",
+            vec![0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1.0]
+        ).expect("register db_ping_duration_seconds")
+    });
+
+    let pool = atomo.db_pool().clone();
+    let start = std::time::Instant::now();
+    match sqlx::query("SELECT 1").execute(&pool).await {
+        Ok(_) => {
+            DB_UP.set(1);
+        }
+        Err(_) => {
+            DB_UP.set(0);
+        }
+    }
+    DB_PING.observe(start.elapsed().as_secs_f64());
+
+    let metric_families = prometheus::gather();
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    if let Err(_) = encoder.encode(&metric_families, &mut buffer) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), String::new());
+    }
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        "text/plain; version=0.0.4; charset=utf-8".parse().unwrap(),
+    );
+    (StatusCode::OK, headers, String::from_utf8_lossy(&buffer).into_owned())
 }
 
 pub async fn atomo_info(Extension(_atomo): Extension<Atomo>) -> String {
@@ -518,12 +602,15 @@ pub fn create_router(
         // Public routes (no authentication required)
         .route("/", get(|| async { "🚀 Atomo Content Core Server" }))
         .route("/health", get(health_check))
+        .route("/ready", get(ready_check))
+        .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
         
         // Authentication routes  
         .nest("/auth", Router::new()
             .route("/login", post(handlers::login))
             .route("/logout", post(handlers::logout))
+            .route("/refresh", post(handlers::refresh))
             .route("/me", get(handlers::me))
             .with_state(auth_service.clone())
         )

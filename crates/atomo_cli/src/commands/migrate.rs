@@ -465,34 +465,59 @@ fn is_system_table(table_name: &str) -> bool {
 }
 
 fn parse_sql_statements(content: &str) -> Vec<String> {
+    use regex::Regex;
     let mut statements = Vec::new();
-    let mut current_statement = String::new();
-    
-    for line in content.lines() {
+    let mut current = String::new();
+    let mut in_dollar: Option<String> = None; // e.g. Some("$$") or Some("$BODY$")
+
+    // Regex to detect dollar-quote delimiters like $$ or $tag$
+    let dq = Regex::new(r"\$[A-Za-z0-9_]*\$").unwrap();
+
+    for original_line in content.lines() {
+        let line = original_line;
         let trimmed = line.trim();
-        
-        // Skip empty lines and comments
-        if trimmed.is_empty() || trimmed.starts_with("--") {
+
+        // Skip pure comments, but keep comment lines inside dollar-quoted blocks to preserve bodies
+        if in_dollar.is_none() && (trimmed.is_empty() || trimmed.starts_with("--")) {
             continue;
         }
-        
-        current_statement.push_str(line);
-        current_statement.push('\n');
-        
-        // End of statement
-        if trimmed.ends_with(';') {
-            let statement = current_statement.trim().to_string();
-            if !statement.is_empty() && statement.len() > 5 {
-                statements.push(statement);
+
+        // Scan for entering/exiting dollar-quoted bodies
+        // There may be multiple tokens on one line; toggle for each match
+        if let Some(_) = dq.find(line) {
+            // process all occurrences in order
+            let mut start = 0;
+            while let Some(m) = dq.find_at(line, start) {
+                let token = m.as_str().to_string();
+                if let Some(ref current_token) = in_dollar {
+                    if &token == current_token {
+                        // leaving
+                        in_dollar = None;
+                    }
+                } else {
+                    // entering a dollar-quoted block
+                    in_dollar = Some(token);
+                }
+                start = m.end();
             }
-            current_statement.clear();
+        }
+
+        current.push_str(line);
+        current.push('\n');
+
+        // Only split on semicolon when not inside a dollar-quoted body
+        if in_dollar.is_none() && trimmed.ends_with(';') {
+            let stmt = current.trim().to_string();
+            if !stmt.is_empty() {
+                statements.push(stmt);
+            }
+            current.clear();
         }
     }
-    
-    // Handle any remaining statement without semicolon
-    if !current_statement.trim().is_empty() {
-        statements.push(current_statement.trim().to_string());
+
+    if !current.trim().is_empty() {
+        statements.push(current.trim().to_string());
     }
-    
+
     statements
 }
