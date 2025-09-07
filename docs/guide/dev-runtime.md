@@ -1,6 +1,6 @@
 # Development Runtime
 
-`atomo dev` spins up an on‑the‑fly runtime for fast iteration. For core contributors, `atomo workspace-dev` runs the service directly inside the workspace for even faster incremental builds.
+`atomo dev` spins up an on‑the‑fly runtime for fast iteration. For core contributors, `atomo dev --workspace` runs the service directly inside the workspace for even faster incremental builds.
 
 What it does
 - Creates a service‑local runtime under `services/<name>/.atomo/runtime`
@@ -9,12 +9,12 @@ What it does
 - Watches files and rebuilds incrementally
 
 Workspace mode
-- Command: `atomo workspace-dev [--service-path services/<name>] [-p 3000]`
+- Command: `atomo dev --workspace [--service-path services/<name>] [-p 3000]`
 - Uses the workspace target dir for incremental compilation
 - Watches both core crates and service schema for hot reload
 - Also boots the Admin UI dev server and proxies it under the same port
 
-Proxied Admin UI (workspace-dev)
+Proxied Admin UI (workspace mode)
 - Admin UI dev server runs on `http://localhost:5173`
 - The backend proxies it under the service port:
   - `/admin` and `/admin/*` → Admin UI
@@ -50,8 +50,10 @@ Environment
 Tips
 - Restart clean: delete `services/<name>/.atomo/runtime` if needed
 - Override port: `atomo dev --port 4000`
-- Workspace mode for core contributors: `atomo workspace-dev`
+- Workspace mode for core contributors: `atomo dev --workspace`
 
 Troubleshooting
 - Admin UI unavailable: ensure `packages/atomo-admin-ui` dev server is running; the proxy will display a helpful message if it isn’t.
 - `schema.ts` not found: confirm the file exists in the service root; the runtime tries several relative paths.
+Force isolated mode inside the monorepo
+- Command: `atomo dev --isolated` (useful to test the service-only flow without workspace deps)

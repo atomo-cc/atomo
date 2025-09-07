@@ -18,7 +18,7 @@ pnpm migrate    # atomo migrate --service crm
 
 ```bash
 # Start dev pipeline (codegen, server, admin UI)
-atomo dev [-p, --port 3000]
+atomo dev [-p, --port 3000] [--workspace] [--isolated] [--service-path services/<name>] [--strict-schema] [--verify-schema]
 
 # Build service for production
 atomo build --service <name>
@@ -36,8 +36,16 @@ atomo seed [--file ./seed.sql]
 ### Workspace Dev
 For core contributors working on the core crates and a service together:
 ```bash
-atomo workspace-dev [--service-path services/<name>] [-p 3000]
+atomo dev --workspace [--service-path services/<name>] [-p 3000]
 ```
+Note: `atomo workspace-dev` has been removed. Use `atomo dev --workspace`.
+
+Flags
+- `--workspace` — run from the monorepo context (faster rebuilds, Admin UI proxy)
+- `--isolated` — force isolated mode (no workspace); useful to test service-only flow inside the monorepo
+- `--service-path <path>` — explicit service directory in workspace mode
+- `--strict-schema` — treat schema validation problems as errors (default strict in isolated mode; warnings in workspace)
+- `--verify-schema` — run schema validations (enabled by default; flag is a no-op enable switch)
 
 Init/build/deploy:
 ```bash

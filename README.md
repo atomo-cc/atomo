@@ -49,8 +49,11 @@ atomo init my-shop --template ecommerce
 ```bash
 cd my-crm
 
-# 启动开发服务器
+# 启动开发服务器（服务目录中）
 atomo dev
+
+# 工作区模式（在仓库根或指定服务）
+atomo dev --workspace [--service-path services/<name>]
 
 # 构建生产版本
 atomo build

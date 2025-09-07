@@ -13,7 +13,7 @@
    - [x] `atomo migrate` - 数据库迁移
    - [x] `atomo dev` - 开发服务器
    - [x] `atomo codegen` - 前端类型生成 ✅ **已实现**
-   - [x] `atomo workspace-dev` - 工作区开发模式 🚀 **超前实现**
+   - [x] `atomo dev --workspace` - 工作区开发模式 🚀 **超前实现**
 
 2. **双模定义系统 (TS -> Rust)** ✅ **完全实现**
    - [x] TypeScript schema 解析器 ✨ 完整增强版本

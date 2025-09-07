@@ -6,10 +6,10 @@ This page summarizes the current implementation status and aligns it with the vi
 
 ## Status Overview
 
-- CLI and dev runtime: implemented (init, migrate, codegen, dev, workspace-dev)
+- CLI and dev runtime: implemented (init, migrate, codegen, dev, dev --workspace)
 - Schema → Rust/GraphQL/codegen: implemented with hot reload
 - GraphQL API: implemented and merged with platform queries
-- Admin UI: dynamic rendering core implemented; proxied in workspace-dev
+- Admin UI: dynamic rendering core implemented; proxied in workspace mode
 - Auth (JWT + RBAC): implemented; hashing is dev-stub (see notes)
 - Audit logs: implemented with REST endpoints and platform GraphQL
 - TypeScript SDK: implemented (types and React hooks)
@@ -20,11 +20,11 @@ This page summarizes the current implementation status and aligns it with the vi
 
 - Development runtime
   - `.atomo/runtime` generation, incremental compilation, hot reload
-  - `workspace-dev` watches core crates and service schema; proxies Admin UI under `/admin`
+  - `dev --workspace` watches core crates and service schema; proxies Admin UI under `/admin`
 - GraphQL and metadata
   - Service + platform schema merge (users, sessions, audit)
   - `/meta/schema` JSON metadata and `GET /schema.ts` in dev
-  - GraphQL IDE: `/graphql` (dev server) or `/playground` (workspace-dev)
+- GraphQL IDE: `/graphql` (dev server) or `/playground` (workspace mode)
 - Auth and sessions
   - JWT issuance/verification and session storage in Postgres
   - Role model (`Admin|Manager|Sales|Support|Viewer`) with basic RBAC checks
@@ -57,7 +57,7 @@ This page summarizes the current implementation status and aligns it with the vi
 
 ## Mapping to Vision (About/Paper)
 
-- “Instantly compiled service runtime” (paper §2.2): implemented via dev runtime and workspace-dev
+- “Instantly compiled service runtime” (paper §2.2): implemented via dev runtime and workspace mode
 - “Schema-driven platform” (about/paper): implemented end-to-end (TS → GraphQL/UI/SDK)
 - “Hydra UI” (paper §2.4): Admin UI dynamic renderer exists; cross-platform renderers are future work
 - “Local-first & collaboration” (about/paper): architectural groundwork; CRDT/sync SDK planned

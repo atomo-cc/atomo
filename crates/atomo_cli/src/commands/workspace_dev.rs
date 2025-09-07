@@ -79,7 +79,12 @@ impl ProcessManager {
 /// - 同时启动Admin UI和后端服务
 /// - 提供优雅的停止机制
 /// - 管理所有相关进程的生命周期
-pub async fn workspace_dev_command(port: u16, service_path: Option<PathBuf>) -> Result<()> {
+pub async fn workspace_dev_command(
+    port: u16,
+    service_path: Option<PathBuf>,
+    strict_schema: bool,
+    verify_schema: bool,
+) -> Result<()> {
     println!("🚀 {}", style("Starting Atomo workspace development server...").cyan());
     
     // Step 1: Detect or use provided service directory
@@ -110,7 +115,7 @@ pub async fn workspace_dev_command(port: u16, service_path: Option<PathBuf>) -> 
     });
     
     // Step 5: Run service with workspace context and hot reload
-    run_service_with_workspace_context(&service_dir, port).await?;
+    run_service_with_workspace_context(&service_dir, port, strict_schema, verify_schema).await?;
     
     // 如果到达这里，说明后端服务已停止，也停止Admin UI
     process_manager.lock().await.stop_all().await;
@@ -184,7 +189,7 @@ atomo_server = "../../crates/atomo_server"
 }
 
 /// Run service with workspace context for fast incremental compilation
-async fn run_service_with_workspace_context(service_dir: &Path, port: u16) -> Result<()> {
+async fn run_service_with_workspace_context(service_dir: &Path, port: u16, strict_schema: bool, verify_schema: bool) -> Result<()> {
     println!("   🔧 Starting service with workspace context...");
     
     // Step 1: Setup file watching for core libraries AND service schema
@@ -241,7 +246,7 @@ async fn run_service_with_workspace_context(service_dir: &Path, port: u16) -> Re
     println!("   👀 File watching setup complete");
     
     // Step 2: Build and run service with workspace dependencies
-    build_and_run_workspace_service(service_dir, port, rx).await?;
+    build_and_run_workspace_service(service_dir, port, rx, strict_schema, verify_schema).await?;
     
     Ok(())
 }
@@ -291,12 +296,14 @@ async fn rebuild_cli(workspace_root: &Path) -> Result<()> {
 async fn build_and_run_workspace_service(
     service_dir: &Path,
     port: u16,
-    rx: mpsc::Receiver<notify::Result<notify::Event>>
+    rx: mpsc::Receiver<notify::Result<notify::Event>>,
+    strict_schema: bool,
+    verify_schema: bool,
 ) -> Result<()> {
     let workspace_root = find_workspace_root(service_dir)?;
     
     // Step 1: Generate service-specific runtime code
-    generate_service_runtime_code(service_dir, port).await?;
+    generate_service_runtime_code(service_dir, port, strict_schema, verify_schema).await?;
     
     // Step 2: Create workspace-aware Cargo.toml for the service
     create_workspace_service_cargo_toml(service_dir, &workspace_root).await?;
@@ -306,36 +313,25 @@ async fn build_and_run_workspace_service(
     compile_workspace_service(&workspace_root, service_dir).await?;
     
     // Step 4: Start service with hot reload
-    start_workspace_service_with_hot_reload(&workspace_root, service_dir, port, rx).await?;
+    start_workspace_service_with_hot_reload(&workspace_root, service_dir, port, rx, strict_schema, verify_schema).await?;
     
     Ok(())
 }
 
-/// Generate minimal runtime code for the service
-async fn generate_service_runtime_code(service_dir: &Path, port: u16) -> Result<()> {
-    use atomo_schema::{TypeScriptParser, HasuraV2TypeGenerator, HasuraV2ResolverGenerator};
-    
+/// Generate runtime code for the service (workspace mode)
+async fn generate_service_runtime_code(service_dir: &Path, port: u16, strict_schema: bool, verify_schema: bool) -> Result<()> {
+    // Paths
     let schema_path = service_dir.join("schema.ts");
-    
-    // Create hidden temporary runtime directory (following Atomo architecture principles)
     let runtime_dir = service_dir.join(".atomo/runtime");
     let src_dir = runtime_dir.join("src");
     tokio::fs::create_dir_all(&src_dir).await?;
-    
-    // Parse schema
-    let schema_content = tokio::fs::read_to_string(&schema_path).await?;
-    let parser = TypeScriptParser::new();
-    let models = parser.parse(&schema_content)?;
-    
-    // Generate models and resolvers in the temporary directory
-    let type_generator = HasuraV2TypeGenerator::new();
-    let resolver_generator = HasuraV2ResolverGenerator::new();
-    
-    let models_code = type_generator.generate_types(&models)?;
-    let resolvers_code = resolver_generator.generate_resolvers(&models)?;
-    
-    tokio::fs::write(src_dir.join("models.rs"), models_code).await?;
-    tokio::fs::write(src_dir.join("resolvers.rs"), resolvers_code).await?;
+
+    // Use shared incremental codegen for models/resolvers/schema.graphql
+    // Falls back to previous unconditional generation behavior if needed in future.
+    crate::commands::dev::shared_incremental_codegen(&runtime_dir, &schema_path).await?;
+    if verify_schema {
+        crate::commands::dev::shared_validate_schema(&runtime_dir, &schema_path, strict_schema).await?;
+    }
 
     // Copy .env file if it exists
     let env_file = service_dir.join(".env");
@@ -881,7 +877,9 @@ async fn start_workspace_service_with_hot_reload(
     workspace_root: &Path,
     service_dir: &Path,
     port: u16,
-    rx: mpsc::Receiver<notify::Result<notify::Event>>
+    rx: mpsc::Receiver<notify::Result<notify::Event>>,
+    strict_schema: bool,
+    verify_schema: bool,
 ) -> Result<()> {
     use std::sync::{Arc, Mutex};
     use tokio::process::Child;
@@ -960,7 +958,7 @@ async fn start_workspace_service_with_hot_reload(
                     // Check if schema changed (need regeneration) or just core libs (just recompile)
                     if schema_changed {
                         println!("   📝 Schema changed - regenerating code...");
-                        if let Err(e) = generate_service_runtime_code(service_dir, 3000).await {
+                        if let Err(e) = generate_service_runtime_code(service_dir, port, strict_schema, verify_schema).await {
                             eprintln!("   ❌ Code generation failed: {}", e);
                             continue;
                         }

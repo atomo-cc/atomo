@@ -60,13 +60,19 @@ enum Commands {
         /// Port to run on
         #[arg(short, long, default_value = "3000")]
         port: u16,
-    },
-    /// Start development server with workspace context (faster for core development)
-    WorkspaceDev {
-        /// Port to run on
-        #[arg(short, long, default_value = "3000")]
-        port: u16,
-        /// Optional path to service directory
+        /// Use workspace context (fast rebuilds, Admin UI, platform integration)
+        #[arg(long, default_value_t = false)]
+        workspace: bool,
+        /// Force isolated mode (no workspace), useful to test service-only flow inside the monorepo
+        #[arg(long, default_value_t = false)]
+        isolated: bool,
+        /// Treat schema validation as errors (otherwise warnings in workspace)
+        #[arg(long, default_value_t = false)]
+        strict_schema: bool,
+        /// Run schema validations (enabled by default; flag explicitly enables and can be used for clarity)
+        #[arg(long, default_value_t = false)]
+        verify_schema: bool,
+        /// Optional path to service directory (workspace mode)
         #[arg(long)]
         service_path: Option<std::path::PathBuf>,
     },
@@ -105,11 +111,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Codegen { output } => {
             codegen_command(output).await?;
         }
-        Commands::Dev { port } => {
-            dev_command(port).await?;
-        }
-        Commands::WorkspaceDev { port, service_path } => {
-            workspace_dev_command(port, service_path).await?;
+        Commands::Dev { port, workspace, isolated, strict_schema, verify_schema, service_path } => {
+            dev_command(port, workspace, isolated, service_path, strict_schema, verify_schema).await?;
         }
         Commands::Build => {
             build_command().await?;

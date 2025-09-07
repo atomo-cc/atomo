@@ -13,8 +13,58 @@ use std::time::Duration;
 /// 
 /// 核心机制: Atomo 的开发环境采用"即时编译的服务运行时"模式，
 /// 实现平台通用性与服务特异性的完美结合。
-pub async fn dev_command(port: u16) -> Result<()> {
-    println!("🚀 {}", style("Starting Atomo development server...").cyan());
+pub async fn dev_command(
+    port: u16,
+    workspace: bool,
+    isolated: bool,
+    service_path: Option<PathBuf>,
+    strict_schema_flag: bool,
+    verify_schema_flag: bool,
+) -> Result<()> {
+    // Resolve mode: explicit flags override auto-detection, and log the reason
+    let cwd = std::env::current_dir()?;
+    let mut use_workspace = false;
+    let mut mode_note = String::new();
+    if isolated {
+        use_workspace = false;
+        mode_note = "Using isolated mode (forced by --isolated)".to_string();
+    } else if workspace {
+        use_workspace = true;
+        mode_note = "Using workspace mode (forced by --workspace)".to_string();
+    } else {
+        match detect_workspace_root_from(cwd.as_path())? {
+            Some(root) => {
+                use_workspace = true;
+                mode_note = format!(
+                    "Using workspace mode (auto-detected at {})",
+                    root.display()
+                );
+            }
+            None => {
+                use_workspace = false;
+                mode_note = "Using isolated mode (no workspace detected)".to_string();
+            }
+        }
+    }
+
+    // Determine validation behavior
+    // Defaults: workspace -> warn (non-strict), isolated -> strict
+    let effective_verify = if verify_schema_flag { true } else { true };
+    let effective_strict = if strict_schema_flag {
+        true
+    } else if use_workspace {
+        false
+    } else {
+        true
+    };
+
+    // Dispatch to workspace flow when selected or auto-detected
+    println!("   {}", mode_note.dimmed());
+    if use_workspace {
+        return super::workspace_dev::workspace_dev_command(port, service_path, effective_strict, effective_verify).await;
+    }
+
+    println!("🚀 {}", style("Starting Atomo development server (isolated mode)...").cyan());
     
     // 步骤1: 检测当前是否在service目录中
     let current_dir = std::env::current_dir()?;
@@ -36,27 +86,58 @@ pub async fn dev_command(port: u16) -> Result<()> {
         anyhow::bail!("❌ schema.ts not found in current directory");
     }
     
-    // 使用统一的操作符定义验证一致性
-    let operation_definitions = OperationDefinitions::hasura_v2_standard();
-    operation_definitions.validate()
-        .context("Failed to validate operation definitions")?;
-    
-    println!("   🎯 Using Hasura v2 standard operation definitions");
-    println!("      - {} comparison operators", operation_definitions.comparison_ops.len());
-    println!("      - {} logical operators", operation_definitions.logical_ops.len());
+    // 使用统一的操作符定义验证一致性（isolated 默认严格）
+    if effective_verify {
+        let operation_definitions = OperationDefinitions::hasura_v2_standard();
+        operation_definitions
+            .validate()
+            .context("Failed to validate operation definitions")?;
+        println!("   🎯 Using Hasura v2 standard operation definitions");
+        println!("      - {} comparison operators", operation_definitions.comparison_ops.len());
+        println!("      - {} logical operators", operation_definitions.logical_ops.len());
+    }
     
     // 解析并生成代码（分离式生成，支持增量更新）
     generate_business_code_incremental(&runtime_dir, &schema_path).await?;
     println!("   🦀 Generated business code from schema.ts");
     
     // 验证schema一致性 (Hasura v2标准)
-    let schema_graphql_path = runtime_dir.join("schema.graphql");
-    verify_schema_consistency(&schema_graphql_path).await?;
-    println!("   ✅ Schema consistency verified (Hasura v2 compliant)");
+    if effective_verify {
+        let schema_graphql_path = runtime_dir.join("schema.graphql");
+        match verify_schema_consistency(&schema_graphql_path).await {
+            Ok(()) => println!("   ✅ Schema consistency verified (Hasura v2 compliant)"),
+            Err(e) => {
+                if effective_strict { return Err(e); }
+                eprintln!("   ⚠️  Schema validation warning: {}", e);
+            }
+        }
+    }
     
     // 步骤5: 编译并运行服务（带文件监听）
     compile_and_run_service_with_watch(&runtime_dir, &service_name, port, &current_dir).await?;
     
+    Ok(())
+}
+
+/// Shared incremental codegen entry used by both isolated and workspace modes.
+/// Generates or updates models.rs, resolvers.rs, and schema.graphql under `runtime_dir/src`.
+pub async fn shared_incremental_codegen(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
+    generate_business_code_incremental(runtime_dir, schema_path).await
+}
+
+/// Optional schema validation shared helper (OperationDefinitions + Hasura v2 checks)
+pub async fn shared_validate_schema(runtime_dir: &Path, schema_path: &Path, strict: bool) -> Result<()> {
+    // Ensure GraphQL schema exists/updated
+    let schema_graphql_path = runtime_dir.join("schema.graphql");
+    if !schema_graphql_path.exists() {
+        generate_graphql_schema_definition(schema_path, &schema_graphql_path).await?;
+    }
+
+    // Validate Hasura v2 compatibility
+    if let Err(e) = verify_schema_consistency(&schema_graphql_path).await {
+        if strict { return Err(e); }
+        eprintln!("   ⚠️  Schema validation warning: {}", e);
+    }
     Ok(())
 }
 
@@ -306,7 +387,7 @@ async fn graphql_playground() -> impl IntoResponse {{
 
 /// 生成业务代码 (models.rs, resolvers.rs) - 增强版本
 /// 真正的细粒度增量代码生成 - 只重新生成变更的部分
-async fn generate_business_code_incremental(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
+pub(crate) async fn generate_business_code_incremental(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
     let models_path = runtime_dir.join("src").join("models.rs");
     let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
     
@@ -368,6 +449,22 @@ async fn generate_business_code_incremental(runtime_dir: &Path, schema_path: &Pa
     }
     
     Ok(())
+}
+
+/// Detect workspace root from a starting directory by looking for a Cargo.toml with [workspace]
+fn detect_workspace_root_from(start: &Path) -> Result<Option<PathBuf>> {
+    let mut current = start;
+    for _ in 0..10 {
+        let cargo = current.join("Cargo.toml");
+        if cargo.exists() {
+            let content = std::fs::read_to_string(&cargo).unwrap_or_default();
+            if content.contains("[workspace]") && current.join("crates").exists() {
+                return Ok(Some(current.to_path_buf()))
+            }
+        }
+        if let Some(parent) = current.parent() { current = parent; } else { break; }
+    }
+    Ok(None)
 }
 
 /// 原有的完整生成函数，保留用于回退
@@ -566,7 +663,10 @@ async fn compile_and_run_service(runtime_dir: &Path, service_name: &str, port: u
     println!("{}", "─".repeat(70).yellow());
     
     // 直接运行二进制文件，使用fast-dev目录以匹配编译模式
-    let service_binary = runtime_dir.join("target").join("fast-dev").join("service.exe");
+    let service_binary = runtime_dir
+        .join("target")
+        .join("fast-dev")
+        .join(platform_service_binary_name());
     
     let mut child = TokioCommand::new(&service_binary)
         .current_dir(runtime_dir)
@@ -1303,13 +1403,21 @@ async fn compile_and_run_service_with_watch(
     println!();
     
     // 步骤4: 启动带进程管理的热重载服务
-    let service_binary = runtime_dir.join("target").join("fast-dev").join("service.exe");
+    let service_binary = runtime_dir
+        .join("target")
+        .join("fast-dev")
+        .join(platform_service_binary_name());
     let service_dir_clone = service_dir.to_path_buf();
     let runtime_dir_clone = runtime_dir.to_path_buf();
     
     start_service_with_hot_reload(&service_binary, runtime_dir, &service_dir_clone, &runtime_dir_clone, rx).await?;
     
     Ok(())
+}
+
+#[inline]
+fn platform_service_binary_name() -> &'static str {
+    if cfg!(windows) { "service.exe" } else { "service" }
 }
 
 /// 热重载：当文件变更时快速重新生成和重编译

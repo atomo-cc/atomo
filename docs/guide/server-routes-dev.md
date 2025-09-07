@@ -1,6 +1,6 @@
 # Server Routes in Dev
 
-This page lists the routes available while developing locally and clarifies which ones are provided by `atomo dev` versus `atomo workspace-dev`.
+This page lists the routes available while developing locally and clarifies which ones are provided by `atomo dev` versus `atomo dev --workspace`.
 
 Common (both modes)
 - `/health` — health check
@@ -8,7 +8,7 @@ Common (both modes)
 - `/graphql` — GraphQL endpoint (POST for operations)
 - GraphQL IDE
   - `atomo dev`: `GET /graphql` serves the playground
-  - `workspace-dev`: `GET /playground` serves GraphiQL
+  - `atomo dev --workspace`: `GET /playground` serves GraphiQL
 - `/schema.ts` — raw schema file served in development (used by Admin UI/tooling)
 
 atomo dev (full platform server)
@@ -26,7 +26,7 @@ atomo dev (full platform server)
   - `GET /audit/entity/:entity_type/:entity_id/audit`
   - `GET /audit/statistics`
 
-workspace-dev (service‑scoped hot reload server)
+workspace mode (service‑scoped hot reload server)
 - `/` — service health message (Workspace Dev)
 - `/health` — health check
 - `/graphql` — POST (operations)
@@ -36,7 +36,7 @@ workspace-dev (service‑scoped hot reload server)
   - `/admin` → 301 to `/admin/`
   - `/admin/` → proxies to `http://localhost:5173/`
   - `/admin/*` → proxies to `http://localhost:5173/*`
-- Vite asset proxies (workspace‑dev only)
+- Vite asset proxies (workspace mode only)
   - `/@vite/*`, `/@react-refresh`
   - `/@fs/*`, `/src/*`, `/node_modules/*`
 
@@ -45,7 +45,7 @@ Observability
 
 Ports
 - Service/API default: `http://localhost:3000`
-- Admin UI dev server: `http://localhost:5173` (proxied under `/admin` in workspace‑dev)
+- Admin UI dev server: `http://localhost:5173` (proxied under `/admin` in workspace mode)
 
 Notes
 - Admin proxy returns a helpful message if the UI dev server is not running.
