@@ -212,7 +212,7 @@ pub fn process_content(content: &str) -> String {
 }
 ```
 
-详细开发路线图和当前进度请参考 [ROADMAP.md](ROADMAP.md)。
+详细开发路线图和当前进度请参考 docs/roadmap.md；平台愿景与架构请参考 docs/vision.md。
 
 ## � 性能基准
 

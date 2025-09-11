@@ -112,4 +112,4 @@ Deployment runbook (outline)
    - Run smoke tests; inspect logs/metrics; create admin user
 
 Where to track this
-- This checklist lives under Guide → Advanced. Keep the root `ROADMAP.md` for long‑term planning; use this page for production tasks and validation.
+- This checklist lives under Guide → Advanced. Keep `docs/roadmap.md` for long‑term planning; use this page for production tasks and validation.

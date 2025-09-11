@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Atomo',
   description: 'The Next-Generation Content Core - Developer Documentation',
-  
+
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],
     ['meta', { name: 'theme-color', content: '#3c82f6' }],
@@ -16,12 +16,18 @@ export default defineConfig({
 
   themeConfig: {
     logo: '/logo.svg',
-    
+    outline: 'deep',
+
     nav: [
+      { text: 'Vision', link: '/vision' },
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'API', link: '/api/' },
       { text: 'Examples', link: '/examples/' },
       { text: 'Services', link: '/services/' },
+      { text: '中文', items: [
+        { text: '愿景', link: '/zh/vision' },
+        { text: '路线图', link: '/zh/roadmap' }
+      ]},
       { text: 'Playground', link: 'https://playground.atomo.cc' },
       {
         text: 'v0.1.0',
@@ -72,6 +78,8 @@ export default defineConfig({
           items: [
             { text: 'Custom Event Stores', link: '/guide/advanced/event-stores' },
             { text: 'Multi-tenant Setup', link: '/guide/advanced/multi-tenant' },
+            { text: 'Access & Hooks', link: '/guide/advanced/access-hooks' },
+            { text: 'AI & Vector Search', link: '/guide/advanced/ai-vector' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },
             { text: 'Performance Tuning', link: '/guide/advanced/performance' }
