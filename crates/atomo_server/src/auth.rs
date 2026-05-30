@@ -4,6 +4,7 @@
 //! and authorization interfaces defined in atomo_core.
 
 use anyhow::Result;
+use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::{SaltString, rand_core::OsRng}};
 use async_trait::async_trait;
 use atomo_core::{
     AuthProvider, AuthorizationService, AuthCredentials,
@@ -347,20 +348,24 @@ impl HttpAuthService {
         Ok(())
     }
 
-    /// Hash a password using bcrypt
+    /// Hash a password using argon2id
     pub fn hash_password(&self, password: &str) -> Result<String, anyhow::Error> {
-        // Read cost from env or default to 12
-        let cost: u32 = std::env::var("BCRYPT_COST")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(12);
-        let hash = bcrypt::hash(password, cost)?;
-        Ok(hash)
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let hash = argon2.hash_password(password.as_bytes(), &salt)
+            .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
+        Ok(hash.to_string())
     }
 
-    /// Verify a password against its hash
+    /// Verify a password against its hash (supports argon2 and bcrypt fallback)
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool, anyhow::Error> {
-        Ok(bcrypt::verify(password, hash).unwrap_or(false))
+        if hash.starts_with("$argon2") {
+            let parsed = argon2::password_hash::PasswordHash::new(hash)
+                .map_err(|e| anyhow::anyhow!("Invalid hash: {}", e))?;
+            Ok(Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
+        } else {
+            Ok(bcrypt::verify(password, hash).unwrap_or(false))
+        }
     }
 }
 

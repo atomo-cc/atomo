@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use async_graphql::{Schema as GraphQLSchema, Object, Subscription, Context, Result as GraphQLResult, EmptySubscription};
 use serde_json::Value;
 use futures;
+use futures::StreamExt;
 use sqlx;
+use tokio_stream::wrappers::BroadcastStream;
 
 use crate::client::AtomoClient;
 use crate::schema::Schema;
@@ -151,7 +153,8 @@ impl Subscription {
         &self,
         model: String,
     ) -> impl futures::Stream<Item = ModelEvent> + '_ {
-        futures::stream::empty()
+        let rx = self.client.subscribe(&model, &[], &[]).await;
+        BroadcastStream::new(rx).filter_map(|result| async { result.ok() })
     }
 }
 

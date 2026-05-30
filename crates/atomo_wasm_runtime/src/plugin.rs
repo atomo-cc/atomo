@@ -10,7 +10,7 @@ pub struct PluginManifest {
     pub permissions: Vec<Permission>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {
     ReadEvents,
     WriteEvents,

@@ -145,7 +145,8 @@ impl AtomoServer {
         // Global rate limit disabled (tower::limit not enabled). Consider adding a gateway/proxy for rate limiting.
 
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
-            .layer(svc_builder);
+            .layer(svc_builder)
+            .layer(middleware::from_fn(crate::tracing_middleware::request_tracing));
         // Conditionally apply security headers
         let disable_headers = std::env::var("DISABLE_SECURITY_HEADERS").map(|v| v == "true" || v == "1").unwrap_or(false);
         if !disable_headers { app = app.layer(sec_builder); }

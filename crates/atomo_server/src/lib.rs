@@ -9,6 +9,7 @@
 pub mod config;
 pub mod server;
 pub mod handlers;
+pub mod tracing_middleware;
 pub mod auth;
 pub mod audit;
 pub mod event_store;

@@ -1,7 +1,7 @@
 //! HTTP handlers for the Atomo server
 
 use async_graphql::{Schema as GraphQLSchema, MergedObject};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
@@ -199,6 +199,7 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
         .route("/ready", get(ready_check))
         .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
+        .route_service("/graphql/ws", GraphQLSubscription::new(schema.clone()))
         
         // Authentication routes  
         .nest("/auth", Router::new()
