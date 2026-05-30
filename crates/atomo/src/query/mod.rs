@@ -3,6 +3,7 @@
 use serde_json::{Value, Map};
 
 pub mod operators;
+pub mod sql_builder;
 
 /// Where clause for filtering queries
 #[derive(Debug, Clone)]

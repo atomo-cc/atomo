@@ -154,7 +154,11 @@ impl Subscription {
         model: String,
     ) -> impl futures::Stream<Item = ModelEvent> + '_ {
         let rx = self.client.subscribe(&model, &[], &[]).await;
-        BroadcastStream::new(rx).filter_map(|result| async { result.ok() })
+        let model_filter = model;
+        BroadcastStream::new(rx).filter_map(move |result| {
+            let m = model_filter.clone();
+            async move { result.ok().filter(|e| e.model_name == m) }
+        })
     }
 }
 

@@ -142,15 +142,19 @@ impl AtomoServer {
             )
             .layer(cors_layer);
 
-        // Global rate limit disabled (tower::limit not enabled). Consider adding a gateway/proxy for rate limiting.
+        // Rate limiting
+        let rate_limiter = crate::rate_limit::RateLimiter::from_env();
 
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .layer(svc_builder)
-            .layer(middleware::from_fn(crate::tracing_middleware::request_tracing));
+            .layer(middleware::from_fn(crate::tracing_middleware::request_tracing))
+            .route_layer(middleware::from_fn_with_state(
+                rate_limiter,
+                crate::rate_limit::rate_limit_middleware,
+            ));
         // Conditionally apply security headers
         let disable_headers = std::env::var("DISABLE_SECURITY_HEADERS").map(|v| v == "true" || v == "1").unwrap_or(false);
         if !disable_headers { app = app.layer(sec_builder); }
-        // Custom per-IP/per-key middleware removed for now to ensure compatibility; use global RPS limiter above.
 
         // Start server
         let addr = SocketAddr::new(

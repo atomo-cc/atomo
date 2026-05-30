@@ -12,6 +12,7 @@ pub mod handlers;
 pub mod tracing_middleware;
 pub mod auth;
 pub mod audit;
+pub mod rate_limit;
 pub mod event_store;
 pub mod aggregate;
 pub mod domain;
@@ -21,6 +22,7 @@ pub mod models_ext;
 pub mod schema_metadata;
 pub mod model_registry;
 pub mod plugins;
+pub mod wasm_plugins;
 
 pub use config::*;
 pub use server::*;
