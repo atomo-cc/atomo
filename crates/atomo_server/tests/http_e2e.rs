@@ -43,6 +43,19 @@ export default schema;
     .await
     .unwrap();
 
+    // Seed a viewer user for RBAC tests (Note.create requires admin).
+    let vid = atomo_core::types::EntityId::new().to_string();
+    let vhash = auth.hash_password("viewer123").unwrap();
+    sqlx::query(
+        "INSERT INTO users (id,email,password_hash,first_name,last_name,role,is_active) \
+         VALUES ($1,'viewer@test.dev',$2,'V','R','viewer',true) ON CONFLICT (email) DO NOTHING",
+    )
+    .bind(&vid)
+    .bind(&vhash)
+    .execute(atomo.db_pool())
+    .await
+    .unwrap();
+
     let app = atomo_server::handlers::create_router(gql, atomo, auth.clone(), audit);
     (app, auth)
 }
@@ -497,4 +510,55 @@ async fn test_update_scoped_and_persists() {
     assert!(recs.iter().any(|r| r["title"] == "changed"), "target update did not persist");
     assert!(recs.iter().any(|r| r["title"] == "untouched"), "non-target was wrongly modified");
     assert!(!recs.iter().any(|r| r["title"] == "orig"), "old value still present");
+}
+
+
+// Phase S1: RBAC is enforced end-to-end. Note.create requires 'admin' (build_app schema).
+// A viewer logging in and attempting create must be denied; admin must succeed.
+#[tokio::test]
+#[ignore]
+async fn test_rbac_viewer_denied_create_admin_allowed() {
+    let (app, _) = build_app().await;
+
+    let login = |email: &str, pw: &str| {
+        serde_json::json!({ "email": email, "password": pw })
+    };
+    let do_login = |app: &axum::Router, body: serde_json::Value| {
+        let app = app.clone();
+        async move {
+            let req = Request::builder().uri("/auth/login").method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+            let (_, json) = send(&app, req).await;
+            json["token"].as_str().map(|s| s.to_string())
+        }
+    };
+
+    let create_req = |token: &str| {
+        let body = serde_json::json!({
+            "query": r#"mutation { create(model: "Note", data: { title: "rbac" }) }"#
+        });
+        Request::builder().uri("/graphql").method("POST")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {}", token))
+            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap()
+    };
+
+    // Viewer: denied (Note.create requires admin).
+    let vtoken = do_login(&app, login("viewer@test.dev", "viewer123")).await.expect("viewer login");
+    let (_, vjson) = send(&app, create_req(&vtoken)).await;
+    let verrs = serde_json::to_string(&vjson).unwrap();
+    assert!(
+        vjson.get("errors").and_then(|e| e.as_array()).is_some_and(|a| !a.is_empty()),
+        "viewer create should be denied by RBAC, got: {}", verrs
+    );
+    assert!(verrs.contains("denied") || verrs.contains("Access"), "denial should cite access: {}", verrs);
+
+    // Admin: allowed.
+    let atoken = do_login(&app, login("admin@test.dev", "admin123")).await.expect("admin login");
+    let (_, ajson) = send(&app, create_req(&atoken)).await;
+    assert!(
+        ajson.get("errors").is_none() || ajson["errors"].as_array().is_none_or(|a| a.is_empty()),
+        "admin create should be allowed, got: {:?}", ajson
+    );
 }

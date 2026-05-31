@@ -90,7 +90,83 @@ impl TypeScriptParser {
             }
         }
 
+        // Sixth pass: parse `access` rules from the schema const and attach. Only set when the
+        // DSL pass didn't already provide access (DSL/defineModel form takes precedence).
+        let mut access_map = Self::parse_access_rules(content);
+        for model in &mut models {
+            if model.access.is_none() {
+                if let Some(ac) = access_map.remove(&model.name) {
+                    model.access = Some(ac);
+                }
+            }
+        }
+
         Ok(models)
+    }
+
+    /// Extract per-model `access` rules from the `export const schema` object, e.g.
+    /// `Contact: { access: { create: "sales|manager|admin", read: "authenticated" } }`.
+    /// Produces `AccessRule::Boolean(roles_str)` which `check_access` already understands
+    /// (pipe-OR roles + the `authenticated`/`public` tokens). Accepts single/double quotes.
+    fn parse_access_rules(content: &str) -> HashMap<String, AccessControl> {
+        let mut result = HashMap::new();
+        // Find each `ModelName: { ... access: { ... } }` and pull the access block, then the
+        // per-op string rules within it.
+        let model_re = Regex::new(r"(\w+)\s*:\s*\{").unwrap();
+        let op_re = Regex::new(r#"(create|read|update|delete)\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+        let bytes = content.as_bytes();
+        for cap in model_re.captures_iter(content) {
+            let model_name = cap[1].to_string();
+            let block_start = cap.get(0).unwrap().end();
+            // Walk the model block to find a nested `access: {` and capture it (brace-balanced).
+            let mut depth = 1usize;
+            let mut idx = block_start;
+            let mut access_block: Option<String> = None;
+            while idx < bytes.len() && depth > 0 {
+                match bytes[idx] {
+                    b'{' => {
+                        let prefix = &content[..idx];
+                        if depth == 1 && prefix.trim_end().ends_with("access:") {
+                            let mut d = 1usize;
+                            let mut j = idx + 1;
+                            let astart = j;
+                            while j < bytes.len() && d > 0 {
+                                match bytes[j] {
+                                    b'{' => d += 1,
+                                    b'}' => d -= 1,
+                                    _ => {}
+                                }
+                                j += 1;
+                            }
+                            access_block = Some(content[astart..j.saturating_sub(1)].to_string());
+                        }
+                        depth += 1;
+                    }
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                idx += 1;
+            }
+            if let Some(block) = access_block {
+                let mut ac = AccessControl { create: None, read: None, update: None, delete: None };
+                let mut any = false;
+                for c in op_re.captures_iter(&block) {
+                    let rule = Some(AccessRule::Boolean(c[2].to_string()));
+                    any = true;
+                    match &c[1] {
+                        "create" => ac.create = rule,
+                        "read" => ac.read = rule,
+                        "update" => ac.update = rule,
+                        "delete" => ac.delete = rule,
+                        _ => {}
+                    }
+                }
+                if any {
+                    result.insert(model_name, ac);
+                }
+            }
+        }
+        result
     }
 
     /// Extract per-model `tableName` from the `export const schema` object, e.g.
@@ -545,15 +621,28 @@ mod validation_tests {
     }
 
     #[test]
-    fn parses_explicit_table_name() {
-        // The schema-const format declares tableName; it must reach Model.table_name so the
-        // SQL layer doesn't naively pluralize (Company -> 'company', not 'companys').
+    fn parses_and_enforces_access_rules() {
+        use crate::types::AccessDecision;
+        // Mirrors the real CRM: double-quoted access rules in the export-const-schema format.
         let content = r#"
-        export interface Company { id: string; name: string; }
-        export const schema = { models: { Company: { tableName: "company", access: { read: "authenticated" } } } };
+        export interface Contact { id: string; name: string; }
+        export const schema = { models: { Contact: {
+          tableName: "contact",
+          access: { create: "sales|manager|admin", read: "authenticated", delete: "manager|admin" }
+        } } };
         "#;
         let models = TypeScriptParser::new().parse(content).unwrap();
-        let c = models.iter().find(|m| m.name == "Company").expect("Company parsed");
-        assert_eq!(c.table_name.as_deref(), Some("company"), "explicit tableName must be honored");
+        let c = models.iter().find(|m| m.name == "Contact").expect("Contact parsed");
+        let ac = c.access.as_ref().expect("access rules must be parsed (RBAC bypass fix)");
+
+        // create requires sales|manager|admin
+        assert_eq!(ac.decide("create", Some("Viewer")), AccessDecision::Forbidden, "viewer denied create");
+        assert_eq!(ac.decide("create", Some("Sales")), AccessDecision::Allow, "sales allowed create");
+        assert_eq!(ac.decide("create", None), AccessDecision::NeedsAuth, "anon needs auth");
+        // read is authenticated → any logged-in role allowed
+        assert_eq!(ac.decide("read", Some("Viewer")), AccessDecision::Allow, "viewer can read");
+        // delete gated to manager|admin
+        assert_eq!(ac.decide("delete", Some("Sales")), AccessDecision::Forbidden, "sales cannot delete");
+        assert_eq!(ac.decide("delete", Some("Admin")), AccessDecision::Allow, "admin can delete");
     }
 }

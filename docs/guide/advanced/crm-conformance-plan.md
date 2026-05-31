@@ -105,7 +105,15 @@ targets is the bulk of the work.
     that's a separate, riskier change to the CRM service's migration history (deferred, not done).
 
 ### Phase SEC — Security holes (jumped the queue; do right after A1)
-- [ ] S1. **RBAC**: parse `access` from the `export const schema` format (the missing `parse_access_rules`, mirroring `parse_validation_rules`); enforce in BOTH the GraphQL resolver and the data-layer `client.create/update/delete` (not just GraphQL). Handle `public`/`authenticated` tokens. Test: viewer denied create, sales allowed, delete gated to manager|admin.
+- [x] S1. **RBAC** (✅ GraphQL path done): `parse_access_rules` extracts `access` from the
+  export-const-schema format (the bug — only `defineModel` was parsed); attached in a sixth parse
+  pass. New shared seam `AccessControl::decide(action, role) -> AccessDecision` (in atomo_schema)
+  handles `public`/`authenticated`/pipe-OR; `graphql.rs::check_access` refactored onto it. Tests:
+  `parses_and_enforces_access_rules` (unit) + `test_rbac_viewer_denied_create_admin_allowed`
+  (e2e: viewer denied, admin allowed). **CAVEAT: data-layer `client.create/update/delete` does
+  NOT yet enforce** — it has no role context (only `actor` user_id); the decide() seam is shared
+  and ready, but plumbing role through the data-layer API is a follow-up. GraphQL is the external
+  boundary, so the API-level bypass is closed; direct SDK/internal/plugin callers still bypass.
 - [ ] S2. **WebSocket auth**: require auth on `/graphql/ws`; inject `UserRoleCtx`/`TenantCtx` into the subscription context; gate `model_changes` by read access. Test: unauth subscribe rejected.
 - [ ] S3. **Multi-tenant**: auto-generate a `tenant_id` column; scope reads AND writes; filter subscriptions by tenant; validate the `x-tenant-id` header against the authenticated user. (Largest; may split.) Test: 2 tenants, assert isolation incl. subscriptions.
 
@@ -146,6 +154,7 @@ targets is the bulk of the work.
 ## Caveats / cost
 
 - DB-gated tests are slow (~20s each with fuel-metered plugins); a full run is minutes. Keep it manual-dispatch, not per-push.
+- **`http_e2e` tests share one `atomo_test` DB and FAIL under parallel execution** (they seed users / create tables and clobber each other) — run with `--test-threads=1`. Same shared-DB-singleton constraint that prevents parallel *implementation*. Worth fixing with per-test DBs/schemas eventually.
 - Disk is finite (wasmtime builds + `.wasm` fixtures); watch `target/` size.
 - This is a multi-week effort — correct *if* the goal is a trustworthy platform; the wrong call if the near-term goal is shipping features fast. That's a product decision.
 - Findings are mostly subagent reports with file:line; RBAC + tenant_id were spot-verified by direct read. **Reconfirm each via its conformance test before trusting** — a couple may be partially inaccurate. Do not treat "implemented" as "working" until a test says so.

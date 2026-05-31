@@ -14,8 +14,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_stream::wrappers::BroadcastStream;
 
-use atomo_schema::AccessRule;
-
 use crate::client::AtomoClient;
 use crate::errors::{AtomoError, FieldError};
 use crate::events::ModelEvent;
@@ -37,47 +35,21 @@ fn check_access(
     action: &str,
     ctx: &Context<'_>,
 ) -> GraphQLResult<()> {
-    let access = schema
-        .models
-        .get(model_name)
-        .and_then(|m| m.access.as_ref());
-    let rule = match (access, action) {
-        (Some(a), "create") => a.create.as_ref(),
-        (Some(a), "read") => a.read.as_ref(),
-        (Some(a), "update") => a.update.as_ref(),
-        (Some(a), "delete") => a.delete.as_ref(),
-        _ => return Ok(()),
-    };
-    let rule = match rule {
-        Some(r) => r,
+    let access = match schema.models.get(model_name).and_then(|m| m.access.as_ref()) {
+        Some(a) => a,
         None => return Ok(()),
     };
-    let user_role = ctx.data_opt::<UserRoleCtx>();
-    match rule {
-        AccessRule::Boolean(roles_str) => {
-            if roles_str == "authenticated" {
-                if user_role.is_none() {
-                    return Err(AtomoError::Unauthorized {
-                        message: "Authentication required".to_string(),
-                    }
-                    .into());
-                }
-                return Ok(());
-            }
-            let allowed: Vec<&str> = roles_str.split('|').collect();
-            match user_role {
-                Some(r) if allowed.iter().any(|a| a.eq_ignore_ascii_case(&r.0)) => Ok(()),
-                Some(_) => Err(AtomoError::Forbidden {
-                    message: format!("Access denied: requires one of [{}]", roles_str),
-                }
-                .into()),
-                None => Err(AtomoError::Unauthorized {
-                    message: "Authentication required".to_string(),
-                }
-                .into()),
-            }
+    let user_role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.as_str());
+    match access.decide(action, user_role) {
+        atomo_schema::AccessDecision::Allow => Ok(()),
+        atomo_schema::AccessDecision::Forbidden => Err(AtomoError::Forbidden {
+            message: format!("Access denied for '{}' on '{}'", action, model_name),
         }
-        _ => Ok(()),
+        .into()),
+        atomo_schema::AccessDecision::NeedsAuth => Err(AtomoError::Unauthorized {
+            message: "Authentication required".to_string(),
+        }
+        .into()),
     }
 }
 
