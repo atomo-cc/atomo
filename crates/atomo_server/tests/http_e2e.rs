@@ -663,3 +663,84 @@ export default schema;
 
     sqlx::query("DROP TABLE IF EXISTS notes").execute(atomo.db_pool()).await.ok();
 }
+
+
+// Phase B4: audit-on-mutation works through the real CRM models (not just a synthetic Note),
+// capturing the actor and the correct operation for both create and update.
+#[tokio::test]
+#[ignore]
+async fn test_crm_mutation_audited_with_actor() {
+    use atomo_core::audit::{AuditLogEntry, AuditOperation, AuditService};
+    use atomo_core::types::EntityId;
+    use std::collections::HashMap;
+
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../services/crm-service/schema.ts")
+        .to_string_lossy()
+        .into_owned();
+    let atomo = atomo::Atomo::builder()
+        .schema_file(schema_path)
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .unwrap();
+    let audit = atomo_server::audit::HttpAuditService::new(atomo.db_pool().clone());
+    atomo_server::ensure_platform_tables(atomo.db_pool()).await.unwrap();
+
+    // Same audit listener the server boot wires.
+    {
+        let audit = audit.clone();
+        let mut rx = atomo.event_receiver();
+        tokio::spawn(async move {
+            while let Ok(ev) = rx.recv().await {
+                let op = match ev.event_type {
+                    atomo::events::EventType::Created => AuditOperation::Create,
+                    atomo::events::EventType::Updated => AuditOperation::Update,
+                    atomo::events::EventType::Deleted => AuditOperation::Delete,
+                    atomo::events::EventType::Custom => AuditOperation::Read,
+                };
+                let entity_id = ev.data.get("id").and_then(|v| v.as_str())
+                    .and_then(|s| EntityId::from_string(s).ok())
+                    .unwrap_or_else(EntityId::new);
+                let details = serde_json::to_string(&ev.data).unwrap_or_default();
+                let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, ev.actor.clone());
+                let _ = audit.log_audit_entry(entry).await;
+            }
+        });
+    }
+
+    // Create a Contact, then update it — both as "sales-7".
+    let c = atomo.client();
+    let mut data = HashMap::new();
+    data.insert("firstName".to_string(), serde_json::json!("Grace"));
+    data.insert("lastName".to_string(), serde_json::json!("Hopper"));
+    data.insert("email".to_string(), serde_json::json!("grace@navy.mil"));
+    let contact = c.create("Contact", &data, &[], Some("sales-7")).await.unwrap();
+    let id = contact.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+
+    let mut patch = HashMap::new();
+    patch.insert("lastName".to_string(), serde_json::json!("Hopper-Updated"));
+    c.update_many(
+        "Contact",
+        &[atomo::query::WhereClause { field: "id".into(), operator: atomo::query::WhereOperator::Equals, value: serde_json::json!(id) }],
+        &patch, &[], Some("sales-7"),
+    ).await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
+    // Both a Create and an Update audit entry for Contact, attributed to sales-7.
+    let rows: Vec<(i16, Option<String>)> = sqlx::query_as(
+        "SELECT operation, user_id FROM audit_log WHERE entity_type = 'Contact' ORDER BY created_at",
+    )
+    .fetch_all(atomo.db_pool())
+    .await
+    .unwrap();
+    assert!(rows.iter().any(|(op, u)| *op == AuditOperation::Create as i16 && u.as_deref() == Some("sales-7")), "Contact create not audited: {:?}", rows);
+    assert!(rows.iter().any(|(op, u)| *op == AuditOperation::Update as i16 && u.as_deref() == Some("sales-7")), "Contact update not audited: {:?}", rows);
+
+    for t in ["contact", "company", "deal", "activity"] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();
+    }
+}

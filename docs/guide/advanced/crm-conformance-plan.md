@@ -45,7 +45,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
 | Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
 | RBAC enforcement | yes | ✅ GraphQL | S1: rules now parsed from export-const-schema; `check_access` via shared `decide()` seam. **Data-layer callers still bypass** (no role ctx) — follow-up |
-| Audit logging | yes | 🟡 | synthetic only |
+| Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
 | Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | 🟢 | works (find_many cached, invalidated on writes); minor: `find_unique` uncached, no eviction, Debug-format keys — all LOW |
@@ -162,7 +162,11 @@ targets is the bulk of the work.
   (`partial_update_*`, `full_validate_still_requires_absent_field`) + dogfood partial-update
   assertion. `exists:<table>,<col>` stays a **documented no-op** — referential integrity is the
   DB's job (FK constraints); a sync validator can't query, and an async pass would duplicate the FK.
-- [ ] B4. Audit-on-CRM-mutation with the real actor.
+- [x] B4. **Audit-on-CRM-mutation** (✅ done — already worked): the boot audit listener is
+  model-agnostic (subscribes to the event stream, records any `model_name` with the actor), so it
+  handles CRM models correctly with no fix needed. `test_crm_mutation_audited_with_actor` proves a
+  Contact create + update are both audited with op + actor `sales-7`. **First capability that was
+  not silently broken** — only needed CRM-driven proof.
 
 ### Phase C — Data-pipeline polish (CRM-native, lower risk)
 - [ ] C1. Relationship resolution: `include` company-on-contact, deals-on-contact (nested reads)
