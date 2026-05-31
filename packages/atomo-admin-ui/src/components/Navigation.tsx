@@ -18,7 +18,8 @@ import {
   ChevronDown,
   Settings,
   HelpCircle,
-  Workflow
+  Workflow,
+  Trash2
 } from 'lucide-react'
 
 import { apiClient } from '../lib/api'
@@ -93,6 +94,12 @@ export function Navigation() {
       href: '/workflows',
       icon: Workflow,
       active: isActive('/workflows')
+    },
+    {
+      name: '回收站',
+      href: '/trash',
+      icon: Trash2,
+      active: isActive('/trash')
     }
   ]
 

@@ -585,14 +585,9 @@ fn build_args(params: &[Value]) -> Result<PgArguments> {
     let mut args = PgArguments::default();
     for p in params {
         match p {
-            Value::String(s) => {
-                // Bind UUID-shaped strings as native UUID so `uuid = $1` comparisons work
-                if let Ok(uuid) = s.parse::<uuid::Uuid>() {
-                    args.add(uuid);
-                } else {
-                    args.add(s.as_str());
-                }
-            }
+            // Bind all strings as text. WHERE comparisons cast the column to text
+            // (e.g. `id::text = $1`) so this works for both TEXT and UUID columns.
+            Value::String(s) => args.add(s.as_str()),
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     args.add(i);

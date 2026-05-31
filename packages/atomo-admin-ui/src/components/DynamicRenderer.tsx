@@ -13,6 +13,7 @@ import { EntityListView } from './views/EntityListView'
 import { EntityDetailView } from './views/EntityDetailView'
 import { Dashboard } from './views/Dashboard'
 import { WorkflowsView } from './views/WorkflowsView'
+import { TrashView } from './views/TrashView'
 import { Card, CardContent } from './ui/Card'
 import { Spinner } from './ui/Spinner'
 import { componentPluginManager } from '../lib/component-plugins'
@@ -22,7 +23,7 @@ export interface DynamicRendererProps {
    * 当前路由信息
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows' | 'trash'
     modelName?: string
     entityId?: string
     contactId?: string
@@ -90,6 +91,9 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
 
     case 'workflows':
       return <WorkflowsView />
+
+    case 'trash':
+      return <TrashView schema={schema} />
       
     case 'list':
       if (!route.modelName) {
@@ -228,6 +232,11 @@ export function useRouteParser(): DynamicRendererProps['route'] {
     // Workflows management page
     if (path === '/workflows') {
       return { type: 'workflows' as const }
+    }
+
+    // Trash / soft-delete management page
+    if (path === '/trash') {
+      return { type: 'trash' as const }
     }
     
     // Entity routes: /entities/:modelName

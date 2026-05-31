@@ -256,6 +256,35 @@ class AtomoApiClient {
     }
   }
 
+  // ── Trash / soft-delete management ────────────────────────────────
+  /** List soft-deleted records for a model (the trash view). */
+  async listDeleted(modelName: string, limit = 50, offset = 0): Promise<EntityData[]> {
+    const result = await this.graphql(`
+      query($model: String!, $limit: Int, $offset: Int) {
+        deletedRecords(model: $model, limit: $limit, offset: $offset)
+      }
+    `, { model: modelName, limit, offset })
+    return result.deletedRecords || []
+  }
+
+  /** Restore a soft-deleted record by id. */
+  async restoreEntity(modelName: string, id: string): Promise<void> {
+    await this.graphql(`
+      mutation($model: String!, $where: JSON!) {
+        restore(model: $model, where: $where)
+      }
+    `, { model: modelName, where: { id: { equals: id } } })
+  }
+
+  /** Permanently delete (purge) a record by id. */
+  async hardDeleteEntity(modelName: string, id: string): Promise<void> {
+    await this.graphql(`
+      mutation($model: String!, $where: JSON!) {
+        hardDelete(model: $model, where: $where)
+      }
+    `, { model: modelName, where: { id: { equals: id } } })
+  }
+
   /**
    * 批量操作
    */
