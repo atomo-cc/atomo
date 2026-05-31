@@ -54,3 +54,11 @@ atomo_wasm_runtime = { path = "../atomo_wasm_runtime" }
 atomo_projectors = { path = "../atomo_projectors" }
 toml = "0.8"
 wasmtime = "16.0"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres"] }
+atomo_core = { path = "../atomo_core", features = ["sqlx"] }
+atomo = { path = "../atomo" }

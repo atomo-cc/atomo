@@ -8,6 +8,12 @@ use crate::plugin::{Permission, PluginManifest};
 pub struct PluginState {
     pub permissions: HashSet<Permission>,
     pub logs: Vec<String>,
+    /// Events the plugin emitted (JSON strings), gated by WriteEvents.
+    pub emitted_events: Vec<String>,
+    /// Events made available to the plugin to read (JSON strings), gated by ReadEvents.
+    pub readable_events: Vec<String>,
+    /// Cursor for sequential host_read_event consumption.
+    pub read_cursor: usize,
 }
 
 pub struct WasmRuntime {
@@ -35,6 +41,9 @@ impl WasmRuntime {
         let state = PluginState {
             permissions: manifest.permissions.iter().cloned().collect(),
             logs: Vec::new(),
+            emitted_events: Vec::new(),
+            readable_events: Vec::new(),
+            read_cursor: 0,
         };
         let mut store = Store::new(&self.engine, state);
         store.set_fuel(self.fuel_limit)?;
@@ -60,20 +69,39 @@ impl WasmRuntime {
         linker.func_wrap(
             "env",
             "host_read_event",
-            |caller: Caller<'_, PluginState>, _ptr: i32, _len: i32| -> Result<(), anyhow::Error> {
+            |mut caller: Caller<'_, PluginState>, ptr: i32, cap: i32| -> Result<i32, anyhow::Error> {
                 if !caller.data().permissions.contains(&Permission::ReadEvents) {
                     anyhow::bail!("Permission denied: ReadEvents required");
                 }
-                Ok(())
+                let cursor = caller.data().read_cursor;
+                if cursor >= caller.data().readable_events.len() {
+                    return Ok(0);
+                }
+                let event_bytes = caller.data().readable_events[cursor].clone().into_bytes();
+                let write_len = (cap as usize).min(event_bytes.len());
+                caller.data_mut().read_cursor += 1;
+                let mem = caller.get_export("memory").and_then(|e| e.into_memory());
+                if let Some(mem) = mem {
+                    mem.write(&mut caller, ptr as usize, &event_bytes[..write_len])?;
+                }
+                Ok(write_len as i32)
             },
         )?;
 
         linker.func_wrap(
             "env",
             "host_emit_event",
-            |caller: Caller<'_, PluginState>, _ptr: i32, _len: i32| -> Result<(), anyhow::Error> {
+            |mut caller: Caller<'_, PluginState>, ptr: i32, len: i32| -> Result<(), anyhow::Error> {
                 if !caller.data().permissions.contains(&Permission::WriteEvents) {
                     anyhow::bail!("Permission denied: WriteEvents required");
+                }
+                let mem = caller.get_export("memory").and_then(|e| e.into_memory());
+                if let Some(mem) = mem {
+                    let data = mem.data(&caller);
+                    if let Some(slice) = data.get(ptr as usize..(ptr + len) as usize) {
+                        let s = String::from_utf8_lossy(slice).to_string();
+                        caller.data_mut().emitted_events.push(s);
+                    }
                 }
                 Ok(())
             },
@@ -115,6 +143,16 @@ impl WasmPlugin {
 
     pub fn logs(&self) -> &[String] {
         &self.store.data().logs
+    }
+
+    pub fn emitted_events(&self) -> &[String] {
+        &self.store.data().emitted_events
+    }
+
+    /// Seed events the plugin can read via host_read_event.
+    pub fn set_readable_events(&mut self, events: Vec<String>) {
+        self.store.data_mut().readable_events = events;
+        self.store.data_mut().read_cursor = 0;
     }
 
     /// Call a hook function passing JSON input, returning optional JSON output.
