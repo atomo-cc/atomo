@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// A workflow definition
@@ -190,6 +191,39 @@ impl WorkflowEngine {
                     }
                     Err(_) => break,
                 }
+            }
+        });
+    }
+
+    /// Start a background task that fires Schedule-triggered workflows on their cron cadence.
+    pub fn start_scheduler(self: Arc<Self>) {
+        tokio::spawn(async move {
+            let mut last_tick = chrono::Utc::now();
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let now = chrono::Utc::now();
+                let scheduled: Vec<(String, String)> = self.workflows.read().unwrap().values()
+                    .filter_map(|w| match &w.trigger {
+                        WorkflowTrigger::Schedule { cron } => Some((w.name.clone(), cron.clone())),
+                        _ => None,
+                    })
+                    .collect();
+                for (name, cron_expr) in scheduled {
+                    match cron::Schedule::from_str(&cron_expr) {
+                        Ok(schedule) => {
+                            if let Some(next) = schedule.after(&last_tick).next() {
+                                if next <= now {
+                                    if let Err(e) = self.execute(&name, HashMap::new()).await {
+                                        tracing::error!(workflow = %name, error = %e, "Scheduled workflow failed");
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => tracing::warn!(workflow = %name, error = %e, "Invalid cron expression"),
+                    }
+                }
+                last_tick = now;
             }
         });
     }

@@ -40,11 +40,13 @@ impl ProjectorManager {
         Ok(())
     }
 
-    /// Rebuild all projections from scratch
+    /// Rebuild all projections from scratch. Per-projection failures are logged, not fatal.
     pub async fn rebuild_all(&self) -> Result<()> {
         for proj in &self.projections {
             info!(projection = proj.name(), "Rebuilding projection");
-            proj.rebuild(&self.pool).await?;
+            if let Err(e) = proj.rebuild(&self.pool).await {
+                tracing::warn!(projection = proj.name(), error = %e, "Projection rebuild failed; skipping");
+            }
         }
         Ok(())
     }

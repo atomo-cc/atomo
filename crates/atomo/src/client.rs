@@ -460,7 +460,8 @@ fn build_args(params: &[Value]) -> Result<PgArguments> {
             }
             Value::Bool(b) => args.add(*b),
             Value::Null => args.add(None::<String>),
-            _ => args.add(p.to_string()),
+            // Arrays/objects bind as native JSON so JSONB columns accept them.
+            other => args.add(other.clone()),
         }
     }
     Ok(args)

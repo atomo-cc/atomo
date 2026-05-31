@@ -106,7 +106,7 @@ impl OAuthManager {
         if let Some(row) = existing {
             return Ok(row);
         }
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = atomo_core::types::EntityId::new().to_string();
         let name = info.name.clone().unwrap_or_default();
         sqlx::query(
             "INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES ($1, $2, '', $3, '', 'viewer', true, NOW(), NOW())"

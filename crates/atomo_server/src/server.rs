@@ -95,19 +95,24 @@ impl AtomoServer {
         let auth_service = crate::auth::HttpAuthService::new(&jwt_secret, self.atomo.db_pool().clone());
         let audit_service = crate::audit::HttpAuditService::new(self.atomo.db_pool().clone());
 
+        // Ensure platform tables (users, sessions, audit_log) exist.
+        crate::ensure_platform_tables(self.atomo.db_pool()).await?;
+        info!("   ✓ Platform tables ensured");
+
         // Start CQRS projector listener: convert ModelEvent -> ProjectorEvent and feed projections.
         // Auto-register one TableProjection per schema model (maintains a `{table}_projection` read table).
-        {
+        let projector_manager = {
             use atomo_projectors::{ProjectorManager, ProjectorEvent, TableProjection};
             let mut manager = ProjectorManager::new(self.atomo.db_pool().clone());
             for (name, model) in &self.atomo.schema().models {
-                // Skip enum-derived pseudo-models (marked with _enum_type field).
+                // Skip enum-derived pseudo-models and block sub-types (only real entities have an `id`).
                 if model.fields.contains_key("_enum_type") { continue; }
+                if !model.fields.contains_key("id") { continue; }
                 let table = format!("{}_projection", crate::pluralize(name));
                 let columns: Vec<String> = model.fields.keys().map(|f| crate::to_snake(f)).collect();
                 // Ensure the projection table exists (id + each column as TEXT/JSONB-agnostic TEXT).
                 let cols_ddl: Vec<String> = columns.iter()
-                    .map(|c| if c == "id" { format!("{} TEXT PRIMARY KEY", c) } else { format!("{} TEXT", c) })
+                    .map(|c| if c == "id" { format!("\"{}\" TEXT PRIMARY KEY", c) } else { format!("\"{}\" TEXT", c) })
                     .collect();
                 let ddl = format!("CREATE TABLE IF NOT EXISTS {} ({})", table, cols_ddl.join(", "));
                 let _ = sqlx::query(&ddl).execute(self.atomo.db_pool()).await;
@@ -115,7 +120,7 @@ impl AtomoServer {
             }
             let manager = std::sync::Arc::new(manager);
             let (proj_tx, proj_rx) = tokio::sync::broadcast::channel::<ProjectorEvent>(1000);
-            manager.start_event_listener(proj_rx);
+            manager.clone().start_event_listener(proj_rx);
             let mut model_rx = self.atomo.event_receiver();
             tokio::spawn(async move {
                 while let Ok(ev) = model_rx.recv().await {
@@ -127,15 +132,17 @@ impl AtomoServer {
                 }
             });
             info!("   ✓ CQRS projector listener started");
-        }
+            manager
+        };
 
-        // Workflow engine: load definitions from ./workflows/*.json and start the event listener.
+        // Workflow engine: load definitions from ./workflows/*.json, start the event listener and cron scheduler.
         let workflow_engine = std::sync::Arc::new(atomo::workflow::WorkflowEngine::new());
         {
             let loaded = crate::load_workflows(&workflow_engine, "workflows").await;
             if loaded > 0 { info!("   ✓ Loaded {} workflow(s) from ./workflows", loaded); }
             workflow_engine.clone().start_event_listener(self.atomo.event_receiver());
-            info!("   ✓ Workflow event listener started");
+            workflow_engine.clone().start_scheduler();
+            info!("   ✓ Workflow event listener + scheduler started");
         }
 
         // Build CORS layer from configured origins
@@ -197,6 +204,7 @@ impl AtomoServer {
 
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
+            .merge(crate::projector_routes::projector_router(projector_manager.clone()))
             .layer(svc_builder)
             .layer(middleware::from_fn(crate::tracing_middleware::request_tracing))
             .route_layer(middleware::from_fn_with_state(

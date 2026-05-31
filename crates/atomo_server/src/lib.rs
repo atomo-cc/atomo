@@ -26,6 +26,7 @@ pub mod model_registry;
 pub mod plugins;
 pub mod wasm_plugins;
 pub mod wasm_hooks;
+pub mod projector_routes;
 
 pub use config::*;
 pub use server::*;
@@ -49,6 +50,52 @@ pub fn to_snake(s: &str) -> String {
 /// Pluralized snake_case table name for a model (matches the SQL builder convention).
 pub fn pluralize(model_name: &str) -> String {
     to_snake(model_name) + "s"
+}
+
+/// Ensure platform tables (users, sessions, audit_log) exist. Idempotent.
+pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    let stmts = [
+        "CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            first_name TEXT NOT NULL DEFAULT '',
+            last_name TEXT NOT NULL DEFAULT '',
+            role TEXT NOT NULL DEFAULT 'viewer',
+            is_active BOOLEAN NOT NULL DEFAULT true,
+            last_login_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            version INTEGER NOT NULL DEFAULT 1
+        )",
+        "CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id TEXT NOT NULL,
+            token TEXT NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            is_revoked BOOLEAN NOT NULL DEFAULT false,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            version INTEGER NOT NULL DEFAULT 1
+        )",
+        "CREATE TABLE IF NOT EXISTS audit_log (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            operation SMALLINT NOT NULL,
+            operation_details JSONB,
+            user_id TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+    ];
+    for sql in stmts {
+        sqlx::query(sql).execute(pool).await?;
+    }
+    Ok(())
 }
 
 /// Load workflow definitions from `{dir}/*.json` into the engine. Returns count loaded.
