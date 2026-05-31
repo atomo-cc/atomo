@@ -48,6 +48,19 @@ impl TypeScriptParser {
         // Second pass: parse interfaces with full type context
         let mut models = parser.parse_interfaces(content)?;
 
+        // Resolve fields whose type names a known enum: an enum is a string constraint, not a
+        // JSON blob, so map it to String (-> TEXT column). Without this, `stage: DealStage`
+        // becomes Custom("DealStage") -> JSONB and string inserts fail.
+        for model in &mut models {
+            for field in model.fields.values_mut() {
+                if let FieldType::Custom(name) = &field.field_type {
+                    if parser.enums.contains_key(name) {
+                        field.field_type = FieldType::String;
+                    }
+                }
+            }
+        }
+
         // Third pass: parse DSL models (defineModel calls) and merge with interfaces
         let dsl_models = parser.dsl_parser.parse_define_model(content)?;
         for dsl_model in dsl_models {

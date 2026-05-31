@@ -51,10 +51,12 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                 ));
                 continue;
             }
-            // Timestamp columns default to NOW()
+            // Defaults: timestamps -> NOW(); JSON array-ish fields (arrays/blocks) -> '[]'
+            // so a required `notes: ContentBlock[]` doesn't force every insert to pass it.
             let default = match (col.as_str(), &field.field_type) {
-                ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()",
-                _ => "",
+                ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()".to_string(),
+                (_, FieldType::Array(_) | FieldType::Blocks) => " DEFAULT '[]'::jsonb".to_string(),
+                _ => String::new(),
             };
             let nullable = if field.optional { "" } else { " NOT NULL" };
             columns.push(format!("  {} {}{}{}", col, column_type, default, nullable));
