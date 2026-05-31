@@ -376,12 +376,14 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         model: String,
-        _where_: Value,
+        #[graphql(name = "where")] where_: Value,
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "update", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();
-        let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
+        let where_clauses = parse_where(&where_);
+        let where_clauses =
+            crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
         let results = self
             .client
@@ -399,10 +401,17 @@ impl Mutation {
     }
 
     /// Delete a record
-    async fn delete(&self, ctx: &Context<'_>, model: String, _where_: Value) -> GraphQLResult<i32> {
+    async fn delete(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+        #[graphql(name = "where")] where_: Value,
+    ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();
-        let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
+        let where_clauses = parse_where(&where_);
+        let where_clauses =
+            crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
         let count = self
             .client

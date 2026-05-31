@@ -308,3 +308,74 @@ export default schema;
     assert_eq!(row.1, AuditOperation::Create as i16);
     assert_eq!(row.2.as_deref(), Some("user-42"), "audit entry should capture the actor");
 }
+
+
+// Regression: delete must honor its `where` filter and NOT affect other records.
+#[tokio::test]
+#[ignore]
+async fn test_delete_respects_where_filter() {
+    let (app, _) = build_app().await;
+
+    let login_req = Request::builder()
+        .uri("/auth/login")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"email":"admin@test.dev","password":"admin123"}"#))
+        .unwrap();
+    let (_, login_json) = send(&app, login_req).await;
+    let token = login_json["token"].as_str().expect("no token");
+
+    // Create two notes.
+    for title in ["keep", "remove"] {
+        let body = serde_json::json!({
+            "query": format!(r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#, title)
+        });
+        let req = Request::builder()
+            .uri("/graphql").method("POST")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {}", token))
+            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+        let (status, j) = send(&app, req).await;
+        assert_eq!(status, StatusCode::OK, "create failed: {:?}", j);
+    }
+
+    // Find the id of the "remove" note.
+    let list_body = serde_json::json!({ "query": r#"{ records(model: "Note") }"# });
+    let req = Request::builder()
+        .uri("/graphql").method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&list_body).unwrap())).unwrap();
+    let (_, list_json) = send(&app, req).await;
+    let records = list_json["data"]["records"].as_array().expect("records array");
+    let remove_id = records.iter()
+        .find(|r| r["title"] == "remove")
+        .and_then(|r| r["id"].as_str())
+        .expect("remove note not found")
+        .to_string();
+
+    // Delete ONLY the "remove" note by id.
+    let del_body = serde_json::json!({
+        "query": "mutation($w: JSON!){ delete(model: \"Note\", where: $w) }",
+        "variables": { "w": { "id": { "equals": remove_id } } }
+    });
+    let req = Request::builder()
+        .uri("/graphql").method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&del_body).unwrap())).unwrap();
+    let (status, del_json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "delete failed: {:?}", del_json);
+    assert_eq!(del_json["data"]["delete"], 1, "delete should affect exactly 1 row, got: {:?}", del_json);
+
+    // The "keep" note must still be present.
+    let req = Request::builder()
+        .uri("/graphql").method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&list_body).unwrap())).unwrap();
+    let (_, after_json) = send(&app, req).await;
+    let after = after_json["data"]["records"].as_array().expect("records array");
+    assert!(after.iter().any(|r| r["title"] == "keep"), "the non-matching record was wrongly deleted");
+    assert!(!after.iter().any(|r| r["title"] == "remove"), "the matching record was not deleted");
+}
