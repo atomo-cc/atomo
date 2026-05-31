@@ -478,6 +478,26 @@ impl AtomoClient {
         &self.schema
     }
 
+    /// Enforce a model's access rule for `action` against `role` (None = unauthenticated).
+    /// Returns `Err` (Unauthorized/Forbidden) when denied. This is the data-layer RBAC seam:
+    /// callers that have a role (SDK, server handlers, plugins) call this BEFORE a mutation so
+    /// access is enforced outside the GraphQL resolver too. Uses the same
+    /// `AccessControl::decide` seam the GraphQL `check_access` uses. No `access` rule = allow.
+    pub fn enforce_access(&self, model_name: &str, action: &str, role: Option<&str>) -> Result<()> {
+        use atomo_schema::AccessDecision;
+        let access = match self.schema.models.get(model_name).and_then(|m| m.access.as_ref()) {
+            Some(a) => a,
+            None => return Ok(()),
+        };
+        match access.decide(action, role) {
+            AccessDecision::Allow => Ok(()),
+            AccessDecision::Forbidden => {
+                anyhow::bail!("Access denied: '{}' on '{}' requires a permitted role", action, model_name)
+            }
+            AccessDecision::NeedsAuth => anyhow::bail!("Authentication required for '{}' on '{}'", action, model_name),
+        }
+    }
+
     /// Get a clonable sender to publish events onto the model-event stream
     /// (used to surface plugin-emitted events to projectors/audit/subscriptions).
     pub fn event_sender(&self) -> broadcast::Sender<ModelEvent> {

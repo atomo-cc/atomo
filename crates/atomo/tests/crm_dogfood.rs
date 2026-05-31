@@ -225,3 +225,34 @@ async fn crm_deal_event_history_replays() {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();
     }
 }
+
+
+// Post-conformance: data-layer RBAC seam. client.enforce_access gates by the CRM's access
+// rules OUTSIDE the GraphQL resolver, so SDK/server/plugin callers can enforce too.
+#[tokio::test]
+#[ignore]
+async fn data_layer_enforce_access_gates_by_role() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let atomo = atomo::Atomo::builder()
+        .schema_file(crm_schema_path())
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .unwrap();
+    let c = atomo.client();
+
+    // Contact create requires sales|manager|admin (CRM schema).
+    assert!(c.enforce_access("Contact", "create", Some("Viewer")).is_err(), "viewer denied create");
+    assert!(c.enforce_access("Contact", "create", Some("Sales")).is_ok(), "sales allowed create");
+    assert!(c.enforce_access("Contact", "create", None).is_err(), "anon needs auth");
+    // delete is manager|admin only.
+    assert!(c.enforce_access("Contact", "delete", Some("Sales")).is_err(), "sales cannot delete");
+    assert!(c.enforce_access("Contact", "delete", Some("Admin")).is_ok(), "admin can delete");
+    // read is authenticated — any role allowed.
+    assert!(c.enforce_access("Contact", "read", Some("Viewer")).is_ok(), "viewer can read");
+
+    for t in ["deal", "contact", "company", "activity"] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();
+    }
+}

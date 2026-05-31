@@ -53,7 +53,10 @@ mostly healthy (audit, events, subscriptions delivery, relationships) with isola
 correctness bugs (projection corruption, the pagination cache collision). A future
 root-cause fix would be a single robust schema-metadata parser all features read from.
 
-**Deferred backlog** (each documented inline below): data-layer RBAC enforcement;
+**Deferred backlog** (each documented inline below): data-layer RBAC *auto-enforcement* (the
+`client.enforce_access(model, action, role)` seam now exists + is tested, but isn't yet called
+automatically on every `create`/`update`/`delete` — that needs a role threaded into the data
+layer; callers can enforce on demand today);
 S3a subscription tenant-filter; S3b per-user tenant binding; S3c event-store/PG-RLS;
 B1a Mutation/Plugin workflow steps; B1b JS workflow-step runtime; B2a projection rebuild-replay;
 relationship resolution reading the declared `relationships` block; SDK `SubscriptionBuilder`
@@ -81,7 +84,7 @@ after Phase D — several (esp. data-layer RBAC) are real, others are acceptable
 | Event sourcing + replay | yes | ✅ | C3: Deal Created→Updated→Updated→Deleted reconstructs via `entity_history` (`crm_deal_event_history_replays`); confirms B2 delete-event id fix |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
 | Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
-| RBAC enforcement | yes | ✅ GraphQL | S1: rules now parsed from export-const-schema; `check_access` via shared `decide()` seam. **Data-layer callers still bypass** (no role ctx) — follow-up |
+| RBAC enforcement | yes | ✅ GraphQL + seam | S1: rules parsed from export-const-schema, `check_access` via shared `decide()`. Data-layer `client.enforce_access(model,action,role)` seam added + tested (`data_layer_enforce_access_gates_by_role`); **not yet auto-called** on every mutation (needs role threaded in) |
 | Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
 | Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
