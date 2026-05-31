@@ -7,8 +7,6 @@
 // Pre-existing lints in code-generation modules; cleaned up incrementally.
 #![allow(
     clippy::needless_range_loop,
-    clippy::useless_format,
-    clippy::new_without_default,
     clippy::regex_creation_in_loops,
     clippy::for_kv_map,
     clippy::manual_strip,

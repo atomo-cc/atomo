@@ -14,6 +14,10 @@ pub struct PluginState {
     pub readable_events: Vec<String>,
     /// Cursor for sequential host_read_event consumption.
     pub read_cursor: usize,
+    /// DB read requests issued by the plugin (JSON query descriptors), gated by ReadDatabase.
+    pub db_requests: Vec<String>,
+    /// HTTP requests issued by the plugin (JSON {method,url,body}), gated by HttpRequests.
+    pub http_requests: Vec<String>,
 }
 
 pub struct WasmRuntime {
@@ -44,6 +48,8 @@ impl WasmRuntime {
             emitted_events: Vec::new(),
             readable_events: Vec::new(),
             read_cursor: 0,
+            db_requests: Vec::new(),
+            http_requests: Vec::new(),
         };
         let mut store = Store::new(&self.engine, state);
         store.set_fuel(self.fuel_limit)?;
@@ -113,6 +119,50 @@ impl WasmRuntime {
             },
         )?;
 
+        linker.func_wrap(
+            "env",
+            "host_db_query",
+            |mut caller: Caller<'_, PluginState>,
+             ptr: i32,
+             len: i32|
+             -> Result<(), anyhow::Error> {
+                if !caller.data().permissions.contains(&Permission::ReadDatabase) {
+                    anyhow::bail!("Permission denied: ReadDatabase required");
+                }
+                let mem = caller.get_export("memory").and_then(|e| e.into_memory());
+                if let Some(mem) = mem {
+                    let data = mem.data(&caller);
+                    if let Some(slice) = data.get(ptr as usize..(ptr + len) as usize) {
+                        let s = String::from_utf8_lossy(slice).to_string();
+                        caller.data_mut().db_requests.push(s);
+                    }
+                }
+                Ok(())
+            },
+        )?;
+
+        linker.func_wrap(
+            "env",
+            "host_http_request",
+            |mut caller: Caller<'_, PluginState>,
+             ptr: i32,
+             len: i32|
+             -> Result<(), anyhow::Error> {
+                if !caller.data().permissions.contains(&Permission::HttpRequests) {
+                    anyhow::bail!("Permission denied: HttpRequests required");
+                }
+                let mem = caller.get_export("memory").and_then(|e| e.into_memory());
+                if let Some(mem) = mem {
+                    let data = mem.data(&caller);
+                    if let Some(slice) = data.get(ptr as usize..(ptr + len) as usize) {
+                        let s = String::from_utf8_lossy(slice).to_string();
+                        caller.data_mut().http_requests.push(s);
+                    }
+                }
+                Ok(())
+            },
+        )?;
+
         let instance = linker.instantiate(&mut store, &module)?;
         Ok(WasmPlugin {
             store,
@@ -161,6 +211,14 @@ impl WasmPlugin {
 
     pub fn emitted_events(&self) -> &[String] {
         &self.store.data().emitted_events
+    }
+
+    pub fn db_requests(&self) -> &[String] {
+        &self.store.data().db_requests
+    }
+
+    pub fn http_requests(&self) -> &[String] {
+        &self.store.data().http_requests
     }
 
     /// Seed events the plugin can read via host_read_event.

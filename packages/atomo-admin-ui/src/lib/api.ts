@@ -388,6 +388,12 @@ class AtomoApiClient {
     return response.data
   }
 
+  /** Fetch a single workflow definition by name. */
+  async getWorkflow(name: string): Promise<any> {
+    const response = await this.client.get(`/workflows/${encodeURIComponent(name)}`)
+    return response.data
+  }
+
   /** Register a workflow definition. */
   async registerWorkflow(workflow: any): Promise<{ registered: string }> {
     const response = await this.client.post('/workflows', workflow)

@@ -99,6 +99,33 @@ impl AtomoServer {
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
         info!("   ✓ Platform tables ensured");
 
+        // Audit listener: record an audit entry for every model mutation event.
+        {
+            let audit = audit_service.clone();
+            let mut rx = self.atomo.event_receiver();
+            tokio::spawn(async move {
+                use atomo_core::audit::{AuditLogEntry, AuditOperation};
+                use atomo_core::types::EntityId;
+                use atomo_core::audit::AuditService;
+                while let Ok(ev) = rx.recv().await {
+                    let op = match ev.event_type {
+                        atomo::events::EventType::Created => AuditOperation::Create,
+                        atomo::events::EventType::Updated => AuditOperation::Update,
+                        atomo::events::EventType::Deleted => AuditOperation::Delete,
+                    };
+                    let entity_id = ev.data.get("id").and_then(|v| v.as_str())
+                        .and_then(|s| EntityId::from_string(s).ok())
+                        .unwrap_or_else(EntityId::new);
+                    let details = serde_json::to_string(&ev.data).unwrap_or_default();
+                    let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, None);
+                    if let Err(e) = audit.log_audit_entry(entry).await {
+                        tracing::warn!(error = %e, "Failed to write audit entry");
+                    }
+                }
+            });
+            info!("   ✓ Audit listener started");
+        }
+
         // Optionally seed an admin user from ADMIN_EMAIL/ADMIN_PASSWORD env vars.
         crate::seed_admin(&auth_service).await?;
 

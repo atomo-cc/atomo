@@ -1,13 +1,18 @@
 name: Deploy Documentation
 
+# NOTE: auto-trigger on push temporarily disabled to control Actions cost.
+# Run manually from the Actions tab (workflow_dispatch). To re-enable, restore the push block below:
+#
+# on:
+#   push:
+#     branches: [ main ]
+#     paths:
+#       - 'docs/**'
+#       - 'README.md'
+#       - 'ROADMAP.md'
+#       - 'Atomo-*.md'
+#   workflow_dispatch:
 on:
-  push:
-    branches: [ main ]
-    paths: 
-      - 'docs/**'
-      - 'README.md'
-      - 'ROADMAP.md'
-      - 'Atomo-*.md'
   workflow_dispatch:
 
 permissions:

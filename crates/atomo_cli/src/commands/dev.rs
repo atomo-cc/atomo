@@ -22,7 +22,7 @@ pub async fn dev_command(
     isolated: bool,
     service_path: Option<PathBuf>,
     strict_schema_flag: bool,
-    verify_schema_flag: bool,
+    _verify_schema_flag: bool,
 ) -> Result<()> {
     // Resolve mode: explicit flags override auto-detection, and log the reason
     let cwd = std::env::current_dir()?;
@@ -49,7 +49,7 @@ pub async fn dev_command(
 
     // Determine validation behavior
     // Defaults: workspace -> warn (non-strict), isolated -> strict
-    let effective_verify = if verify_schema_flag { true } else { true };
+    let effective_verify = true; // always verify; flag reserved for future use
     let effective_strict = if strict_schema_flag {
         true
     } else {

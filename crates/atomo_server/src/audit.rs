@@ -39,7 +39,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
     async fn log_audit_entry(&self, entry: AuditLogEntry) -> Result<(), Self::Error> {
         sqlx::query(
             "INSERT INTO audit_log (id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)"
         )
         .bind(&entry.id)
         .bind(&entry.entity_type)
@@ -47,9 +47,6 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
         .bind(entry.operation as i16)
         .bind(&entry.operation_details)
         .bind(&entry.user_id)
-        .bind(&entry.ip_address)
-        .bind(&entry.user_agent)
-        .bind(entry.created_at)
         .bind(&entry.ip_address)
         .bind(&entry.user_agent)
         .bind(entry.created_at)

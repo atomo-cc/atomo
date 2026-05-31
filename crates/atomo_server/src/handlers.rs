@@ -497,9 +497,17 @@ use std::sync::Arc;
 pub fn workflow_router(engine: Arc<WorkflowEngine>) -> Router {
     Router::new()
         .route("/workflows", get(list_workflows).post(register_workflow))
-        .route("/workflows/{name}", axum::routing::delete(delete_workflow))
+        .route("/workflows/{name}", get(get_workflow).delete(delete_workflow))
         .route("/workflows/{name}/run", post(run_workflow))
         .with_state(engine)
+}
+
+/// GET /workflows/{name} - fetch a single workflow definition
+async fn get_workflow(
+    State(engine): State<Arc<WorkflowEngine>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<Json<Workflow>, StatusCode> {
+    engine.get(&name).map(Json).ok_or(StatusCode::NOT_FOUND)
 }
 
 /// GET /workflows - list registered workflow names

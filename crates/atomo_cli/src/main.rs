@@ -1,7 +1,6 @@
 #![allow(dead_code, unused_assignments)]
 // Pre-existing lints in dev/migrate tooling; revisit during a focused CLI cleanup.
 #![allow(
-    clippy::needless_bool,
     clippy::if_same_then_else,
     clippy::await_holding_lock,
     clippy::collapsible_match,

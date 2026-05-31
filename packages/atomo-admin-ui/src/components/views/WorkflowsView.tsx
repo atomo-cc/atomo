@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Workflow as WorkflowIcon, Play, Plus, Trash2 } from 'lucide-react'
+import { Workflow as WorkflowIcon, Play, Plus, Trash2, Edit } from 'lucide-react'
 import { apiClient } from '../../lib/api'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -65,6 +65,16 @@ export function WorkflowsView() {
     onError: (e: any) => setError(e?.message || 'Failed to delete workflow'),
   })
 
+  const handleEdit = async (name: string) => {
+    try {
+      const wf = await apiClient.getWorkflow(name)
+      setDefinition(JSON.stringify(wf, null, 2))
+      setError(null)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load workflow')
+    }
+  }
+
   const handleRegister = () => {
     try {
       const parsed = JSON.parse(definition)
@@ -106,6 +116,9 @@ export function WorkflowsView() {
                 <li key={name} className="flex items-center justify-between py-3">
                   <span className="font-medium text-gray-900">{name}</span>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => handleEdit(name)}>
+                      <Edit className="h-4 w-4 mr-1" /> 编辑
+                    </Button>
                     <Button
                       size="sm"
                       variant="secondary"
