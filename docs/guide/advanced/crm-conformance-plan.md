@@ -92,8 +92,17 @@ test-add phases** — the investigation proved the features don't work, so fixin
 targets is the bulk of the work.
 
 ### Phase A — Unblocker (must go first, solo)
-- [ ] A1. Honor explicit `tableName`; reconcile/retire the 7 hand-written CRM migrations (kill the drift)
-- Rationale: changes table names; every DB-driven test asserts against them, so it must land before anything else.
+- [x] A1. Honor explicit `tableName` (✅ done — `Model.table_name`, parsed via `parse_table_names`,
+  used in `sql_builder::table_name` + migrations; falls back to pluralized name). `crm_dogfood`
+  now creates `company`/`contact`/`deal` (not `companys`). Parser test `parses_explicit_table_name`.
+  - **Migration-drift assessment**: the 7 hand-written CRM migrations are **stale artifacts of an
+    older, buggier codegen** — they predate this session's fixes. With `tableName` honored the
+    *table names* now match (`contact`/`company`/`deal`), but the hand-written SQL also has:
+    `version INTEGER` + per-table indexes (platform generates neither), **no `deleted_at`** (so
+    soft-delete would break on them), enum-as-table junk (`companysize` with `_enum_value_0..5`),
+    and `UUID` ids on block tables vs `TEXT` on core. **Recommendation: retire the hand-written
+    migrations in favor of platform-generated ones** rather than reconcile column-by-column — but
+    that's a separate, riskier change to the CRM service's migration history (deferred, not done).
 
 ### Phase SEC — Security holes (jumped the queue; do right after A1)
 - [ ] S1. **RBAC**: parse `access` from the `export const schema` format (the missing `parse_access_rules`, mirroring `parse_validation_rules`); enforce in BOTH the GraphQL resolver and the data-layer `client.create/update/delete` (not just GraphQL). Handle `public`/`authenticated` tokens. Test: viewer denied create, sales allowed, delete gated to manager|admin.

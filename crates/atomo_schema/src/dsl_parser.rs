@@ -46,6 +46,7 @@ impl DslParser {
                 access,
                 hooks,
                 validation: HashMap::new(),
+                table_name: None,
             });
         }
 

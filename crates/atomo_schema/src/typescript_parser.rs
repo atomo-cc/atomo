@@ -82,7 +82,28 @@ impl TypeScriptParser {
             }
         }
 
+        // Fifth pass: parse explicit `tableName` from the schema const and attach.
+        let mut table_names = Self::parse_table_names(content);
+        for model in &mut models {
+            if let Some(t) = table_names.remove(&model.name) {
+                model.table_name = Some(t);
+            }
+        }
+
         Ok(models)
+    }
+
+    /// Extract per-model `tableName` from the `export const schema` object, e.g.
+    /// `Contact: { tableName: "contact", ... }`. Accepts single- or double-quotes.
+    fn parse_table_names(content: &str) -> HashMap<String, String> {
+        let mut result = HashMap::new();
+        // `ModelName: { ... tableName: "x"` — capture the model name then its tableName within
+        // a short window (the metadata block opens with tableName as its first key in practice).
+        let re = Regex::new(r#"(\w+)\s*:\s*\{\s*tableName\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+        for cap in re.captures_iter(content) {
+            result.insert(cap[1].to_string(), cap[2].to_string());
+        }
+        result
     }
 
     /// Extract per-model validation rules from the `export const schema` object
@@ -243,6 +264,7 @@ impl TypeScriptParser {
                 access: None,
                 hooks: None,
                 validation: HashMap::new(),
+                table_name: None,
             });
         }
 
@@ -322,6 +344,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         access: None, // Will be populated later by DSL parser
         hooks: None,  // Will be populated later by DSL parser
         validation: HashMap::new(),
+        table_name: None,
     };
     let lines_consumed = i - start_index;
 
@@ -519,5 +542,18 @@ mod validation_tests {
         let models = TypeScriptParser::new().parse_interfaces(multi).unwrap();
         let n = models.iter().find(|m| m.name == "Note").expect("Note parsed");
         assert!(n.fields.contains_key("id") && n.fields.contains_key("title"));
+    }
+
+    #[test]
+    fn parses_explicit_table_name() {
+        // The schema-const format declares tableName; it must reach Model.table_name so the
+        // SQL layer doesn't naively pluralize (Company -> 'company', not 'companys').
+        let content = r#"
+        export interface Company { id: string; name: string; }
+        export const schema = { models: { Company: { tableName: "company", access: { read: "authenticated" } } } };
+        "#;
+        let models = TypeScriptParser::new().parse(content).unwrap();
+        let c = models.iter().find(|m| m.name == "Company").expect("Company parsed");
+        assert_eq!(c.table_name.as_deref(), Some("company"), "explicit tableName must be honored");
     }
 }

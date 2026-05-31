@@ -183,7 +183,11 @@ pub fn build_where_pub(where_clauses: &[WhereClause], param_offset: usize) -> (S
 }
 
 fn table_name(model: &Model) -> String {
-    to_snake_case(&model.name) + "s"
+    // Honor an explicit `tableName` from the schema; otherwise pluralize the model name.
+    model
+        .table_name
+        .clone()
+        .unwrap_or_else(|| to_snake_case(&model.name) + "s")
 }
 
 fn build_where(where_clauses: &[WhereClause], param_offset: usize) -> (String, Vec<Value>) {

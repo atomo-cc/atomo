@@ -14,6 +14,9 @@ pub struct Model {
     pub hooks: Option<HookDefinitions>,
     #[serde(default)]
     pub validation: HashMap<String, String>,
+    /// Explicit `tableName` from the schema metadata; falls back to pluralized name when None.
+    #[serde(default)]
+    pub table_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

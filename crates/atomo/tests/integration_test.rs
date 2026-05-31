@@ -45,6 +45,7 @@ fn test_schema() -> atomo_schema::Schema {
             access: None,
             hooks: None,
             validation: std::collections::HashMap::new(),
+            table_name: None,
         },
     );
     atomo_schema::Schema { models }
