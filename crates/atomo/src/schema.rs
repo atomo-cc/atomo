@@ -37,7 +37,8 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         for field in model.fields.values() {
             let col = to_snake_case(&field.name);
             let column_type = field_type_to_sql(&field.field_type);
-            // Primary key: id column gets a UUID default and PRIMARY KEY constraint
+            // Primary key: id is TEXT (EntityId is a ULID string; matches CRM `id: string`).
+            // Default generates a value DB-side so inserts without an explicit id still work.
             let is_primary = field.name == "id"
                 || field
                     .attributes
@@ -45,8 +46,8 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                     .any(|a| matches!(a, FieldAttribute::Primary));
             if is_primary {
                 columns.push(format!(
-                    "  {} {} PRIMARY KEY DEFAULT gen_random_uuid()",
-                    col, column_type
+                    "  {} TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text",
+                    col
                 ));
                 continue;
             }
@@ -78,9 +79,9 @@ fn field_type_to_sql(field_type: &FieldType) -> &'static str {
         FieldType::Boolean => "BOOLEAN",
         FieldType::Date => "DATE",
         FieldType::DateTime => "TIMESTAMPTZ",
-        FieldType::EntityId => "UUID",
+        FieldType::EntityId => "TEXT",
         FieldType::Json => "JSONB",
-        FieldType::Reference(_) => "UUID",
+        FieldType::Reference(_) => "TEXT",
         FieldType::Array(_) => "JSONB",
         FieldType::Blocks => "JSONB",
         FieldType::Custom(_) => "JSONB",

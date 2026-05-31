@@ -218,7 +218,7 @@ impl Query {
         Ok(result)
     }
 
-    /// List soft-deleted records (the "trash" view).
+    /// List soft-deleted records (the "trash" view) with pagination metadata.
     async fn deleted_records(
         &self,
         ctx: &Context<'_>,
@@ -227,24 +227,35 @@ impl Query {
         #[graphql(name = "orderBy")] order_by: Option<Value>,
         limit: Option<i32>,
         offset: Option<i32>,
-    ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
+    ) -> GraphQLResult<PaginatedRecords> {
         check_access(&self.schema, &model, "read", ctx)?;
+        let lim = limit.unwrap_or(20) as usize;
+        let off = offset.unwrap_or(0) as usize;
         let where_clauses = where_.as_ref().map(parse_where).unwrap_or_default();
         let tenant = ctx.data_opt::<TenantCtx>();
         let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let orders = order_by.as_ref().map(parse_order_by).unwrap_or_default();
-        let result = self
+        let data = self
             .client
-            .find_deleted(
-                &model,
-                &where_clauses,
-                &orders,
-                limit.map(|l| l as usize),
-                offset.map(|o| o as usize),
-            )
+            .find_deleted(&model, &where_clauses, &orders, Some(lim), Some(off))
             .await?;
-        Ok(result)
+        let total_count = self
+            .client
+            .count_deleted(&model, &where_clauses)
+            .await
+            .unwrap_or(0);
+        let page_info = PageInfo {
+            total_count,
+            has_next_page: (off + lim) < total_count as usize,
+            has_previous_page: off > 0,
+            page_size: lim as i32,
+            offset: off as i32,
+        };
+        Ok(PaginatedRecords {
+            data: serde_json::to_value(&data)?,
+            page_info,
+        })
     }
 
     /// Get a single record by ID

@@ -405,6 +405,27 @@ impl AtomoClient {
         Ok(row.try_get::<i64, _>("count").unwrap_or(0))
     }
 
+    /// Count only soft-deleted records (for the trash view's total).
+    pub async fn count_deleted(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+        let table = crate::query::sql_builder::table_name_for(model);
+        let mut clauses = where_clauses.to_vec();
+        clauses.push(WhereClause {
+            field: "deleted_at".to_string(),
+            operator: crate::query::WhereOperator::IsNotNull,
+            value: serde_json::Value::Null,
+        });
+        let (where_sql, params) = crate::query::sql_builder::build_where_pub(&clauses, 0);
+        let sql = format!("SELECT COUNT(*) as count FROM {} WHERE {}", table, where_sql);
+        let args = build_args(&params)?;
+        let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
+        Ok(row.try_get::<i64, _>("count").unwrap_or(0))
+    }
+
     /// Subscribe to model events
     pub async fn subscribe(
         &self,

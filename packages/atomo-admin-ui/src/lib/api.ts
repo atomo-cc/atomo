@@ -261,10 +261,13 @@ class AtomoApiClient {
   async listDeleted(modelName: string, limit = 50, offset = 0): Promise<EntityData[]> {
     const result = await this.graphql(`
       query($model: String!, $limit: Int, $offset: Int) {
-        deletedRecords(model: $model, limit: $limit, offset: $offset)
+        deletedRecords(model: $model, limit: $limit, offset: $offset) {
+          data
+          pageInfo { totalCount }
+        }
       }
     `, { model: modelName, limit, offset })
-    return result.deletedRecords || []
+    return result.deletedRecords?.data || []
   }
 
   /** Restore a soft-deleted record by id. */
