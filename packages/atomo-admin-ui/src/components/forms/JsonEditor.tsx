@@ -173,7 +173,7 @@ export function JsonEditor({
       {/* 工具栏 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Badge variant={isValid ? 'success' : 'destructive'} className="text-xs">
+          <Badge variant={isValid ? 'success' : 'danger'} className="text-xs">
             {isValid ? (
               <>
                 <CheckCircle className="w-3 h-3 mr-1" />
@@ -259,7 +259,7 @@ export function JsonEditor({
         {/* 错误提示 */}
         {validationError && (
           <div className="absolute top-2 right-2">
-            <Badge variant="destructive" className="text-xs">
+            <Badge variant="danger" className="text-xs">
               <AlertCircle className="w-3 h-3 mr-1" />
               JSON错误
             </Badge>

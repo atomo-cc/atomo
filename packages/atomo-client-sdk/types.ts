@@ -1,17 +1,22 @@
 /**
  * 自动生成的业务模型类型
- * 
+ *
  * 这个文件由 atomo CLI 从 schema.ts 自动生成
  * 请勿手动编辑 - 所有更改将被覆盖
- * 
+ *
+ * NOTE: This root SDK currently carries a CRM demo generated snapshot.
+ * Keep this business-model surface mirrored with
+ * services/crm-service/packages/atomo-client-sdk/types.ts until service-specific
+ * generated types are published separately.
+ *
  * 生成时间: 2025-08-30T14:13:10.649521100+00:00
  * 源文件: packages/atomo-crm-app/atomo/schema.ts
  */
 
-import { 
-  BaseEntity, 
-  Block, 
-  CreateInput, 
+import {
+  BaseEntity,
+  Block,
+  CreateInput,
   UpdateInput,
   WhereCondition,
   ApiResponse,
@@ -33,15 +38,7 @@ export interface Company extends BaseEntity {
 }
 
 /** DealStage实体 */
-export interface DealStage extends BaseEntity {
-  WON: string;
-  _enum_type: string;
-  PROPOSAL: string;
-  NEGOTIATION: string;
-  LEAD: string;
-  QUALIFIED: string;
-  LOST: string;
-}
+export type DealStage = 'lead' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
 
 /** 联系人实体 */
 export interface Contact extends BaseEntity {
@@ -64,17 +61,11 @@ export interface Deal extends BaseEntity {
   expectedCloseDate?: string;
   actualCloseDate?: string;
   stage: DealStage;
+  position: number;
 }
 
 /** CompanySize实体 */
-export interface CompanySize extends BaseEntity {
-  _enum_type: string;
-  MEDIUM: string;
-  LARGE: string;
-  STARTUP: string;
-  ENTERPRISE: string;
-  SMALL: string;
-}
+export type CompanySize = 'startup' | 'small' | 'medium' | 'large' | 'enterprise';
 
 // ================================
 // 输入类型（用于创建和更新）
@@ -84,8 +75,8 @@ export type CompanyCreateInput = CreateInput<Company>;
 export type CompanyUpdateInput = UpdateInput<Company>;
 export type CompanyWhereInput = WhereCondition<Company>;
 
-export type DealStageCreateInput = CreateInput<DealStage>;
-export type DealStageUpdateInput = UpdateInput<DealStage>;
+export type DealStageCreateInput = DealStage;
+export type DealStageUpdateInput = DealStage;
 export type DealStageWhereInput = WhereCondition<DealStage>;
 
 export type ContactCreateInput = CreateInput<Contact>;
@@ -96,8 +87,8 @@ export type DealCreateInput = CreateInput<Deal>;
 export type DealUpdateInput = UpdateInput<Deal>;
 export type DealWhereInput = WhereCondition<Deal>;
 
-export type CompanySizeCreateInput = CreateInput<CompanySize>;
-export type CompanySizeUpdateInput = UpdateInput<CompanySize>;
+export type CompanySizeCreateInput = CompanySize;
+export type CompanySizeUpdateInput = CompanySize;
 export type CompanySizeWhereInput = WhereCondition<CompanySize>;
 
 // ================================
@@ -191,4 +182,3 @@ export interface CompanySizeStats {
   createdThisWeek: number;
   createdThisMonth: number;
 }
-

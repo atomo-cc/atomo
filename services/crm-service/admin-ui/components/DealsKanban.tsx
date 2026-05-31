@@ -1,14 +1,13 @@
-import React, { useMemo, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 
-// Import CRM service types
-import { Deal, DealStage } from '../../packages/atomo-client-sdk/types'
+import type { Deal, DealStage } from '../../packages/atomo-client-sdk/types'
 
-const STAGES: { key: string; title: string; color: string }[] = [
+const STAGES: { key: DealStage; title: string; color: string }[] = [
   { key: 'lead', title: '线索', color: '#e3f2fd' },
   { key: 'qualified', title: '已资格', color: '#e8f5e9' },
   { key: 'proposal', title: '提案', color: '#fff3e0' },
@@ -21,8 +20,8 @@ export function DealsKanban() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [draggingStage, setDraggingStage] = useState<string | null>(null)
-  const [overCard, setOverCard] = useState<{ id: string; stage: string } | null>(null)
+  const [draggingStage, setDraggingStage] = useState<DealStage | null>(null)
+  const [overCard, setOverCard] = useState<{ id: string; stage: DealStage } | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['deals', { limit: 200 }],
@@ -34,62 +33,44 @@ export function DealsKanban() {
   })
 
   const dealsByStage = useMemo(() => {
-    const map: Record<string, Deal[]> = {}
+    const map: Record<DealStage, Deal[]> = {
+      lead: [],
+      qualified: [],
+      proposal: [],
+      negotiation: [],
+      won: [],
+      lost: [],
+    }
     for (const s of STAGES) map[s.key] = []
     for (const d of (data || [])) {
-      // Map DealStage enum to stage key, fallback to lowercase string
-      let stageKey = (d.stage || '').toLowerCase()
-      
-      // Handle enum values - if it's a DealStage enum, convert to lowercase
-      if (typeof d.stage === 'string' && ['lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'].includes(d.stage)) {
-        stageKey = d.stage.toLowerCase()
-      }
-      
-      if (!map[stageKey]) map[stageKey] = []
-      map[stageKey].push(d)
+      map[d.stage]?.push(d)
     }
     return map
   }, [data])
 
-  const [localOrder, setLocalOrder] = useState<Record<string, string[]>>({})
-  React.useEffect(() => {
-    const initial: Record<string, string[]> = {}
+  const [localOrder, setLocalOrder] = useState<Record<DealStage, string[]>>({
+    lead: [],
+    qualified: [],
+    proposal: [],
+    negotiation: [],
+    won: [],
+    lost: [],
+  })
+  useEffect(() => {
+    const initial = {} as Record<DealStage, string[]>
     for (const s of STAGES) {
       initial[s.key] = (dealsByStage[s.key] || []).map(d => d.id)
     }
     setLocalOrder(initial)
-  }, [JSON.stringify(dealsByStage)])
+  }, [dealsByStage])
 
-  const updateMutation = useMutation({
-    mutationKey: ['deal-stage-update'],
-    mutationFn: async ({ id, stage, position }: { id: string; stage: string; position?: number }) => {
-      await apiClient.updateEntity('Deal', id, position != null ? { stage, position } : { stage })
-    },
-    onMutate: async ({ id, stage, position }) => {
-      await queryClient.cancelQueries({ queryKey: ['deals', { limit: 200 }] })
-      const prev = queryClient.getQueryData<Deal[]>(['deals', { limit: 200 }])
-      if (prev) {
-        const next = prev.map(d => (d.id === id ? { ...d, stage, position: position ?? d.position } : d))
-        queryClient.setQueryData(['deals', { limit: 200 }], next)
-      }
-      return { prev }
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(['deals', { limit: 200 }], ctx.prev)
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['deals', { limit: 200 }] })
-    }
-  })
-
-  const onDragStart = (id: string, stageKey: string) => { setDraggingId(id); setDraggingStage(stageKey) }
-  const persistStageOrders = async (stageKey: string) => {
-    const ids = localOrder[stageKey] || []
+  const onDragStart = (id: string, stageKey: DealStage) => { setDraggingId(id); setDraggingStage(stageKey) }
+  const persistStageOrders = async (stageKey: DealStage, ids: string[]) => {
     const updates = ids.map((id, idx) => ({ id, position: idx, stage: stageKey }))
     try { await apiClient.updateDealPositions(updates) } catch {}
   }
 
-  const onDropOnStage = async (stageKey: string) => {
+  const onDropOnStage = async (stageKey: DealStage) => {
     if (draggingId) {
       if (draggingStage && draggingStage === stageKey) {
         // same column reorder only updates local state
@@ -103,10 +84,11 @@ export function DealsKanban() {
         const next = [...filtered.slice(0, idx), draggingId, ...filtered.slice(idx)]
         const newState = { ...localOrder, [stageKey]: next }
         setLocalOrder(newState)
-        persistStageOrders(stageKey)
+        persistStageOrders(stageKey, next)
       } else {
         // move across columns
-        const src = draggingStage!
+        if (!draggingStage) return
+        const src = draggingStage
         const srcIds = (localOrder[src] || []).filter(i => i !== draggingId)
         let destIds = (localOrder[stageKey] || []).filter(i => i !== draggingId)
         let idx = destIds.length
@@ -156,12 +138,13 @@ export function DealsKanban() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div data-testid="deals-kanban-board" className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {STAGES.map(col => {
           const items = dealsByStage[col.key] || []
           const totalValue = items.reduce((sum, d) => sum + (d.value || 0), 0)
           return (
             <div key={col.key}
+                 data-testid="deals-kanban-column"
                  className="rounded-lg border border-gray-200 bg-white flex flex-col"
                  onDragOver={(e) => e.preventDefault()}
                  onDrop={() => onDropOnStage(col.key)}>
@@ -174,6 +157,7 @@ export function DealsKanban() {
               <div className="p-2 space-y-2 overflow-auto" style={{ minHeight: 300 }}>
                 {(localOrder[col.key] || items.map(i => i.id)).map(id => items.find(d => d.id === id)).filter((deal): deal is Deal => deal !== undefined).map(deal => (
                   <div key={deal.id}
+                       data-testid="deal-card"
                        className="rounded-md border p-3 bg-white shadow-sm cursor-move"
                        draggable
                        onDragStart={() => onDragStart(deal.id, col.key)}

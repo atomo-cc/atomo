@@ -114,6 +114,8 @@ pnpm type-check
 pnpm format
 ```
 
+`pnpm type-check` should stay green. From the repo root, `pnpm --filter "./packages/*" test` verifies the Admin UI and TypeScript SDK baseline.
+
 ## 🎨 定制指南
 
 ### 1. 修改设计令牌

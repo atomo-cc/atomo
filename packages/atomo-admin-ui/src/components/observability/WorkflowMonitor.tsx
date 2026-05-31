@@ -27,6 +27,14 @@ import { Input } from '../ui/Input'
 import { Progress } from '../ui/Progress'
 import { formatDate, cn } from '../../lib/utils'
 
+function formatDuration(duration?: number) {
+  if (!duration) return '0s'
+  const seconds = Math.floor(duration / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`
+}
+
 export interface WorkflowInstance {
   id: string
   name: string

@@ -8,7 +8,7 @@
  * for the Atomo Admin UI.
  */
 
-import React from 'react'
+import { lazy } from 'react'
 import { ComponentPlugin, componentPluginManager } from './component-plugins'
 
 // CRM Component Plugin definition
@@ -20,12 +20,12 @@ export const crmComponentPlugin: ComponentPlugin = {
   routes: [
     {
       pattern: /^\/deals\/board$/,
-      component: React.lazy(() => import('../components/DealsKanban').then(module => ({ default: module.DealsKanban }))),
+      component: lazy(() => import('../components/DealsKanban').then(module => ({ default: module.DealsKanban }))),
       props: () => ({})
     },
     {
       pattern: /^\/contacts\/([^\/]+)\/timeline$/,
-      component: React.lazy(() => import('../components/ContactTimeline').then(module => ({ default: module.ContactTimeline }))),
+      component: lazy(() => import('../components/ContactTimeline').then(module => ({ default: module.ContactTimeline }))),
       props: (match?: RegExpMatchArray | undefined): Record<string, any> => {
         if (!match) return {};
         return { contactId: match[1] };

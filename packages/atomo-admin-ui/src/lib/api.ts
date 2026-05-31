@@ -7,6 +7,7 @@
 import axios, { AxiosInstance } from 'axios'
 import { SchemaMetadata, EntityData, QueryOptions } from './types'
 import { loadSchemaMetadata } from './schema-parser'
+import { cloneDemoEntities } from './demo-data'
 
 /**
  * 将camelCase字段名转换为snake_case（用于GraphQL输入）
@@ -31,6 +32,7 @@ function camelToSnakeCase(obj: Record<string, any>): Record<string, any> {
 class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
+  private demoStore: Record<string, EntityData[]> = {}
 
   constructor(baseUrl: string = '') {
     // Simplified URL detection - more reliable than complex logic
@@ -290,10 +292,18 @@ class AtomoApiClient {
       }
     `
 
-    const result = await this.graphql(query, {
-      offset: (page - 1) * limit,
-      limit,
-    })
+    let result: any
+    try {
+      result = await this.graphql(query, {
+        offset: (page - 1) * limit,
+        limit,
+      })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        return this.listDemoEntities(modelName, options)
+      }
+      throw error
+    }
 
     const entities = result[queryField] || []
     const aggregate = result[aggregateField]
@@ -431,7 +441,16 @@ class AtomoApiClient {
 
     console.log(`🔍 查询${isPlatformModel ? '平台' : '业务'}模型 ${modelName}:`, query)
     
-    const result = await this.graphql(query, variables)
+    let result: any
+    try {
+      result = await this.graphql(query, variables)
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entity = this.getDemoEntities(modelName).find((item) => item.id === id)
+        if (entity) return entity
+      }
+      throw error
+    }
     
     let entity: any
     if (isPlatformModel) {
@@ -476,7 +495,22 @@ class AtomoApiClient {
       }
     `
 
-    const result = await this.graphql(query, { object: snakeCaseData })
+    let result: any
+    try {
+      result = await this.graphql(query, { object: snakeCaseData })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entity = {
+          id: `${modelName.toLowerCase()}_${Date.now()}`,
+          ...data,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as EntityData
+        this.getDemoEntities(modelName).push(entity)
+        return entity
+      }
+      throw error
+    }
     return result[mutationName]
   }
 
@@ -506,10 +540,27 @@ class AtomoApiClient {
       }
     `
 
-    const result = await this.graphql(query, { 
-      pkColumns: { id },
-      set: snakeCaseData 
-    })
+    let result: any
+    try {
+      result = await this.graphql(query, {
+        pkColumns: { id },
+        set: snakeCaseData
+      })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entities = this.getDemoEntities(modelName)
+        const index = entities.findIndex((item) => item.id === id)
+        if (index >= 0) {
+          entities[index] = {
+            ...entities[index],
+            ...data,
+            updatedAt: new Date().toISOString(),
+          }
+          return entities[index]
+        }
+      }
+      throw error
+    }
     return result[mutationName]
   }
 
@@ -535,7 +586,20 @@ class AtomoApiClient {
       }
     `
 
-    const result = await this.graphql(query, { id })
+    let result: any
+    try {
+      result = await this.graphql(query, { id })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entities = this.getDemoEntities(modelName)
+        const index = entities.findIndex((item) => item.id === id)
+        if (index >= 0) {
+          entities.splice(index, 1)
+          return true
+        }
+      }
+      throw error
+    }
     return !!result[mutationName]
   }
 
@@ -616,6 +680,52 @@ class AtomoApiClient {
   // Extend method to allow extending the client with custom methods
   extend<T>(methods: T): AtomoApiClient & T {
     return Object.assign(this, methods)
+  }
+
+  private canUseDemoData(): boolean {
+    return Boolean((import.meta as any).env?.DEV)
+  }
+
+  private getDemoEntities(modelName: string): EntityData[] {
+    if (!this.demoStore[modelName]) {
+      this.demoStore[modelName] = cloneDemoEntities(modelName)
+    }
+    return this.demoStore[modelName]
+  }
+
+  private listDemoEntities(modelName: string, options: QueryOptions = {}) {
+    const { page = 1, limit = 20, sort = 'createdAt', order = 'desc', filters = {}, search } = options
+    let data = [...this.getDemoEntities(modelName)]
+
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== '') {
+        data = data.filter((entity) => entity[key] === value)
+      }
+    }
+
+    if (search) {
+      const term = search.toLowerCase()
+      data = data.filter((entity) =>
+        Object.values(entity).some((value) => String(value).toLowerCase().includes(term))
+      )
+    }
+
+    data.sort((a, b) => {
+      const left = a[sort]
+      const right = b[sort]
+      if (left === right) return 0
+      const comparison = left > right ? 1 : -1
+      return order === 'asc' ? comparison : -comparison
+    })
+
+    const total = data.length
+    const offset = (page - 1) * limit
+    return {
+      data: data.slice(offset, offset + limit),
+      total,
+      page,
+      limit,
+    }
   }
 }
 

@@ -5,8 +5,9 @@
  * Kanban-style deal pipeline view.
  */
 
-import React from 'react';
-import { DealStage, Deal } from '../../schema';
+import { useMemo } from 'react';
+import { DealStage } from '../../schema';
+import type { Deal } from '../../schema';
 
 interface DealPipelineViewProps {
   deals: Deal[];
@@ -23,24 +24,12 @@ const STAGE_COLUMNS = [
 ];
 
 export function CustomDealPipelineView({ deals, onDealUpdate }: DealPipelineViewProps) {
-  const dealsByStage = React.useMemo(() => {
+  const dealsByStage = useMemo(() => {
     return STAGE_COLUMNS.reduce((acc, column) => {
       acc[column.stage] = deals.filter(deal => deal.stage === column.stage);
       return acc;
     }, {} as Record<DealStage, Deal[]>);
   }, [deals]);
-
-  const handleDragEnd = (result: any) => {
-    if (!result.destination) return;
-
-    const { source, destination, draggableId } = result;
-    const dealId = draggableId;
-    const newStage = destination.droppableId as DealStage;
-
-    if (source.droppableId !== destination.droppableId) {
-      onDealUpdate(dealId, { stage: newStage });
-    }
-  };
 
   const getTotalValue = (stage: DealStage) => {
     return dealsByStage[stage]?.reduce((sum, deal) => sum + deal.value, 0) || 0;

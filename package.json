@@ -4,7 +4,7 @@
   "private": true,
   "description": "Atomo Content Core - The Next-Generation Content Management Platform",
   "scripts": {
-    "dev:admin": "pnpm --filter atomo-admin-ui dev", 
+    "dev:admin": "pnpm --filter @atomo/admin-ui dev",
     "dev:service": "atomo dev",
     "dev:docs": "pnpm --filter @atomo/docs dev",
     "build:core": "cargo build --workspace --release",

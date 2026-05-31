@@ -140,9 +140,10 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
       return acc
     }, {} as Record<string, number>),
     uniqueUsers: new Set(events.map(e => e.userId)).size,
-    timeSpan: events.length > 0 ? 
-      new Date(Math.max(...events.map(e => e.timestamp.getTime()))) - 
-      new Date(Math.min(...events.map(e => e.timestamp.getTime()))) : 0
+    timeSpan: events.length > 0
+      ? Math.max(...events.map(e => e.timestamp.getTime())) -
+        Math.min(...events.map(e => e.timestamp.getTime()))
+      : 0
   } : null
 
   return (
@@ -262,7 +263,6 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
                   value={filters.searchTerm || ''}
                   onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
                   className="pl-9 w-48"
-                  size="sm"
                 />
               </div>
 
