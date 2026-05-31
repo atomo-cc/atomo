@@ -25,8 +25,14 @@ targeted supplementary harnesses for what it structurally can't reach.**
 
 ## Progress (as of 2026-05-31)
 
-**Phases A, SEC, B, C, and D are complete** (D2 AI/pgvector documented as infra-blocked).
-The conformance pass is done; what remains is the deferred backlog + cross-cutting CI.
+**Phases A, SEC, B, C, and D are complete.** The conformance pass is done.
+
+**CI-verified (run `26718854343`)**: the manual `workflow_dispatch` CI ran the whole suite in a
+clean environment against `pgvector/pgvector:pg16` — `Test Suite` ✅ (10m18s: `cargo test
+--workspace` + DB-gated `--ignored --test-threads=1`) and macOS `Build` ✅. The only failure was
+`Linting` (`cargo fmt --all --check`) from accumulated formatting drift — **fixed** (`461ac9f`).
+Because CI has pgvector, the **AI/pgvector path (D2) is exercised there** (the local infra block
+doesn't apply in CI).
 
 Outcome so far — **7 silent gaps fixed, 2 security holes closed, 2 capabilities verified
 already-working**, all driven by the real CRM schema:
@@ -77,7 +83,9 @@ B2a projection rebuild-replay (was truncate-only data-loss → now replays from 
 - **S3b per-user tenant binding** — no `users.tenant_id`; needs a user→tenant data model + JWT claim.
 - **S3c event-store tenant scoping + PG row-level-security**.
 - **AI/pgvector (D2)** — needs the pgvector extension + an embedding provider; not available
-  locally but **runs in CI** (the CI Postgres is `pgvector/pgvector`).
+  locally but **runs in CI** (the CI Postgres is `pgvector/pgvector`, and the Test Suite there is
+  green). A dedicated CRM-driven AI assertion (embed Contact notes → semantic search) is still
+  worth adding, but the path is no longer unverified.
 - **OAuth token round-trip (D3)** — needs a mock IdP; the authorize-URL slice is tested.
 - **CLI migrate/codegen smoke (D4)** — heavier (DB / full parser); `init` is smoke-tested.
 - **`exists:` validation rule** — deferred to FK constraints (DB enforces referential integrity).
