@@ -21,7 +21,8 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
-import { Textarea } from '../ui/Textarea'
+import { ActionEditor } from './ActionEditor'
+import { WorkflowGraphView } from './WorkflowGraphView'
 
 const ACTION_KINDS = ['SetVariable', 'Delay', 'Http', 'Mutation', 'Plugin']
 const FAILURE_KINDS = ['Continue', 'Stop', 'Retry']
@@ -174,25 +175,20 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
                 </div>
               </div>
 
-              <Textarea
-                label="动作参数 (JSON)"
-                className="font-mono text-xs"
-                rows={4}
-                value={JSON.stringify(Object.values(step.action)[0], null, 2)}
-                onChange={(e) => {
-                  try {
-                    const body = JSON.parse(e.target.value)
-                    const kind = Object.keys(step.action)[0]
-                    patchStep(step.id, { action: { [kind]: body } })
-                    setError(null)
-                  } catch {
-                    setError(`步骤 "${step.name}" 的动作参数 JSON 无效`)
-                  }
-                }}
+              <ActionEditor
+                action={step.action}
+                onChange={(action) => patchStep(step.id, { action })}
               />
             </div>
           ))}
           <Button variant="secondary" onClick={addStep}><Plus className="h-4 w-4 mr-1" /> 添加步骤</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>预览</CardTitle></CardHeader>
+        <CardContent>
+          <WorkflowGraphView graph={graph} />
         </CardContent>
       </Card>
 
