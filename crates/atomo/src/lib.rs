@@ -156,6 +156,11 @@ impl Atomo {
     pub fn event_receiver(&self) -> tokio::sync::broadcast::Receiver<events::ModelEvent> {
         self.client.event_receiver()
     }
+
+    /// Get a clonable sender to publish onto the model-event stream.
+    pub fn event_sender(&self) -> tokio::sync::broadcast::Sender<events::ModelEvent> {
+        self.client.event_sender()
+    }
 }
 
 /// Builder for Atomo configuration

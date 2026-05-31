@@ -271,6 +271,7 @@ export default schema;
                     atomo::events::EventType::Created => AuditOperation::Create,
                     atomo::events::EventType::Updated => AuditOperation::Update,
                     atomo::events::EventType::Deleted => AuditOperation::Delete,
+                atomo::events::EventType::Custom => AuditOperation::Read,
                 };
                 let entity_id = ev
                     .data

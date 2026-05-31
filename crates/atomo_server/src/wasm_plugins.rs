@@ -19,6 +19,8 @@ pub struct WasmPluginManager {
     js_plugins: HashMap<String, JsPlugin>,
     /// Permission-gated effects a JS plugin requested (emit/db/http), drained by the caller.
     js_effects: Vec<String>,
+    /// Sender to publish plugin-emitted events onto the model-event stream (set at boot).
+    event_sender: Option<tokio::sync::broadcast::Sender<atomo::events::ModelEvent>>,
     plugin_dir: PathBuf,
 }
 
@@ -30,6 +32,7 @@ impl WasmPluginManager {
             plugins: HashMap::new(),
             js_plugins: HashMap::new(),
             js_effects: Vec::new(),
+            event_sender: None,
             plugin_dir: plugin_dir.into(),
         })
     }
@@ -181,6 +184,15 @@ impl WasmPluginManager {
         std::mem::take(&mut self.js_effects)
     }
 
+    /// Set the event sender so plugin `emit` effects are published to the model-event
+    /// stream (consumed by projectors/audit/subscriptions). Call once at boot.
+    pub fn set_event_sender(
+        &mut self,
+        sender: tokio::sync::broadcast::Sender<atomo::events::ModelEvent>,
+    ) {
+        self.event_sender = Some(sender);
+    }
+
     /// Drain and execute the recorded JS plugin effects.
     /// - `dbQuery` → constrained read via `fulfill_db_request`
     /// - `http` → request via `fulfill_http_request`
@@ -210,6 +222,27 @@ impl WasmPluginManager {
             } else if let Some(r) = obj.get("http") {
                 results.push(fulfill_http_request(&r.to_string(), http).await);
             } else if let Some(e) = obj.get("emit") {
+                // Publish as a Custom event on the model-event stream, if a sender is set.
+                if let Some(tx) = &self.event_sender {
+                    let data = match e {
+                        serde_json::Value::Object(m) => m.clone().into_iter().collect(),
+                        other => {
+                            let mut m = std::collections::HashMap::new();
+                            m.insert("value".to_string(), other.clone());
+                            m
+                        }
+                    };
+                    let event = atomo::events::ModelEvent {
+                        event_type: atomo::events::EventType::Custom,
+                        model_name: "plugin".to_string(),
+                        data,
+                        previous_data: None,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        event_id: uuid::Uuid::new_v4().to_string(),
+                        actor: None,
+                    };
+                    let _ = tx.send(event);
+                }
                 results.push(serde_json::json!({ "emit": e }).to_string());
             }
         }

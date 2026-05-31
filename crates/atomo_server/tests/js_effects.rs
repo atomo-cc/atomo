@@ -53,3 +53,24 @@ async fn js_effect_aborts_when_permission_denied() {
         HookResult::Continue(_) => panic!("denied emit should have aborted the hook"),
     }
 }
+
+#[tokio::test]
+#[ignore]
+async fn js_emit_effect_publishes_custom_event() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    let mut mgr = WasmPluginManager::new(dir("emit-granted")).unwrap();
+    mgr.discover_and_load().await.unwrap();
+    // Wire an event sender and subscribe before running.
+    let (tx, mut rx) = tokio::sync::broadcast::channel::<atomo::events::ModelEvent>(16);
+    mgr.set_event_sender(tx);
+
+    // Record the emit effect (before_create), then fulfill it (publishes the Custom event).
+    let _ = mgr.call_hook("js-emit-granted", "before_create", r#"{"email":"a@b.com"}"#).unwrap();
+    let http = reqwest::Client::new();
+    let _ = mgr.fulfill_js_effects(&pool, &http).await;
+
+    let ev = rx.try_recv().expect("a Custom event should have been published");
+    assert!(matches!(ev.event_type, atomo::events::EventType::Custom));
+    assert_eq!(ev.model_name, "plugin");
+}

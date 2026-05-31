@@ -15,6 +15,8 @@ pub enum EventType {
     Created,
     Updated,
     Deleted,
+    /// Emitted by a plugin (not a CRUD mutation).
+    Custom,
 }
 
 /// Builder for creating subscriptions

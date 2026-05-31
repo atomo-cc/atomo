@@ -441,6 +441,12 @@ impl AtomoClient {
         self.event_sender.subscribe()
     }
 
+    /// Get a clonable sender to publish events onto the model-event stream
+    /// (used to surface plugin-emitted events to projectors/audit/subscriptions).
+    pub fn event_sender(&self) -> broadcast::Sender<ModelEvent> {
+        self.event_sender.clone()
+    }
+
     /// Resolve relationships for a record based on include list
     pub fn resolve_includes<'a>(
         &'a self,

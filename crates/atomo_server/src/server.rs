@@ -24,6 +24,7 @@ use crate::{config::ServerConfig, handlers::create_router};
 pub struct AtomoServer {
     config: ServerConfig,
     atomo: Atomo,
+    plugin_manager: Option<std::sync::Arc<tokio::sync::Mutex<crate::wasm_plugins::WasmPluginManager>>>,
 }
 
 impl AtomoServer {
@@ -39,24 +40,31 @@ impl AtomoServer {
             .database_url(&config.database_url)
             .enable_migrations(true)
             .enable_ai(config.enable_ai);
+        let mut manager_handle = None;
         if !loaded.is_empty() {
             info!("🔌 Loaded {} WASM plugin(s): {:?}", loaded.len(), loaded);
             let manager = std::sync::Arc::new(tokio::sync::Mutex::new(plugin_manager));
-            let mut runner = crate::wasm_hooks::WasmHookRunner::new(manager);
+            let mut runner = crate::wasm_hooks::WasmHookRunner::new(manager.clone());
             // Enable JS effect fulfillment with a pool from the same database.
             if let Ok(pool) = sqlx::PgPool::connect(&config.database_url).await {
                 runner = runner.with_fulfillment(pool);
             }
             builder = builder.hook_runner(std::sync::Arc::new(runner));
+            manager_handle = Some(manager);
         }
         let atomo = builder.build().await?;
 
-        Ok(Self { config, atomo })
+        // Let plugin `emit` effects publish onto the model-event stream.
+        if let Some(mgr) = &manager_handle {
+            mgr.lock().await.set_event_sender(atomo.event_sender());
+        }
+
+        Ok(Self { config, atomo, plugin_manager: manager_handle })
     }
 
     /// Create from existing Atomo instance (for testing/embedding)
     pub fn from_atomo(config: ServerConfig, atomo: Atomo) -> Self {
-        Self { config, atomo }
+        Self { config, atomo, plugin_manager: None }
     }
 
     #[instrument(skip(self))]
@@ -123,6 +131,7 @@ impl AtomoServer {
                         atomo::events::EventType::Created => AuditOperation::Create,
                         atomo::events::EventType::Updated => AuditOperation::Update,
                         atomo::events::EventType::Deleted => AuditOperation::Delete,
+                    atomo::events::EventType::Custom => AuditOperation::Read,
                     };
                     let entity_id = ev.data.get("id").and_then(|v| v.as_str())
                         .and_then(|s| EntityId::from_string(s).ok())

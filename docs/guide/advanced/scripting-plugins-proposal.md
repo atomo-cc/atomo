@@ -138,8 +138,10 @@ The QuickJS/Javy spike must meet, or we reconsider:
    emit/fulfill. (`tests/js_effects.rs` + fixtures `emit-granted`/`emit-denied`.)
    NOTE: effect *fulfillment* is wired — `WasmHookRunner::with_fulfillment(pool)` drains and
    executes recorded effects after after-hooks: `dbQuery` runs the constrained read, `http`
-   performs the request, `emit` is returned for the caller to push to the event stream.
-   (`fulfill_js_effects`; `tests/js_fulfill.rs` DB-gated: a JS `dbQuery` effect returns rows.)
+   performs the request, and `emit` publishes a `Custom` `ModelEvent` onto the model-event
+   stream (consumed by projectors/audit/subscriptions) via `set_event_sender` wired at boot.
+   (`fulfill_js_effects`; `tests/js_fulfill.rs` DB-gated dbQuery; `tests/js_effects.rs`
+   `js_emit_effect_publishes_custom_event` DB-gated emit→stream.)
 
 **Phase 3 — Validation:**
 8. A real JS example plugin in-repo + integration test (mirrors `tests/host_api.rs`).
