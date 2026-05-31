@@ -350,9 +350,11 @@ impl Mutation {
             }
         }
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
+        let role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.clone());
         let result = self
             .client
-            .create(
+            .create_checked(
+                role.as_deref(),
                 &model,
                 &data,
                 &[], // include
@@ -377,9 +379,11 @@ impl Mutation {
         let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
+        let role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.clone());
         let results = self
             .client
-            .update_many(
+            .update_many_checked(
+                role.as_deref(),
                 &model,
                 &where_clauses,
                 &data,
@@ -405,9 +409,10 @@ impl Mutation {
         let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
+        let role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.clone());
         let count = self
             .client
-            .delete_many(&model, &where_clauses, actor.as_deref())
+            .delete_many_checked(role.as_deref(), &model, &where_clauses, actor.as_deref())
             .await?;
 
         Ok(count as i32)

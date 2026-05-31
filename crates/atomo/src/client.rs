@@ -518,6 +518,47 @@ impl AtomoClient {
         }
     }
 
+    /// RBAC-enforced mutations: check the model's access rule for `role` (None = unauthenticated)
+    /// then delegate. These are the data-layer enforcement entry points — the GraphQL resolvers
+    /// route through them so access is enforced inside the data layer (one seam), and any
+    /// SDK/internal caller that has a role can use them instead of the unchecked variants.
+    pub async fn create_checked(
+        &self,
+        role: Option<&str>,
+        model_name: &str,
+        data: &HashMap<String, Value>,
+        include: &[String],
+        actor: Option<&str>,
+    ) -> Result<HashMap<String, Value>> {
+        self.enforce_access(model_name, "create", role)?;
+        self.create(model_name, data, include, actor).await
+    }
+
+    pub async fn update_many_checked(
+        &self,
+        role: Option<&str>,
+        model_name: &str,
+        where_clauses: &[WhereClause],
+        data: &HashMap<String, Value>,
+        include: &[String],
+        actor: Option<&str>,
+    ) -> Result<Vec<HashMap<String, Value>>> {
+        self.enforce_access(model_name, "update", role)?;
+        self.update_many(model_name, where_clauses, data, include, actor)
+            .await
+    }
+
+    pub async fn delete_many_checked(
+        &self,
+        role: Option<&str>,
+        model_name: &str,
+        where_clauses: &[WhereClause],
+        actor: Option<&str>,
+    ) -> Result<usize> {
+        self.enforce_access(model_name, "delete", role)?;
+        self.delete_many(model_name, where_clauses, actor).await
+    }
+
     /// Get a clonable sender to publish events onto the model-event stream
     /// (used to surface plugin-emitted events to projectors/audit/subscriptions).
     pub fn event_sender(&self) -> broadcast::Sender<ModelEvent> {
