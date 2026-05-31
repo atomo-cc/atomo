@@ -22,7 +22,11 @@ fn fixtures_dir() -> std::path::PathBuf {
 async fn js_plugin_runs_in_before_create_hook() {
     let mut mgr = WasmPluginManager::new(fixtures_dir()).unwrap();
     let loaded = mgr.discover_and_load().await.unwrap();
-    assert!(loaded.contains(&"js-hook".to_string()), "js plugin not loaded: {:?}", loaded);
+    assert!(
+        loaded.contains(&"js-hook".to_string()),
+        "js plugin not loaded: {:?}",
+        loaded
+    );
 
     let runner = WasmHookRunner::new(Arc::new(Mutex::new(mgr)));
 
@@ -43,5 +47,9 @@ async fn js_plugin_runs_in_before_create_hook() {
     };
     let tags = out.get("tags").and_then(|v| v.as_array()).expect("tags");
     assert!(tags.iter().any(|t| t == "x"), "original tag preserved");
-    assert!(tags.iter().any(|t| t == "hooked"), "js before_create added its tag: {:?}", out);
+    assert!(
+        tags.iter().any(|t| t == "hooked"),
+        "js before_create added its tag: {:?}",
+        out
+    );
 }

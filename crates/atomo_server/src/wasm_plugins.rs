@@ -2,7 +2,9 @@ use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use atomo_wasm_runtime::{JsRuntime, Permission, PluginManifest, PluginRuntime, WasmPlugin, WasmRuntime};
+use atomo_wasm_runtime::{
+    JsRuntime, Permission, PluginManifest, PluginRuntime, WasmPlugin, WasmRuntime,
+};
 use tracing::info;
 
 /// A loaded JS (Javy) plugin: its compiled module + the permissions it was granted.
@@ -68,7 +70,13 @@ impl WasmPluginManager {
                 info!(plugin = %name, "Loading JS plugin");
                 let module = self.js_runtime.compile(&wasm_path)?;
                 let permissions = manifest.permissions.iter().cloned().collect();
-                self.js_plugins.insert(name.clone(), JsPlugin { module, permissions });
+                self.js_plugins.insert(
+                    name.clone(),
+                    JsPlugin {
+                        module,
+                        permissions,
+                    },
+                );
             }
             PluginRuntime::Wasm => {
                 info!(plugin = %name, "Loading WASM plugin");
@@ -124,7 +132,10 @@ impl WasmPluginManager {
                     if let Some(effects) = obj.get("effects").and_then(|e| e.as_array()) {
                         self.apply_js_effects(plugin_name, &perms, effects)?;
                     }
-                    let record = obj.get("record").cloned().unwrap_or(serde_json::Value::Null);
+                    let record = obj
+                        .get("record")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
                     return Ok(Some(record.to_string()));
                 }
             }
@@ -226,7 +237,11 @@ impl WasmPluginManager {
                 // a typed event: { model, event: Created|Updated|Deleted|Custom, data }.
                 // Unspecified fields fall back to model="plugin", event=Custom, data=payload.
                 if let Some(tx) = &self.event_sender {
-                    let model_name = e.get("model").and_then(|v| v.as_str()).unwrap_or("plugin").to_string();
+                    let model_name = e
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("plugin")
+                        .to_string();
                     let event_type = match e.get("event").and_then(|v| v.as_str()) {
                         Some("Created") => atomo::events::EventType::Created,
                         Some("Updated") => atomo::events::EventType::Updated,
@@ -334,7 +349,10 @@ async fn fulfill_http_request(req: &str, http: &reqwest::Client) -> String {
         Ok(v) => v,
         Err(e) => return error_json(&format!("invalid http request: {}", e)),
     };
-    let method = parsed.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
+    let method = parsed
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("GET");
     let url = parsed.get("url").and_then(|v| v.as_str()).unwrap_or("");
     if url.is_empty() {
         return error_json("http request requires a `url`");
@@ -372,7 +390,9 @@ mod tests {
         sqlx::query("CREATE TABLE IF NOT EXISTS widgets (id TEXT PRIMARY KEY, name TEXT, deleted_at TIMESTAMPTZ)")
             .execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO widgets (id, name) VALUES ('1','a') ON CONFLICT DO NOTHING")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // Valid model request returns rows.
         let res = fulfill_db_request(r#"{"model":"Widget","limit":5}"#, &pool).await;
@@ -381,14 +401,23 @@ mod tests {
 
         // SQL-injection-style model is rejected (not alphanumeric) — never executes raw SQL.
         let bad = fulfill_db_request(r#"{"model":"widgets; DROP TABLE widgets"}"#, &pool).await;
-        assert!(bad.contains("\"ok\":false"), "injection attempt should be rejected: {}", bad);
+        assert!(
+            bad.contains("\"ok\":false"),
+            "injection attempt should be rejected: {}",
+            bad
+        );
 
         // The table still exists (the injection did nothing).
-        let still: (i64,) = sqlx::query_as("SELECT count(*) FROM widgets").fetch_one(&pool).await.unwrap();
+        let still: (i64,) = sqlx::query_as("SELECT count(*) FROM widgets")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(still.0, 1);
 
         // Malformed JSON is rejected gracefully.
-        assert!(fulfill_db_request("not json", &pool).await.contains("\"ok\":false"));
+        assert!(fulfill_db_request("not json", &pool)
+            .await
+            .contains("\"ok\":false"));
 
         sqlx::query("DROP TABLE widgets").execute(&pool).await.ok();
     }

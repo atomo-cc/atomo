@@ -285,7 +285,6 @@ pub async fn oauth_providers(State(oauth): State<OAuthManager>) -> Json<Vec<Stri
     )
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,11 +305,35 @@ mod tests {
             scopes: vec!["openid".into(), "email".into()],
         };
         let url = p.authorize_url("csrf-state-xyz");
-        assert!(url.starts_with("https://accounts.example.com/o/oauth2/auth?"), "base auth_url: {}", url);
-        assert!(url.contains("client_id=cid-123"), "client_id missing: {}", url);
-        assert!(url.contains("response_type=code"), "response_type missing: {}", url);
-        assert!(url.contains("state=csrf-state-xyz"), "CSRF state missing: {}", url);
-        assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback%2Fgoogle"), "redirect not encoded: {}", url);
-        assert!(url.contains("scope=openid%20email"), "scopes not encoded: {}", url);
+        assert!(
+            url.starts_with("https://accounts.example.com/o/oauth2/auth?"),
+            "base auth_url: {}",
+            url
+        );
+        assert!(
+            url.contains("client_id=cid-123"),
+            "client_id missing: {}",
+            url
+        );
+        assert!(
+            url.contains("response_type=code"),
+            "response_type missing: {}",
+            url
+        );
+        assert!(
+            url.contains("state=csrf-state-xyz"),
+            "CSRF state missing: {}",
+            url
+        );
+        assert!(
+            url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback%2Fgoogle"),
+            "redirect not encoded: {}",
+            url
+        );
+        assert!(
+            url.contains("scope=openid%20email"),
+            "scopes not encoded: {}",
+            url
+        );
     }
 }

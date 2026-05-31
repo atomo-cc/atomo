@@ -38,7 +38,10 @@ impl Permission {
     /// (`runtime.rs`) and JS effects (`atomo_server::wasm_plugins`). Centralizing it keeps the
     /// gating logic and the error wording consistent — a plugin that lacks `required` is denied
     /// the same way regardless of tier.
-    pub fn ensure(perms: &std::collections::HashSet<Permission>, required: &Permission) -> anyhow::Result<()> {
+    pub fn ensure(
+        perms: &std::collections::HashSet<Permission>,
+        required: &Permission,
+    ) -> anyhow::Result<()> {
         if perms.contains(required) {
             Ok(())
         } else {

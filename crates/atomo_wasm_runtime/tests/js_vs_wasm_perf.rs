@@ -57,16 +57,30 @@ fn js_vs_wasm_perf() {
         let mut store = Store::new(&engine, ());
         store.set_fuel(1_000_000).unwrap();
         let inst = wasmtime::Instance::new(&mut store, &wasm_module, &[]).unwrap();
-        let f = inst.get_typed_func::<(i32, i32), i32>(&mut store, "run").unwrap();
+        let f = inst
+            .get_typed_func::<(i32, i32), i32>(&mut store, "run")
+            .unwrap();
         let _ = f.call(&mut store, (1, 2)).unwrap();
     }
     let wasm_per_call = t.elapsed() / ITERS;
 
     println!("\n=== JS (Javy) vs compiled wasm (debug build, {ITERS} iters) ===");
-    println!("module size:   JS {:>8} B   |  compiled {:>6} B", bytes.len(), wasm_bytes.len());
-    println!("cold start:    JS {:>8?}   |  compiled {:>8?}", js_cold, wasm_cold);
-    println!("per call:      JS {:>8?}   |  compiled {:>8?}", js_per_call, wasm_per_call);
-    println!("ratio:         cold {:.0}x   per-call {:.0}x",
+    println!(
+        "module size:   JS {:>8} B   |  compiled {:>6} B",
+        bytes.len(),
+        wasm_bytes.len()
+    );
+    println!(
+        "cold start:    JS {:>8?}   |  compiled {:>8?}",
+        js_cold, wasm_cold
+    );
+    println!(
+        "per call:      JS {:>8?}   |  compiled {:>8?}",
+        js_per_call, wasm_per_call
+    );
+    println!(
+        "ratio:         cold {:.0}x   per-call {:.0}x",
         js_cold.as_secs_f64() / wasm_cold.as_secs_f64().max(1e-9),
-        js_per_call.as_secs_f64() / wasm_per_call.as_secs_f64().max(1e-9));
+        js_per_call.as_secs_f64() / wasm_per_call.as_secs_f64().max(1e-9)
+    );
 }

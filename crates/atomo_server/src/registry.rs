@@ -17,7 +17,10 @@ pub struct RegistryStore {
 
 impl RegistryStore {
     pub fn new(pool: PgPool, blob_dir: impl Into<PathBuf>) -> Self {
-        Self { pool, blob_dir: blob_dir.into() }
+        Self {
+            pool,
+            blob_dir: blob_dir.into(),
+        }
     }
 
     /// Ensure the registry tables exist. Idempotent.
@@ -30,7 +33,9 @@ impl RegistryStore {
                 latest_version TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
-        ).execute(&self.pool).await?;
+        )
+        .execute(&self.pool)
+        .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS plugin_versions (
                 name TEXT NOT NULL,
@@ -42,7 +47,9 @@ impl RegistryStore {
                 published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (name, version)
             )",
-        ).execute(&self.pool).await?;
+        )
+        .execute(&self.pool)
+        .await?;
         tokio::fs::create_dir_all(&self.blob_dir).await.ok();
         Ok(())
     }

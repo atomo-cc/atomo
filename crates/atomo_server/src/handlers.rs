@@ -2,7 +2,8 @@
 
 use crate::platform_graphql::{PlatformMutation, PlatformQuery};
 use async_graphql::{MergedObject, Schema as GraphQLSchema};
-use async_graphql_axum::GraphQLResponse;use atomo::graphql::UserRoleCtx;
+use async_graphql_axum::GraphQLResponse;
+use atomo::graphql::UserRoleCtx;
 use atomo::graphql::{Mutation as ServiceMutation, Query as ServiceQuery, Subscription};
 use atomo::prelude::*;
 use atomo_core::types::EntityId;
@@ -50,7 +51,9 @@ async fn graphql_ws_handler(
                         .and_then(|v| v.as_str())
                         .map(|s| s.strip_prefix("Bearer ").unwrap_or(s).to_string());
                     let token = raw.ok_or_else(|| {
-                        async_graphql::Error::new("WebSocket auth required: missing token in connection_init")
+                        async_graphql::Error::new(
+                            "WebSocket auth required: missing token in connection_init",
+                        )
                     })?;
                     let user = auth.verify_token(&token).await.map_err(|_| {
                         async_graphql::Error::new("WebSocket auth failed: invalid or expired token")
@@ -317,7 +320,8 @@ pub fn create_router(
             get({
                 let schema = schema.clone();
                 let auth = auth_service.clone();
-                move |protocol: async_graphql_axum::GraphQLProtocol, ws: axum::extract::WebSocketUpgrade| {
+                move |protocol: async_graphql_axum::GraphQLProtocol,
+                      ws: axum::extract::WebSocketUpgrade| {
                     graphql_ws_handler(schema.clone(), auth.clone(), protocol, ws)
                 }
             }),
@@ -555,7 +559,10 @@ use std::sync::Arc;
 pub fn workflow_router(engine: Arc<WorkflowEngine>) -> Router {
     Router::new()
         .route("/workflows", get(list_workflows).post(register_workflow))
-        .route("/workflows/{name}", get(get_workflow).delete(delete_workflow))
+        .route(
+            "/workflows/{name}",
+            get(get_workflow).delete(delete_workflow),
+        )
         .route("/workflows/{name}/run", post(run_workflow))
         .with_state(engine)
 }

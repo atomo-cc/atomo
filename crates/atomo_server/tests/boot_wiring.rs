@@ -14,8 +14,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 fn plugins_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../services/crm-service/plugins")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../services/crm-service/plugins")
 }
 
 #[tokio::test]
@@ -56,11 +55,23 @@ export default schema;
     let mut data: HashMap<String, Value> = HashMap::new();
     data.insert("email".into(), json!("  Boot@Example.COM "));
     data.insert("name".into(), json!("  Boot User  "));
-    let created = atomo.client().create("Contact", &data, &[], None).await.unwrap();
+    let created = atomo
+        .client()
+        .create("Contact", &data, &[], None)
+        .await
+        .unwrap();
 
     // (a) before_create normalization applied through the live path.
-    assert_eq!(created.get("email").and_then(|v| v.as_str()), Some("boot@example.com"), "email normalized at boot");
-    assert_eq!(created.get("name").and_then(|v| v.as_str()), Some("Boot User"), "name trimmed at boot");
+    assert_eq!(
+        created.get("email").and_then(|v| v.as_str()),
+        Some("boot@example.com"),
+        "email normalized at boot"
+    );
+    assert_eq!(
+        created.get("name").and_then(|v| v.as_str()),
+        Some("Boot User"),
+        "name trimmed at boot"
+    );
 
     // (b) the after_create emit reached the event stream. Two events are expected on the
     // channel: the CRUD Created (model=Contact) and the plugin emit (model=Notification).
@@ -69,7 +80,10 @@ export default schema;
         match rx.try_recv() {
             Ok(ev) if ev.model_name == "Notification" => {
                 assert!(matches!(ev.event_type, atomo::events::EventType::Created));
-                assert_eq!(ev.data.get("kind").and_then(|v| v.as_str()), Some("contact_welcome"));
+                assert_eq!(
+                    ev.data.get("kind").and_then(|v| v.as_str()),
+                    Some("contact_welcome")
+                );
                 saw_notification = true;
                 break;
             }
@@ -77,8 +91,14 @@ export default schema;
             Err(_) => break,
         }
     }
-    assert!(saw_notification, "plugin emit should have published a Notification event onto the stream");
+    assert!(
+        saw_notification,
+        "plugin emit should have published a Notification event onto the stream"
+    );
 
     // Cleanup
-    sqlx::query("DROP TABLE IF EXISTS contacts").execute(atomo.db_pool()).await.ok();
+    sqlx::query("DROP TABLE IF EXISTS contacts")
+        .execute(atomo.db_pool())
+        .await
+        .ok();
 }

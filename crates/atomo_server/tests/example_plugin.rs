@@ -14,15 +14,19 @@ use tokio::sync::Mutex;
 /// The CRM service plugins dir (manager scans subdirs for plugin.toml; only
 /// normalize-contact has one, so it's the only plugin loaded).
 fn plugins_dir() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../services/crm-service/plugins")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../services/crm-service/plugins")
 }
 
 fn ctx(op: &str, email: &str, name: &str) -> HookContext {
     let mut data: HashMap<String, Value> = HashMap::new();
     data.insert("email".into(), json!(email));
     data.insert("name".into(), json!(name));
-    HookContext { model_name: "Contact".into(), operation: op.into(), data, user_id: None }
+    HookContext {
+        model_name: "Contact".into(),
+        operation: op.into(),
+        data,
+        user_id: None,
+    }
 }
 
 #[tokio::test]
@@ -31,11 +35,25 @@ async fn example_plugin_normalizes_contact() {
     mgr.discover_and_load().await.unwrap();
     let runner = WasmHookRunner::new(Arc::new(Mutex::new(mgr)));
 
-    let result = runner.run_before("before_create", &ctx("create", "  Alice@Example.COM ", "  Alice  ")).await.unwrap();
+    let result = runner
+        .run_before(
+            "before_create",
+            &ctx("create", "  Alice@Example.COM ", "  Alice  "),
+        )
+        .await
+        .unwrap();
     match result {
         HookResult::Continue(data) => {
-            assert_eq!(data.get("email").and_then(|v| v.as_str()), Some("alice@example.com"), "email normalized");
-            assert_eq!(data.get("name").and_then(|v| v.as_str()), Some("Alice"), "name trimmed");
+            assert_eq!(
+                data.get("email").and_then(|v| v.as_str()),
+                Some("alice@example.com"),
+                "email normalized"
+            );
+            assert_eq!(
+                data.get("name").and_then(|v| v.as_str()),
+                Some("Alice"),
+                "name trimmed"
+            );
         }
         HookResult::Abort(m) => panic!("normalize should not abort: {}", m),
     }
@@ -52,12 +70,23 @@ async fn example_plugin_emits_welcome_notification() {
     mgr.set_event_sender(tx);
 
     // after_create records the emit effect; fulfill publishes it.
-    let _ = mgr.call_hook("normalize-contact", "after_create", r#"{"email":"a@b.com"}"#).unwrap();
+    let _ = mgr
+        .call_hook(
+            "normalize-contact",
+            "after_create",
+            r#"{"email":"a@b.com"}"#,
+        )
+        .unwrap();
     let http = reqwest::Client::new();
     let _ = mgr.fulfill_js_effects(&pool, &http).await;
 
-    let ev = rx.try_recv().expect("a Notification event should be published");
+    let ev = rx
+        .try_recv()
+        .expect("a Notification event should be published");
     assert!(matches!(ev.event_type, atomo::events::EventType::Created));
     assert_eq!(ev.model_name, "Notification");
-    assert_eq!(ev.data.get("kind").and_then(|v| v.as_str()), Some("contact_welcome"));
+    assert_eq!(
+        ev.data.get("kind").and_then(|v| v.as_str()),
+        Some("contact_welcome")
+    );
 }

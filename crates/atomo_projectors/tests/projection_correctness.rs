@@ -10,7 +10,10 @@ use atomo_projectors::{Projection, TableProjection};
 use serde_json::{json, Value};
 
 fn rec(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect()
 }
 
 #[tokio::test]
@@ -18,9 +21,14 @@ fn rec(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
 async fn projection_stores_numeric_and_removes_on_delete() {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    sqlx::query("DROP TABLE IF EXISTS deals_projection").execute(&pool).await.ok();
+    sqlx::query("DROP TABLE IF EXISTS deals_projection")
+        .execute(&pool)
+        .await
+        .ok();
     sqlx::query("CREATE TABLE deals_projection (id TEXT PRIMARY KEY, title TEXT, value TEXT)")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let proj = TableProjection::new(
         "Deal",
@@ -31,21 +39,39 @@ async fn projection_stores_numeric_and_removes_on_delete() {
     // Created with a NUMERIC value — must be stored as "50000", not "" (the old as_str() bug).
     proj.handle_event(
         "Created",
-        &rec(&[("id", json!("d1")), ("title", json!("Acme")), ("value", json!(50000))]),
+        &rec(&[
+            ("id", json!("d1")),
+            ("title", json!("Acme")),
+            ("value", json!(50000)),
+        ]),
         &pool,
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     let stored: (String,) = sqlx::query_as("SELECT value FROM deals_projection WHERE id = 'd1'")
-        .fetch_one(&pool).await.unwrap();
-    assert_eq!(stored.0, "50000", "numeric field must be stored, not empty string");
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored.0, "50000",
+        "numeric field must be stored, not empty string"
+    );
 
     // Deleted carrying the id — must remove the projection row.
-    proj.handle_event("Deleted", &rec(&[("id", json!("d1"))]), &pool).await.unwrap();
+    proj.handle_event("Deleted", &rec(&[("id", json!("d1"))]), &pool)
+        .await
+        .unwrap();
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM deals_projection WHERE id = 'd1'")
-        .fetch_one(&pool).await.unwrap();
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count.0, 0, "Deleted event must remove the projection row");
 
-    sqlx::query("DROP TABLE IF EXISTS deals_projection").execute(&pool).await.ok();
+    sqlx::query("DROP TABLE IF EXISTS deals_projection")
+        .execute(&pool)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -61,9 +87,18 @@ async fn rebuild_replays_from_event_log() {
          data JSONB NOT NULL DEFAULT '{}', previous_data JSONB, timestamp TEXT NOT NULL DEFAULT now()::text, \
          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
     ).execute(&pool).await.unwrap();
-    sqlx::query("DELETE FROM event_log WHERE model_name = 'Widget'").execute(&pool).await.ok();
-    sqlx::query("DROP TABLE IF EXISTS widgets_projection").execute(&pool).await.ok();
-    sqlx::query("CREATE TABLE widgets_projection (id TEXT PRIMARY KEY, name TEXT)").execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM event_log WHERE model_name = 'Widget'")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("DROP TABLE IF EXISTS widgets_projection")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("CREATE TABLE widgets_projection (id TEXT PRIMARY KEY, name TEXT)")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     sqlx::query("INSERT INTO event_log (event_id, event_type, model_name, data, timestamp) VALUES ($1,$2,$3,$4,$5)")
         .bind("evt-w1").bind("Created").bind("Widget")
@@ -71,14 +106,29 @@ async fn rebuild_replays_from_event_log() {
         .bind("2026-01-01T00:00:00Z")
         .execute(&pool).await.unwrap();
 
-    let proj = TableProjection::new("Widget", "widgets_projection", vec!["id".into(), "name".into()]);
+    let proj = TableProjection::new(
+        "Widget",
+        "widgets_projection",
+        vec!["id".into(), "name".into()],
+    );
     // Projection table is empty; rebuild must REPLAY the logged event to repopulate it (not just
     // truncate — the old behavior left it permanently empty).
     proj.rebuild(&pool).await.unwrap();
     let row: (String,) = sqlx::query_as("SELECT name FROM widgets_projection WHERE id = 'w1'")
-        .fetch_one(&pool).await.expect("rebuild must replay the event into the projection");
-    assert_eq!(row.0, "widget-one", "rebuild should repopulate from the event log");
+        .fetch_one(&pool)
+        .await
+        .expect("rebuild must replay the event into the projection");
+    assert_eq!(
+        row.0, "widget-one",
+        "rebuild should repopulate from the event log"
+    );
 
-    sqlx::query("DELETE FROM event_log WHERE model_name = 'Widget'").execute(&pool).await.ok();
-    sqlx::query("DROP TABLE IF EXISTS widgets_projection").execute(&pool).await.ok();
+    sqlx::query("DELETE FROM event_log WHERE model_name = 'Widget'")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("DROP TABLE IF EXISTS widgets_projection")
+        .execute(&pool)
+        .await
+        .ok();
 }

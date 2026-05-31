@@ -16,15 +16,27 @@ fn init_scaffolds_a_project() {
         .current_dir(&tmp)
         .output()
         .expect("run atomo init");
-    assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let proj = tmp.join("my-app");
-    assert!(proj.join("atomo/schema.ts").exists(), "schema.ts not scaffolded");
-    assert!(proj.join("package.json").exists(), "package.json not scaffolded");
+    assert!(
+        proj.join("atomo/schema.ts").exists(),
+        "schema.ts not scaffolded"
+    );
+    assert!(
+        proj.join("package.json").exists(),
+        "package.json not scaffolded"
+    );
     // The CRM template's schema should mention a CRM model.
     let schema = std::fs::read_to_string(proj.join("atomo/schema.ts")).unwrap();
-    assert!(schema.contains("Contact") || schema.contains("Deal") || schema.contains("Company"),
-        "crm template schema should contain a CRM model");
+    assert!(
+        schema.contains("Contact") || schema.contains("Deal") || schema.contains("Company"),
+        "crm template schema should contain a CRM model"
+    );
 
     std::fs::remove_dir_all(&tmp).ok();
 }

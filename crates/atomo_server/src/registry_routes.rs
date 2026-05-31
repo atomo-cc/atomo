@@ -17,7 +17,10 @@ pub fn registry_router(store: Arc<RegistryStore>) -> Router {
     Router::new()
         .route("/registry/plugins", get(search_plugins))
         .route("/registry/plugins/{name}", get(get_plugin))
-        .route("/registry/plugins/{name}/{version}/download", get(download_artifact))
+        .route(
+            "/registry/plugins/{name}/{version}/download",
+            get(download_artifact),
+        )
         .with_state(store)
 }
 

@@ -14,7 +14,10 @@ async fn setup() -> (axum::Router, std::path::PathBuf) {
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let blob_dir = std::env::temp_dir().join(format!(
         "atomo_reg_{}",
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     let store = RegistryStore::new(pool.clone(), &blob_dir);
     store.init().await.unwrap();
@@ -22,7 +25,9 @@ async fn setup() -> (axum::Router, std::path::PathBuf) {
     // Seed a plugin + version + artifact blob.
     sqlx::query("INSERT INTO plugins (name, description, author, latest_version) VALUES ('enrich','Enrich contacts','acme','0.1.0') ON CONFLICT (name) DO UPDATE SET latest_version='0.1.0'")
         .execute(&pool).await.unwrap();
-    tokio::fs::write(blob_dir.join("enrich-0.1.0.wasm"), b"\0asm\x01\0\0\0").await.unwrap();
+    tokio::fs::write(blob_dir.join("enrich-0.1.0.wasm"), b"\0asm\x01\0\0\0")
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO plugin_versions (name, version, checksum, manifest, artifact_path) VALUES ('enrich','0.1.0','sha256:abc','{\"permissions\":[\"ReadEvents\"]}','enrich-0.1.0.wasm') ON CONFLICT (name, version) DO NOTHING")
         .execute(&pool).await.unwrap();
 
@@ -33,7 +38,9 @@ async fn send(app: &axum::Router, uri: &str) -> (StatusCode, Vec<u8>) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000)
+        .await
+        .unwrap();
     (status, bytes.to_vec())
 }
 
@@ -47,7 +54,11 @@ async fn test_registry_search_get_download() {
     assert_eq!(status, StatusCode::OK);
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let plugins = json["plugins"].as_array().unwrap();
-    assert!(plugins.iter().any(|p| p["name"] == "enrich"), "search missing seeded plugin: {:?}", json);
+    assert!(
+        plugins.iter().any(|p| p["name"] == "enrich"),
+        "search missing seeded plugin: {:?}",
+        json
+    );
 
     // search with a matching query
     let (status, body) = send(&app, "/registry/plugins?q=enrich").await;

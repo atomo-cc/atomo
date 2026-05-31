@@ -24,7 +24,8 @@ use crate::{config::ServerConfig, handlers::create_router};
 pub struct AtomoServer {
     config: ServerConfig,
     atomo: Atomo,
-    plugin_manager: Option<std::sync::Arc<tokio::sync::Mutex<crate::wasm_plugins::WasmPluginManager>>>,
+    plugin_manager:
+        Option<std::sync::Arc<tokio::sync::Mutex<crate::wasm_plugins::WasmPluginManager>>>,
 }
 
 impl AtomoServer {
@@ -59,12 +60,20 @@ impl AtomoServer {
             mgr.lock().await.set_event_sender(atomo.event_sender());
         }
 
-        Ok(Self { config, atomo, plugin_manager: manager_handle })
+        Ok(Self {
+            config,
+            atomo,
+            plugin_manager: manager_handle,
+        })
     }
 
     /// Create from existing Atomo instance (for testing/embedding)
     pub fn from_atomo(config: ServerConfig, atomo: Atomo) -> Self {
-        Self { config, atomo, plugin_manager: None }
+        Self {
+            config,
+            atomo,
+            plugin_manager: None,
+        }
     }
 
     #[instrument(skip(self))]
@@ -123,21 +132,30 @@ impl AtomoServer {
             let audit = audit_service.clone();
             let mut rx = self.atomo.event_receiver();
             tokio::spawn(async move {
+                use atomo_core::audit::AuditService;
                 use atomo_core::audit::{AuditLogEntry, AuditOperation};
                 use atomo_core::types::EntityId;
-                use atomo_core::audit::AuditService;
                 while let Ok(ev) = rx.recv().await {
                     let op = match ev.event_type {
                         atomo::events::EventType::Created => AuditOperation::Create,
                         atomo::events::EventType::Updated => AuditOperation::Update,
                         atomo::events::EventType::Deleted => AuditOperation::Delete,
-                    atomo::events::EventType::Custom => AuditOperation::Read,
+                        atomo::events::EventType::Custom => AuditOperation::Read,
                     };
-                    let entity_id = ev.data.get("id").and_then(|v| v.as_str())
+                    let entity_id = ev
+                        .data
+                        .get("id")
+                        .and_then(|v| v.as_str())
                         .and_then(|s| EntityId::from_string(s).ok())
                         .unwrap_or_else(EntityId::new);
                     let details = serde_json::to_string(&ev.data).unwrap_or_default();
-                    let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, ev.actor.clone());
+                    let entry = AuditLogEntry::new(
+                        ev.model_name.clone(),
+                        entity_id,
+                        op,
+                        details,
+                        ev.actor.clone(),
+                    );
                     if let Err(e) = audit.log_audit_entry(entry).await {
                         tracing::warn!(error = %e, "Failed to write audit entry");
                     }
@@ -278,7 +296,9 @@ impl AtomoServer {
             .merge(crate::projector_routes::projector_router(
                 projector_manager.clone(),
             ))
-            .merge(crate::registry_routes::registry_router(registry_store.clone()))
+            .merge(crate::registry_routes::registry_router(
+                registry_store.clone(),
+            ))
             .layer(svc_builder)
             .layer(middleware::from_fn(
                 crate::tracing_middleware::request_tracing,

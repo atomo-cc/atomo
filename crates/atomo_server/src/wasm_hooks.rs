@@ -20,7 +20,11 @@ pub struct WasmHookRunner {
 
 impl WasmHookRunner {
     pub fn new(manager: Arc<Mutex<WasmPluginManager>>) -> Self {
-        Self { manager, pool: None, http: reqwest::Client::new() }
+        Self {
+            manager,
+            pool: None,
+            http: reqwest::Client::new(),
+        }
     }
 
     /// Enable JS effect fulfillment (dbQuery/http) using the given pool.

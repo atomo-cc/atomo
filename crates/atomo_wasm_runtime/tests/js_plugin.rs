@@ -7,8 +7,7 @@
 use atomo_wasm_runtime::JsRuntime;
 
 fn fixture() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/tag_plugin.wasm")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tag_plugin.wasm")
 }
 
 #[test]

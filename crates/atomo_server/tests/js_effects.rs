@@ -15,13 +15,20 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 fn dir(sub: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(sub)
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(sub)
 }
 
 fn ctx() -> HookContext {
     let mut data: HashMap<String, Value> = HashMap::new();
     data.insert("email".into(), json!("a@b.com"));
-    HookContext { model_name: "Contact".into(), operation: "create".into(), data, user_id: None }
+    HookContext {
+        model_name: "Contact".into(),
+        operation: "create".into(),
+        data,
+        user_id: None,
+    }
 }
 
 #[tokio::test]
@@ -32,12 +39,24 @@ async fn js_effect_recorded_when_permission_granted() {
     let runner = WasmHookRunner::new(mgr.clone());
 
     let result = runner.run_before("before_create", &ctx()).await.unwrap();
-    assert!(matches!(result, HookResult::Continue(_)), "granted plugin should continue");
+    assert!(
+        matches!(result, HookResult::Continue(_)),
+        "granted plugin should continue"
+    );
 
     // The emit effect was recorded (WriteEvents granted).
     let effects = mgr.lock().await.take_js_effects();
-    assert_eq!(effects.len(), 1, "expected one recorded effect, got {:?}", effects);
-    assert!(effects[0].contains("welcome"), "effect should carry the emit payload: {:?}", effects);
+    assert_eq!(
+        effects.len(),
+        1,
+        "expected one recorded effect, got {:?}",
+        effects
+    );
+    assert!(
+        effects[0].contains("welcome"),
+        "effect should carry the emit payload: {:?}",
+        effects
+    );
 }
 
 #[tokio::test]
@@ -49,7 +68,11 @@ async fn js_effect_aborts_when_permission_denied() {
     // The plugin emits without WriteEvents -> the hook must abort.
     let result = runner.run_before("before_create", &ctx()).await.unwrap();
     match result {
-        HookResult::Abort(msg) => assert!(msg.contains("WriteEvents"), "abort should cite the missing permission: {}", msg),
+        HookResult::Abort(msg) => assert!(
+            msg.contains("WriteEvents"),
+            "abort should cite the missing permission: {}",
+            msg
+        ),
         HookResult::Continue(_) => panic!("denied emit should have aborted the hook"),
     }
 }
@@ -66,12 +89,25 @@ async fn js_emit_effect_publishes_custom_event() {
     mgr.set_event_sender(tx);
 
     // Record the emit effect (before_create), then fulfill it (publishes the Custom event).
-    let _ = mgr.call_hook("js-emit-granted", "before_create", r#"{"email":"a@b.com"}"#).unwrap();
+    let _ = mgr
+        .call_hook("js-emit-granted", "before_create", r#"{"email":"a@b.com"}"#)
+        .unwrap();
     let http = reqwest::Client::new();
     let _ = mgr.fulfill_js_effects(&pool, &http).await;
 
-    let ev = rx.try_recv().expect("a typed event should have been published");
-    assert!(matches!(ev.event_type, atomo::events::EventType::Created), "plugin emitted event=Created");
-    assert_eq!(ev.model_name, "Notification", "plugin emitted model=Notification");
-    assert_eq!(ev.data.get("message").and_then(|v| v.as_str()), Some("welcome"));
+    let ev = rx
+        .try_recv()
+        .expect("a typed event should have been published");
+    assert!(
+        matches!(ev.event_type, atomo::events::EventType::Created),
+        "plugin emitted event=Created"
+    );
+    assert_eq!(
+        ev.model_name, "Notification",
+        "plugin emitted model=Notification"
+    );
+    assert_eq!(
+        ev.data.get("message").and_then(|v| v.as_str()),
+        Some("welcome")
+    );
 }

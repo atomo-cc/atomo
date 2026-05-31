@@ -246,7 +246,6 @@ async fn test_workflow_register_list_run_delete() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-
 // B1: a model mutation produces an audit_log entry, attributed to the actor.
 #[tokio::test]
 #[ignore]
@@ -272,7 +271,9 @@ export default schema;
         .await
         .unwrap();
     let audit = atomo_server::audit::HttpAuditService::new(atomo.db_pool().clone());
-    atomo_server::ensure_platform_tables(atomo.db_pool()).await.unwrap();
+    atomo_server::ensure_platform_tables(atomo.db_pool())
+        .await
+        .unwrap();
 
     // Wire the same audit listener the server boot uses.
     {
@@ -284,7 +285,7 @@ export default schema;
                     atomo::events::EventType::Created => AuditOperation::Create,
                     atomo::events::EventType::Updated => AuditOperation::Update,
                     atomo::events::EventType::Deleted => AuditOperation::Delete,
-                atomo::events::EventType::Custom => AuditOperation::Read,
+                    atomo::events::EventType::Custom => AuditOperation::Read,
                 };
                 let entity_id = ev
                     .data
@@ -293,7 +294,13 @@ export default schema;
                     .and_then(|s| EntityId::from_string(s).ok())
                     .unwrap_or_else(EntityId::new);
                 let details = serde_json::to_string(&ev.data).unwrap_or_default();
-                let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, ev.actor.clone());
+                let entry = AuditLogEntry::new(
+                    ev.model_name.clone(),
+                    entity_id,
+                    op,
+                    details,
+                    ev.actor.clone(),
+                );
                 let _ = audit.log_audit_entry(entry).await;
             }
         });
@@ -320,9 +327,12 @@ export default schema;
 
     assert_eq!(row.0, "Note");
     assert_eq!(row.1, AuditOperation::Create as i16);
-    assert_eq!(row.2.as_deref(), Some("user-42"), "audit entry should capture the actor");
+    assert_eq!(
+        row.2.as_deref(),
+        Some("user-42"),
+        "audit entry should capture the actor"
+    );
 }
-
 
 // Regression: delete must honor its `where` filter and NOT affect other records.
 #[tokio::test]
@@ -334,7 +344,9 @@ async fn test_delete_respects_where_filter() {
         .uri("/auth/login")
         .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"email":"admin@test.dev","password":"admin123"}"#))
+        .body(Body::from(
+            r#"{"email":"admin@test.dev","password":"admin123"}"#,
+        ))
         .unwrap();
     let (_, login_json) = send(&app, login_req).await;
     let token = login_json["token"].as_str().expect("no token");
@@ -345,10 +357,12 @@ async fn test_delete_respects_where_filter() {
             "query": format!(r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#, title)
         });
         let req = Request::builder()
-            .uri("/graphql").method("POST")
+            .uri("/graphql")
+            .method("POST")
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {}", token))
-            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap();
         let (status, j) = send(&app, req).await;
         assert_eq!(status, StatusCode::OK, "create failed: {:?}", j);
     }
@@ -356,13 +370,18 @@ async fn test_delete_respects_where_filter() {
     // Find the id of the "remove" note.
     let list_body = serde_json::json!({ "query": r#"{ records(model: "Note") }"# });
     let req = Request::builder()
-        .uri("/graphql").method("POST")
+        .uri("/graphql")
+        .method("POST")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", token))
-        .body(Body::from(serde_json::to_vec(&list_body).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&list_body).unwrap()))
+        .unwrap();
     let (_, list_json) = send(&app, req).await;
-    let records = list_json["data"]["records"].as_array().expect("records array");
-    let remove_id = records.iter()
+    let records = list_json["data"]["records"]
+        .as_array()
+        .expect("records array");
+    let remove_id = records
+        .iter()
         .find(|r| r["title"] == "remove")
         .and_then(|r| r["id"].as_str())
         .expect("remove note not found")
@@ -374,26 +393,41 @@ async fn test_delete_respects_where_filter() {
         "variables": { "w": { "id": { "equals": remove_id } } }
     });
     let req = Request::builder()
-        .uri("/graphql").method("POST")
+        .uri("/graphql")
+        .method("POST")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", token))
-        .body(Body::from(serde_json::to_vec(&del_body).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&del_body).unwrap()))
+        .unwrap();
     let (status, del_json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK, "delete failed: {:?}", del_json);
-    assert_eq!(del_json["data"]["delete"], 1, "delete should affect exactly 1 row, got: {:?}", del_json);
+    assert_eq!(
+        del_json["data"]["delete"], 1,
+        "delete should affect exactly 1 row, got: {:?}",
+        del_json
+    );
 
     // The "keep" note must still be present.
     let req = Request::builder()
-        .uri("/graphql").method("POST")
+        .uri("/graphql")
+        .method("POST")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", token))
-        .body(Body::from(serde_json::to_vec(&list_body).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&list_body).unwrap()))
+        .unwrap();
     let (_, after_json) = send(&app, req).await;
-    let after = after_json["data"]["records"].as_array().expect("records array");
-    assert!(after.iter().any(|r| r["title"] == "keep"), "the non-matching record was wrongly deleted");
-    assert!(!after.iter().any(|r| r["title"] == "remove"), "the matching record was not deleted");
+    let after = after_json["data"]["records"]
+        .as_array()
+        .expect("records array");
+    assert!(
+        after.iter().any(|r| r["title"] == "keep"),
+        "the non-matching record was wrongly deleted"
+    );
+    assert!(
+        !after.iter().any(|r| r["title"] == "remove"),
+        "the matching record was not deleted"
+    );
 }
-
 
 // Regression: paginatedRecords must accept and apply a `where` filter (admin list view).
 #[tokio::test]
@@ -405,7 +439,9 @@ async fn test_paginated_records_with_where_filter() {
         .uri("/auth/login")
         .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"email":"admin@test.dev","password":"admin123"}"#))
+        .body(Body::from(
+            r#"{"email":"admin@test.dev","password":"admin123"}"#,
+        ))
         .unwrap();
     let (_, login_json) = send(&app, login_req).await;
     let token = login_json["token"].as_str().expect("no token");
@@ -416,10 +452,12 @@ async fn test_paginated_records_with_where_filter() {
             "query": format!(r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#, title)
         });
         let req = Request::builder()
-            .uri("/graphql").method("POST")
+            .uri("/graphql")
+            .method("POST")
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {}", token))
-            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap();
         let (status, _) = send(&app, req).await;
         assert_eq!(status, StatusCode::OK);
     }
@@ -430,25 +468,32 @@ async fn test_paginated_records_with_where_filter() {
         "variables": { "w": { "title": { "equals": "beta" } } }
     });
     let req = Request::builder()
-        .uri("/graphql").method("POST")
+        .uri("/graphql")
+        .method("POST")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", token))
-        .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
     let (status, json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK, "query failed: {:?}", json);
     assert!(
-        json.get("errors").is_none()
-            || json["errors"].as_array().is_none_or(|a| a.is_empty()),
+        json.get("errors").is_none() || json["errors"].as_array().is_none_or(|a| a.is_empty()),
         "GraphQL errors: {:?}",
         json
     );
     let page = &json["data"]["paginatedRecords"];
     let data = page["data"].as_array().expect("data array");
-    assert_eq!(data.len(), 1, "where filter should return exactly the matching record");
+    assert_eq!(
+        data.len(),
+        1,
+        "where filter should return exactly the matching record"
+    );
     assert_eq!(data[0]["title"], "beta");
-    assert_eq!(page["pageInfo"]["totalCount"], 1, "totalCount should reflect the filter");
+    assert_eq!(
+        page["pageInfo"]["totalCount"], 1,
+        "totalCount should reflect the filter"
+    );
 }
-
 
 // Update must apply data to only the where-matched record and persist the change.
 #[tokio::test]
@@ -460,7 +505,9 @@ async fn test_update_scoped_and_persists() {
         .uri("/auth/login")
         .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"email":"admin@test.dev","password":"admin123"}"#))
+        .body(Body::from(
+            r#"{"email":"admin@test.dev","password":"admin123"}"#,
+        ))
         .unwrap();
     let (_, login_json) = send(&app, login_req).await;
     let token = login_json["token"].as_str().expect("no token");
@@ -470,10 +517,12 @@ async fn test_update_scoped_and_persists() {
             "query": format!(r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#, title)
         });
         Request::builder()
-            .uri("/graphql").method("POST")
+            .uri("/graphql")
+            .method("POST")
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {}", token))
-            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap()
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
     };
     let (_, c1) = send(&app, create("orig")).await;
     let target_id = c1["data"]["create"]["id"].as_str().expect("id").to_string();
@@ -485,10 +534,12 @@ async fn test_update_scoped_and_persists() {
         "variables": { "w": { "id": { "equals": target_id } }, "d": { "title": "changed" } }
     });
     let req = Request::builder()
-        .uri("/graphql").method("POST")
+        .uri("/graphql")
+        .method("POST")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", token))
-        .body(Body::from(serde_json::to_vec(&upd).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&upd).unwrap()))
+        .unwrap();
     let (status, upd_json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK, "update failed: {:?}", upd_json);
     assert!(
@@ -501,17 +552,27 @@ async fn test_update_scoped_and_persists() {
     // Read back: target is "changed", the other note is still "untouched".
     let list = serde_json::json!({ "query": r#"{ records(model: "Note") }"# });
     let req = Request::builder()
-        .uri("/graphql").method("POST")
+        .uri("/graphql")
+        .method("POST")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {}", token))
-        .body(Body::from(serde_json::to_vec(&list).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&list).unwrap()))
+        .unwrap();
     let (_, list_json) = send(&app, req).await;
     let recs = list_json["data"]["records"].as_array().expect("records");
-    assert!(recs.iter().any(|r| r["title"] == "changed"), "target update did not persist");
-    assert!(recs.iter().any(|r| r["title"] == "untouched"), "non-target was wrongly modified");
-    assert!(!recs.iter().any(|r| r["title"] == "orig"), "old value still present");
+    assert!(
+        recs.iter().any(|r| r["title"] == "changed"),
+        "target update did not persist"
+    );
+    assert!(
+        recs.iter().any(|r| r["title"] == "untouched"),
+        "non-target was wrongly modified"
+    );
+    assert!(
+        !recs.iter().any(|r| r["title"] == "orig"),
+        "old value still present"
+    );
 }
-
 
 // Phase S1: RBAC is enforced end-to-end. Note.create requires 'admin' (build_app schema).
 // A viewer logging in and attempting create must be denied; admin must succeed.
@@ -520,15 +581,16 @@ async fn test_update_scoped_and_persists() {
 async fn test_rbac_viewer_denied_create_admin_allowed() {
     let (app, _) = build_app().await;
 
-    let login = |email: &str, pw: &str| {
-        serde_json::json!({ "email": email, "password": pw })
-    };
+    let login = |email: &str, pw: &str| serde_json::json!({ "email": email, "password": pw });
     let do_login = |app: &axum::Router, body: serde_json::Value| {
         let app = app.clone();
         async move {
-            let req = Request::builder().uri("/auth/login").method("POST")
+            let req = Request::builder()
+                .uri("/auth/login")
+                .method("POST")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap();
             let (_, json) = send(&app, req).await;
             json["token"].as_str().map(|s| s.to_string())
         }
@@ -538,31 +600,46 @@ async fn test_rbac_viewer_denied_create_admin_allowed() {
         let body = serde_json::json!({
             "query": r#"mutation { create(model: "Note", data: { title: "rbac" }) }"#
         });
-        Request::builder().uri("/graphql").method("POST")
+        Request::builder()
+            .uri("/graphql")
+            .method("POST")
             .header("content-type", "application/json")
             .header("authorization", format!("Bearer {}", token))
-            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap()
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
     };
 
     // Viewer: denied (Note.create requires admin).
-    let vtoken = do_login(&app, login("viewer@test.dev", "viewer123")).await.expect("viewer login");
+    let vtoken = do_login(&app, login("viewer@test.dev", "viewer123"))
+        .await
+        .expect("viewer login");
     let (_, vjson) = send(&app, create_req(&vtoken)).await;
     let verrs = serde_json::to_string(&vjson).unwrap();
     assert!(
-        vjson.get("errors").and_then(|e| e.as_array()).is_some_and(|a| !a.is_empty()),
-        "viewer create should be denied by RBAC, got: {}", verrs
+        vjson
+            .get("errors")
+            .and_then(|e| e.as_array())
+            .is_some_and(|a| !a.is_empty()),
+        "viewer create should be denied by RBAC, got: {}",
+        verrs
     );
-    assert!(verrs.contains("denied") || verrs.contains("Access"), "denial should cite access: {}", verrs);
+    assert!(
+        verrs.contains("denied") || verrs.contains("Access"),
+        "denial should cite access: {}",
+        verrs
+    );
 
     // Admin: allowed.
-    let atoken = do_login(&app, login("admin@test.dev", "admin123")).await.expect("admin login");
+    let atoken = do_login(&app, login("admin@test.dev", "admin123"))
+        .await
+        .expect("admin login");
     let (_, ajson) = send(&app, create_req(&atoken)).await;
     assert!(
         ajson.get("errors").is_none() || ajson["errors"].as_array().is_none_or(|a| a.is_empty()),
-        "admin create should be allowed, got: {:?}", ajson
+        "admin create should be allowed, got: {:?}",
+        ajson
     );
 }
-
 
 // Phase S2: the model_changes subscription is gated by read access using the injected role.
 // Without a role (the unauth WS case) it must error; with a valid role it must open a stream.
@@ -571,8 +648,8 @@ async fn test_rbac_viewer_denied_create_admin_allowed() {
 #[tokio::test]
 #[ignore]
 async fn test_subscription_requires_auth_role() {
-    use atomo::graphql::UserRoleCtx;
     use async_graphql::futures_util::StreamExt;
+    use atomo::graphql::UserRoleCtx;
 
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     // Note has read: 'authenticated' in build_app's schema.
@@ -598,7 +675,10 @@ export default schema;
     // No role injected (unauthenticated): the stream's first item must be an error.
     let mut anon = schema.execute_stream(async_graphql::Request::new(sub_query));
     let first = anon.next().await.expect("a response");
-    assert!(!first.errors.is_empty(), "unauthenticated subscription must be rejected");
+    assert!(
+        !first.errors.is_empty(),
+        "unauthenticated subscription must be rejected"
+    );
 
     // With a role injected (as connection_init would do): no auth error.
     let req = async_graphql::Request::new(sub_query).data(UserRoleCtx("Viewer".to_string()));
@@ -606,9 +686,11 @@ export default schema;
     // The stream stays open (pending) for an authorized subscriber; just assert it didn't
     // immediately yield an auth error. Use a short timeout since no events will arrive.
     let res = tokio::time::timeout(std::time::Duration::from_millis(300), authed.next()).await;
-    assert!(res.is_err(), "authorized subscription should stay open (no immediate error)");
+    assert!(
+        res.is_err(),
+        "authorized subscription should stay open (no immediate error)"
+    );
 }
-
 
 // Phase S3: multi-tenant isolation. With the generated tenant_id column, writes are tagged by
 // TenantCtx and reads are scoped to it — tenant A and tenant B must not see each other's rows.
@@ -644,39 +726,85 @@ export default schema;
     let list = || async_graphql::Request::new(r#"{ records(model: "Note") }"#);
 
     // tenant A creates "a-note"; tenant B creates "b-note".
-    let ra = schema.execute(create("a-note").data(TenantCtx("tenant-a".into()))).await;
-    assert!(ra.errors.is_empty(), "tenant A create failed: {:?}", ra.errors);
-    let rb = schema.execute(create("b-note").data(TenantCtx("tenant-b".into()))).await;
-    assert!(rb.errors.is_empty(), "tenant B create failed: {:?}", rb.errors);
+    let ra = schema
+        .execute(create("a-note").data(TenantCtx("tenant-a".into())))
+        .await;
+    assert!(
+        ra.errors.is_empty(),
+        "tenant A create failed: {:?}",
+        ra.errors
+    );
+    let rb = schema
+        .execute(create("b-note").data(TenantCtx("tenant-b".into())))
+        .await;
+    assert!(
+        rb.errors.is_empty(),
+        "tenant B create failed: {:?}",
+        rb.errors
+    );
 
     // tenant A lists → only a-note.
-    let la = schema.execute(list().data(TenantCtx("tenant-a".into()))).await;
+    let la = schema
+        .execute(list().data(TenantCtx("tenant-a".into())))
+        .await;
     let la_str = serde_json::to_string(&la.data).unwrap();
-    assert!(la_str.contains("a-note"), "tenant A should see its own note: {}", la_str);
-    assert!(!la_str.contains("b-note"), "tenant A must NOT see tenant B's note: {}", la_str);
+    assert!(
+        la_str.contains("a-note"),
+        "tenant A should see its own note: {}",
+        la_str
+    );
+    assert!(
+        !la_str.contains("b-note"),
+        "tenant A must NOT see tenant B's note: {}",
+        la_str
+    );
 
     // tenant B lists → only b-note.
-    let lb = schema.execute(list().data(TenantCtx("tenant-b".into()))).await;
+    let lb = schema
+        .execute(list().data(TenantCtx("tenant-b".into())))
+        .await;
     let lb_str = serde_json::to_string(&lb.data).unwrap();
-    assert!(lb_str.contains("b-note"), "tenant B should see its own note: {}", lb_str);
-    assert!(!lb_str.contains("a-note"), "tenant B must NOT see tenant A's note: {}", lb_str);
+    assert!(
+        lb_str.contains("b-note"),
+        "tenant B should see its own note: {}",
+        lb_str
+    );
+    assert!(
+        !lb_str.contains("a-note"),
+        "tenant B must NOT see tenant A's note: {}",
+        lb_str
+    );
 
     // D1: writes are tenant-scoped too. Tenant B tries to UPDATE every Note title to "hacked"
     // and then DELETE all Notes — both must only touch B's own rows, leaving A's note intact.
-    let upd = async_graphql::Request::new(r#"mutation { update(model: "Note", where: {}, data: { title: "hacked" }) }"#);
+    let upd = async_graphql::Request::new(
+        r#"mutation { update(model: "Note", where: {}, data: { title: "hacked" }) }"#,
+    );
     let _ = schema.execute(upd.data(TenantCtx("tenant-b".into()))).await;
     let del = async_graphql::Request::new(r#"mutation { delete(model: "Note", where: {}) }"#);
     let _ = schema.execute(del.data(TenantCtx("tenant-b".into()))).await;
 
     // Tenant A still sees its untouched a-note (B's update/delete must not have reached it).
-    let la2 = schema.execute(list().data(TenantCtx("tenant-a".into()))).await;
+    let la2 = schema
+        .execute(list().data(TenantCtx("tenant-a".into())))
+        .await;
     let la2_str = serde_json::to_string(&la2.data).unwrap();
-    assert!(la2_str.contains("a-note"), "A's note must survive B's update/delete: {}", la2_str);
-    assert!(!la2_str.contains("hacked"), "B must NOT have updated A's note: {}", la2_str);
+    assert!(
+        la2_str.contains("a-note"),
+        "A's note must survive B's update/delete: {}",
+        la2_str
+    );
+    assert!(
+        !la2_str.contains("hacked"),
+        "B must NOT have updated A's note: {}",
+        la2_str
+    );
 
-    sqlx::query("DROP TABLE IF EXISTS notes").execute(atomo.db_pool()).await.ok();
+    sqlx::query("DROP TABLE IF EXISTS notes")
+        .execute(atomo.db_pool())
+        .await
+        .ok();
 }
-
 
 // Phase B4: audit-on-mutation works through the real CRM models (not just a synthetic Note),
 // capturing the actor and the correct operation for both create and update.
@@ -700,7 +828,9 @@ async fn test_crm_mutation_audited_with_actor() {
         .await
         .unwrap();
     let audit = atomo_server::audit::HttpAuditService::new(atomo.db_pool().clone());
-    atomo_server::ensure_platform_tables(atomo.db_pool()).await.unwrap();
+    atomo_server::ensure_platform_tables(atomo.db_pool())
+        .await
+        .unwrap();
 
     // Same audit listener the server boot wires.
     {
@@ -714,11 +844,20 @@ async fn test_crm_mutation_audited_with_actor() {
                     atomo::events::EventType::Deleted => AuditOperation::Delete,
                     atomo::events::EventType::Custom => AuditOperation::Read,
                 };
-                let entity_id = ev.data.get("id").and_then(|v| v.as_str())
+                let entity_id = ev
+                    .data
+                    .get("id")
+                    .and_then(|v| v.as_str())
                     .and_then(|s| EntityId::from_string(s).ok())
                     .unwrap_or_else(EntityId::new);
                 let details = serde_json::to_string(&ev.data).unwrap_or_default();
-                let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, ev.actor.clone());
+                let entry = AuditLogEntry::new(
+                    ev.model_name.clone(),
+                    entity_id,
+                    op,
+                    details,
+                    ev.actor.clone(),
+                );
                 let _ = audit.log_audit_entry(entry).await;
             }
         });
@@ -730,16 +869,31 @@ async fn test_crm_mutation_audited_with_actor() {
     data.insert("firstName".to_string(), serde_json::json!("Grace"));
     data.insert("lastName".to_string(), serde_json::json!("Hopper"));
     data.insert("email".to_string(), serde_json::json!("grace@navy.mil"));
-    let contact = c.create("Contact", &data, &[], Some("sales-7")).await.unwrap();
-    let id = contact.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+    let contact = c
+        .create("Contact", &data, &[], Some("sales-7"))
+        .await
+        .unwrap();
+    let id = contact
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     let mut patch = HashMap::new();
     patch.insert("lastName".to_string(), serde_json::json!("Hopper-Updated"));
     c.update_many(
         "Contact",
-        &[atomo::query::WhereClause { field: "id".into(), operator: atomo::query::WhereOperator::Equals, value: serde_json::json!(id) }],
-        &patch, &[], Some("sales-7"),
-    ).await.unwrap();
+        &[atomo::query::WhereClause {
+            field: "id".into(),
+            operator: atomo::query::WhereOperator::Equals,
+            value: serde_json::json!(id),
+        }],
+        &patch,
+        &[],
+        Some("sales-7"),
+    )
+    .await
+    .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 
@@ -750,10 +904,23 @@ async fn test_crm_mutation_audited_with_actor() {
     .fetch_all(atomo.db_pool())
     .await
     .unwrap();
-    assert!(rows.iter().any(|(op, u)| *op == AuditOperation::Create as i16 && u.as_deref() == Some("sales-7")), "Contact create not audited: {:?}", rows);
-    assert!(rows.iter().any(|(op, u)| *op == AuditOperation::Update as i16 && u.as_deref() == Some("sales-7")), "Contact update not audited: {:?}", rows);
+    assert!(
+        rows.iter()
+            .any(|(op, u)| *op == AuditOperation::Create as i16 && u.as_deref() == Some("sales-7")),
+        "Contact create not audited: {:?}",
+        rows
+    );
+    assert!(
+        rows.iter()
+            .any(|(op, u)| *op == AuditOperation::Update as i16 && u.as_deref() == Some("sales-7")),
+        "Contact update not audited: {:?}",
+        rows
+    );
 
     for t in ["contact", "company", "deal", "activity"] {
-        sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();
+        sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
+            .execute(atomo.db_pool())
+            .await
+            .ok();
     }
 }
