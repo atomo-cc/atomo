@@ -1,12 +1,12 @@
 //! Audit Core Interfaces
-//! 
+//!
 //! This module provides the core interfaces for audit logging in the Atomo platform.
 //! Concrete implementations should be provided in the server layer.
 
+use crate::{EntityId, StreamId, Timestamp};
+use async_graphql::{Enum, SimpleObject};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::{EntityId, StreamId, Timestamp};
-use async_graphql::{SimpleObject, Enum};
 
 /// Types of operations that can be audited
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Enum)]
@@ -18,7 +18,7 @@ pub enum AuditOperation {
 }
 
 /// Core audit log entry structure
-/// 
+///
 /// This represents the minimal structure for audit entries.
 /// Implementations can extend this with additional fields.
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
@@ -37,11 +37,11 @@ pub struct AuditLogEntry {
 impl AuditLogEntry {
     /// Create a new audit log entry
     pub fn new(
-        entity_type: impl Into<String>, 
-        entity_id: EntityId, 
+        entity_type: impl Into<String>,
+        entity_id: EntityId,
         operation: AuditOperation,
         operation_details: impl Into<String>,
-        user_id: Option<String>
+        user_id: Option<String>,
     ) -> Self {
         Self {
             id: ulid::Ulid::new().to_string(),
@@ -56,7 +56,11 @@ impl AuditLogEntry {
         }
     }
 
-    pub fn with_request_metadata(mut self, ip_address: Option<String>, user_agent: Option<String>) -> Self {
+    pub fn with_request_metadata(
+        mut self,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> Self {
         self.ip_address = ip_address;
         self.user_agent = user_agent;
         self
@@ -95,10 +99,10 @@ pub struct UserAuditStats {
 }
 
 /// Core audit service interface
-/// 
+///
 /// This trait defines the audit operations that any audit implementation must provide.
 #[async_trait]
-pub trait AuditService<AuditEntry>: Send + Sync 
+pub trait AuditService<AuditEntry>: Send + Sync
 where
     AuditEntry: Send + Sync,
 {

@@ -1,13 +1,15 @@
 //! Audit Log HTTP Implementation
-//! 
+//!
 //! This module provides HTTP-specific implementations of the audit
 //! interfaces defined in atomo_core.
 
 use anyhow::Result;
 use async_trait::async_trait;
 use atomo_core::{
-    audit::{AuditService, AuditOperation, AuditSearchFilters, AuditStats, UserAuditStats, AuditLogEntry},
-    types::EntityId
+    audit::{
+        AuditLogEntry, AuditOperation, AuditSearchFilters, AuditService, AuditStats, UserAuditStats,
+    },
+    types::EntityId,
 };
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -58,9 +60,9 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
     }
 
     async fn get_audit_logs_for_entity(
-        &self, 
-        entity_type: &str, 
-        entity_id: &EntityId
+        &self,
+        entity_type: &str,
+        entity_id: &EntityId,
     ) -> Result<Vec<AuditLogEntry>, Self::Error> {
         let rows = sqlx::query_as::<_, (String, String, String, i16, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>(
             "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at
@@ -101,7 +103,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
 
     async fn get_audit_logs_for_user(
         &self,
-        user_id: &EntityId
+        user_id: &EntityId,
     ) -> Result<Vec<AuditLogEntry>, Self::Error> {
         let rows = sqlx::query_as::<_, (String, String, String, i16, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>(
             "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at
@@ -141,7 +143,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
 
     async fn search_audit_logs(
         &self,
-        filters: &AuditSearchFilters
+        filters: &AuditSearchFilters,
     ) -> Result<Vec<AuditLogEntry>, Self::Error> {
         let mut query = "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at FROM audit_log WHERE 1=1".to_string();
         let mut bind_values: Vec<Box<dyn sqlx::Encode<sqlx::Postgres> + Send + Sync>> = Vec::new();
@@ -255,7 +257,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
 
     async fn get_audit_stats(
         &self,
-        _filters: &AuditSearchFilters
+        _filters: &AuditSearchFilters,
     ) -> Result<AuditStats, Self::Error> {
         // Get total count
         let total_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM audit_log")
@@ -264,7 +266,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
 
         // Get operations by type
         let operation_counts = sqlx::query_as::<_, (i16, i64)>(
-            "SELECT operation, COUNT(*) FROM audit_log GROUP BY operation"
+            "SELECT operation, COUNT(*) FROM audit_log GROUP BY operation",
         )
         .fetch_all(&self.db_pool)
         .await?;
@@ -288,7 +290,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
              WHERE user_id IS NOT NULL 
              GROUP BY user_id 
              ORDER BY count DESC 
-             LIMIT 10"
+             LIMIT 10",
         )
         .fetch_all(&self.db_pool)
         .await?;
@@ -304,7 +306,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
 
         // Get date range
         let date_range = sqlx::query_as::<_, (Option<DateTime<Utc>>, Option<DateTime<Utc>>)>(
-            "SELECT MIN(created_at), MAX(created_at) FROM audit_log"
+            "SELECT MIN(created_at), MAX(created_at) FROM audit_log",
         )
         .fetch_one(&self.db_pool)
         .await?;

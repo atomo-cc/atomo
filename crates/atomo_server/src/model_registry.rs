@@ -3,10 +3,10 @@
 //! This module provides a plugin-based system for registering business domain models
 //! without hardcoding them in the platform core.
 
+use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use once_cell::sync::Lazy;
 
 /// Model definition structure
 #[derive(Debug, Clone)]
@@ -23,6 +23,12 @@ pub struct ModelDefinition {
 /// Dynamic model registry
 pub struct ModelRegistry {
     models: RwLock<HashMap<String, ModelDefinition>>,
+}
+
+impl Default for ModelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ModelRegistry {
@@ -72,7 +78,7 @@ impl ModelRegistry {
 }
 
 /// Global model registry instance
-static MODEL_REGISTRY: Lazy<ModelRegistry> = Lazy::new(|| ModelRegistry::new());
+static MODEL_REGISTRY: Lazy<ModelRegistry> = Lazy::new(ModelRegistry::new);
 
 /// Helper function to register CRM models (for backward compatibility)
 /// Note: This is a temporary function for backward compatibility.

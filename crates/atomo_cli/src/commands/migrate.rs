@@ -1,32 +1,33 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
+use atomo_schema::{Field, Model, TypeScriptParser};
 use colored::*;
 use console::style;
-use std::fs;
-use std::path::Path;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
-use atomo_schema::{TypeScriptParser, Field, Model};
+use std::fs;
+use std::path::Path;
 
 pub async fn migrate_command(database_url: Option<String>) -> Result<()> {
     println!("🗄️  {}", style("Running database migrations...").cyan());
-    
+
     // Load .env file if it exists
     let env_loaded = dotenv::dotenv().is_ok();
     if env_loaded {
         println!("   ✅ .env file loaded successfully");
     }
-    
+
     let db_url = database_url.unwrap_or_else(|| {
         std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost/atomo_dev".to_string())
     });
-    
+
     println!("   📊 Connecting to database...");
-    
+
     // Connect to database
-    let pool = PgPool::connect(&db_url).await
-        .with_context(|| "Failed to connect to database. Make sure PostgreSQL is running and DATABASE_URL is correct")?;
-    
+    let pool = PgPool::connect(&db_url).await.with_context(|| {
+        "Failed to connect to database. Make sure PostgreSQL is running and DATABASE_URL is correct"
+    })?;
+
     // Ensure migrations directory exists
     let migrations_dir = "migrations";
     if !Path::new(migrations_dir).exists() {
@@ -34,73 +35,79 @@ pub async fn migrate_command(database_url: Option<String>) -> Result<()> {
             .with_context(|| "Failed to create migrations directory")?;
         println!("   📁 Created migrations directory");
     }
-    
+
     // Create migration tracking table if it doesn't exist
     create_migration_table(&pool).await?;
-    
+
     // Apply pending migrations
     apply_migrations(&pool, migrations_dir).await?;
-    
-    println!("   ✓ {}", "Migrations completed successfully!".bright_green());
-    
+
+    println!(
+        "   ✓ {}",
+        "Migrations completed successfully!".bright_green()
+    );
+
     Ok(())
 }
 
 pub async fn generate_migration_command(name: Option<String>) -> Result<()> {
     println!("🔧 {}", style("Generating database migration...").cyan());
-    
+
     // Find schema.ts file in current directory or subdirectories
-    let schema_path = find_schema_file(".")
-        .ok_or_else(|| anyhow::anyhow!("No schema.ts file found in current directory or subdirectories"))?;
-    
+    let schema_path = find_schema_file(".").ok_or_else(|| {
+        anyhow::anyhow!("No schema.ts file found in current directory or subdirectories")
+    })?;
+
     println!("   📄 Found schema: {}", schema_path.display());
-    
+
     // Parse TypeScript schema
     let content = fs::read_to_string(&schema_path)
         .with_context(|| format!("Failed to read schema file: {}", schema_path.display()))?;
-    
+
     let parser = TypeScriptParser::new();
-    let models = parser.parse(&content)
+    let models = parser
+        .parse(&content)
         .with_context(|| "Failed to parse TypeScript schema")?;
-    
+
     // Connect to database to get current schema
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://localhost/atomo_dev".to_string());
-    
+
     println!("   📊 Connecting to database to analyze current schema...");
-    
-    let pool = PgPool::connect(&db_url).await
+
+    let pool = PgPool::connect(&db_url)
+        .await
         .with_context(|| "Failed to connect to database")?;
-    
+
     // Get current database schema
     let current_tables = get_current_database_schema(&pool).await?;
-    
+
     // Generate migration SQL
     let migration_sql = generate_migration_sql(&models, &current_tables)?;
-    
+
     if migration_sql.trim().is_empty() {
         println!("   ✅ No schema changes detected - database is up to date");
         return Ok(());
     }
-    
+
     // Create migration file
     let migrations_dir = "migrations";
     if !Path::new(migrations_dir).exists() {
         fs::create_dir_all(migrations_dir)
             .with_context(|| "Failed to create migrations directory")?;
     }
-    
+
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let migration_name = name.unwrap_or_else(|| "auto_generated".to_string());
     let filename = format!("{}_{}.sql", timestamp, migration_name);
     let filepath = Path::new(migrations_dir).join(&filename);
-    
+
     fs::write(&filepath, migration_sql)
         .with_context(|| format!("Failed to write migration file: {}", filepath.display()))?;
-    
+
     println!("   🚀 Generated migration: {}", filename.bright_green());
     println!("   📝 Review the migration file before running 'atomo migrate'");
-    
+
     Ok(())
 }
 
@@ -113,27 +120,26 @@ async fn create_migration_table(pool: &PgPool) -> Result<()> {
             applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
     "#;
-    
+
     sqlx::query(create_table_sql)
         .execute(pool)
         .await
         .with_context(|| "Failed to create migration tracking table")?;
-    
+
     Ok(())
 }
 
 async fn apply_migrations(pool: &PgPool, migrations_dir: &str) -> Result<()> {
     // Get already applied migrations
-    let applied_migrations: HashMap<String, String> = sqlx::query(
-        "SELECT filename, checksum FROM _atomo_migrations ORDER BY id"
-    )
-    .fetch_all(pool)
-    .await
-    .with_context(|| "Failed to fetch applied migrations")?
-    .into_iter()
-    .map(|row| (row.get("filename"), row.get("checksum")))
-    .collect();
-    
+    let applied_migrations: HashMap<String, String> =
+        sqlx::query("SELECT filename, checksum FROM _atomo_migrations ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .with_context(|| "Failed to fetch applied migrations")?
+            .into_iter()
+            .map(|row| (row.get("filename"), row.get("checksum")))
+            .collect();
+
     // Read migration files from directory
     let mut migration_files = Vec::new();
     if let Ok(entries) = fs::read_dir(migrations_dir) {
@@ -145,23 +151,24 @@ async fn apply_migrations(pool: &PgPool, migrations_dir: &str) -> Result<()> {
             }
         }
     }
-    
+
     // Sort migration files by name (timestamp-based naming ensures chronological order)
     migration_files.sort();
-    
+
     println!("   ⬆️  Applying migrations...");
-    
+
     for migration_path in migration_files {
-        let filename = migration_path.file_name()
+        let filename = migration_path
+            .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow::anyhow!("Invalid migration filename"))?;
-        
+
         let migration_content = fs::read_to_string(&migration_path)
             .with_context(|| format!("Failed to read migration file: {}", filename))?;
-        
+
         // Calculate checksum
         let checksum = format!("{:x}", md5::compute(&migration_content));
-        
+
         // Check if migration already applied
         match applied_migrations.get(filename) {
             Some(existing_checksum) => {
@@ -176,68 +183,80 @@ async fn apply_migrations(pool: &PgPool, migrations_dir: &str) -> Result<()> {
             }
             None => {
                 println!("   🚀 Applying migration: {}", filename.bright_yellow());
-                
+
                 // Begin transaction
                 let mut tx = pool.begin().await?;
-                
+
                 // Execute each statement separately
                 let statements = parse_sql_statements(&migration_content);
-                
+
                 println!("   📋 Found {} SQL statements to execute", statements.len());
-                
+
                 for (i, statement) in statements.iter().enumerate() {
                     let statement_num = i + 1;
-                    let preview = statement.lines().next().unwrap_or("").get(..50).unwrap_or(statement);
-                    
-                    println!("   📝 Executing statement {}: {}...", statement_num, preview);
-                    
+                    let preview = statement
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .get(..50)
+                        .unwrap_or(statement);
+
+                    println!(
+                        "   📝 Executing statement {}: {}...",
+                        statement_num, preview
+                    );
+
                     sqlx::query(statement)
                         .execute(&mut *tx)
                         .await
-                        .with_context(|| format!("Failed to execute statement {}: {}", statement_num, statement))?;
+                        .with_context(|| {
+                            format!(
+                                "Failed to execute statement {}: {}",
+                                statement_num, statement
+                            )
+                        })?;
                 }
-                
+
                 // Record migration as applied
-                sqlx::query(
-                    "INSERT INTO _atomo_migrations (filename, checksum) VALUES ($1, $2)"
-                )
-                .bind(filename)
-                .bind(&checksum)
-                .execute(&mut *tx)
-                .await
-                .with_context(|| "Failed to record migration")?;
-                
+                sqlx::query("INSERT INTO _atomo_migrations (filename, checksum) VALUES ($1, $2)")
+                    .bind(filename)
+                    .bind(&checksum)
+                    .execute(&mut *tx)
+                    .await
+                    .with_context(|| "Failed to record migration")?;
+
                 // Commit transaction
-                tx.commit().await
+                tx.commit()
+                    .await
                     .with_context(|| "Failed to commit migration transaction")?;
-                
+
                 println!("   ✅ Applied: {}", filename.bright_green());
             }
         }
     }
-    
+
     Ok(())
 }
 
 fn find_schema_file(dir: &str) -> Option<std::path::PathBuf> {
     use std::fs;
     use std::path::PathBuf;
-    
+
     // Common schema file locations
     let candidates = [
         "schema.ts",
-        "atomo/schema.ts", 
+        "atomo/schema.ts",
         "src/schema.ts",
         "atomo.config.ts", // backup option
     ];
-    
+
     for candidate in &candidates {
         let path = PathBuf::from(dir).join(candidate);
         if path.exists() {
             return Some(path);
         }
     }
-    
+
     // Search subdirectories for schema.ts
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -246,14 +265,14 @@ fn find_schema_file(dir: &str) -> Option<std::path::PathBuf> {
                 if subdir_name == "node_modules" || subdir_name == "target" {
                     continue; // Skip these directories
                 }
-                
+
                 if let Some(found) = find_schema_file(&entry.path().to_string_lossy()) {
                     return Some(found);
                 }
             }
         }
     }
-    
+
     None
 }
 
@@ -273,7 +292,7 @@ struct DatabaseColumn {
 
 async fn get_current_database_schema(pool: &PgPool) -> Result<HashMap<String, DatabaseTable>> {
     let mut tables = HashMap::new();
-    
+
     // Query to get all tables and their columns
     let rows = sqlx::query(r#"
         SELECT 
@@ -293,84 +312,95 @@ async fn get_current_database_schema(pool: &PgPool) -> Result<HashMap<String, Da
             AND t.table_name != '__atomo_migrations'
         ORDER BY t.table_name, c.ordinal_position
     "#).fetch_all(pool).await?;
-    
+
     for row in rows {
         let table_name: String = row.get("table_name");
         let column_name: String = row.get("column_name");
         let data_type: String = row.get("data_type");
         let is_nullable: String = row.get("is_nullable");
         let is_primary_key: bool = row.get("is_primary_key");
-        
-        let table = tables.entry(table_name.clone()).or_insert_with(|| DatabaseTable {
-            name: table_name.clone(),
-            columns: HashMap::new(),
-        });
-        
-        table.columns.insert(column_name.clone(), DatabaseColumn {
-            name: column_name,
-            data_type,
-            is_nullable: is_nullable == "YES",
-            is_primary_key,
-        });
+
+        let table = tables
+            .entry(table_name.clone())
+            .or_insert_with(|| DatabaseTable {
+                name: table_name.clone(),
+                columns: HashMap::new(),
+            });
+
+        table.columns.insert(
+            column_name.clone(),
+            DatabaseColumn {
+                name: column_name,
+                data_type,
+                is_nullable: is_nullable == "YES",
+                is_primary_key,
+            },
+        );
     }
-    
+
     Ok(tables)
 }
 
 fn generate_migration_sql(
-    models: &[Model], 
-    current_tables: &HashMap<String, DatabaseTable>
+    models: &[Model],
+    current_tables: &HashMap<String, DatabaseTable>,
 ) -> Result<String> {
     let mut sql = String::new();
-    
+
     // Add migration header
     sql.push_str("-- Auto-generated migration\n");
-    sql.push_str(&format!("-- Generated at: {}\n", chrono::Utc::now().to_rfc3339()));
-    sql.push_str("\n");
-    
+    sql.push_str(&format!(
+        "-- Generated at: {}\n",
+        chrono::Utc::now().to_rfc3339()
+    ));
+    sql.push('\n');
+
     for model in models {
         let table_name = model.name.to_lowercase();
-        
+
         if let Some(existing_table) = current_tables.get(&table_name) {
             // Table exists - check for column changes
             let table_changes = generate_table_alterations(model, existing_table)?;
             if !table_changes.is_empty() {
                 sql.push_str(&table_changes);
-                sql.push_str("\n");
+                sql.push('\n');
             }
         } else {
             // New table - create it
             sql.push_str(&generate_create_table_sql(model)?);
-            sql.push_str("\n");
+            sql.push('\n');
         }
     }
-    
+
     // Check for tables that need to be dropped (exist in DB but not in schema)
-    for (table_name, _) in current_tables {
+    for table_name in current_tables.keys() {
         let model_exists = models.iter().any(|m| m.name.to_lowercase() == *table_name);
         if !model_exists && !is_system_table(table_name) {
-            sql.push_str(&format!("-- DROP TABLE IF EXISTS {}; -- Uncomment to drop unused table\n", table_name));
+            sql.push_str(&format!(
+                "-- DROP TABLE IF EXISTS {}; -- Uncomment to drop unused table\n",
+                table_name
+            ));
         }
     }
-    
+
     Ok(sql)
 }
 
 fn generate_create_table_sql(model: &Model) -> Result<String> {
     let mut sql = String::new();
     let table_name = model.name.to_lowercase();
-    
+
     sql.push_str(&format!("-- Create table for {}\n", model.name));
     sql.push_str(&format!("CREATE TABLE {} (\n", table_name));
-    
+
     let mut columns = Vec::new();
-    
+
     // Add id column if not present
     let has_id = model.fields.contains_key("id");
     if !has_id {
         columns.push("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()".to_string());
     }
-    
+
     // Add model fields (skip standard audit fields that will be added later)
     for (field_name, field) in &model.fields {
         // Skip standard Atomo fields that are added automatically
@@ -380,19 +410,25 @@ fn generate_create_table_sql(model: &Model) -> Result<String> {
         let column_def = generate_column_definition(field_name, field)?;
         columns.push(format!("    {}", column_def));
     }
-    
+
     // Add audit columns
     columns.push("    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
     columns.push("    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
     columns.push("    version INTEGER NOT NULL DEFAULT 1".to_string());
-    
+
     sql.push_str(&columns.join(",\n"));
     sql.push_str("\n);\n");
-    
+
     // Add indexes
-    sql.push_str(&format!("CREATE INDEX idx_{}_created_at ON {} (created_at);\n", table_name, table_name));
-    sql.push_str(&format!("CREATE INDEX idx_{}_updated_at ON {} (updated_at);\n", table_name, table_name));
-    
+    sql.push_str(&format!(
+        "CREATE INDEX idx_{}_created_at ON {} (created_at);\n",
+        table_name, table_name
+    ));
+    sql.push_str(&format!(
+        "CREATE INDEX idx_{}_updated_at ON {} (updated_at);\n",
+        table_name, table_name
+    ));
+
     Ok(sql)
 }
 
@@ -434,7 +470,8 @@ fn generate_table_alterations(model: &Model, existing_table: &DatabaseTable) -> 
     let table_name = model.name.to_lowercase();
 
     // Track which DB columns are accounted for by schema fields
-    let mut matched_db_columns: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut matched_db_columns: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     for (field_name, field) in &model.fields {
         let db_col_name = camel_to_snake_case(field_name);
@@ -500,32 +537,32 @@ fn generate_column_definition(field_name: &str, field: &Field) -> Result<String>
         atomo_schema::FieldType::Blocks => "JSONB",
         atomo_schema::FieldType::Custom(_) => "TEXT", // Default fallback
     };
-    
+
     // Convert camelCase to snake_case for database columns
     let db_field_name = camel_to_snake_case(field_name);
     let mut def = format!("{} {}", db_field_name, pg_type);
-    
+
     if field_name == "id" {
         def.push_str(" PRIMARY KEY DEFAULT gen_random_uuid()");
     } else if !field.optional {
         def.push_str(" NOT NULL");
     }
-    
+
     Ok(def)
 }
 
 // Convert camelCase to snake_case
 fn camel_to_snake_case(input: &str) -> String {
     let mut result = String::new();
-    let mut chars = input.chars().peekable();
-    
-    while let Some(ch) = chars.next() {
+    let chars = input.chars().peekable();
+
+    for ch in chars {
         if ch.is_uppercase() && !result.is_empty() {
             result.push('_');
         }
         result.push(ch.to_lowercase().next().unwrap());
     }
-    
+
     result
 }
 
@@ -553,7 +590,7 @@ fn parse_sql_statements(content: &str) -> Vec<String> {
 
         // Scan for entering/exiting dollar-quoted bodies
         // There may be multiple tokens on one line; toggle for each match
-        if let Some(_) = dq.find(line) {
+        if dq.find(line).is_some() {
             // process all occurrences in order
             let mut start = 0;
             while let Some(m) = dq.find_at(line, start) {

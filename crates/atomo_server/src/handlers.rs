@@ -1,7 +1,13 @@
 //! HTTP handlers for the Atomo server
 
-use async_graphql::{Schema as GraphQLSchema, MergedObject};
+use crate::platform_graphql::{PlatformMutation, PlatformQuery};
+use async_graphql::{MergedObject, Schema as GraphQLSchema};
 use async_graphql_axum::{GraphQLResponse, GraphQLSubscription};
+use atomo::graphql::UserRoleCtx;
+use atomo::graphql::{Mutation as ServiceMutation, Query as ServiceQuery, Subscription};
+use atomo::prelude::*;
+use atomo_core::types::EntityId;
+use axum::http::{header, HeaderMap};
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
@@ -9,15 +15,9 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use atomo::prelude::*;
-use atomo::graphql::UserRoleCtx;
-use std::time::Instant;
-use atomo_core::types::EntityId;
-use atomo::graphql::{Query as ServiceQuery, Mutation as ServiceMutation, Subscription};
-use crate::platform_graphql::{PlatformQuery, PlatformMutation};
-use serde_json::Value;
 use prometheus::{Encoder, TextEncoder};
-use axum::http::{header, HeaderMap};
+use serde_json::Value;
+use std::time::Instant;
 
 /// Combined query that merges service-level and platform-level queries
 #[derive(MergedObject)]
@@ -32,34 +32,42 @@ pub type AtomoGraphQLSchema = GraphQLSchema<Query, Mutation, Subscription>;
 /// Build extended GraphQL schema that includes both service and platform queries
 pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
     use std::sync::Arc;
-    
+
     // Get service-level components
     let client = Arc::new(atomo.client().clone());
     let schema = atomo.schema().clone();
     let pool = atomo.db_pool().clone();
-    
+
     // Create service-level components
     let service_query = ServiceQuery::new(client.clone(), schema.clone());
     let service_mutation = ServiceMutation::new(client.clone(), schema.clone());
     let subscription = Subscription::new(client.clone());
-    
+
     // Create platform-level components
     let platform_query = PlatformQuery::new(pool.clone());
     let platform_mutation = PlatformMutation::new(pool.clone());
-    
+
     // Merge queries and mutations
     let query = Query(service_query, platform_query);
     let mutation = Mutation(service_mutation, platform_mutation);
-    
+
     let mut builder = GraphQLSchema::build(query, mutation, subscription)
         .data(client)
         .data(pool);
 
     // Apply GraphQL limits from env (with safe defaults)
-    let max_depth: Option<usize> = std::env::var("GRAPHQL_MAX_DEPTH").ok().and_then(|s| s.parse().ok());
-    let max_complexity: Option<usize> = std::env::var("GRAPHQL_MAX_COMPLEXITY").ok().and_then(|s| s.parse().ok());
-    if let Some(d) = max_depth.or(Some(20)) { builder = builder.limit_depth(d); }
-    if let Some(c) = max_complexity.or(Some(200)) { builder = builder.limit_complexity(c); }
+    let max_depth: Option<usize> = std::env::var("GRAPHQL_MAX_DEPTH")
+        .ok()
+        .and_then(|s| s.parse().ok());
+    let max_complexity: Option<usize> = std::env::var("GRAPHQL_MAX_COMPLEXITY")
+        .ok()
+        .and_then(|s| s.parse().ok());
+    if let Some(d) = max_depth.or(Some(20)) {
+        builder = builder.limit_depth(d);
+    }
+    if let Some(c) = max_complexity.or(Some(200)) {
+        builder = builder.limit_complexity(c);
+    }
 
     builder.finish()
 }
@@ -68,28 +76,38 @@ pub async fn graphql_handler(
     Extension(schema): Extension<AtomoGraphQLSchema>,
     req: axum::extract::Request,
 ) -> GraphQLResponse {
-    static GQL_COUNTER: once_cell::sync::Lazy<prometheus::IntCounterVec> = once_cell::sync::Lazy::new(|| {
-        prometheus::register_int_counter_vec!(
-            "graphql_requests_total",
-            "Total GraphQL requests",
-            &["operation", "status"]
-        ).expect("register graphql_requests_total")
-    });
-    static GQL_HISTO: once_cell::sync::Lazy<prometheus::HistogramVec> = once_cell::sync::Lazy::new(|| {
-        prometheus::register_histogram_vec!(
-            "graphql_request_duration_seconds",
-            "GraphQL request duration seconds",
-            &["operation"],
-            vec![0.005,0.01,0.025,0.05,0.1,0.25,0.5,1.0,2.5,5.0,10.0]
-        ).expect("register graphql_request_duration_seconds")
-    });
+    static GQL_COUNTER: once_cell::sync::Lazy<prometheus::IntCounterVec> =
+        once_cell::sync::Lazy::new(|| {
+            prometheus::register_int_counter_vec!(
+                "graphql_requests_total",
+                "Total GraphQL requests",
+                &["operation", "status"]
+            )
+            .expect("register graphql_requests_total")
+        });
+    static GQL_HISTO: once_cell::sync::Lazy<prometheus::HistogramVec> =
+        once_cell::sync::Lazy::new(|| {
+            prometheus::register_histogram_vec!(
+                "graphql_request_duration_seconds",
+                "GraphQL request duration seconds",
+                &["operation"],
+                vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+            )
+            .expect("register graphql_request_duration_seconds")
+        });
 
     // Extract auth user from request extensions (set by auth middleware)
     let auth_user = req.extensions().get::<crate::auth::AuthUser>().cloned();
-    let tenant_id = req.headers().get("x-tenant-id").and_then(|v| v.to_str().ok()).map(String::from);
+    let tenant_id = req
+        .headers()
+        .get("x-tenant-id")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
 
     // Parse GraphQL request from body
-    let body = axum::body::to_bytes(req.into_body(), 2_000_000).await.unwrap_or_default();
+    let body = axum::body::to_bytes(req.into_body(), 2_000_000)
+        .await
+        .unwrap_or_default();
     let mut inner: async_graphql::Request = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(_) => async_graphql::Request::new(""),
@@ -103,10 +121,17 @@ pub async fn graphql_handler(
         inner = inner.data(atomo::graphql::TenantCtx(tid));
     }
 
-    let op = inner.operation_name.clone().unwrap_or_else(|| "anonymous".to_string());
+    let op = inner
+        .operation_name
+        .clone()
+        .unwrap_or_else(|| "anonymous".to_string());
     let start = Instant::now();
     let resp = schema.execute(inner).await;
-    let status = if resp.errors.is_empty() { "ok" } else { "error" };
+    let status = if resp.errors.is_empty() {
+        "ok"
+    } else {
+        "error"
+    };
     let elapsed = start.elapsed().as_secs_f64();
     GQL_COUNTER.with_label_values(&[op.as_str(), status]).inc();
     GQL_HISTO.with_label_values(&[op.as_str()]).observe(elapsed);
@@ -137,15 +162,18 @@ pub async fn ready_check(Extension(atomo): Extension<Atomo>) -> StatusCode {
 pub async fn metrics(Extension(atomo): Extension<Atomo>) -> (StatusCode, HeaderMap, String) {
     // Update DB health metrics
     static DB_UP: once_cell::sync::Lazy<prometheus::IntGauge> = once_cell::sync::Lazy::new(|| {
-        prometheus::register_int_gauge!("db_up", "Database connection status (1=up,0=down)").expect("register db_up")
+        prometheus::register_int_gauge!("db_up", "Database connection status (1=up,0=down)")
+            .expect("register db_up")
     });
-    static DB_PING: once_cell::sync::Lazy<prometheus::Histogram> = once_cell::sync::Lazy::new(|| {
-        prometheus::register_histogram!(
-            "db_ping_duration_seconds",
-            "Database ping duration seconds",
-            vec![0.001,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1.0]
-        ).expect("register db_ping_duration_seconds")
-    });
+    static DB_PING: once_cell::sync::Lazy<prometheus::Histogram> =
+        once_cell::sync::Lazy::new(|| {
+            prometheus::register_histogram!(
+                "db_ping_duration_seconds",
+                "Database ping duration seconds",
+                vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+            )
+            .expect("register db_ping_duration_seconds")
+        });
 
     let pool = atomo.db_pool().clone();
     let start = std::time::Instant::now();
@@ -162,20 +190,28 @@ pub async fn metrics(Extension(atomo): Extension<Atomo>) -> (StatusCode, HeaderM
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();
-    if let Err(_) = encoder.encode(&metric_families, &mut buffer) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, HeaderMap::new(), String::new());
+    if encoder.encode(&metric_families, &mut buffer).is_err() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            HeaderMap::new(),
+            String::new(),
+        );
     }
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_TYPE,
         "text/plain; version=0.0.4; charset=utf-8".parse().unwrap(),
     );
-    (StatusCode::OK, headers, String::from_utf8_lossy(&buffer).into_owned())
+    (
+        StatusCode::OK,
+        headers,
+        String::from_utf8_lossy(&buffer).into_owned(),
+    )
 }
 
 pub async fn atomo_info(Extension(_atomo): Extension<Atomo>) -> String {
     // You could add schema introspection here
-    format!("🚀 Atomo Content Core Server\n📊 Schema loaded successfully")
+    "🚀 Atomo Content Core Server\n📊 Schema loaded successfully".to_string()
 }
 
 /// Schema metadata endpoint for Admin UI
@@ -193,26 +229,32 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
     }
 
     Json(extended_metadata)
-}pub fn create_router(
-    schema: AtomoGraphQLSchema, 
-    atomo: Atomo, 
+}
+pub fn create_router(
+    schema: AtomoGraphQLSchema,
+    atomo: Atomo,
     auth_service: crate::auth::HttpAuthService,
     audit_service: crate::audit::HttpAuditService,
 ) -> Router {
-    use crate::auth::{auth_middleware, optional_auth_middleware, handlers};
+    use crate::auth::{auth_middleware, handlers, optional_auth_middleware};
     use axum::middleware;
 
-    let oauth_manager = crate::oauth::OAuthManager::from_env()
-        .with_pool(atomo.db_pool().clone());
+    let oauth_manager = crate::oauth::OAuthManager::from_env().with_pool(atomo.db_pool().clone());
 
     let protected_routes = Router::new()
         .route("/graphql", post(graphql_handler))
-        .route_layer(middleware::from_fn_with_state(auth_service.clone(), auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            auth_service.clone(),
+            auth_middleware,
+        ));
 
     let semi_protected_routes = Router::new()
         .route("/meta/schema", get(schema_metadata))
         .route("/graphql", get(graphql_playground))
-        .route_layer(middleware::from_fn_with_state(auth_service.clone(), optional_auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            auth_service.clone(),
+            optional_auth_middleware,
+        ));
 
     Router::new()
         // Public routes (no authentication required)
@@ -222,37 +264,41 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
         .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
         .route_service("/graphql/ws", GraphQLSubscription::new(schema.clone()))
-        
-        // Authentication routes  
-        .nest("/auth", Router::new()
-            .route("/login", post(handlers::login))
-            .route("/logout", post(handlers::logout))
-            .route("/refresh", post(handlers::refresh))
-            .route("/me", get(handlers::me))
-            .with_state(auth_service.clone())
+        // Authentication routes
+        .nest(
+            "/auth",
+            Router::new()
+                .route("/login", post(handlers::login))
+                .route("/logout", post(handlers::logout))
+                .route("/refresh", post(handlers::refresh))
+                .route("/me", get(handlers::me))
+                .with_state(auth_service.clone()),
         )
-        
         // OAuth routes
-        .nest("/auth/oauth", Router::new()
-            .route("/authorize", get(crate::oauth::oauth_authorize))
-            .route("/callback/{provider}", get(crate::oauth::oauth_callback))
-            .route("/providers", get(crate::oauth::oauth_providers))
-            .with_state(oauth_manager)
+        .nest(
+            "/auth/oauth",
+            Router::new()
+                .route("/authorize", get(crate::oauth::oauth_authorize))
+                .route("/callback/{provider}", get(crate::oauth::oauth_callback))
+                .route("/providers", get(crate::oauth::oauth_providers))
+                .with_state(oauth_manager),
         )
-        
         // Audit log routes
-        .nest("/audit", Router::new()
-            .route("/logs", get(get_audit_logs))
-            .route("/user/{user_id}/activity", get(get_user_activity))
-            .route("/entity/{entity_type}/{entity_id}/audit", get(get_entity_audit))
-            .route("/statistics", get(get_audit_statistics))
-            .with_state(audit_service.clone())
+        .nest(
+            "/audit",
+            Router::new()
+                .route("/logs", get(get_audit_logs))
+                .route("/user/{user_id}/activity", get(get_user_activity))
+                .route(
+                    "/entity/{entity_type}/{entity_id}/audit",
+                    get(get_entity_audit),
+                )
+                .route("/statistics", get(get_audit_statistics))
+                .with_state(audit_service.clone()),
         )
-        
         // Merge protected and semi-protected routes
         .merge(protected_routes)
         .merge(semi_protected_routes)
-        
         // Add state and extensions
         .with_state(auth_service)
         .layer(Extension(schema))
@@ -269,39 +315,46 @@ pub async fn get_audit_logs(
     State(audit_service): State<crate::audit::HttpAuditService>,
     req: axum::extract::Request,
 ) -> Result<Json<Vec<atomo_core::audit::AuditLogEntry>>, axum::http::StatusCode> {
-    use atomo_core::audit::{AuditService, AuditSearchFilters, AuditOperation};
+    use atomo_core::audit::{AuditOperation, AuditSearchFilters, AuditService};
     use atomo_core::types::{EntityId, StreamId};
-    
+
     // Check authentication
-    let user = req.extensions()
+    let user = req
+        .extensions()
         .get::<crate::auth::AuthUser>()
         .cloned()
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
-    if !matches!(user.role, crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager) {
+    if !matches!(
+        user.role,
+        crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager
+    ) {
         return Err(axum::http::StatusCode::FORBIDDEN);
     }
-    
+
     // Parse query parameters into filter
     let filters = AuditSearchFilters {
         entity_type: params.get("entity_type").cloned(),
-        entity_id: params.get("entity_id")
+        entity_id: params
+            .get("entity_id")
             .and_then(|s| EntityId::from_string(s).ok()),
-        stream_id: params.get("stream_id")
+        stream_id: params
+            .get("stream_id")
             .and_then(|s| StreamId::from_string(s).ok()),
-        operation: params.get("operation")
-            .and_then(|s| match s.as_str() {
-                "create" => Some(AuditOperation::Create),
-                "update" => Some(AuditOperation::Update),
-                "delete" => Some(AuditOperation::Delete),
-                "read" => Some(AuditOperation::Read),
-                _ => None,
-            }),
+        operation: params.get("operation").and_then(|s| match s.as_str() {
+            "create" => Some(AuditOperation::Create),
+            "update" => Some(AuditOperation::Update),
+            "delete" => Some(AuditOperation::Delete),
+            "read" => Some(AuditOperation::Read),
+            _ => None,
+        }),
         user_id: params.get("user_id").cloned(),
-        start_time: params.get("start_date")
+        start_time: params
+            .get("start_date")
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc)),
-        end_time: params.get("end_date")
+        end_time: params
+            .get("end_date")
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc)),
         limit: params.get("limit").and_then(|s| s.parse().ok()),
@@ -322,19 +375,26 @@ pub async fn get_user_activity(
     req: axum::extract::Request,
 ) -> Result<Json<Vec<atomo_core::audit::AuditLogEntry>>, axum::http::StatusCode> {
     use atomo_core::audit::AuditService;
-    
+
     // Check authentication
-    let current_user = req.extensions()
+    let current_user = req
+        .extensions()
         .get::<crate::auth::AuthUser>()
         .cloned()
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
     // Users can only view their own activity unless they're admin/manager
-    if current_user.id != user_id && !matches!(current_user.role, crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager) {
+    if current_user.id != user_id
+        && !matches!(
+            current_user.role,
+            crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager
+        )
+    {
         return Err(axum::http::StatusCode::FORBIDDEN);
     }
 
-    let _limit = params.get("limit")
+    let _limit = params
+        .get("limit")
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
 
@@ -357,21 +417,28 @@ pub async fn get_entity_audit(
 ) -> Result<Json<Vec<atomo_core::audit::AuditLogEntry>>, axum::http::StatusCode> {
     use atomo_core::audit::AuditService;
     use atomo_core::types::EntityId;
-    
+
     // Check authentication
-    let user = req.extensions()
+    let user = req
+        .extensions()
         .get::<crate::auth::AuthUser>()
         .cloned()
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
-    if !matches!(user.role, crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager) {
+    if !matches!(
+        user.role,
+        crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager
+    ) {
         return Err(axum::http::StatusCode::FORBIDDEN);
     }
 
-    let entity_id = EntityId::from_string(&entity_id)
-        .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
+    let entity_id =
+        EntityId::from_string(&entity_id).map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
 
-    match audit_service.get_audit_logs_for_entity(&entity_type, &entity_id).await {
+    match audit_service
+        .get_audit_logs_for_entity(&entity_type, &entity_id)
+        .await
+    {
         Ok(entries) => Ok(Json(entries)),
         Err(_) => Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
     }
@@ -383,24 +450,30 @@ pub async fn get_audit_statistics(
     State(audit_service): State<crate::audit::HttpAuditService>,
     req: axum::extract::Request,
 ) -> Result<Json<atomo_core::audit::AuditStats>, axum::http::StatusCode> {
-    use atomo_core::audit::{AuditService, AuditSearchFilters};
-    
+    use atomo_core::audit::{AuditSearchFilters, AuditService};
+
     // Check authentication - only admin/manager can view statistics
-    let user = req.extensions()
+    let user = req
+        .extensions()
         .get::<crate::auth::AuthUser>()
         .cloned()
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
-    if !matches!(user.role, crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager) {
+    if !matches!(
+        user.role,
+        crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager
+    ) {
         return Err(axum::http::StatusCode::FORBIDDEN);
     }
 
     // Parse date range for statistics
     let filters = AuditSearchFilters {
-        start_time: params.get("start_date")
+        start_time: params
+            .get("start_date")
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc)),
-        end_time: params.get("end_date")
+        end_time: params
+            .get("end_date")
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc)),
         ..Default::default()
@@ -416,9 +489,9 @@ pub async fn get_audit_statistics(
 // Workflow REST API
 // ============================================================================
 
-use std::sync::Arc;
 use atomo::workflow::{Workflow, WorkflowEngine};
 use serde_json::json;
+use std::sync::Arc;
 
 /// Router for workflow management, scoped to a shared WorkflowEngine.
 pub fn workflow_router(engine: Arc<WorkflowEngine>) -> Router {

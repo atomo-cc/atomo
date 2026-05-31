@@ -1,14 +1,14 @@
 //! In-Memory Event Store Implementation
-//! 
+//!
 //! This module provides an in-memory implementation of the EventStore trait
 //! suitable for testing and development purposes.
 
+use async_trait::async_trait;
 use atomo_core::{
-    events::{EventStore, EventEnvelope, EventType, Snapshot, SnapshotStore},
+    events::{EventEnvelope, EventStore, EventType, Snapshot, SnapshotStore},
     types::{EntityId, StreamId, Timestamp},
     AtomoError, Result,
 };
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -85,13 +85,19 @@ impl EventStore for InMemoryEventStore {
         let start_index = all_events.len();
         for (i, event) in events.iter().enumerate() {
             let event_index = start_index + i;
-            
+
             // Index by stream
-            stream_events.entry(stream_id).or_default().push(event_index);
-            
+            stream_events
+                .entry(stream_id)
+                .or_default()
+                .push(event_index);
+
             // Index by aggregate
-            let aggregate_id = event.metadata.user_id.unwrap_or_else(|| EntityId::new());
-            aggregate_events.entry(aggregate_id).or_default().push(event_index);
+            let aggregate_id = event.metadata.user_id.unwrap_or_else(EntityId::new);
+            aggregate_events
+                .entry(aggregate_id)
+                .or_default()
+                .push(event_index);
         }
 
         // Update stream version
@@ -134,7 +140,8 @@ impl EventStore for InMemoryEventStore {
         max_count: Option<usize>,
     ) -> Result<Vec<EventEnvelope>> {
         let events = self.events.read().unwrap();
-        let from_time = from_timestamp.unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
+        let from_time =
+            from_timestamp.unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
 
         let result: Vec<EventEnvelope> = events
             .iter()
@@ -241,15 +248,15 @@ where
     async fn save_snapshot(&self, snapshot: S) -> Result<()> {
         let mut snapshots = self.snapshots.write().unwrap();
         let aggregate_id = snapshot.aggregate_id();
-        
+
         snapshots.entry(aggregate_id).or_default().push(snapshot);
-        
+
         Ok(())
     }
 
     async fn load_snapshot(&self, aggregate_id: EntityId) -> Result<Option<S>> {
         let snapshots = self.snapshots.read().unwrap();
-        
+
         if let Some(aggregate_snapshots) = snapshots.get(&aggregate_id) {
             // Return the latest snapshot
             Ok(aggregate_snapshots.last().cloned())
@@ -264,7 +271,7 @@ where
         version: i64,
     ) -> Result<Option<S>> {
         let snapshots = self.snapshots.read().unwrap();
-        
+
         if let Some(aggregate_snapshots) = snapshots.get(&aggregate_id) {
             // Find the latest snapshot at or before the specified version
             let snapshot = aggregate_snapshots
@@ -278,13 +285,9 @@ where
         }
     }
 
-    async fn cleanup_snapshots(
-        &self,
-        aggregate_id: EntityId,
-        keep_count: usize,
-    ) -> Result<()> {
+    async fn cleanup_snapshots(&self, aggregate_id: EntityId, keep_count: usize) -> Result<()> {
         let mut snapshots = self.snapshots.write().unwrap();
-        
+
         if let Some(aggregate_snapshots) = snapshots.get_mut(&aggregate_id) {
             if aggregate_snapshots.len() > keep_count {
                 // Sort by version and keep only the most recent
@@ -292,7 +295,7 @@ where
                 aggregate_snapshots.drain(..aggregate_snapshots.len() - keep_count);
             }
         }
-        
+
         Ok(())
     }
 }

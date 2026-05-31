@@ -1,24 +1,26 @@
 //! Authentication and Authorization HTTP Implementation
-//! 
+//!
 //! This module provides HTTP-specific implementations of the authentication
 //! and authorization interfaces defined in atomo_core.
 
+use crate::platform_models::{PlatformUser, UserRole, UserSession};
 use anyhow::Result;
-use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::{SaltString, rand_core::OsRng}};
-use async_trait::async_trait;
-use atomo_core::{
-    AuthProvider, AuthorizationService, AuthCredentials,
-    EntityId
+use argon2::{
+    password_hash::{rand_core::OsRng, SaltString},
+    Argon2, PasswordHasher, PasswordVerifier,
 };
-use crate::platform_models::{PlatformUser, UserSession, UserRole};
+use async_trait::async_trait;
+use atomo_core::{AuthCredentials, AuthProvider, AuthorizationService, EntityId};
 use axum::{
     extract::{Request, State},
-    http::{StatusCode},
+    http::StatusCode,
     middleware::Next,
     response::Response,
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
+use jsonwebtoken::{
+    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -26,12 +28,12 @@ use uuid::Uuid;
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,        // User ID
-    pub email: String,      // User email
-    pub role: String,       // User role
-    pub exp: i64,          // Expiration time
-    pub iat: i64,          // Issued at
-    pub jti: String,       // JWT ID (session ID)
+    pub sub: String,   // User ID
+    pub email: String, // User email
+    pub role: String,  // User role
+    pub exp: i64,      // Expiration time
+    pub iat: i64,      // Issued at
+    pub jti: String,   // JWT ID (session ID)
 }
 
 /// User context extracted from JWT - HTTP layer specific
@@ -56,10 +58,18 @@ pub type AuthError = anyhow::Error;
 
 impl HttpAuthService {
     fn validate_password_policy(&self, password: &str) -> Result<(), anyhow::Error> {
-        let min_len: usize = std::env::var("PASSWORD_MIN_LENGTH").ok().and_then(|s| s.parse().ok()).unwrap_or(8);
-        let require_complexity = std::env::var("PASSWORD_REQUIRE_COMPLEXITY").map(|v| v == "true" || v == "1").unwrap_or(true);
+        let min_len: usize = std::env::var("PASSWORD_MIN_LENGTH")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
+        let require_complexity = std::env::var("PASSWORD_REQUIRE_COMPLEXITY")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(true);
         if password.len() < min_len {
-            return Err(anyhow::anyhow!(format!("Password must be at least {} characters", min_len)));
+            return Err(anyhow::anyhow!(format!(
+                "Password must be at least {} characters",
+                min_len
+            )));
         }
         if require_complexity {
             let has_letter = password.chars().any(|c| c.is_ascii_alphabetic());
@@ -84,7 +94,12 @@ impl HttpAuthService {
     }
 
     /// Generate access token and refresh token for a user (rotates/creates session)
-    pub async fn issue_tokens(&self, user_id: &str, email: &str, role: &str) -> Result<(String, String)> {
+    pub async fn issue_tokens(
+        &self,
+        user_id: &str,
+        email: &str,
+        role: &str,
+    ) -> Result<(String, String)> {
         // Create a real session via DB and use its ID as JWT jti
         let entity_id = EntityId::from_string(user_id)?;
         let session = self.create_session(&entity_id).await?;
@@ -127,10 +142,13 @@ impl HttpAuthService {
     }
 
     /// Refresh access token using a refresh token (rotates refresh token and extends session)
-    pub async fn refresh_access_token(&self, refresh_token: &str) -> Result<(String, String, PlatformUser)> {
+    pub async fn refresh_access_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<(String, String, PlatformUser)> {
         // Validate session by refresh token
         let session = sqlx::query_as::<_, (String, String, chrono::DateTime<chrono::Utc>)>(
-            "SELECT id, user_id, expires_at FROM sessions WHERE token = $1 AND is_revoked = false"
+            "SELECT id, user_id, expires_at FROM sessions WHERE token = $1 AND is_revoked = false",
         )
         .bind(refresh_token)
         .fetch_optional(&self.db_pool)
@@ -143,12 +161,14 @@ impl HttpAuthService {
 
         // Check session expiry
         let still_valid = sqlx::query_as::<_, (bool,)>(
-            "SELECT expires_at > NOW() FROM sessions WHERE token = $1"
+            "SELECT expires_at > NOW() FROM sessions WHERE token = $1",
         )
         .bind(refresh_token)
         .fetch_one(&self.db_pool)
         .await?;
-        if !still_valid.0 { return Err(anyhow::anyhow!("Refresh token expired")); }
+        if !still_valid.0 {
+            return Err(anyhow::anyhow!("Refresh token expired"));
+        }
 
         // Fetch user
         let user_row = sqlx::query_as::<_, (String, String, String, String, String, bool, Option<chrono::DateTime<chrono::Utc>>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
@@ -158,8 +178,17 @@ impl HttpAuthService {
         .fetch_optional(&self.db_pool)
         .await?;
 
-        let (id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at) = user_row
-            .ok_or_else(|| anyhow::anyhow!("User not found"))?;
+        let (
+            id,
+            email,
+            first_name,
+            last_name,
+            role,
+            is_active,
+            last_login_at,
+            created_at,
+            updated_at,
+        ) = user_row.ok_or_else(|| anyhow::anyhow!("User not found"))?;
 
         let platform_user = PlatformUser {
             id: EntityId::from_string(&id)?,
@@ -206,7 +235,10 @@ impl HttpAuthService {
 impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
     type Error = anyhow::Error;
 
-    async fn authenticate(&self, credentials: &AuthCredentials) -> Result<Option<PlatformUser>, Self::Error> {
+    async fn authenticate(
+        &self,
+        credentials: &AuthCredentials,
+    ) -> Result<Option<PlatformUser>, Self::Error> {
         let user = sqlx::query_as::<_, (String, String, String, String, String, String, bool, Option<chrono::DateTime<chrono::Utc>>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
             "SELECT id, email, password_hash, first_name, last_name, role, is_active, last_login_at, created_at, updated_at FROM users 
              WHERE email = $1 AND is_active = true"
@@ -215,7 +247,19 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
         .fetch_optional(&self.db_pool)
         .await?;
 
-        if let Some((user_id, user_email, password_hash, first_name, last_name, role, is_active, last_login_at, created_at, updated_at)) = user {
+        if let Some((
+            user_id,
+            user_email,
+            password_hash,
+            first_name,
+            last_name,
+            role,
+            is_active,
+            last_login_at,
+            created_at,
+            updated_at,
+        )) = user
+        {
             if self.verify_password(&credentials.password, &password_hash)? {
                 // Update last login
                 sqlx::query("UPDATE users SET last_login_at = NOW() WHERE id = $1")
@@ -243,7 +287,12 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
         Ok(None)
     }
 
-    async fn authorize(&self, user: &PlatformUser, _resource: &str, action: &str) -> Result<bool, Self::Error> {
+    async fn authorize(
+        &self,
+        user: &PlatformUser,
+        _resource: &str,
+        action: &str,
+    ) -> Result<bool, Self::Error> {
         // For now, implement basic role-based authorization
         let access_pattern = match action {
             "read" => "admin|manager|sales|support|viewer",
@@ -264,7 +313,7 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
 
         sqlx::query(
             "INSERT INTO sessions (id, user_id, token, expires_at, created_at, is_revoked) 
-             VALUES ($1, $2, $3, $4, $5, false)"
+             VALUES ($1, $2, $3, $4, $5, false)",
         )
         .bind(session_id.to_string())
         .bind(user_id.to_string())
@@ -276,7 +325,7 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
 
         Ok(UserSession {
             id: session_id,
-            user_id: user_id.clone(),
+            user_id: *user_id,
             token,
             expires_at,
             ip_address: None,
@@ -285,26 +334,30 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
         })
     }
 
-    async fn validate_session(&self, session_token: &str) -> Result<Option<PlatformUser>, Self::Error> {
+    async fn validate_session(
+        &self,
+        session_token: &str,
+    ) -> Result<Option<PlatformUser>, Self::Error> {
         // First try to decode JWT to get session info
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_required_spec_claims(&["sub", "exp", "iat", "jti"]);
 
         if let Ok(token_data) = decode::<Claims>(session_token, &self.decoding_key, &validation) {
             let claims = token_data.claims;
-            
+
             // Check if session exists and is active
-            let session = sqlx::query_as::<_, (String, String, chrono::DateTime<chrono::Utc>, bool)>(
-                "SELECT id, user_id, expires_at, is_revoked FROM sessions 
-                 WHERE id = $1 AND expires_at > NOW() AND is_revoked = false"
-            )
-            .bind(&claims.jti)
-            .fetch_optional(&self.db_pool)
-            .await?;
+            let session =
+                sqlx::query_as::<_, (String, String, chrono::DateTime<chrono::Utc>, bool)>(
+                    "SELECT id, user_id, expires_at, is_revoked FROM sessions 
+                 WHERE id = $1 AND expires_at > NOW() AND is_revoked = false",
+                )
+                .bind(&claims.jti)
+                .fetch_optional(&self.db_pool)
+                .await?;
 
             if let Some((_, user_id_str, _, _)) = session {
                 let user_id = EntityId::from_string(&user_id_str)?;
-                
+
                 // Get user directly instead of calling self.get_user
                 let user = sqlx::query_as::<_, (String, String, String, String, String, bool, Option<chrono::DateTime<chrono::Utc>>, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
                     "SELECT id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at FROM users WHERE id = $1"
@@ -313,7 +366,18 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
                 .fetch_optional(&self.db_pool)
                 .await?;
 
-                if let Some((id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at)) = user {
+                if let Some((
+                    id,
+                    email,
+                    first_name,
+                    last_name,
+                    role,
+                    is_active,
+                    last_login_at,
+                    created_at,
+                    updated_at,
+                )) = user
+                {
                     return Ok(Some(PlatformUser {
                         id: EntityId::from_string(&id)?,
                         email,
@@ -349,7 +413,8 @@ impl HttpAuthService {
     pub fn hash_password(&self, password: &str) -> Result<String, anyhow::Error> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        let hash = argon2.hash_password(password.as_bytes(), &salt)
+        let hash = argon2
+            .hash_password(password.as_bytes(), &salt)
             .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
         Ok(hash.to_string())
     }
@@ -359,7 +424,9 @@ impl HttpAuthService {
         if hash.starts_with("$argon2") {
             let parsed = argon2::password_hash::PasswordHash::new(hash)
                 .map_err(|e| anyhow::anyhow!("Invalid hash: {}", e))?;
-            Ok(Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
+            Ok(Argon2::default()
+                .verify_password(password.as_bytes(), &parsed)
+                .is_ok())
         } else {
             Ok(bcrypt::verify(password, hash).unwrap_or(false))
         }
@@ -379,7 +446,18 @@ impl AuthorizationService<PlatformUser> for HttpAuthService {
         .fetch_optional(&self.db_pool)
         .await?;
 
-        if let Some((id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at)) = user {
+        if let Some((
+            id,
+            email,
+            first_name,
+            last_name,
+            role,
+            is_active,
+            last_login_at,
+            created_at,
+            updated_at,
+        )) = user
+        {
             Ok(Some(PlatformUser {
                 id: EntityId::from_string(&id)?,
                 email,
@@ -405,7 +483,18 @@ impl AuthorizationService<PlatformUser> for HttpAuthService {
         .fetch_optional(&self.db_pool)
         .await?;
 
-        if let Some((id, email, first_name, last_name, role, is_active, last_login_at, created_at, updated_at)) = user {
+        if let Some((
+            id,
+            email,
+            first_name,
+            last_name,
+            role,
+            is_active,
+            last_login_at,
+            created_at,
+            updated_at,
+        )) = user
+        {
             Ok(Some(PlatformUser {
                 id: EntityId::from_string(&id)?,
                 email,
@@ -423,13 +512,20 @@ impl AuthorizationService<PlatformUser> for HttpAuthService {
         }
     }
 
-    async fn create_user(&self, email: &str, password: &str, first_name: &str, last_name: &str, _role: impl Send) -> Result<PlatformUser, Self::Error> {
+    async fn create_user(
+        &self,
+        email: &str,
+        password: &str,
+        first_name: &str,
+        last_name: &str,
+        _role: impl Send,
+    ) -> Result<PlatformUser, Self::Error> {
         // Enforce password policy
         self.validate_password_policy(password)?;
         let user_id = EntityId::new();
         let now = Utc::now();
         let password_hash = self.hash_password(password)?;
-        
+
         // Role handling: default to viewer if unspecified/invalid
         let role_str = "viewer";
 
@@ -464,7 +560,7 @@ impl AuthorizationService<PlatformUser> for HttpAuthService {
 
     async fn update_user(&self, user: &PlatformUser) -> Result<PlatformUser, Self::Error> {
         let now = Utc::now();
-        
+
         sqlx::query(
             "UPDATE users SET email = $2, first_name = $3, last_name = $4, role = $5, is_active = $6, updated_at = $7 
              WHERE id = $1"
@@ -592,7 +688,7 @@ pub mod handlers {
 
                 // Fetch user details
                 let user_details = sqlx::query_as::<_, (String, String)>(
-                    "SELECT first_name, last_name FROM users WHERE id = $1"
+                    "SELECT first_name, last_name FROM users WHERE id = $1",
                 )
                 .bind(user.id.to_string())
                 .fetch_one(auth_service.db_pool())
@@ -621,29 +717,33 @@ pub mod handlers {
         State(auth_service): State<HttpAuthService>,
         req: Request,
     ) -> Result<Json<serde_json::Value>, StatusCode> {
-        let user = req.extensions()
+        let user = req
+            .extensions()
             .get::<AuthUser>()
             .cloned()
             .ok_or(StatusCode::UNAUTHORIZED)?;
-            
+
         let session_id = EntityId::from_string(&user.session_id)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            
+
         auth_service
             .revoke_session(&session_id)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        Ok(Json(serde_json::json!({ "message": "Logged out successfully" })))
+        Ok(Json(
+            serde_json::json!({ "message": "Logged out successfully" }),
+        ))
     }
 
     /// Get current user handler
     pub async fn me(req: Request) -> Result<Json<UserInfo>, StatusCode> {
-        let user = req.extensions()
+        let user = req
+            .extensions()
             .get::<AuthUser>()
             .cloned()
             .ok_or(StatusCode::UNAUTHORIZED)?;
-            
+
         Ok(Json(UserInfo {
             id: user.id.clone(),
             email: user.email.clone(),
@@ -656,7 +756,9 @@ pub mod handlers {
     /// Refresh handler
     #[derive(Deserialize)]
     #[allow(non_snake_case)]
-    pub struct RefreshRequest { pub refreshToken: String }
+    pub struct RefreshRequest {
+        pub refreshToken: String,
+    }
 
     pub async fn refresh(
         State(auth_service): State<HttpAuthService>,

@@ -1,7 +1,7 @@
+use crate::events::{EventType, ModelEvent};
 use anyhow::Result;
 use serde_json::Value;
 use sqlx::PgPool;
-use crate::events::{ModelEvent, EventType};
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -26,10 +26,15 @@ impl EventStore {
                 previous_data JSONB,
                 timestamp TEXT NOT NULL DEFAULT now()::text,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )"
-        ).execute(&self.pool).await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_event_log_model ON event_log (model_name, timestamp)")
-            .execute(&self.pool).await?;
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_event_log_model ON event_log (model_name, timestamp)",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -44,7 +49,7 @@ impl EventStore {
         .bind(format!("{:?}", event.event_type))
         .bind(&event.model_name)
         .bind(serde_json::to_value(&event.data)?)
-        .bind(event.previous_data.as_ref().map(|d| serde_json::to_value(d).ok()).flatten())
+        .bind(event.previous_data.as_ref().and_then(|d| serde_json::to_value(d).ok()))
         .bind(&event.timestamp)
         .execute(&self.pool)
         .await?;
@@ -66,7 +71,11 @@ impl EventStore {
     }
 
     /// Get all events for a specific entity by ID
-    pub async fn entity_history(&self, model_name: &str, entity_id: &str) -> Result<Vec<ModelEvent>> {
+    pub async fn entity_history(
+        &self,
+        model_name: &str,
+        entity_id: &str,
+    ) -> Result<Vec<ModelEvent>> {
         let rows = sqlx::query_as::<_, EventRow>(
             "SELECT event_id, event_type, model_name, data, previous_data, timestamp FROM event_log WHERE model_name = $1 AND data->>'id' = $2 ORDER BY timestamp"
         ).bind(model_name).bind(entity_id).fetch_all(&self.pool).await?;
@@ -100,6 +109,13 @@ impl From<EventRow> for ModelEvent {
             Value::Object(map) => Some(map.into_iter().collect()),
             _ => None,
         });
-        ModelEvent { event_type, model_name: row.model_name, data, previous_data, timestamp: row.timestamp, event_id: row.event_id }
+        ModelEvent {
+            event_type,
+            model_name: row.model_name,
+            data,
+            previous_data,
+            timestamp: row.timestamp,
+            event_id: row.event_id,
+        }
     }
 }

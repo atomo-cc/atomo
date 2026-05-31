@@ -9,7 +9,12 @@ use std::collections::HashMap;
 pub trait Projection: Send + Sync {
     fn name(&self) -> &str;
     fn source_model(&self) -> &str;
-    async fn handle_event(&self, event_type: &str, data: &HashMap<String, Value>, pool: &PgPool) -> Result<()>;
+    async fn handle_event(
+        &self,
+        event_type: &str,
+        data: &HashMap<String, Value>,
+        pool: &PgPool,
+    ) -> Result<()>;
     async fn rebuild(&self, pool: &PgPool) -> Result<()>;
 }
 
@@ -34,16 +39,38 @@ impl TableProjection {
 
 #[async_trait]
 impl Projection for TableProjection {
-    fn name(&self) -> &str { &self.name }
-    fn source_model(&self) -> &str { &self.source_model }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn source_model(&self) -> &str {
+        &self.source_model
+    }
 
-    async fn handle_event(&self, event_type: &str, data: &HashMap<String, Value>, pool: &PgPool) -> Result<()> {
+    async fn handle_event(
+        &self,
+        event_type: &str,
+        data: &HashMap<String, Value>,
+        pool: &PgPool,
+    ) -> Result<()> {
         match event_type {
             "Created" => {
-                let cols: Vec<&str> = self.columns.iter().filter(|c| data.contains_key(*c)).map(|s| s.as_str()).collect();
-                if cols.is_empty() { return Ok(()); }
-                let placeholders: Vec<String> = (1..=cols.len()).map(|i| format!("${}", i)).collect();
-                let sql = format!("INSERT INTO {} ({}) VALUES ({}) ON CONFLICT DO NOTHING", self.table_name, cols.join(", "), placeholders.join(", "));
+                let cols: Vec<&str> = self
+                    .columns
+                    .iter()
+                    .filter(|c| data.contains_key(*c))
+                    .map(|s| s.as_str())
+                    .collect();
+                if cols.is_empty() {
+                    return Ok(());
+                }
+                let placeholders: Vec<String> =
+                    (1..=cols.len()).map(|i| format!("${}", i)).collect();
+                let sql = format!(
+                    "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT DO NOTHING",
+                    self.table_name,
+                    cols.join(", "),
+                    placeholders.join(", ")
+                );
                 let mut query = sqlx::query(&sql);
                 for col in &cols {
                     let val = data.get(*col).unwrap_or(&Value::Null);
@@ -53,15 +80,28 @@ impl Projection for TableProjection {
             }
             "Updated" => {
                 if let Some(Value::String(id)) = data.get("id") {
-                    let sets: Vec<String> = self.columns.iter()
+                    let sets: Vec<String> = self
+                        .columns
+                        .iter()
                         .filter(|c| *c != "id" && data.contains_key(*c))
                         .enumerate()
                         .map(|(i, c)| format!("{} = ${}", c, i + 1))
                         .collect();
-                    if sets.is_empty() { return Ok(()); }
-                    let sql = format!("UPDATE {} SET {} WHERE id = ${}", self.table_name, sets.join(", "), sets.len() + 1);
+                    if sets.is_empty() {
+                        return Ok(());
+                    }
+                    let sql = format!(
+                        "UPDATE {} SET {} WHERE id = ${}",
+                        self.table_name,
+                        sets.join(", "),
+                        sets.len() + 1
+                    );
                     let mut query = sqlx::query(&sql);
-                    for col in self.columns.iter().filter(|c| *c != "id" && data.contains_key(*c)) {
+                    for col in self
+                        .columns
+                        .iter()
+                        .filter(|c| *c != "id" && data.contains_key(*c))
+                    {
                         let val = data.get(col).unwrap_or(&Value::Null);
                         query = query.bind(val.as_str().unwrap_or_default());
                     }
@@ -72,7 +112,9 @@ impl Projection for TableProjection {
             "Deleted" => {
                 if let Some(Value::String(id)) = data.get("id") {
                     sqlx::query(&format!("DELETE FROM {} WHERE id = $1", self.table_name))
-                        .bind(id).execute(pool).await?;
+                        .bind(id)
+                        .execute(pool)
+                        .await?;
                 }
             }
             _ => {}
@@ -82,7 +124,8 @@ impl Projection for TableProjection {
 
     async fn rebuild(&self, pool: &PgPool) -> Result<()> {
         sqlx::query(&format!("TRUNCATE TABLE {} CASCADE", self.table_name))
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
         Ok(())
     }
 }

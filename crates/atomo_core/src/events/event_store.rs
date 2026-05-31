@@ -4,12 +4,12 @@
 //! event sourcing architecture. Concrete implementations should be in
 //! the server layer.
 
-use async_trait::async_trait;
+use super::{EventEnvelope, EventType, Snapshot};
 use crate::types::{EntityId, StreamId, Timestamp};
-use super::{EventType, EventEnvelope, Snapshot};
+use async_trait::async_trait;
 
 /// Core event store interface
-/// 
+///
 /// This trait defines the fundamental operations that any event store
 /// implementation must provide for Atomo's event sourcing architecture.
 #[async_trait]
@@ -68,11 +68,11 @@ pub trait EventStore: Send + Sync {
 }
 
 /// Snapshot store interface for aggregate state snapshots
-/// 
+///
 /// Snapshots are used to optimize event replay by periodically
 /// capturing aggregate state.
 #[async_trait]
-pub trait SnapshotStore<S>: Send + Sync 
+pub trait SnapshotStore<S>: Send + Sync
 where
     S: Snapshot,
 {
@@ -86,16 +86,16 @@ where
 
     /// Load a snapshot at or before a specific version
     async fn load_snapshot_at_version(
-        &self, 
-        aggregate_id: EntityId, 
-        version: i64
+        &self,
+        aggregate_id: EntityId,
+        version: i64,
     ) -> Result<Option<S>, Self::Error>;
 
     /// Delete old snapshots, keeping only the most recent N
     async fn cleanup_snapshots(
-        &self, 
-        aggregate_id: EntityId, 
-        keep_count: usize
+        &self,
+        aggregate_id: EntityId,
+        keep_count: usize,
     ) -> Result<(), Self::Error>;
 }
 
@@ -104,19 +104,19 @@ where
 pub struct EventStoreStats {
     /// Total number of events in the store
     pub total_events: i64,
-    
+
     /// Total number of streams
     pub total_streams: i64,
-    
+
     /// Latest global sequence number
     pub latest_sequence: i64,
-    
+
     /// Events by type
     pub events_by_type: std::collections::HashMap<String, i64>,
-    
+
     /// Average events per stream
     pub avg_events_per_stream: f64,
-    
+
     /// Date range of events
     pub date_range: Option<(Timestamp, Timestamp)>,
 }
@@ -126,10 +126,10 @@ pub struct EventStoreStats {
 pub trait EventStoreExt: EventStore {
     /// Get statistics about the event store
     async fn get_stats(&self) -> Result<EventStoreStats, Self::Error>;
-    
+
     /// Get health status of the event store
     async fn health_check(&self) -> Result<bool, Self::Error>;
-    
+
     /// Compact/optimize the event store (if supported)
     async fn compact(&self) -> Result<(), Self::Error>;
 }
@@ -144,10 +144,16 @@ pub trait EventSubscription: Send + Sync {
     async fn subscribe_all(&self) -> Result<Box<Self::Handle>, Self::Error>;
 
     /// Subscribe to events of a specific type
-    async fn subscribe_to_type(&self, event_type: EventType) -> Result<Box<Self::Handle>, Self::Error>;
+    async fn subscribe_to_type(
+        &self,
+        event_type: EventType,
+    ) -> Result<Box<Self::Handle>, Self::Error>;
 
     /// Subscribe to events from a specific stream
-    async fn subscribe_to_stream(&self, stream_id: StreamId) -> Result<Box<Self::Handle>, Self::Error>;
+    async fn subscribe_to_stream(
+        &self,
+        stream_id: StreamId,
+    ) -> Result<Box<Self::Handle>, Self::Error>;
 }
 
 /// Handle for managing event subscriptions

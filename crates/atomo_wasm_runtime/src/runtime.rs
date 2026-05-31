@@ -69,7 +69,10 @@ impl WasmRuntime {
         linker.func_wrap(
             "env",
             "host_read_event",
-            |mut caller: Caller<'_, PluginState>, ptr: i32, cap: i32| -> Result<i32, anyhow::Error> {
+            |mut caller: Caller<'_, PluginState>,
+             ptr: i32,
+             cap: i32|
+             -> Result<i32, anyhow::Error> {
                 if !caller.data().permissions.contains(&Permission::ReadEvents) {
                     anyhow::bail!("Permission denied: ReadEvents required");
                 }
@@ -91,7 +94,10 @@ impl WasmRuntime {
         linker.func_wrap(
             "env",
             "host_emit_event",
-            |mut caller: Caller<'_, PluginState>, ptr: i32, len: i32| -> Result<(), anyhow::Error> {
+            |mut caller: Caller<'_, PluginState>,
+             ptr: i32,
+             len: i32|
+             -> Result<(), anyhow::Error> {
                 if !caller.data().permissions.contains(&Permission::WriteEvents) {
                     anyhow::bail!("Permission denied: WriteEvents required");
                 }
@@ -108,7 +114,11 @@ impl WasmRuntime {
         )?;
 
         let instance = linker.instantiate(&mut store, &module)?;
-        Ok(WasmPlugin { store, instance, fuel_limit: self.fuel_limit })
+        Ok(WasmPlugin {
+            store,
+            instance,
+            fuel_limit: self.fuel_limit,
+        })
     }
 }
 
@@ -119,7 +129,11 @@ pub struct WasmPlugin {
 }
 
 impl WasmPlugin {
-    pub fn call_function(&mut self, name: &str, args: &[wasmtime::Val]) -> Result<Vec<wasmtime::Val>> {
+    pub fn call_function(
+        &mut self,
+        name: &str,
+        args: &[wasmtime::Val],
+    ) -> Result<Vec<wasmtime::Val>> {
         let func = self
             .instance
             .get_func(&mut self.store, name)
@@ -159,19 +173,27 @@ impl WasmPlugin {
     /// ABI: guest exports `alloc(i32)->i32` and `{hook}(ptr:i32,len:i32)->i64`.
     /// Return value packs ptr<<32 | len; 0 means 'no modification'.
     pub fn call_hook(&mut self, hook_name: &str, input_json: &str) -> Result<Option<String>> {
-        let memory = self.instance.get_memory(&mut self.store, "memory")
+        let memory = self
+            .instance
+            .get_memory(&mut self.store, "memory")
             .ok_or_else(|| anyhow::anyhow!("plugin has no exported memory"))?;
 
         let input_bytes = input_json.as_bytes();
         let len = input_bytes.len() as i32;
-        let ptr = match self.instance.get_typed_func::<i32, i32>(&mut self.store, "alloc") {
+        let ptr = match self
+            .instance
+            .get_typed_func::<i32, i32>(&mut self.store, "alloc")
+        {
             Ok(alloc) => alloc.call(&mut self.store, len)?,
             Err(_) => return Err(anyhow::anyhow!("plugin missing required `alloc` export")),
         };
 
         memory.write(&mut self.store, ptr as usize, input_bytes)?;
 
-        let hook = match self.instance.get_typed_func::<(i32, i32), i64>(&mut self.store, hook_name) {
+        let hook = match self
+            .instance
+            .get_typed_func::<(i32, i32), i64>(&mut self.store, hook_name)
+        {
             Ok(f) => f,
             Err(_) => return Ok(None),
         };

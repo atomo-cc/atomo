@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use colored::*;
 use console::style;
 use std::fs;
@@ -35,15 +35,24 @@ pub async fn deploy_command(env: String) -> Result<()> {
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "schema": schema_path.unwrap().to_string_lossy(),
     });
-    fs::write("deploy-manifest.json", serde_json::to_string_pretty(&manifest)?)?;
+    fs::write(
+        "deploy-manifest.json",
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
     println!("   ✅ Manifest written to deploy-manifest.json");
 
     // Step 4: Summary
     println!();
-    println!("   🚀 {}", format!("Ready to deploy to '{}' environment", env).bright_green());
+    println!(
+        "   🚀 {}",
+        format!("Ready to deploy to '{}' environment", env).bright_green()
+    );
     println!("   📄 Manifest: deploy-manifest.json");
     println!("   💡 To deploy to Atomo Cloud, push to your configured remote.");
-    println!("   🔗 Dashboard: {}", "https://cloud.atomo.cc/deployments".bright_blue());
+    println!(
+        "   🔗 Dashboard: {}",
+        "https://cloud.atomo.cc/deployments".bright_blue()
+    );
 
     Ok(())
 }

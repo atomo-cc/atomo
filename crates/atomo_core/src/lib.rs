@@ -1,8 +1,8 @@
 //! Atomo Core - The Fundamental Platform Infrastructure
-//! 
+//!
 //! This crate contains only the most essential abstractions and interfaces
 //! that define the Atomo platform's core capabilities:
-//! 
+//!
 //! - Base types (EntityId, StreamId, etc.)
 //! - Event sourcing abstractions
 //! - Authentication and authorization interfaces
@@ -10,22 +10,25 @@
 //! - Core domain traits
 //!
 //! According to the Atomo whitepaper architecture, this core should remain
-//! absolutely pure - no concrete implementations, no database code, no 
-//! GraphQL schemas, no business logic. All concrete implementations belong 
+//! absolutely pure - no concrete implementations, no database code, no
+//! GraphQL schemas, no business logic. All concrete implementations belong
 //! in the server layer.
 
-pub mod types;
-pub mod events;
-pub mod auth;
+// EntityId/StreamId intentionally expose inherent to_string() alongside Display.
+#![allow(clippy::inherent_to_string_shadow_display)]
+
 pub mod audit;
-pub mod traits;
-pub mod errors;
+pub mod auth;
 pub mod content;
+pub mod errors;
+pub mod events;
+pub mod traits;
+pub mod types;
 
 // Re-export core types for easier access
-pub use types::{EntityId, StreamId, Timestamp, UserRole};
-pub use audit::{AuditOperation, AuditLogEntry};
-pub use events::*;
+pub use audit::{AuditLogEntry, AuditOperation};
 pub use auth::*;
-pub use errors::*;
 pub use content::*;
+pub use errors::*;
+pub use events::*;
+pub use types::{EntityId, StreamId, Timestamp, UserRole};

@@ -3,23 +3,23 @@
 //! This module handles parsing TypeScript schema files and converting them
 //! into Rust types for the Atomo runtime.
 
-use std::collections::HashMap;
 use anyhow::Result;
+use std::collections::HashMap;
 
 // Re-export from atomo_schema for compatibility
-pub use atomo_schema::{TypeScriptParser, Schema, Model, Field, FieldType, FieldAttribute};
+pub use atomo_schema::{Field, FieldAttribute, FieldType, Model, Schema, TypeScriptParser};
 
 /// Parse a TypeScript schema string into a Schema object
 pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
     let parser = TypeScriptParser::new();
     let models = parser.parse(content)?;
-    
+
     // Convert Vec<Model> to HashMap<String, Model>
     let mut schema_models = HashMap::new();
     for model in models {
         schema_models.insert(model.name.clone(), model);
     }
-    
+
     Ok(Schema {
         models: schema_models,
     })
@@ -28,20 +28,26 @@ pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
 /// Generate database migrations from schema
 pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
     let mut migrations = Vec::new();
-    
-    for (_, model) in &schema.models {
+
+    for model in schema.models.values() {
         let table = crate::query::sql_builder::table_name_for(model);
         let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", table);
-        
+
         let mut columns = Vec::new();
-        for (_, field) in &model.fields {
+        for field in model.fields.values() {
             let col = to_snake_case(&field.name);
             let column_type = field_type_to_sql(&field.field_type);
             // Primary key: id column gets a UUID default and PRIMARY KEY constraint
             let is_primary = field.name == "id"
-                || field.attributes.iter().any(|a| matches!(a, FieldAttribute::Primary));
+                || field
+                    .attributes
+                    .iter()
+                    .any(|a| matches!(a, FieldAttribute::Primary));
             if is_primary {
-                columns.push(format!("  {} {} PRIMARY KEY DEFAULT gen_random_uuid()", col, column_type));
+                columns.push(format!(
+                    "  {} {} PRIMARY KEY DEFAULT gen_random_uuid()",
+                    col, column_type
+                ));
                 continue;
             }
             // Timestamp columns default to NOW()
@@ -52,15 +58,15 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             let nullable = if field.optional { "" } else { " NOT NULL" };
             columns.push(format!("  {} {}{}{}", col, column_type, default, nullable));
         }
-        
+
         // Add soft delete column
-        columns.push(format!("  deleted_at TIMESTAMPTZ"));
+        columns.push("  deleted_at TIMESTAMPTZ".to_string());
         sql.push_str(&columns.join(",\n"));
         sql.push_str("\n);");
-        
+
         migrations.push(sql);
     }
-    
+
     Ok(migrations)
 }
 
@@ -84,14 +90,14 @@ fn field_type_to_sql(field_type: &FieldType) -> &'static str {
 /// Convert camelCase to snake_case
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    
-    while let Some(c) = chars.next() {
+    let chars = s.chars().peekable();
+
+    for c in chars {
         if c.is_uppercase() && !result.is_empty() {
             result.push('_');
         }
         result.push(c.to_lowercase().next().unwrap());
     }
-    
+
     result
 }

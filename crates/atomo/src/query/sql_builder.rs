@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use serde_json::Value;
+use super::{OrderDirection, WhereClause, WhereOperator};
 use crate::schema::Model;
-use super::{WhereClause, WhereOperator, OrderDirection};
+use serde_json::Value;
+use std::collections::HashMap;
 
 pub struct SqlBuilder;
 
@@ -42,10 +42,7 @@ impl SqlBuilder {
     }
 
     /// Build SELECT ... LIMIT 1 for find_unique
-    pub fn select_one(
-        model: &Model,
-        where_clauses: &[WhereClause],
-    ) -> (String, Vec<Value>) {
+    pub fn select_one(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
         let (mut sql, params) = Self::select(model, where_clauses, &[], Some(1), None);
         // select already adds LIMIT 1
         let _ = &mut sql;
@@ -53,10 +50,7 @@ impl SqlBuilder {
     }
 
     /// Build INSERT query. Returns (sql, params)
-    pub fn insert(
-        model: &Model,
-        data: &HashMap<String, Value>,
-    ) -> (String, Vec<Value>) {
+    pub fn insert(model: &Model, data: &HashMap<String, Value>) -> (String, Vec<Value>) {
         let mut columns = Vec::new();
         let mut placeholders = Vec::new();
         let mut params = Vec::new();
@@ -106,10 +100,7 @@ impl SqlBuilder {
     }
 
     /// Build DELETE query. Returns (sql, params)
-    pub fn delete(
-        model: &Model,
-        where_clauses: &[WhereClause],
-    ) -> (String, Vec<Value>) {
+    pub fn delete(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
         let mut sql = format!("DELETE FROM {}", table_name(model));
         let (where_sql, params) = build_where(where_clauses, 0);
         if !where_sql.is_empty() {
@@ -119,10 +110,7 @@ impl SqlBuilder {
     }
 
     /// Build a soft-delete UPDATE (sets deleted_at = NOW())
-    pub fn soft_delete(
-        model: &Model,
-        where_clauses: &[WhereClause],
-    ) -> (String, Vec<Value>) {
+    pub fn soft_delete(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
         let mut sql = format!("UPDATE {} SET deleted_at = NOW()", table_name(model));
         let (where_sql, params) = build_where(where_clauses, 0);
         if !where_sql.is_empty() {
@@ -160,8 +148,12 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
-pub fn table_name_for(model: &Model) -> String { table_name(model) }
-pub fn build_where_pub(where_clauses: &[WhereClause], param_offset: usize) -> (String, Vec<Value>) { build_where(where_clauses, param_offset) }
+pub fn table_name_for(model: &Model) -> String {
+    table_name(model)
+}
+pub fn build_where_pub(where_clauses: &[WhereClause], param_offset: usize) -> (String, Vec<Value>) {
+    build_where(where_clauses, param_offset)
+}
 
 fn table_name(model: &Model) -> String {
     to_snake_case(&model.name) + "s"

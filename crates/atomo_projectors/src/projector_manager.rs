@@ -23,7 +23,10 @@ pub struct ProjectorManager {
 
 impl ProjectorManager {
     pub fn new(pool: PgPool) -> Self {
-        Self { projections: Vec::new(), pool }
+        Self {
+            projections: Vec::new(),
+            pool,
+        }
     }
 
     pub fn register(&mut self, projection: impl Projection + 'static) {
@@ -31,7 +34,12 @@ impl ProjectorManager {
     }
 
     /// Process a single event through all matching projections
-    pub async fn process_event(&self, event_type: &str, model_name: &str, data: &std::collections::HashMap<String, serde_json::Value>) -> Result<()> {
+    pub async fn process_event(
+        &self,
+        event_type: &str,
+        model_name: &str,
+        data: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
         for proj in &self.projections {
             if proj.source_model() == model_name {
                 proj.handle_event(event_type, data, &self.pool).await?;
@@ -61,7 +69,10 @@ impl ProjectorManager {
             loop {
                 match rx.recv().await {
                     Ok(event) => {
-                        if let Err(e) = self.process_event(&event.event_type, &event.model_name, &event.data).await {
+                        if let Err(e) = self
+                            .process_event(&event.event_type, &event.model_name, &event.data)
+                            .await
+                        {
                             tracing::error!(error = %e, "Projection processing failed");
                         }
                     }

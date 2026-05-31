@@ -1,7 +1,7 @@
 //! Query operators for building where clauses
 
-use serde_json::Value;
 use super::{WhereClause, WhereOperator};
+use serde_json::Value;
 
 /// Equals operator
 pub struct Equals(pub Value);

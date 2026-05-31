@@ -1,12 +1,12 @@
-use anyhow::Result;
-use crate::types::*;
 use crate::dsl_parser::DslParser;
-use std::collections::HashMap;
+use crate::types::*;
+use anyhow::Result;
 use regex::Regex;
+use std::collections::HashMap;
 
 /// TypeScript parser that implements true "Dual-Mode Schema"
 /// Parses TypeScript interface definitions and extracts complete field information
-/// 
+///
 /// Enhanced features:
 /// - Interface parsing with inheritance
 /// - Enum and union type support
@@ -23,6 +23,12 @@ pub struct TypeScriptParser {
     pub dsl_parser: DslParser,
 }
 
+impl Default for TypeScriptParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeScriptParser {
     pub fn new() -> Self {
         Self {
@@ -31,17 +37,17 @@ impl TypeScriptParser {
             dsl_parser: DslParser::new(),
         }
     }
-    
+
     /// Parse TypeScript schema content and extract complete interface definitions
     pub fn parse(&self, content: &str) -> Result<Vec<Model>> {
         let mut parser = TypeScriptParser::new();
-        
+
         // First pass: collect enums and type definitions
         parser.collect_type_definitions(content)?;
-        
+
         // Second pass: parse interfaces with full type context
         let mut models = parser.parse_interfaces(content)?;
-        
+
         // Third pass: parse DSL models (defineModel calls) and merge with interfaces
         let dsl_models = parser.dsl_parser.parse_define_model(content)?;
         for dsl_model in dsl_models {
@@ -54,7 +60,7 @@ impl TypeScriptParser {
                 models.push(dsl_model);
             }
         }
-        
+
         // Fourth pass: parse validation rules from schema const and attach to models
         let mut validation_map = Self::parse_validation_rules(content);
         for model in &mut models {
@@ -62,10 +68,10 @@ impl TypeScriptParser {
                 model.validation = rules;
             }
         }
-        
+
         Ok(models)
     }
-    
+
     /// Extract per-model validation rules from the `export const schema` object
     fn parse_validation_rules(content: &str) -> HashMap<String, HashMap<String, String>> {
         let mut result: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -76,7 +82,7 @@ impl TypeScriptParser {
         for cap in model_open_re.captures_iter(content) {
             let model_name = cap[1].to_string();
             let block_start = cap.get(0).unwrap().end(); // just after the opening '{'
-            // Walk forward tracking brace depth to find this block's matching close.
+                                                         // Walk forward tracking brace depth to find this block's matching close.
             let mut depth = 1usize;
             let mut idx = block_start;
             let mut val_block: Option<String> = None;
@@ -119,18 +125,22 @@ impl TypeScriptParser {
         }
         result
     }
-    
+
     /// Collect enum and type alias definitions
     fn collect_type_definitions(&mut self, content: &str) -> Result<()> {
         let lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
-        
+
         while i < lines.len() {
             let line = lines[i].trim();
-            
+
             if line.starts_with("export enum ") {
                 let (enum_name, enum_values, lines_consumed) = parse_enum(&lines, i)?;
-                println!("DEBUG: Collected enum {} with {} values", enum_name, enum_values.len());
+                println!(
+                    "DEBUG: Collected enum {} with {} values",
+                    enum_name,
+                    enum_values.len()
+                );
                 self.enums.insert(enum_name, enum_values);
                 i += lines_consumed;
             } else if line.starts_with("export type ") {
@@ -141,19 +151,19 @@ impl TypeScriptParser {
                 i += 1;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Parse interface definitions with full type context
     fn parse_interfaces(&mut self, content: &str) -> Result<Vec<Model>> {
         let mut models = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
-        
+
         while i < lines.len() {
             let line = lines[i].trim();
-            
+
             // Look for interface definitions
             if line.starts_with("export interface ") {
                 if let Some(interface_name) = extract_interface_name(line) {
@@ -162,15 +172,18 @@ impl TypeScriptParser {
                         i += 1;
                         continue;
                     }
-                    
+
                     // Parse the complete interface
-                    let (mut model, lines_consumed) = parse_interface(&lines, i, interface_name.clone())?;
-                    
+                    let (mut model, lines_consumed) =
+                        parse_interface(&lines, i, interface_name.clone())?;
+
                     // Parse hooks and access control for this model
-                    let (access, hooks) = self.dsl_parser.parse_model_definition(content, &interface_name)?;
+                    let (access, hooks) = self
+                        .dsl_parser
+                        .parse_model_definition(content, &interface_name)?;
                     model.access = access;
                     model.hooks = hooks;
-                    
+
                     models.push(model);
                     i += lines_consumed;
                 } else {
@@ -180,30 +193,40 @@ impl TypeScriptParser {
                 i += 1;
             }
         }
-        
+
         // Also convert collected enums to models
         for (enum_name, enum_values) in &self.enums {
-            println!("DEBUG: Converting enum {} to model with {} values", enum_name, enum_values.len());
+            println!(
+                "DEBUG: Converting enum {} to model with {} values",
+                enum_name,
+                enum_values.len()
+            );
             let mut fields = HashMap::new();
-            
+
             // Create a special marker field to identify this as an enum
-            fields.insert("_enum_type".to_string(), Field {
-                name: "_enum_type".to_string(),
-                field_type: FieldType::String,
-                optional: false,
-                attributes: vec![],
-            });
-            
-            // Add each enum value as metadata (we'll handle this specially in the generator)
-            for (i, value) in enum_values.iter().enumerate() {
-                fields.insert(format!("_enum_value_{}", i), Field {
-                    name: value.clone(),
+            fields.insert(
+                "_enum_type".to_string(),
+                Field {
+                    name: "_enum_type".to_string(),
                     field_type: FieldType::String,
                     optional: false,
                     attributes: vec![],
-                });
+                },
+            );
+
+            // Add each enum value as metadata (we'll handle this specially in the generator)
+            for (i, value) in enum_values.iter().enumerate() {
+                fields.insert(
+                    format!("_enum_value_{}", i),
+                    Field {
+                        name: value.clone(),
+                        field_type: FieldType::String,
+                        optional: false,
+                        attributes: vec![],
+                    },
+                );
             }
-            
+
             models.push(Model {
                 name: enum_name.clone(),
                 fields,
@@ -212,11 +235,11 @@ impl TypeScriptParser {
                 validation: HashMap::new(),
             });
         }
-        
+
         if models.is_empty() {
             anyhow::bail!("No valid interfaces found in schema");
         }
-        
+
         Ok(models)
     }
 }
@@ -230,51 +253,52 @@ fn extract_interface_name(line: &str) -> Option<String> {
 fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(Model, usize)> {
     let mut fields = HashMap::new();
     let mut i = start_index;
-    
+
     // Find the opening brace
     while i < lines.len() && !lines[i].contains('{') {
         i += 1;
     }
     i += 1; // Move past the opening brace line
-    
+
     // Parse fields until we hit the closing brace at the beginning of a line
     while i < lines.len() {
         let line = lines[i].trim();
-        
+
         // Check for closing brace at start of line (end of interface)
         if line == "}" {
             break;
         }
-        
+
         // Skip comments, empty lines, and other non-field lines
-        if line.is_empty() 
-            || line.starts_with("//") 
-            || line.starts_with("/*") 
+        if line.is_empty()
+            || line.starts_with("//")
+            || line.starts_with("/*")
             || line.starts_with("*")
             || line.starts_with("export ")  // Skip nested exports
-            || line.contains("|")  // Skip union type members
+            || line.contains("|")
+        // Skip union type members
         {
             i += 1;
             continue;
         }
-        
+
         // Try to parse as field definition
         if let Some(field) = parse_field_definition(line) {
             fields.insert(field.name.clone(), field);
         }
-        
+
         i += 1;
     }
-    
-    let model = Model { 
-        name, 
+
+    let model = Model {
+        name,
         fields,
         access: None, // Will be populated later by DSL parser
         hooks: None,  // Will be populated later by DSL parser
         validation: HashMap::new(),
     };
     let lines_consumed = i - start_index + 1;
-    
+
     Ok((model, lines_consumed))
 }
 
@@ -284,29 +308,29 @@ fn parse_field_definition(line: &str) -> Option<Field> {
     // email?: string;
     // createdAt: Date; // ISO date string
     // stage: DealStage;
-    
+
     let field_re = Regex::new(r"(\w+)(\?)?:\s*([^;/]+)").ok()?;
     let captures = field_re.captures(line)?;
-    
+
     let field_name = captures.get(1)?.as_str().to_string();
     let is_optional = captures.get(2).is_some();
     let type_str = captures.get(3)?.as_str().trim();
-    
+
     // Determine field type
     let field_type = match type_str {
         "string" => FieldType::String,
         "number" => FieldType::Number,
         "boolean" => FieldType::Boolean,
         "Date" => FieldType::DateTime,
-        "any" => FieldType::Json, // TypeScript any type maps to JSON
+        "any" => FieldType::Json,       // TypeScript any type maps to JSON
         "Block[]" => FieldType::Blocks, // Special handling for composable content
         t if t.ends_with("[]") => FieldType::Array(Box::new(parse_array_type(t)?)),
         t => FieldType::Custom(t.to_string()),
     };
-    
+
     // Determine attributes based on field name and comments
     let mut attributes = Vec::new();
-    
+
     // Common patterns for attributes
     if field_name == "id" {
         attributes.push(FieldAttribute::Primary);
@@ -320,7 +344,7 @@ fn parse_field_definition(line: &str) -> Option<Field> {
     if field_name.contains("created") || field_name.contains("updated") {
         attributes.push(FieldAttribute::Timestamp);
     }
-    
+
     Some(Field {
         name: field_name,
         field_type,
@@ -343,30 +367,31 @@ fn parse_array_type(type_str: &str) -> Option<FieldType> {
 fn parse_enum(lines: &[&str], start_index: usize) -> Result<(String, Vec<String>, usize)> {
     let mut i = start_index;
     let line = lines[i].trim();
-    
+
     // Extract enum name from "export enum EnumName {"
     let enum_re = Regex::new(r"export\s+enum\s+(\w+)").unwrap();
-    let enum_name = enum_re.captures(line)
+    let enum_name = enum_re
+        .captures(line)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
         .ok_or_else(|| anyhow::anyhow!("Invalid enum declaration: {}", line))?;
-    
+
     // Find opening brace
     while i < lines.len() && !lines[i].contains('{') {
         i += 1;
     }
     i += 1; // Move past opening brace
-    
+
     let mut enum_values = Vec::new();
-    
+
     // Parse enum values
     while i < lines.len() {
         let line = lines[i].trim();
-        
+
         if line == "}" {
             break;
         }
-        
+
         if !line.is_empty() && !line.starts_with("//") {
             // Extract enum value (handle both "VALUE" and "VALUE = 'string'" patterns)
             let value_re = Regex::new(r"(\w+)").unwrap();
@@ -376,15 +401,18 @@ fn parse_enum(lines: &[&str], start_index: usize) -> Result<(String, Vec<String>
                 }
             }
         }
-        
+
         i += 1;
     }
-    
+
     let lines_consumed = i - start_index + 1;
-    
+
     // Debug output
-    println!("DEBUG: Parsed enum {} with values: {:?}", enum_name, enum_values);
-    
+    println!(
+        "DEBUG: Parsed enum {} with values: {:?}",
+        enum_name, enum_values
+    );
+
     Ok((enum_name, enum_values, lines_consumed))
 }
 
@@ -392,14 +420,15 @@ fn parse_enum(lines: &[&str], start_index: usize) -> Result<(String, Vec<String>
 fn parse_type_alias(lines: &[&str], start_index: usize) -> Result<(String, String, usize)> {
     let mut i = start_index;
     let line = lines[i].trim();
-    
+
     // Extract type name from "export type TypeName = ..."
     let type_re = Regex::new(r"export\s+type\s+(\w+)\s*=").unwrap();
-    let type_name = type_re.captures(line)
+    let type_name = type_re
+        .captures(line)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
         .ok_or_else(|| anyhow::anyhow!("Invalid type declaration: {}", line))?;
-    
+
     // Skip type definitions for now - they're complex and not needed for basic model generation
     // Just consume lines until we find the end
     while i < lines.len() {
@@ -409,7 +438,7 @@ fn parse_type_alias(lines: &[&str], start_index: usize) -> Result<(String, Strin
         }
         i += 1;
     }
-    
+
     let lines_consumed = i - start_index + 1;
     let placeholder_definition = "any".to_string(); // Placeholder for complex types
     Ok((type_name, placeholder_definition, lines_consumed))
@@ -438,8 +467,13 @@ mod validation_tests {
         };
         "#;
         let rules = TypeScriptParser::parse_validation_rules(content);
-        let contact = rules.get("Contact").expect("Contact validation rules missing");
+        let contact = rules
+            .get("Contact")
+            .expect("Contact validation rules missing");
         assert_eq!(contact.get("email").map(|s| s.as_str()), Some("email"));
-        assert_eq!(contact.get("firstName").map(|s| s.as_str()), Some("required|min:1|max:100"));
+        assert_eq!(
+            contact.get("firstName").map(|s| s.as_str()),
+            Some("required|min:1|max:100")
+        );
     }
 }

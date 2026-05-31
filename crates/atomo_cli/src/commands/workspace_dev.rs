@@ -1,14 +1,14 @@
 use anyhow::Result;
 use colored::*;
 use console::style;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::process::Command as TokioCommand;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc;
-use std::time::Duration;
-use tokio::signal;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::process::Command as TokioCommand;
+use tokio::signal;
 use tokio::sync::Mutex;
 
 /// 进程管理器 - 管理Admin UI和后端服务的生命周期
@@ -28,14 +28,14 @@ impl ProcessManager {
 
     async fn start_admin_ui_dev(&mut self, workspace_root: &Path) -> Result<()> {
         let admin_ui_dir = workspace_root.join("packages/atomo-admin-ui");
-        
+
         if !admin_ui_dir.exists() {
             println!("   ⚠️  Admin UI directory not found, skipping UI startup");
             return Ok(());
         }
-        
+
         println!("   🎨 Starting Admin UI development server...");
-        
+
         // 启动Admin UI开发服务器
         let child = TokioCommand::new("pnpm")
             .arg("dev")
@@ -43,25 +43,25 @@ impl ProcessManager {
             .stdout(Stdio::null()) // 避免干扰主服务日志
             .stderr(Stdio::null())
             .spawn()?;
-        
+
         self.admin_ui_process = Some(child);
-        
+
         // 等待Admin UI启动
         tokio::time::sleep(Duration::from_secs(3)).await;
         println!("   ✅ Admin UI dev server started on http://localhost:5173");
         println!("   🌐 Admin UI accessible via: http://localhost:3001/admin (proxied)");
-        
+
         Ok(())
     }
 
     async fn stop_all(&mut self) {
         println!("   🛑 Stopping all processes...");
-        
+
         if let Some(mut child) = self.admin_ui_process.take() {
             let _ = child.kill().await;
             println!("   ✅ Admin UI stopped");
         }
-        
+
         if let Some(mut child) = self.backend_process.take() {
             let _ = child.kill().await;
             println!("   ✅ Backend service stopped");
@@ -70,11 +70,11 @@ impl ProcessManager {
 }
 
 /// Workspace-level development mode
-/// 
+///
 /// Instead of creating isolated runtime, this mode runs the service directly
 /// in the workspace context, allowing for fast incremental compilation
 /// when atomo core changes.
-/// 
+///
 /// 🎯 **符合项目架构：**
 /// - 同时启动Admin UI和后端服务
 /// - 提供优雅的停止机制
@@ -85,26 +85,36 @@ pub async fn workspace_dev_command(
     strict_schema: bool,
     verify_schema: bool,
 ) -> Result<()> {
-    println!("🚀 {}", style("Starting Atomo workspace development server...").cyan());
-    
+    println!(
+        "🚀 {}",
+        style("Starting Atomo workspace development server...").cyan()
+    );
+
     // Step 1: Detect or use provided service directory
     let service_dir = match service_path {
         Some(path) => path,
         None => detect_service_in_workspace().await?,
     };
-    
-    println!("   📋 Using service: {}", service_dir.display().to_string().bright_yellow());
-    
+
+    println!(
+        "   📋 Using service: {}",
+        service_dir.display().to_string().bright_yellow()
+    );
+
     // Step 2: Setup workspace development environment
     setup_workspace_dev_environment(&service_dir).await?;
-    
+
     // Step 3: 创建进程管理器并启动所有服务
     let process_manager = Arc::new(Mutex::new(ProcessManager::new()));
-    
+
     // 🎯 启动Admin UI开发服务器 - 通过代理实现统一端口访问
     let workspace_root = find_workspace_root(&service_dir)?;
-    process_manager.lock().await.start_admin_ui_dev(&workspace_root).await?;
-    
+    process_manager
+        .lock()
+        .await
+        .start_admin_ui_dev(&workspace_root)
+        .await?;
+
     // Step 4: 设置信号处理 - 优雅停止所有进程
     let manager_clone = Arc::clone(&process_manager);
     tokio::spawn(async move {
@@ -113,25 +123,25 @@ pub async fn workspace_dev_command(
         manager_clone.lock().await.stop_all().await;
         std::process::exit(0);
     });
-    
+
     // Step 5: Run service with workspace context and hot reload
     run_service_with_workspace_context(&service_dir, port, strict_schema, verify_schema).await?;
-    
+
     // 如果到达这里，说明后端服务已停止，也停止Admin UI
     process_manager.lock().await.stop_all().await;
-    
+
     Ok(())
 }
 
 /// Detect service directory in current workspace
 async fn detect_service_in_workspace() -> Result<PathBuf> {
     let current_dir = std::env::current_dir()?;
-    
+
     // Check if we're in a service directory
     if current_dir.join("schema.ts").exists() {
         return Ok(current_dir);
     }
-    
+
     // Check if we're in workspace root and look for services
     let services_dir = current_dir.join("services");
     if services_dir.exists() {
@@ -146,19 +156,21 @@ async fn detect_service_in_workspace() -> Result<PathBuf> {
             }
         }
     }
-    
-    anyhow::bail!("❌ No service found. Run from a service directory or workspace root with services/");
+
+    anyhow::bail!(
+        "❌ No service found. Run from a service directory or workspace root with services/"
+    );
 }
 
 /// Setup workspace development environment
 async fn setup_workspace_dev_environment(service_dir: &Path) -> Result<()> {
     println!("   ⚙️  Setting up workspace development environment...");
-    
+
     // Create development configuration in the service directory
     let dev_config_path = service_dir.join(".atomo").join("workspace-dev.toml");
     tokio::fs::create_dir_all(service_dir.join(".atomo")).await?;
-    
-    let dev_config = format!(r#"# Workspace Development Configuration
+
+    let dev_config = r#"# Workspace Development Configuration
 [workspace]
 # Use workspace context for faster compilation
 use_workspace_context = true
@@ -180,25 +192,31 @@ features = ["dev-mode", "hot-reload"]
 atomo_core = "../../crates/atomo_core"
 atomo_schema = "../../crates/atomo_schema"
 atomo_server = "../../crates/atomo_server"
-"#);
-    
+"#
+    .to_string();
+
     tokio::fs::write(&dev_config_path, dev_config).await?;
     println!("   📝 Created workspace development configuration");
-    
+
     Ok(())
 }
 
 /// Run service with workspace context for fast incremental compilation
-async fn run_service_with_workspace_context(service_dir: &Path, port: u16, strict_schema: bool, verify_schema: bool) -> Result<()> {
+async fn run_service_with_workspace_context(
+    service_dir: &Path,
+    port: u16,
+    strict_schema: bool,
+    verify_schema: bool,
+) -> Result<()> {
     println!("   🔧 Starting service with workspace context...");
-    
+
     // Step 1: Setup file watching for core libraries AND service schema
     let (tx, rx) = mpsc::channel();
     let mut watcher = RecommendedWatcher::new(tx, notify::Config::default())?;
-    
+
     // Watch atomo core libraries
     let workspace_root = find_workspace_root(service_dir)?;
-    
+
     // Check if the directories exist before watching
     let core_src = workspace_root.join("crates/atomo_core/src");
     let schema_src = workspace_root.join("crates/atomo_schema/src");
@@ -206,32 +224,56 @@ async fn run_service_with_workspace_context(service_dir: &Path, port: u16, stric
     let cli_src = workspace_root.join("crates/atomo_cli/src");
     let atomo_src = workspace_root.join("crates/atomo/src");
     let service_schema = service_dir.join("schema.ts");
-    
+
     if !core_src.exists() {
-        anyhow::bail!("❌ Atomo core source directory not found: {}", core_src.display());
+        anyhow::bail!(
+            "❌ Atomo core source directory not found: {}",
+            core_src.display()
+        );
     }
     if !schema_src.exists() {
-        anyhow::bail!("❌ Atomo schema source directory not found: {}", schema_src.display());
+        anyhow::bail!(
+            "❌ Atomo schema source directory not found: {}",
+            schema_src.display()
+        );
     }
     if !server_src.exists() {
-        anyhow::bail!("❌ Atomo server source directory not found: {}", server_src.display());
+        anyhow::bail!(
+            "❌ Atomo server source directory not found: {}",
+            server_src.display()
+        );
     }
     if !service_schema.exists() {
-        anyhow::bail!("❌ Service schema.ts not found: {}", service_schema.display());
+        anyhow::bail!(
+            "❌ Service schema.ts not found: {}",
+            service_schema.display()
+        );
     }
-    
+
     println!("   📂 Watching directories:");
     println!("      ├─ Core: {}", core_src.display().to_string().dimmed());
-    println!("      ├─ Schema: {}", schema_src.display().to_string().dimmed());
-    println!("      ├─ Server: {}", server_src.display().to_string().dimmed());
+    println!(
+        "      ├─ Schema: {}",
+        schema_src.display().to_string().dimmed()
+    );
+    println!(
+        "      ├─ Server: {}",
+        server_src.display().to_string().dimmed()
+    );
     if cli_src.exists() {
         println!("      ├─ CLI: {}", cli_src.display().to_string().dimmed());
     }
     if atomo_src.exists() {
-        println!("      ├─ Atomo: {}", atomo_src.display().to_string().dimmed());
+        println!(
+            "      ├─ Atomo: {}",
+            atomo_src.display().to_string().dimmed()
+        );
     }
-    println!("      └─ Service Schema: {}", service_schema.display().to_string().dimmed());
-    
+    println!(
+        "      └─ Service Schema: {}",
+        service_schema.display().to_string().dimmed()
+    );
+
     watcher.watch(&core_src, RecursiveMode::Recursive)?;
     watcher.watch(&schema_src, RecursiveMode::Recursive)?;
     watcher.watch(&server_src, RecursiveMode::Recursive)?;
@@ -242,19 +284,20 @@ async fn run_service_with_workspace_context(service_dir: &Path, port: u16, stric
         watcher.watch(&atomo_src, RecursiveMode::Recursive)?;
     }
     watcher.watch(&service_schema, RecursiveMode::NonRecursive)?;
-    
+
     println!("   👀 File watching setup complete");
-    
+
     // Step 2: Build and run service with workspace dependencies
     build_and_run_workspace_service(service_dir, port, rx, strict_schema, verify_schema).await?;
-    
+
     Ok(())
 }
 
 /// Find workspace root directory
 fn find_workspace_root(service_dir: &Path) -> Result<PathBuf> {
     let mut current = service_dir;
-    for _ in 0..10 {  // Max 10 levels up
+    for _ in 0..10 {
+        // Max 10 levels up
         if current.join("Cargo.toml").exists() {
             // Check if it's a workspace Cargo.toml
             let cargo_content = std::fs::read_to_string(current.join("Cargo.toml"))?;
@@ -268,13 +311,16 @@ fn find_workspace_root(service_dir: &Path) -> Result<PathBuf> {
             break;
         }
     }
-    anyhow::bail!("Could not find workspace root from {}", service_dir.display());
+    anyhow::bail!(
+        "Could not find workspace root from {}",
+        service_dir.display()
+    );
 }
 
 /// Rebuild CLI when CLI files change
 async fn rebuild_cli(workspace_root: &Path) -> Result<()> {
     println!("   📦 Building atomo-cli...");
-    
+
     let output = TokioCommand::new("cargo")
         .arg("build")
         .arg("--bin")
@@ -282,12 +328,12 @@ async fn rebuild_cli(workspace_root: &Path) -> Result<()> {
         .current_dir(workspace_root)
         .output()
         .await?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("CLI build failed:\n{}", stderr);
     }
-    
+
     println!("   ✅ CLI rebuilt successfully");
     Ok(())
 }
@@ -301,25 +347,38 @@ async fn build_and_run_workspace_service(
     verify_schema: bool,
 ) -> Result<()> {
     let workspace_root = find_workspace_root(service_dir)?;
-    
+
     // Step 1: Generate service-specific runtime code
     generate_service_runtime_code(service_dir, port, strict_schema, verify_schema).await?;
-    
+
     // Step 2: Create workspace-aware Cargo.toml for the service
     create_workspace_service_cargo_toml(service_dir, &workspace_root).await?;
-    
+
     // Step 3: Initial compilation with workspace context
     println!("   🔧 Initial compilation with workspace context...");
     compile_workspace_service(&workspace_root, service_dir).await?;
-    
+
     // Step 4: Start service with hot reload
-    start_workspace_service_with_hot_reload(&workspace_root, service_dir, port, rx, strict_schema, verify_schema).await?;
-    
+    start_workspace_service_with_hot_reload(
+        &workspace_root,
+        service_dir,
+        port,
+        rx,
+        strict_schema,
+        verify_schema,
+    )
+    .await?;
+
     Ok(())
 }
 
 /// Generate runtime code for the service (workspace mode)
-async fn generate_service_runtime_code(service_dir: &Path, port: u16, strict_schema: bool, verify_schema: bool) -> Result<()> {
+async fn generate_service_runtime_code(
+    service_dir: &Path,
+    port: u16,
+    strict_schema: bool,
+    verify_schema: bool,
+) -> Result<()> {
     // Paths
     let schema_path = service_dir.join("schema.ts");
     let runtime_dir = service_dir.join(".atomo/runtime");
@@ -330,7 +389,8 @@ async fn generate_service_runtime_code(service_dir: &Path, port: u16, strict_sch
     // Falls back to previous unconditional generation behavior if needed in future.
     crate::commands::dev::shared_incremental_codegen(&runtime_dir, &schema_path).await?;
     if verify_schema {
-        crate::commands::dev::shared_validate_schema(&runtime_dir, &schema_path, strict_schema).await?;
+        crate::commands::dev::shared_validate_schema(&runtime_dir, &schema_path, strict_schema)
+            .await?;
     }
 
     // Copy .env file if it exists
@@ -340,9 +400,10 @@ async fn generate_service_runtime_code(service_dir: &Path, port: u16, strict_sch
         tokio::fs::write(runtime_dir.join(".env"), env_content).await?;
         println!("   📋 Copied .env configuration to runtime");
     }
-    
+
     // Generate main.rs using the corrected template for workspace development
-    let main_rs = format!(r#"//! {} Service Runtime - Workspace Development Mode
+    let main_rs = format!(
+        r#"//! {} Service Runtime - Workspace Development Mode
 //! 
 //! 这是一个由 Atomo CLI 自动生成的服务运行时。
 //! 使用工作区上下文进行快速增量编译开发。
@@ -759,30 +820,44 @@ async fn node_modules_proxy(axum::extract::Path(path): axum::extract::Path<Strin
         }}
     }}
 }}
-"#, 
-        service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service"),
-        service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service"),
+"#,
+        service_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace-service"),
+        service_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace-service"),
         port,
-        service_dir.file_name().and_then(|n| n.to_str()).unwrap_or("workspace-service")
+        service_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("workspace-service")
     );
-    
+
     tokio::fs::write(src_dir.join("main.rs"), main_rs).await?;
-    
+
     println!("   📝 Generated service runtime code");
     Ok(())
 }
 
 /// Create Cargo.toml that uses workspace dependencies
-async fn create_workspace_service_cargo_toml(service_dir: &Path, workspace_root: &Path) -> Result<()> {
-    let service_name = service_dir.file_name()
+async fn create_workspace_service_cargo_toml(
+    service_dir: &Path,
+    workspace_root: &Path,
+) -> Result<()> {
+    let service_name = service_dir
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("service");
-    
+
     // Create Cargo.toml in the hidden temporary runtime directory
     let runtime_dir = service_dir.join(".atomo/runtime");
     let cargo_toml_path = runtime_dir.join("Cargo.toml");
-    
-    let cargo_toml = format!(r#"[package]
+
+    let cargo_toml = format!(
+        r#"[package]
 name = "{service_name}-workspace-dev"
 version = "0.1.0"
 edition = "2021"
@@ -839,35 +914,35 @@ codegen-units = 512  # 最大并行度
 [profile.release]
 incremental = true
 lto = "thin"  # 链接时优化，但不要太慢
-"#, 
-    service_name = service_name,
-    workspace_path = workspace_root.canonicalize()?.display()
-);
-    
+"#,
+        service_name = service_name,
+        workspace_path = workspace_root.canonicalize()?.display()
+    );
+
     tokio::fs::write(cargo_toml_path, cargo_toml).await?;
     println!("   📝 Created workspace-aware Cargo.toml");
-    
+
     Ok(())
 }
 
 /// Compile service with workspace context for incremental compilation
 async fn compile_workspace_service(workspace_root: &Path, service_dir: &Path) -> Result<()> {
     println!("   🔧 Compiling with workspace incremental compilation...");
-    
+
     let mut compile_cmd = TokioCommand::new("cargo")
         .arg("build")
         .arg("--manifest-path")
         .arg(service_dir.join(".atomo/runtime/Cargo.toml"))
-        .current_dir(workspace_root)  // Use workspace root for shared target
+        .current_dir(workspace_root) // Use workspace root for shared target
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()?;
-    
+
     let status = compile_cmd.wait().await?;
     if !status.success() {
         anyhow::bail!("❌ Compilation failed");
     }
-    
+
     println!("   ✅ Compilation completed successfully");
     Ok(())
 }
@@ -883,22 +958,31 @@ async fn start_workspace_service_with_hot_reload(
 ) -> Result<()> {
     use std::sync::{Arc, Mutex};
     use tokio::process::Child;
-    
-    println!("🎉 {} {} {}", 
+
+    println!(
+        "🎉 {} {} {}",
         "".repeat(5),
-        "Workspace Development Server Started!".bright_green().bold(),
+        "Workspace Development Server Started!"
+            .bright_green()
+            .bold(),
         "".repeat(5)
     );
-    println!("   🌐 Service: http://localhost:{}", port.to_string().bright_blue());
-    println!("   🔍 GraphQL Playground: http://localhost:{}/playground", port.to_string().bright_blue());
+    println!(
+        "   🌐 Service: http://localhost:{}",
+        port.to_string().bright_blue()
+    );
+    println!(
+        "   🔍 GraphQL Playground: http://localhost:{}/playground",
+        port.to_string().bright_blue()
+    );
     println!("   🔥 Hot Reload: Watching core libraries, schema, and CLI files...");
     println!();
-    
+
     let current_process: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
-    
+
     // Start initial service process
     let binary_path = service_dir.join(".atomo/runtime/target/debug/service");
-    
+
     {
         let mut process_guard = current_process.lock().unwrap();
         let service_process = TokioCommand::new(&binary_path)
@@ -909,85 +993,102 @@ async fn start_workspace_service_with_hot_reload(
             .spawn()?;
         *process_guard = Some(service_process);
     }
-    
+
     // Hot reload loop
     let mut last_reload_time = std::time::Instant::now();
-    
+
     loop {
         if let Ok(event) = rx.recv_timeout(Duration::from_millis(100)) {
-            match event {
-                Ok(notify::Event { kind: notify::EventKind::Modify(_), paths, .. }) => {
-                    let now = std::time::Instant::now();
-                    if now.duration_since(last_reload_time) < Duration::from_millis(1000) {
-                        continue; // Debounce events
-                    }
-                    last_reload_time = now;
-                    
-                    let changed_file = paths.first().map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
-                    
-                    println!("🔄 {} File changed: {}", 
-                        "Detected change!".bright_yellow(),
-                        changed_file.dimmed()
-                    );
-                    
-                    // Check what type of change occurred
-                    let cli_changed = paths.iter()
-                        .any(|p| p.to_string_lossy().contains("atomo_cli/src"));
-                    let schema_changed = paths.iter()
-                        .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("schema.ts"));
-                    
-                    // If CLI files changed, rebuild CLI first
-                    if cli_changed {
-                        println!("   🔧 CLI files changed - rebuilding CLI tool...");
-                        if let Err(e) = rebuild_cli(workspace_root).await {
-                            eprintln!("   ❌ CLI rebuild failed: {}", e);
-                            continue;
-                        }
-                    }
-                    
-                    // Stop current process
-                    {
-                        let mut process_guard = current_process.lock().unwrap();
-                        if let Some(mut process) = process_guard.take() {
-                            let _ = process.kill().await;
-                            let _ = process.wait().await;
-                        }
-                    }
-                    
-                    // Check if schema changed (need regeneration) or just core libs (just recompile)
-                    if schema_changed {
-                        println!("   📝 Schema changed - regenerating code...");
-                        if let Err(e) = generate_service_runtime_code(service_dir, port, strict_schema, verify_schema).await {
-                            eprintln!("   ❌ Code generation failed: {}", e);
-                            continue;
-                        }
-                    }
-                    
-                    // Recompile (incremental)
-                    println!("   🔧 Recompiling (incremental)...");
-                    if let Err(e) = compile_workspace_service(workspace_root, service_dir).await {
-                        eprintln!("   ❌ Compilation failed: {}", e);
+            if let Ok(notify::Event {
+                kind: notify::EventKind::Modify(_),
+                paths,
+                ..
+            }) = event
+            {
+                let now = std::time::Instant::now();
+                if now.duration_since(last_reload_time) < Duration::from_millis(1000) {
+                    continue; // Debounce events
+                }
+                last_reload_time = now;
+
+                let changed_file = paths
+                    .first()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                println!(
+                    "🔄 {} File changed: {}",
+                    "Detected change!".bright_yellow(),
+                    changed_file.dimmed()
+                );
+
+                // Check what type of change occurred
+                let cli_changed = paths
+                    .iter()
+                    .any(|p| p.to_string_lossy().contains("atomo_cli/src"));
+                let schema_changed = paths
+                    .iter()
+                    .any(|p| p.file_name().and_then(|n| n.to_str()) == Some("schema.ts"));
+
+                // If CLI files changed, rebuild CLI first
+                if cli_changed {
+                    println!("   🔧 CLI files changed - rebuilding CLI tool...");
+                    if let Err(e) = rebuild_cli(workspace_root).await {
+                        eprintln!("   ❌ CLI rebuild failed: {}", e);
                         continue;
                     }
-                    
-                    // Restart service
-                    println!("   🚀 Restarting service...");
-                    let new_process = TokioCommand::new(&binary_path)
-                        .current_dir(service_dir)
-                        .env("PORT", port.to_string())
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
-                        .spawn()?;
-                    
-                    {
-                        let mut process_guard = current_process.lock().unwrap();
-                        *process_guard = Some(new_process);
+                }
+
+                // Stop current process
+                {
+                    let mut process_guard = current_process.lock().unwrap();
+                    if let Some(mut process) = process_guard.take() {
+                        let _ = process.kill().await;
+                        let _ = process.wait().await;
                     }
-                    
-                    println!("   ✅ {} Service reloaded successfully! 🚀", "Hot reload completed!".bright_green());
-                },
-                _ => {}
+                }
+
+                // Check if schema changed (need regeneration) or just core libs (just recompile)
+                if schema_changed {
+                    println!("   📝 Schema changed - regenerating code...");
+                    if let Err(e) = generate_service_runtime_code(
+                        service_dir,
+                        port,
+                        strict_schema,
+                        verify_schema,
+                    )
+                    .await
+                    {
+                        eprintln!("   ❌ Code generation failed: {}", e);
+                        continue;
+                    }
+                }
+
+                // Recompile (incremental)
+                println!("   🔧 Recompiling (incremental)...");
+                if let Err(e) = compile_workspace_service(workspace_root, service_dir).await {
+                    eprintln!("   ❌ Compilation failed: {}", e);
+                    continue;
+                }
+
+                // Restart service
+                println!("   🚀 Restarting service...");
+                let new_process = TokioCommand::new(&binary_path)
+                    .current_dir(service_dir)
+                    .env("PORT", port.to_string())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .spawn()?;
+
+                {
+                    let mut process_guard = current_process.lock().unwrap();
+                    *process_guard = Some(new_process);
+                }
+
+                println!(
+                    "   ✅ {} Service reloaded successfully! 🚀",
+                    "Hot reload completed!".bright_green()
+                );
             }
         }
     }

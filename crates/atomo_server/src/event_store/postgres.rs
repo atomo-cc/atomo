@@ -1,16 +1,16 @@
 //! PostgreSQL Event Store Implementation
-//! 
+//!
 //! Production-ready event store implementation using PostgreSQL
 //! with JSONB storage for optimal performance and querying.
 
+use async_trait::async_trait;
 use atomo_core::{
-    events::{EventStore, EventEnvelope, EventType, Snapshot, SnapshotStore},
+    events::{EventEnvelope, EventStore, EventType, Snapshot, SnapshotStore},
     types::{EntityId, StreamId, Timestamp},
     AtomoError, Result,
 };
-use async_trait::async_trait;
-use sqlx::{PgPool, Row};
 use serde_json::Value;
+use sqlx::{PgPool, Row};
 
 /// PostgreSQL event store implementation
 #[derive(Debug, Clone)]
@@ -91,7 +91,11 @@ impl EventStore for PostgresEventStore {
         }
 
         // Start transaction for concurrency control
-        let mut tx = self.pool.begin().await.map_err(|e| AtomoError::Database(e.into()))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| AtomoError::Database(e.into()))?;
 
         // Check current stream version for optimistic concurrency control
         let current_version: Option<i64> = sqlx::query_scalar(
@@ -130,7 +134,9 @@ impl EventStore for PostgresEventStore {
             .map_err(|e| AtomoError::Database(e.into()))?;
         }
 
-        tx.commit().await.map_err(|e| AtomoError::Database(e.into()))?;
+        tx.commit()
+            .await
+            .map_err(|e| AtomoError::Database(e.into()))?;
 
         Ok(())
     }
@@ -160,19 +166,22 @@ impl EventStore for PostgresEventStore {
         .await
         .map_err(|e| AtomoError::Database(e.into()))?;
 
-        let events = rows.into_iter().map(|row| {
-            let event_type: String = row.get("event_type");
-            EventEnvelope {
-                event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
-                stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
-                stream_version: row.get("stream_version"),
-                global_sequence: row.get("global_sequence"),
-                event_type: serde_json::from_str(&event_type).unwrap(),
-                metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
-                payload: row.get("payload"),
-                recorded_at: row.get("recorded_at"),
-            }
-        }).collect();
+        let events = rows
+            .into_iter()
+            .map(|row| {
+                let event_type: String = row.get("event_type");
+                EventEnvelope {
+                    event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
+                    stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
+                    stream_version: row.get("stream_version"),
+                    global_sequence: row.get("global_sequence"),
+                    event_type: serde_json::from_str(&event_type).unwrap(),
+                    metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
+                    payload: row.get("payload"),
+                    recorded_at: row.get("recorded_at"),
+                }
+            })
+            .collect();
 
         Ok(events)
     }
@@ -183,7 +192,8 @@ impl EventStore for PostgresEventStore {
         from_timestamp: Option<Timestamp>,
         max_count: Option<usize>,
     ) -> Result<Vec<EventEnvelope>> {
-        let from_time = from_timestamp.unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
+        let from_time =
+            from_timestamp.unwrap_or_else(|| chrono::DateTime::from_timestamp(0, 0).unwrap());
         let limit = max_count.unwrap_or(1000) as i64;
         let event_type_str = serde_json::to_string(&event_type).unwrap();
 
@@ -203,19 +213,22 @@ impl EventStore for PostgresEventStore {
         .await
         .map_err(|e| AtomoError::Database(e.into()))?;
 
-        let events = rows.into_iter().map(|row| {
-            let event_type: String = row.get("event_type");
-            EventEnvelope {
-                event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
-                stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
-                stream_version: row.get("stream_version"),
-                global_sequence: row.get("global_sequence"),
-                event_type: serde_json::from_str(&event_type).unwrap(),
-                metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
-                payload: row.get("payload"),
-                recorded_at: row.get("recorded_at"),
-            }
-        }).collect();
+        let events = rows
+            .into_iter()
+            .map(|row| {
+                let event_type: String = row.get("event_type");
+                EventEnvelope {
+                    event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
+                    stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
+                    stream_version: row.get("stream_version"),
+                    global_sequence: row.get("global_sequence"),
+                    event_type: serde_json::from_str(&event_type).unwrap(),
+                    metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
+                    payload: row.get("payload"),
+                    recorded_at: row.get("recorded_at"),
+                }
+            })
+            .collect();
 
         Ok(events)
     }
@@ -241,19 +254,22 @@ impl EventStore for PostgresEventStore {
         .await
         .map_err(|e| AtomoError::Database(e.into()))?;
 
-        let events = rows.into_iter().map(|row| {
-            let event_type: String = row.get("event_type");
-            EventEnvelope {
-                event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
-                stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
-                stream_version: row.get("stream_version"),
-                global_sequence: row.get("global_sequence"),
-                event_type: serde_json::from_str(&event_type).unwrap(),
-                metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
-                payload: row.get("payload"),
-                recorded_at: row.get("recorded_at"),
-            }
-        }).collect();
+        let events = rows
+            .into_iter()
+            .map(|row| {
+                let event_type: String = row.get("event_type");
+                EventEnvelope {
+                    event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
+                    stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
+                    stream_version: row.get("stream_version"),
+                    global_sequence: row.get("global_sequence"),
+                    event_type: serde_json::from_str(&event_type).unwrap(),
+                    metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
+                    payload: row.get("payload"),
+                    recorded_at: row.get("recorded_at"),
+                }
+            })
+            .collect();
 
         Ok(events)
     }
@@ -280,19 +296,22 @@ impl EventStore for PostgresEventStore {
         .await
         .map_err(|e| AtomoError::Database(e.into()))?;
 
-        let events = rows.into_iter().map(|row| {
-            let event_type: String = row.get("event_type");
-            EventEnvelope {
-                event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
-                stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
-                stream_version: row.get("stream_version"),
-                global_sequence: row.get("global_sequence"),
-                event_type: serde_json::from_str(&event_type).unwrap(),
-                metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
-                payload: row.get("payload"),
-                recorded_at: row.get("recorded_at"),
-            }
-        }).collect();
+        let events = rows
+            .into_iter()
+            .map(|row| {
+                let event_type: String = row.get("event_type");
+                EventEnvelope {
+                    event_id: EntityId::from_string(&row.get::<String, _>("event_id")).unwrap(),
+                    stream_id: StreamId::from_string(&row.get::<String, _>("stream_id")).unwrap(),
+                    stream_version: row.get("stream_version"),
+                    global_sequence: row.get("global_sequence"),
+                    event_type: serde_json::from_str(&event_type).unwrap(),
+                    metadata: serde_json::from_value(row.get::<Value, _>("metadata")).unwrap(),
+                    payload: row.get("payload"),
+                    recorded_at: row.get("recorded_at"),
+                }
+            })
+            .collect();
 
         Ok(events)
     }
@@ -311,7 +330,7 @@ impl EventStore for PostgresEventStore {
 
     async fn get_latest_sequence(&self) -> Result<i64> {
         let sequence: Option<i64> = sqlx::query_scalar(
-            "SELECT global_sequence FROM events ORDER BY global_sequence DESC LIMIT 1"
+            "SELECT global_sequence FROM events ORDER BY global_sequence DESC LIMIT 1",
         )
         .fetch_optional(&self.pool)
         .await
@@ -321,13 +340,12 @@ impl EventStore for PostgresEventStore {
     }
 
     async fn stream_exists(&self, stream_id: StreamId) -> Result<bool> {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM events WHERE stream_id = $1)"
-        )
-        .bind(stream_id.to_string())
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| AtomoError::Database(e.into()))?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM events WHERE stream_id = $1)")
+                .bind(stream_id.to_string())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| AtomoError::Database(e.into()))?;
 
         Ok(exists)
     }
@@ -372,7 +390,7 @@ where
             ON CONFLICT (aggregate_id, version) DO UPDATE SET
                 data = EXCLUDED.data,
                 taken_at = EXCLUDED.taken_at
-            "#
+            "#,
         )
         .bind(snapshot.aggregate_id().to_string())
         .bind(snapshot.version())
@@ -387,7 +405,7 @@ where
 
     async fn load_snapshot(&self, aggregate_id: EntityId) -> Result<Option<S>> {
         let row = sqlx::query(
-            "SELECT data FROM snapshots WHERE aggregate_id = $1 ORDER BY version DESC LIMIT 1"
+            "SELECT data FROM snapshots WHERE aggregate_id = $1 ORDER BY version DESC LIMIT 1",
         )
         .bind(aggregate_id.to_string())
         .fetch_optional(&self.pool)
@@ -426,11 +444,7 @@ where
         }
     }
 
-    async fn cleanup_snapshots(
-        &self,
-        aggregate_id: EntityId,
-        keep_count: usize,
-    ) -> Result<()> {
+    async fn cleanup_snapshots(&self, aggregate_id: EntityId, keep_count: usize) -> Result<()> {
         sqlx::query(
             r#"
             DELETE FROM snapshots 
@@ -441,7 +455,7 @@ where
                 ORDER BY version DESC 
                 LIMIT $2
             )
-            "#
+            "#,
         )
         .bind(aggregate_id.to_string())
         .bind(keep_count as i64)

@@ -39,11 +39,21 @@ pub struct WorkflowStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StepAction {
     /// Execute a GraphQL mutation
-    Mutation { query: String, variables: HashMap<String, Value> },
+    Mutation {
+        query: String,
+        variables: HashMap<String, Value>,
+    },
     /// Call a WASM plugin function
-    Plugin { plugin_name: String, function: String },
+    Plugin {
+        plugin_name: String,
+        function: String,
+    },
     /// Send an HTTP request
-    Http { method: String, url: String, body: Option<Value> },
+    Http {
+        method: String,
+        url: String,
+        body: Option<Value>,
+    },
     /// Wait for a duration
     Delay { seconds: u64 },
     /// Set a variable in the workflow context
@@ -90,19 +100,34 @@ pub struct WorkflowEngine {
     pool: Option<sqlx::PgPool>,
 }
 
+impl Default for WorkflowEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorkflowEngine {
     pub fn new() -> Self {
-        Self { workflows: std::sync::RwLock::new(HashMap::new()), pool: None }
+        Self {
+            workflows: std::sync::RwLock::new(HashMap::new()),
+            pool: None,
+        }
     }
 
     /// Create an engine backed by a Postgres table for durable persistence.
     pub fn with_pool(pool: sqlx::PgPool) -> Self {
-        Self { workflows: std::sync::RwLock::new(HashMap::new()), pool: Some(pool) }
+        Self {
+            workflows: std::sync::RwLock::new(HashMap::new()),
+            pool: Some(pool),
+        }
     }
 
     /// Ensure the workflows table exists and load any persisted definitions into memory.
     pub async fn init(&self) -> Result<()> {
-        let pool = match &self.pool { Some(p) => p, None => return Ok(()) };
+        let pool = match &self.pool {
+            Some(p) => p,
+            None => return Ok(()),
+        };
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS workflows (
                 name TEXT PRIMARY KEY,
@@ -110,9 +135,12 @@ impl WorkflowEngine {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
-        ).execute(pool).await?;
+        )
+        .execute(pool)
+        .await?;
         let rows = sqlx::query_as::<_, (Value,)>("SELECT definition FROM workflows")
-            .fetch_all(pool).await?;
+            .fetch_all(pool)
+            .await?;
         let mut map = self.workflows.write().unwrap();
         for (def,) in rows {
             if let Ok(wf) = serde_json::from_value::<Workflow>(def) {
@@ -131,7 +159,8 @@ impl WorkflowEngine {
             )
             .bind(&workflow.name)
             .bind(serde_json::to_value(workflow)?)
-            .execute(pool).await?;
+            .execute(pool)
+            .await?;
         }
         Ok(())
     }
@@ -139,13 +168,19 @@ impl WorkflowEngine {
     /// Delete a persisted workflow. No-op without a pool.
     pub async fn unpersist(&self, name: &str) -> Result<()> {
         if let Some(pool) = &self.pool {
-            sqlx::query("DELETE FROM workflows WHERE name = $1").bind(name).execute(pool).await?;
+            sqlx::query("DELETE FROM workflows WHERE name = $1")
+                .bind(name)
+                .execute(pool)
+                .await?;
         }
         Ok(())
     }
 
     pub fn register(&self, workflow: Workflow) {
-        self.workflows.write().unwrap().insert(workflow.name.clone(), workflow);
+        self.workflows
+            .write()
+            .unwrap()
+            .insert(workflow.name.clone(), workflow);
     }
 
     /// Remove a workflow by name. Returns true if it existed.
@@ -163,8 +198,17 @@ impl WorkflowEngine {
     }
 
     /// Execute a workflow with initial context
-    pub async fn execute(&self, name: &str, initial_context: HashMap<String, Value>) -> Result<WorkflowExecution> {
-        let workflow = self.workflows.read().unwrap().get(name).cloned()
+    pub async fn execute(
+        &self,
+        name: &str,
+        initial_context: HashMap<String, Value>,
+    ) -> Result<WorkflowExecution> {
+        let workflow = self
+            .workflows
+            .read()
+            .unwrap()
+            .get(name)
+            .cloned()
             .ok_or_else(|| anyhow::anyhow!("Workflow '{}' not found", name))?;
 
         let mut execution = WorkflowExecution {
@@ -189,7 +233,9 @@ impl WorkflowEngine {
             match execute_step(&step.action, &mut execution.context).await {
                 Ok(()) => {}
                 Err(e) => {
-                    execution.errors.push(format!("Step '{}': {}", step.name, e));
+                    execution
+                        .errors
+                        .push(format!("Step '{}': {}", step.name, e));
                     match &step.on_failure {
                         FailurePolicy::Stop => {
                             execution.status = ExecutionStatus::Failed;
@@ -199,7 +245,10 @@ impl WorkflowEngine {
                         FailurePolicy::Retry { max_attempts } => {
                             let mut success = false;
                             for _ in 0..*max_attempts {
-                                if execute_step(&step.action, &mut execution.context).await.is_ok() {
+                                if execute_step(&step.action, &mut execution.context)
+                                    .await
+                                    .is_ok()
+                                {
                                     success = true;
                                     break;
                                 }
@@ -227,7 +276,10 @@ impl WorkflowEngine {
     }
 
     /// Start listening to model events and auto-trigger matching workflows
-    pub fn start_event_listener(self: Arc<Self>, mut rx: tokio::sync::broadcast::Receiver<crate::events::ModelEvent>) {
+    pub fn start_event_listener(
+        self: Arc<Self>,
+        mut rx: tokio::sync::broadcast::Receiver<crate::events::ModelEvent>,
+    ) {
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
@@ -258,7 +310,11 @@ impl WorkflowEngine {
             loop {
                 interval.tick().await;
                 let now = chrono::Utc::now();
-                let scheduled: Vec<(String, String)> = self.workflows.read().unwrap().values()
+                let scheduled: Vec<(String, String)> = self
+                    .workflows
+                    .read()
+                    .unwrap()
+                    .values()
                     .filter_map(|w| match &w.trigger {
                         WorkflowTrigger::Schedule { cron } => Some((w.name.clone(), cron.clone())),
                         _ => None,
@@ -272,7 +328,9 @@ impl WorkflowEngine {
                             }
                         }
                         Ok(false) => {}
-                        Err(e) => tracing::warn!(workflow = %name, error = %e, "Invalid cron expression"),
+                        Err(e) => {
+                            tracing::warn!(workflow = %name, error = %e, "Invalid cron expression")
+                        }
                     }
                 }
                 last_tick = now;
@@ -289,7 +347,11 @@ pub fn cron_should_fire(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<bool, String> {
     let schedule = cron::Schedule::from_str(cron_expr).map_err(|e| e.to_string())?;
-    Ok(schedule.after(&last_tick).next().map(|next| next <= now).unwrap_or(false))
+    Ok(schedule
+        .after(&last_tick)
+        .next()
+        .map(|next| next <= now)
+        .unwrap_or(false))
 }
 
 fn evaluate_condition(cond: &Condition, context: &HashMap<String, Value>) -> bool {
@@ -299,7 +361,10 @@ fn evaluate_condition(cond: &Condition, context: &HashMap<String, Value>) -> boo
         "neq" => val != &cond.value,
         "gt" => val.as_f64().unwrap_or(0.0) > cond.value.as_f64().unwrap_or(0.0),
         "lt" => val.as_f64().unwrap_or(0.0) < cond.value.as_f64().unwrap_or(0.0),
-        "contains" => val.as_str().unwrap_or("").contains(cond.value.as_str().unwrap_or("")),
+        "contains" => val
+            .as_str()
+            .unwrap_or("")
+            .contains(cond.value.as_str().unwrap_or("")),
         _ => true,
     }
 }
@@ -312,13 +377,23 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
         StepAction::SetVariable { key, value } => {
             context.insert(key.clone(), value.clone());
         }
-        StepAction::Http { method, url, body: _ } => {
+        StepAction::Http {
+            method,
+            url,
+            body: _,
+        } => {
             tracing::info!(method = %method, url = %url, "Workflow HTTP step");
         }
-        StepAction::Mutation { query, variables: _ } => {
+        StepAction::Mutation {
+            query,
+            variables: _,
+        } => {
             tracing::info!(query = %query, "Workflow mutation step");
         }
-        StepAction::Plugin { plugin_name, function } => {
+        StepAction::Plugin {
+            plugin_name,
+            function,
+        } => {
             tracing::info!(plugin = %plugin_name, function = %function, "Workflow plugin step");
         }
     }
@@ -368,7 +443,10 @@ mod tests {
         let engine = WorkflowEngine::new();
         engine.register(Workflow {
             name: "on_contact".into(),
-            trigger: WorkflowTrigger::OnEvent { model: "Contact".into(), event_type: "Created".into() },
+            trigger: WorkflowTrigger::OnEvent {
+                model: "Contact".into(),
+                event_type: "Created".into(),
+            },
             steps: vec![],
         });
         assert_eq!(engine.find_by_trigger("Contact", "Created").len(), 1);
@@ -383,7 +461,10 @@ mod tests {
             trigger: WorkflowTrigger::Manual,
             steps: vec![WorkflowStep {
                 name: "set_done".into(),
-                action: StepAction::SetVariable { key: "done".into(), value: json!(true) },
+                action: StepAction::SetVariable {
+                    key: "done".into(),
+                    value: json!(true),
+                },
                 condition: None,
                 on_failure: FailurePolicy::Continue,
             }],

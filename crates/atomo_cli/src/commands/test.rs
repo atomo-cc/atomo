@@ -1,7 +1,7 @@
 use anyhow::Result;
 use colored::*;
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 pub async fn test_command(service_path: Option<String>, filter: Option<String>) -> Result<()> {
     println!("🧪 {}", "Running service tests...".cyan());
@@ -26,7 +26,10 @@ pub async fn test_command(service_path: Option<String>, filter: Option<String>) 
     cmd.arg("--").arg("--nocapture");
     cmd.current_dir(dir_path);
 
-    println!("   🔨 Running: cargo test {}", filter.as_deref().unwrap_or(""));
+    println!(
+        "   🔨 Running: cargo test {}",
+        filter.as_deref().unwrap_or("")
+    );
 
     let status = cmd.status()?;
 

@@ -6,25 +6,25 @@
 //! use atomo::prelude::*;
 //! ```
 
-pub use crate::{Atomo, AtomoBuilder, ModelClient};
+pub use crate::events::{EventType, ModelEvent, SubscriptionBuilder};
 pub use crate::query::{
-    FindManyQuery, FindUniqueQuery, CreateQuery, UpdateQuery, DeleteQuery,
-    WhereClause, OrderBy, OrderDirection,
+    CreateQuery, DeleteQuery, FindManyQuery, FindUniqueQuery, OrderBy, OrderDirection, UpdateQuery,
+    WhereClause,
 };
-pub use crate::events::{SubscriptionBuilder, EventType, ModelEvent};
-pub use crate::schema::{Schema, Model, Field, FieldType};
+pub use crate::schema::{Field, FieldType, Model, Schema};
+pub use crate::{Atomo, AtomoBuilder, ModelClient};
 
 // Common query operators
 pub use crate::query::operators::{
-    Equals, NotEquals, Contains, StartsWith, EndsWith,
-    GreaterThan, LessThan, In, NotIn, IsNull, IsNotNull,
+    Contains, EndsWith, Equals, GreaterThan, In, IsNotNull, IsNull, LessThan, NotEquals, NotIn,
+    StartsWith,
 };
 
 // Re-export commonly used external types
-pub use anyhow::{Result, Context};
-pub use serde::{Serialize, Deserialize};
-pub use uuid::Uuid;
+pub use anyhow::{Context, Result};
 pub use chrono::{DateTime, Utc};
+pub use serde::{Deserialize, Serialize};
+pub use uuid::Uuid;
 
 // Order direction
 pub use crate::query::OrderDirection::{Asc, Desc};

@@ -15,8 +15,9 @@ fn current_service_dir() -> Result<PathBuf> {
 async fn connect_db_from_env() -> Result<PgPool> {
     // Load .env in current working directory (service root)
     let _ = dotenv::dotenv();
-    let url = std::env::var("DATABASE_URL")
-        .map_err(|_| anyhow::anyhow!("DATABASE_URL not set; ensure .env exists in the service root"))?;
+    let url = std::env::var("DATABASE_URL").map_err(|_| {
+        anyhow::anyhow!("DATABASE_URL not set; ensure .env exists in the service root")
+    })?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&url)

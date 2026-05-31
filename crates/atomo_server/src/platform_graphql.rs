@@ -1,17 +1,17 @@
 //! Platform-level GraphQL resolvers implementation for atomo_server
-//! 
-//! This module provides the concrete implementations of platform functionality 
+//!
+//! This module provides the concrete implementations of platform functionality
 //! (users, sessions, audit logs) with actual database queries.
 
-use async_graphql::{Context, Object, FieldResult, Error as GraphQLError};
+use async_graphql::{Context, Error as GraphQLError, FieldResult, Object};
 use async_trait::async_trait;
-use sqlx::{PgPool, Row};
 use chrono::Utc;
+use sqlx::{PgPool, Row};
 use std::str::FromStr;
 
-use atomo_core::types::EntityId;
+use crate::platform_models::{PlatformUser, UserRole, UserSession};
 use atomo_core::audit::{AuditLogEntry, AuditOperation};
-use crate::platform_models::{PlatformUser, UserSession, UserRole};
+use atomo_core::types::EntityId;
 
 /// Platform query provider trait
 #[async_trait]
@@ -64,14 +64,11 @@ pub trait PlatformMutationProvider: Send + Sync {
         is_active: Option<bool>,
     ) -> Result<PlatformUser, Self::Error>;
 
-    async fn deactivate_user(
-        &self,
-        user_id: String,
-    ) -> Result<bool, Self::Error>;
+    async fn deactivate_user(&self, user_id: String) -> Result<bool, Self::Error>;
 }
 
 /// HTTP-based implementation of platform GraphQL queries
-/// 
+///
 /// This implementation uses PostgreSQL as the backing store and provides
 /// the actual database access for platform-level functionality.
 pub struct HttpPlatformQueryProvider {
@@ -145,7 +142,7 @@ impl HttpPlatformQueryProvider {
                  FROM sessions 
                  WHERE user_id = $1
                  ORDER BY created_at DESC 
-                 LIMIT $2 OFFSET $3"
+                 LIMIT $2 OFFSET $3",
             )
             .bind(user_id)
             .bind(limit)
@@ -157,7 +154,7 @@ impl HttpPlatformQueryProvider {
                 "SELECT id, user_id, token, expires_at, ip_address, user_agent, created_at
                  FROM sessions 
                  ORDER BY created_at DESC 
-                 LIMIT $1 OFFSET $2"
+                 LIMIT $1 OFFSET $2",
             )
             .bind(limit)
             .bind(offset)
@@ -211,10 +208,14 @@ impl HttpPlatformQueryProvider {
             query_str.push_str(&format!(" AND user_id = ${}", param_count));
         }
 
-        query_str.push_str(&format!(" ORDER BY timestamp DESC LIMIT ${} OFFSET ${}", param_count + 1, param_count + 2));
+        query_str.push_str(&format!(
+            " ORDER BY timestamp DESC LIMIT ${} OFFSET ${}",
+            param_count + 1,
+            param_count + 2
+        ));
 
         let mut query = sqlx::query(&query_str);
-        
+
         if let Some(et) = entity_type {
             query = query.bind(et);
         }
@@ -224,7 +225,7 @@ impl HttpPlatformQueryProvider {
         if let Some(ui) = user_id {
             query = query.bind(ui);
         }
-        
+
         query = query.bind(limit).bind(offset);
 
         let rows = query.fetch_all(&self.db_pool).await?;
@@ -265,12 +266,12 @@ impl HttpPlatformQueryProvider {
         let password_hash = bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap();
         let role_str = match role {
             UserRole::Admin => "admin",
-            UserRole::Manager => "manager", 
+            UserRole::Manager => "manager",
             UserRole::Sales => "sales",
             UserRole::Support => "support",
             UserRole::Viewer => "viewer",
         };
-        
+
         let now = Utc::now();
 
         sqlx::query(
@@ -320,7 +321,7 @@ impl HttpPlatformQueryProvider {
         // Build dynamic update query
         let mut set_clauses = vec!["updated_at = $1".to_string()];
         let mut param_count = 1;
-        
+
         if email.is_some() {
             param_count += 1;
             set_clauses.push(format!("email = ${}", param_count));
@@ -349,7 +350,7 @@ impl HttpPlatformQueryProvider {
         );
 
         let mut query = sqlx::query(&query_str).bind(now);
-        
+
         if let Some(e) = email.as_ref() {
             query = query.bind(e);
         }
@@ -363,7 +364,7 @@ impl HttpPlatformQueryProvider {
             let role_str = match r {
                 UserRole::Admin => "admin",
                 UserRole::Manager => "manager",
-                UserRole::Sales => "sales", 
+                UserRole::Sales => "sales",
                 UserRole::Support => "support",
                 UserRole::Viewer => "viewer",
             };
@@ -372,7 +373,7 @@ impl HttpPlatformQueryProvider {
         if let Some(ia) = is_active {
             query = query.bind(ia);
         }
-        
+
         query = query.bind(id.clone());
         query.execute(&self.db_pool).await?;
 
@@ -444,7 +445,7 @@ impl PlatformQuery {
         &self,
         _ctx: &Context<'_>,
         user_id: Option<String>,
-        limit: Option<i32>, 
+        limit: Option<i32>,
         offset: Option<i32>,
     ) -> FieldResult<Vec<UserSession>> {
         self.provider
@@ -477,7 +478,9 @@ pub struct PlatformMutation {
 
 impl PlatformMutation {
     pub fn new(db_pool: PgPool) -> Self {
-        Self { provider: HttpPlatformMutationProvider::new(db_pool) }
+        Self {
+            provider: HttpPlatformMutationProvider::new(db_pool),
+        }
     }
 }
 
@@ -517,7 +520,7 @@ impl PlatformMutation {
 }
 
 /// HTTP-based implementation of platform GraphQL mutations
-/// 
+///
 /// This implementation uses PostgreSQL as the backing store and provides
 /// the actual database access for platform-level user management.
 pub struct HttpPlatformMutationProvider {
@@ -529,7 +532,9 @@ impl HttpPlatformMutationProvider {
         Self { db_pool }
     }
 
-    pub fn pool(&self) -> &PgPool { &self.db_pool }
+    pub fn pool(&self) -> &PgPool {
+        &self.db_pool
+    }
 }
 
 #[async_trait]
@@ -546,7 +551,7 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
         // Generate a temporary password hash (should be replaced with proper implementation)
         let password_hash = "temp_hash".to_string(); // TODO: Implement proper password hashing
         let id = EntityId::new();
-        
+
         let row = sqlx::query(
             r#"
             INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active, created_at, updated_at)
@@ -562,7 +567,7 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
         .bind(role.to_string())
         .fetch_one(&self.db_pool)
         .await?;
-        
+
         let user = PlatformUser {
             id: EntityId::from_string(&row.get::<String, _>("id")).unwrap(),
             email: row.get("email"),
@@ -575,7 +580,7 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
         };
-        
+
         Ok(user)
     }
 
@@ -588,17 +593,18 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
         role: Option<UserRole>,
         is_active: Option<bool>,
     ) -> Result<PlatformUser, Self::Error> {
-        let entity_id: EntityId = user_id.parse().map_err(|_| {
-            sqlx::Error::ColumnDecode { 
-                index: "user_id".to_string(), 
-                source: Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid user ID format"))
-            }
+        let entity_id: EntityId = user_id.parse().map_err(|_| sqlx::Error::ColumnDecode {
+            index: "user_id".to_string(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid user ID format",
+            )),
         })?;
 
         // Build dynamic query based on provided fields
         let mut query_parts = Vec::new();
         let mut bind_count = 1;
-        
+
         if email.is_some() {
             query_parts.push(format!("email = ${}", bind_count));
             bind_count += 1;
@@ -619,9 +625,9 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
             query_parts.push(format!("is_active = ${}", bind_count));
             bind_count += 1;
         }
-        
+
         query_parts.push("updated_at = NOW()".to_string());
-        
+
         let query_str = format!(
             r#"
             UPDATE users 
@@ -632,9 +638,9 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
             query_parts.join(", "),
             bind_count
         );
-        
+
         let mut query = sqlx::query(&query_str);
-        
+
         if let Some(e) = email {
             query = query.bind(e);
         }
@@ -650,11 +656,11 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
         if let Some(active) = is_active {
             query = query.bind(active);
         }
-        
+
         query = query.bind(entity_id.to_string());
-        
+
         let row = query.fetch_one(&self.db_pool).await?;
-        
+
         let user = PlatformUser {
             id: EntityId::from_string(&row.get::<String, _>("id")).unwrap(),
             email: row.get("email"),
@@ -667,19 +673,17 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
         };
-        
+
         Ok(user)
     }
 
-    async fn deactivate_user(
-        &self,
-        user_id: String,
-    ) -> Result<bool, Self::Error> {
-        let entity_id: EntityId = user_id.parse().map_err(|_| {
-            sqlx::Error::ColumnDecode { 
-                index: "user_id".to_string(), 
-                source: Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid user ID format"))
-            }
+    async fn deactivate_user(&self, user_id: String) -> Result<bool, Self::Error> {
+        let entity_id: EntityId = user_id.parse().map_err(|_| sqlx::Error::ColumnDecode {
+            index: "user_id".to_string(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid user ID format",
+            )),
         })?;
 
         let result = sqlx::query(
@@ -687,12 +691,12 @@ impl PlatformMutationProvider for HttpPlatformMutationProvider {
             UPDATE users 
             SET is_active = false, updated_at = NOW()
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(entity_id.to_string())
         .execute(&self.db_pool)
         .await?;
-        
+
         Ok(result.rows_affected() > 0)
     }
 }

@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use serde_json::Value;
-use atomo::hooks::{HookContext, HookResult, HookRunner};
 use crate::wasm_plugins::WasmPluginManager;
+use atomo::hooks::{HookContext, HookResult, HookRunner};
+use serde_json::Value;
 
 pub struct WasmHookRunner {
     manager: Arc<Mutex<WasmPluginManager>>,

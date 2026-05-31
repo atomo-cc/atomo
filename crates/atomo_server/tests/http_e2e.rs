@@ -26,7 +26,9 @@ export default schema;
     let gql = atomo_server::handlers::build_extended_schema(&atomo);
     let auth = atomo_server::auth::HttpAuthService::new("test-secret", atomo.db_pool().clone());
     let audit = atomo_server::audit::HttpAuditService::new(atomo.db_pool().clone());
-    atomo_server::ensure_platform_tables(atomo.db_pool()).await.unwrap();
+    atomo_server::ensure_platform_tables(atomo.db_pool())
+        .await
+        .unwrap();
 
     // Seed admin user
     let id = atomo_core::types::EntityId::new().to_string();
@@ -48,7 +50,9 @@ export default schema;
 async fn send(app: &axum::Router, req: Request<Body>) -> (StatusCode, serde_json::Value) {
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
     (status, json)
 }
@@ -64,7 +68,9 @@ async fn test_health_ok() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let body = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(body.contains("OK") || body.contains("ok") || body.contains("healthy"));
 }
@@ -99,7 +105,9 @@ async fn test_login_then_create_and_list() {
         .unwrap();
     let (status, login_json) = send(&app, login_req).await;
     assert_eq!(status, StatusCode::OK, "login failed: {:?}", login_json);
-    let token = login_json["token"].as_str().expect("no token in login response");
+    let token = login_json["token"]
+        .as_str()
+        .expect("no token in login response");
 
     // 2. Create a Note via GraphQL
     let create_body = serde_json::json!({
@@ -116,7 +124,9 @@ async fn test_login_then_create_and_list() {
     assert_eq!(status, StatusCode::OK, "create failed: {:?}", create_json);
     assert!(
         create_json.get("errors").is_none()
-            || create_json["errors"].as_array().map_or(true, |a| a.is_empty()),
+            || create_json["errors"]
+                .as_array()
+                .map_or(true, |a| a.is_empty()),
         "GraphQL errors on create: {:?}",
         create_json
     );
@@ -135,9 +145,12 @@ async fn test_login_then_create_and_list() {
     let (status, list_json) = send(&app, list_req).await;
     assert_eq!(status, StatusCode::OK, "list failed: {:?}", list_json);
     let list_str = serde_json::to_string(&list_json).unwrap();
-    assert!(list_str.contains("hello"), "created note not found in list: {:?}", list_json);
+    assert!(
+        list_str.contains("hello"),
+        "created note not found in list: {:?}",
+        list_json
+    );
 }
-
 
 #[tokio::test]
 #[ignore]
@@ -159,24 +172,34 @@ async fn test_workflow_register_list_run_delete() {
         ]
     });
     let req = Request::builder()
-        .uri("/workflows").method("POST")
+        .uri("/workflows")
+        .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_vec(&wf).unwrap())).unwrap();
+        .body(Body::from(serde_json::to_vec(&wf).unwrap()))
+        .unwrap();
     let (status, json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK, "register failed: {:?}", json);
     assert_eq!(json["registered"], "http-test-wf");
 
     // 2. List includes it
-    let req = Request::builder().uri("/workflows").method("GET").body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .uri("/workflows")
+        .method("GET")
+        .body(Body::empty())
+        .unwrap();
     let (status, json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(serde_json::to_string(&json).unwrap().contains("http-test-wf"));
+    assert!(serde_json::to_string(&json)
+        .unwrap()
+        .contains("http-test-wf"));
 
     // 3. Run it
     let req = Request::builder()
-        .uri("/workflows/http-test-wf/run").method("POST")
+        .uri("/workflows/http-test-wf/run")
+        .method("POST")
         .header("content-type", "application/json")
-        .body(Body::from("{}")).unwrap();
+        .body(Body::from("{}"))
+        .unwrap();
     let (status, json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK, "run failed: {:?}", json);
     assert_eq!(json["status"], "Completed");
@@ -185,18 +208,27 @@ async fn test_workflow_register_list_run_delete() {
     let pool2 = sqlx::PgPool::connect(&url).await.unwrap();
     let engine2 = atomo::workflow::WorkflowEngine::with_pool(pool2);
     engine2.init().await.unwrap();
-    assert!(engine2.list().contains(&"http-test-wf".to_string()), "workflow did not persist across engines");
+    assert!(
+        engine2.list().contains(&"http-test-wf".to_string()),
+        "workflow did not persist across engines"
+    );
 
     // 5. Delete it
     let req = Request::builder()
-        .uri("/workflows/http-test-wf").method("DELETE").body(Body::empty()).unwrap();
+        .uri("/workflows/http-test-wf")
+        .method("DELETE")
+        .body(Body::empty())
+        .unwrap();
     let (status, json) = send(&app, req).await;
     assert_eq!(status, StatusCode::OK, "delete failed: {:?}", json);
     assert_eq!(json["removed"], "http-test-wf");
 
     // 6. Deleting again is 404
     let req = Request::builder()
-        .uri("/workflows/http-test-wf").method("DELETE").body(Body::empty()).unwrap();
+        .uri("/workflows/http-test-wf")
+        .method("DELETE")
+        .body(Body::empty())
+        .unwrap();
     let (status, _) = send(&app, req).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }

@@ -45,7 +45,9 @@ async fn call_function_add() {
     let rt = WasmRuntime::new().unwrap();
     let path = wasm_path();
     let mut plugin = rt.load_plugin(&path, &manifest(vec![])).await.unwrap();
-    let res = plugin.call_function("add", &[Val::I32(2), Val::I32(3)]).unwrap();
+    let res = plugin
+        .call_function("add", &[Val::I32(2), Val::I32(3)])
+        .unwrap();
     assert_eq!(res.len(), 1);
     assert_eq!(res[0].i32(), Some(5));
     assert!(plugin.fuel_consumed() > 0);
@@ -66,7 +68,10 @@ async fn emit_denied_without_permission() {
     let path = wasm_path();
     let mut plugin = rt.load_plugin(&path, &manifest(vec![])).await.unwrap();
     let res = plugin.call_function("do_emit", &[]);
-    assert!(res.is_err(), "emit should fail without WriteEvents permission");
+    assert!(
+        res.is_err(),
+        "emit should fail without WriteEvents permission"
+    );
 }
 
 #[tokio::test]

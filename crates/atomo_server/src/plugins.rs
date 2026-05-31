@@ -4,12 +4,12 @@
 //! to extend the server's GraphQL schema and HTTP handlers without modifying
 //! the core platform code.
 
+use crate::handlers::{Mutation, Query};
 use async_graphql::SchemaBuilder;
-use axum::Router;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
-use crate::handlers::{Query, Mutation};
 use atomo::graphql::Subscription;
+use axum::Router;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
 /// Plugin trait for extending GraphQL schema
 #[async_trait::async_trait]
@@ -18,10 +18,18 @@ pub trait GraphQLPlugin: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Register GraphQL queries
-    async fn register_queries(&self, _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>) {}
+    async fn register_queries(
+        &self,
+        _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>,
+    ) {
+    }
 
     /// Register GraphQL mutations
-    async fn register_mutations(&self, _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>) {}
+    async fn register_mutations(
+        &self,
+        _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>,
+    ) {
+    }
 
     /// Register HTTP routes
     async fn register_routes(&self, _router: Router) -> Router {
@@ -32,6 +40,12 @@ pub trait GraphQLPlugin: Send + Sync {
 /// Plugin manager for coordinating multiple plugins
 pub struct PluginManager {
     plugins: Vec<Box<dyn GraphQLPlugin>>,
+}
+
+impl Default for PluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PluginManager {
@@ -52,7 +66,10 @@ impl PluginManager {
     }
 
     /// Apply all plugins to a GraphQL schema builder
-    pub async fn apply_to_schema(&self, schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>) {
+    pub async fn apply_to_schema(
+        &self,
+        schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>,
+    ) {
         for plugin in &self.plugins {
             plugin.register_queries(schema_builder).await;
             plugin.register_mutations(schema_builder).await;
@@ -76,6 +93,12 @@ static PLUGIN_MANAGER: Lazy<Mutex<PluginManager>> = Lazy::new(|| Mutex::new(Plug
 /// This plugin provides CRM-specific GraphQL operations
 pub struct CrmGraphQLPlugin;
 
+impl Default for CrmGraphQLPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CrmGraphQLPlugin {
     pub fn new() -> Self {
         Self
@@ -88,7 +111,10 @@ impl GraphQLPlugin for CrmGraphQLPlugin {
         "crm"
     }
 
-    async fn register_mutations(&self, _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>) {
+    async fn register_mutations(
+        &self,
+        _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>,
+    ) {
         // Register CRM-specific mutations
         // This would include deal position updates, etc.
     }

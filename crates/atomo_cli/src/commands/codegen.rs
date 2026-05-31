@@ -3,8 +3,8 @@
 //! This module provides commands for generating client code, types, and other
 //! artifacts from Atomo service schemas.
 
-use std::path::Path;
 use anyhow::Result;
+use std::path::Path;
 
 /// Generate client code from service schemas
 pub async fn codegen_command(output: String) -> Result<()> {

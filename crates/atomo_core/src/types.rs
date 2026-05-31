@@ -1,17 +1,20 @@
 //! Core types for the Atomo platform
-//! 
+//!
 //! This module contains the fundamental types used throughout the Atomo ecosystem.
 //! According to the whitepaper architecture, this should contain only the most
 //! essential types needed by all layers.
 
+use async_graphql::{Enum, InputValueError, InputValueResult, Scalar, ScalarType, Value};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+};
 use ulid::Ulid;
-use std::{fmt::{self, Display}, str::FromStr};
-use async_graphql::{Scalar, ScalarType, InputValueError, InputValueResult, Value, Enum};
+use uuid::Uuid;
 
 /// ULID-based identifier for entities
-/// 
+///
 /// ULIDs provide lexicographic sorting and are globally unique,
 /// making them ideal for distributed systems.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,9 +24,8 @@ pub struct EntityId(pub Ulid);
 impl ScalarType for EntityId {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::String(s) => {
-                EntityId::from_string(&s).map_err(|e| InputValueError::custom(format!("Invalid EntityId: {}", e)))
-            }
+            Value::String(s) => EntityId::from_string(&s)
+                .map_err(|e| InputValueError::custom(format!("Invalid EntityId: {}", e))),
             _ => Err(InputValueError::expected_type(value)),
         }
     }
@@ -38,12 +40,12 @@ impl EntityId {
     pub fn new() -> Self {
         Self(Ulid::new())
     }
-    
+
     /// Create from string representation
     pub fn from_string(s: &str) -> Result<Self, ulid::DecodeError> {
         Ok(Self(Ulid::from_string(s)?))
     }
-    
+
     /// Convert to string representation
     pub fn to_string(&self) -> String {
         self.0.to_string()
@@ -71,7 +73,7 @@ impl FromStr for EntityId {
 }
 
 /// Stream identifier for event sourcing
-/// 
+///
 /// Streams group related events together (e.g., all events for a specific entity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StreamId(pub Uuid);
@@ -80,9 +82,8 @@ pub struct StreamId(pub Uuid);
 impl ScalarType for StreamId {
     fn parse(value: Value) -> InputValueResult<Self> {
         match value {
-            Value::String(s) => {
-                StreamId::from_string(&s).map_err(|e| InputValueError::custom(format!("Invalid StreamId: {}", e)))
-            }
+            Value::String(s) => StreamId::from_string(&s)
+                .map_err(|e| InputValueError::custom(format!("Invalid StreamId: {}", e))),
             _ => Err(InputValueError::expected_type(value)),
         }
     }
@@ -97,12 +98,12 @@ impl StreamId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
-    
+
     /// Create from string representation
     pub fn from_string(s: &str) -> Result<Self, uuid::Error> {
         Ok(Self(Uuid::parse_str(s)?))
     }
-    
+
     /// Convert to string representation
     pub fn to_string(&self) -> String {
         self.0.to_string()
@@ -133,7 +134,7 @@ impl FromStr for StreamId {
 pub type Timestamp = chrono::DateTime<chrono::Utc>;
 
 /// User role enumeration
-/// 
+///
 /// Defines the basic roles that users can have in the system.
 /// This is a core business concept that should be defined at the core level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Enum)]
@@ -158,7 +159,7 @@ impl Display for UserRole {
 
 impl FromStr for UserRole {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "user" => Ok(UserRole::User),

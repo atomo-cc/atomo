@@ -1,10 +1,10 @@
 //! In-memory read cache with event-driven invalidation
 
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde_json::Value;
 
 #[derive(Clone)]
 struct CacheEntry {
@@ -31,17 +31,24 @@ impl ReadCache {
     pub async fn get(&self, key: &str) -> Option<Value> {
         let entries = self.entries.read().await;
         entries.get(key).and_then(|e| {
-            if e.expires_at > Instant::now() { Some(e.data.clone()) } else { None }
+            if e.expires_at > Instant::now() {
+                Some(e.data.clone())
+            } else {
+                None
+            }
         })
     }
 
     /// Set a cached value
     pub async fn set(&self, key: &str, value: Value) {
         let mut entries = self.entries.write().await;
-        entries.insert(key.to_string(), CacheEntry {
-            data: value,
-            expires_at: Instant::now() + self.ttl,
-        });
+        entries.insert(
+            key.to_string(),
+            CacheEntry {
+                data: value,
+                expires_at: Instant::now() + self.ttl,
+            },
+        );
     }
 
     /// Invalidate all entries for a model

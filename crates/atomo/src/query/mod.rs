@@ -1,6 +1,6 @@
 //! Query builder module
 
-use serde_json::{Value, Map};
+use serde_json::{Map, Value};
 
 pub mod operators;
 pub mod sql_builder;
@@ -69,7 +69,11 @@ impl FindManyQuery {
     }
 
     pub fn where_(mut self, field: String, operator: WhereOperator, value: Value) -> Self {
-        self.where_clauses.push(WhereClause { field, operator, value });
+        self.where_clauses.push(WhereClause {
+            field,
+            operator,
+            value,
+        });
         self
     }
 
@@ -112,7 +116,11 @@ impl FindUniqueQuery {
     }
 
     pub fn where_(mut self, field: String, operator: WhereOperator, value: Value) -> Self {
-        self.where_clauses.push(WhereClause { field, operator, value });
+        self.where_clauses.push(WhereClause {
+            field,
+            operator,
+            value,
+        });
         self
     }
 
@@ -170,7 +178,11 @@ impl UpdateQuery {
     }
 
     pub fn where_(mut self, field: String, operator: WhereOperator, value: Value) -> Self {
-        self.where_clauses.push(WhereClause { field, operator, value });
+        self.where_clauses.push(WhereClause {
+            field,
+            operator,
+            value,
+        });
         self
     }
 
@@ -201,7 +213,11 @@ impl DeleteQuery {
     }
 
     pub fn where_(mut self, field: String, operator: WhereOperator, value: Value) -> Self {
-        self.where_clauses.push(WhereClause { field, operator, value });
+        self.where_clauses.push(WhereClause {
+            field,
+            operator,
+            value,
+        });
         self
     }
 }

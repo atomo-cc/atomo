@@ -6,42 +6,45 @@
 //! - High-performance Rust backend
 //! - Integration with the Atomo ecosystem
 #![allow(dead_code)]
+#![allow(clippy::too_many_arguments, clippy::match_like_matches_macro)]
 
-pub mod config;
-pub mod server;
-pub mod handlers;
-pub mod tracing_middleware;
-pub mod auth;
-pub mod oauth;
-pub mod audit;
-pub mod rate_limit;
-pub mod event_store;
 pub mod aggregate;
+pub mod audit;
+pub mod auth;
+pub mod config;
 pub mod domain;
+pub mod event_store;
+pub mod handlers;
+pub mod model_registry;
+pub mod models_ext;
+pub mod oauth;
 pub mod platform_graphql;
 pub mod platform_models;
-pub mod models_ext;
-pub mod schema_metadata;
-pub mod model_registry;
 pub mod plugins;
-pub mod wasm_plugins;
-pub mod wasm_hooks;
 pub mod projector_routes;
+pub mod rate_limit;
+pub mod schema_metadata;
+pub mod server;
+pub mod tracing_middleware;
+pub mod wasm_hooks;
+pub mod wasm_plugins;
 
-pub use config::*;
-pub use server::*;
-pub use auth::*;
-pub use audit::*;
-pub use event_store::*;
 pub use aggregate::*;
+pub use audit::*;
+pub use auth::*;
+pub use config::*;
+pub use event_store::*;
 pub use platform_graphql::*;
 pub use platform_models::*;
+pub use server::*;
 
 /// Convert camelCase/PascalCase to snake_case.
 pub fn to_snake(s: &str) -> String {
     let mut out = String::new();
     for c in s.chars() {
-        if c.is_uppercase() && !out.is_empty() { out.push('_'); }
+        if c.is_uppercase() && !out.is_empty() {
+            out.push('_');
+        }
         out.extend(c.to_lowercase());
     }
     out
@@ -101,7 +104,10 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 /// Create an admin user from `ADMIN_EMAIL`/`ADMIN_PASSWORD` env vars if it doesn't already exist.
 /// No-op when the vars are unset. Idempotent (skips if the email already exists).
 pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<()> {
-    let (email, password) = match (std::env::var("ADMIN_EMAIL"), std::env::var("ADMIN_PASSWORD")) {
+    let (email, password) = match (
+        std::env::var("ADMIN_EMAIL"),
+        std::env::var("ADMIN_PASSWORD"),
+    ) {
         (Ok(e), Ok(p)) if !e.is_empty() && !p.is_empty() => (e, p),
         _ => return Ok(()),
     };
@@ -132,11 +138,15 @@ pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<(
 pub async fn load_workflows(engine: &atomo::workflow::WorkflowEngine, dir: &str) -> usize {
     let mut count = 0;
     let path = std::path::Path::new(dir);
-    if !path.exists() { return 0; }
+    if !path.exists() {
+        return 0;
+    }
     if let Ok(mut entries) = tokio::fs::read_dir(path).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
+            if p.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
             if let Ok(content) = tokio::fs::read_to_string(&p).await {
                 if let Ok(wf) = serde_json::from_str::<atomo::workflow::Workflow>(&content) {
                     engine.register(wf);
@@ -147,4 +157,3 @@ pub async fn load_workflows(engine: &atomo::workflow::WorkflowEngine, dir: &str)
     }
     count
 }
-

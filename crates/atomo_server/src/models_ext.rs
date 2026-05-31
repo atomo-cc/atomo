@@ -1,11 +1,11 @@
 //! Database-specific extensions for atomo_core models
-//! 
+//!
 //! This module provides SQLx implementations for core models,
 //! maintaining the separation between pure domain models and database specifics.
 
 use atomo_core::ContentBlock;
-use sqlx;
 use serde_json;
+use sqlx;
 
 /// Wrapper type for ContentBlock to implement database traits
 /// This avoids the orphan rule while maintaining clean separation

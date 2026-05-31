@@ -42,9 +42,7 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "postgresql://localhost/atomo_dev".to_string()),
             schema_path: std::env::var("ATOMO_SCHEMA_PATH")
                 .unwrap_or_else(|_| "./schema.ts".to_string()),
-            service_config_dir: std::env::var("ATOMO_CONFIG_DIR")
-                .ok()
-                .map(PathBuf::from),
+            service_config_dir: std::env::var("ATOMO_CONFIG_DIR").ok().map(PathBuf::from),
             cors_origins: std::env::var("CORS_ORIGINS")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string())
                 .split(',')

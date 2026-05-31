@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::types::FieldType;
+use anyhow::Result;
 
 /// 统一的操作符定义 - Schema和Runtime的单一数据源
 /// 确保GraphQL Schema生成和Resolver生成使用完全相同的操作符定义
@@ -12,17 +12,17 @@ pub struct OperationDefinitions {
 /// 比较操作符定义
 #[derive(Debug, Clone)]
 pub struct ComparisonOp {
-    pub name: String,                    // GraphQL中的名称: "_eq", "_neq", "_gt"
-    pub sql_operator: String,            // SQL中的操作符: "=", "!=", ">"
-    pub applies_to: Vec<FieldType>,      // 适用的字段类型
-    pub description: String,             // 操作符描述
+    pub name: String,               // GraphQL中的名称: "_eq", "_neq", "_gt"
+    pub sql_operator: String,       // SQL中的操作符: "=", "!=", ">"
+    pub applies_to: Vec<FieldType>, // 适用的字段类型
+    pub description: String,        // 操作符描述
 }
 
 /// 逻辑操作符定义
 #[derive(Debug, Clone)]
 pub struct LogicalOp {
-    pub name: String,                    // "_and", "_or", "_not"
-    pub sql_keyword: String,             // "AND", "OR", "NOT"
+    pub name: String,        // "_and", "_or", "_not"
+    pub sql_keyword: String, // "AND", "OR", "NOT"
     pub description: String,
 }
 
@@ -35,8 +35,12 @@ impl OperationDefinitions {
                     name: "_eq".to_string(),
                     sql_operator: "=".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Boolean,
-                        FieldType::Date, FieldType::DateTime, FieldType::EntityId
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Boolean,
+                        FieldType::Date,
+                        FieldType::DateTime,
+                        FieldType::EntityId,
                     ],
                     description: "Equal to".to_string(),
                 },
@@ -44,8 +48,12 @@ impl OperationDefinitions {
                     name: "_neq".to_string(),
                     sql_operator: "!=".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Boolean,
-                        FieldType::Date, FieldType::DateTime, FieldType::EntityId
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Boolean,
+                        FieldType::Date,
+                        FieldType::DateTime,
+                        FieldType::EntityId,
                     ],
                     description: "Not equal to".to_string(),
                 },
@@ -53,7 +61,10 @@ impl OperationDefinitions {
                     name: "_gt".to_string(),
                     sql_operator: ">".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Date, FieldType::DateTime
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Date,
+                        FieldType::DateTime,
                     ],
                     description: "Greater than".to_string(),
                 },
@@ -61,7 +72,10 @@ impl OperationDefinitions {
                     name: "_gte".to_string(),
                     sql_operator: ">=".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Date, FieldType::DateTime
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Date,
+                        FieldType::DateTime,
                     ],
                     description: "Greater than or equal to".to_string(),
                 },
@@ -69,7 +83,10 @@ impl OperationDefinitions {
                     name: "_lt".to_string(),
                     sql_operator: "<".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Date, FieldType::DateTime
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Date,
+                        FieldType::DateTime,
                     ],
                     description: "Less than".to_string(),
                 },
@@ -77,7 +94,10 @@ impl OperationDefinitions {
                     name: "_lte".to_string(),
                     sql_operator: "<=".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Date, FieldType::DateTime
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Date,
+                        FieldType::DateTime,
                     ],
                     description: "Less than or equal to".to_string(),
                 },
@@ -96,25 +116,25 @@ impl OperationDefinitions {
                 ComparisonOp {
                     name: "_in".to_string(),
                     sql_operator: "IN".to_string(),
-                    applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::EntityId
-                    ],
+                    applies_to: vec![FieldType::String, FieldType::Number, FieldType::EntityId],
                     description: "In array".to_string(),
                 },
                 ComparisonOp {
                     name: "_nin".to_string(),
                     sql_operator: "NOT IN".to_string(),
-                    applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::EntityId
-                    ],
+                    applies_to: vec![FieldType::String, FieldType::Number, FieldType::EntityId],
                     description: "Not in array".to_string(),
                 },
                 ComparisonOp {
                     name: "_is_null".to_string(),
                     sql_operator: "IS NULL".to_string(),
                     applies_to: vec![
-                        FieldType::String, FieldType::Number, FieldType::Boolean,
-                        FieldType::Date, FieldType::DateTime, FieldType::EntityId
+                        FieldType::String,
+                        FieldType::Number,
+                        FieldType::Boolean,
+                        FieldType::Date,
+                        FieldType::DateTime,
+                        FieldType::EntityId,
                     ],
                     description: "Is null or not null".to_string(),
                 },
@@ -171,8 +191,9 @@ impl OperationDefinitions {
         // 验证必要的操作符存在
         let required_ops = ["_eq", "_neq", "_and", "_or", "_not"];
         for required in &required_ops {
-            if !self.comparison_ops.iter().any(|op| op.name == *required) && 
-               !self.logical_ops.iter().any(|op| op.name == *required) {
+            if !self.comparison_ops.iter().any(|op| op.name == *required)
+                && !self.logical_ops.iter().any(|op| op.name == *required)
+            {
                 anyhow::bail!("Required operator missing: {}", required);
             }
         }
@@ -184,7 +205,7 @@ impl OperationDefinitions {
     pub fn generate_report(&self) -> String {
         let mut report = String::new();
         report.push_str("# Hasura v2 Operation Definitions\n\n");
-        
+
         report.push_str("## Comparison Operators\n");
         for op in &self.comparison_ops {
             report.push_str(&format!(
@@ -192,7 +213,7 @@ impl OperationDefinitions {
                 op.name, op.description, op.sql_operator, op.applies_to
             ));
         }
-        
+
         report.push_str("\n## Logical Operators\n");
         for op in &self.logical_ops {
             report.push_str(&format!(
@@ -200,7 +221,7 @@ impl OperationDefinitions {
                 op.name, op.description, op.sql_keyword
             ));
         }
-        
+
         report
     }
 }
@@ -219,7 +240,7 @@ mod tests {
     fn test_get_comparison_ops_for_string() {
         let ops = OperationDefinitions::hasura_v2_standard();
         let string_ops = ops.get_comparison_ops_for_type(&FieldType::String);
-        
+
         // String应该支持大部分操作符
         assert!(string_ops.len() >= 8);
         assert!(string_ops.iter().any(|op| op.name == "_eq"));
@@ -229,13 +250,13 @@ mod tests {
     #[test]
     fn test_get_comparison_op_by_name() {
         let ops = OperationDefinitions::hasura_v2_standard();
-        
+
         let eq_op = ops.get_comparison_op_by_name("_eq").unwrap();
         assert_eq!(eq_op.sql_operator, "=");
-        
+
         let neq_op = ops.get_comparison_op_by_name("_neq").unwrap();
         assert_eq!(neq_op.sql_operator, "!=");
-        
+
         assert!(ops.get_comparison_op_by_name("_invalid").is_none());
     }
 }

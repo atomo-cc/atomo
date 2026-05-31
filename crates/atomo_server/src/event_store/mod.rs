@@ -1,5 +1,5 @@
 //! Event Store Implementations
-//! 
+//!
 //! This module provides concrete implementations of the event store trait.
 
 pub mod memory;

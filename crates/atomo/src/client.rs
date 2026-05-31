@@ -1,17 +1,17 @@
 //! Core client for database operations and event streaming
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use anyhow::Result;
 use serde_json::Value;
+use sqlx::{postgres::PgArguments, Arguments, Column, PgPool, Row, TypeInfo};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::broadcast;
-use sqlx::{PgPool, Row, Column, TypeInfo, postgres::PgArguments, Arguments};
 
-use crate::schema::Schema;
-use crate::query::{WhereClause, OrderDirection};
-use crate::query::sql_builder::SqlBuilder;
-use crate::events::{EventType, ModelEvent};
 use crate::event_store::EventStore;
+use crate::events::{EventType, ModelEvent};
+use crate::query::sql_builder::SqlBuilder;
+use crate::query::{OrderDirection, WhereClause};
+use crate::schema::Schema;
 
 /// Scope where clauses by tenant_id
 pub fn scope_by_tenant(where_clauses: &[WhereClause], tenant_id: Option<&str>) -> Vec<WhereClause> {
@@ -52,20 +52,20 @@ impl AtomoClient {
     pub async fn new(schema: &Schema) -> Result<Self> {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string());
-        
+
         println!("Connecting to database: {}", database_url);
         let pool = PgPool::connect(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
-        
+
         // Auto-create tables
         let migrations = crate::schema::generate_migrations(schema)?;
         for sql in &migrations {
             sqlx::query(sql).execute(&pool).await.ok();
         }
-        
+
         let event_store = EventStore::new(pool.clone());
         event_store.init().await?;
-        
+
         Ok(Self {
             pool,
             schema: schema.clone(),
@@ -76,11 +76,11 @@ impl AtomoClient {
             cache: crate::cache::ReadCache::new(60),
         })
     }
-    
+
     pub fn builder() -> AtomoClientBuilder {
         AtomoClientBuilder::new()
     }
-    
+
     /// Find many records
     pub async fn find_many(
         &self,
@@ -91,13 +91,20 @@ impl AtomoClient {
         offset: Option<usize>,
         include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
-        let cache_key = crate::cache::ReadCache::key(model_name, &format!("{:?}{:?}", where_clauses, order_by));
+        let cache_key =
+            crate::cache::ReadCache::key(model_name, &format!("{:?}{:?}", where_clauses, order_by));
         if let Some(cached) = self.cache.get(&cache_key).await {
-            if let Ok(records) = serde_json::from_value(cached) { return Ok(records); }
+            if let Ok(records) = serde_json::from_value(cached) {
+                return Ok(records);
+            }
         }
-        let model = self.schema.models.get(model_name)
+        let model = self
+            .schema
+            .models
+            .get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
-        let (sql, params) = SqlBuilder::select_active(model, where_clauses, order_by, limit, offset);
+        let (sql, params) =
+            SqlBuilder::select_active(model, where_clauses, order_by, limit, offset);
         let args = build_args(&params)?;
         let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
         let mut records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
@@ -106,10 +113,12 @@ impl AtomoClient {
                 self.resolve_includes(model_name, record, include).await?;
             }
         }
-        self.cache.set(&cache_key, serde_json::to_value(&records)?).await;
+        self.cache
+            .set(&cache_key, serde_json::to_value(&records)?)
+            .await;
         Ok(records)
     }
-    
+
     /// Find a unique record
     pub async fn find_unique(
         &self,
@@ -117,7 +126,10 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         include: &[String],
     ) -> Result<Option<HashMap<String, Value>>> {
-        let model = self.schema.models.get(model_name)
+        let model = self
+            .schema
+            .models
+            .get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let mut clauses = where_clauses.to_vec();
         clauses.push(WhereClause {
@@ -127,7 +139,9 @@ impl AtomoClient {
         });
         let (sql, params) = SqlBuilder::select_one(model, &clauses);
         let args = build_args(&params)?;
-        let row = sqlx::query_with(&sql, args).fetch_optional(&self.pool).await?;
+        let row = sqlx::query_with(&sql, args)
+            .fetch_optional(&self.pool)
+            .await?;
         let mut record = row.as_ref().map(row_to_map);
         if !include.is_empty() {
             if let Some(ref mut rec) = record {
@@ -136,7 +150,7 @@ impl AtomoClient {
         }
         Ok(record)
     }
-    
+
     /// Create a new record
     pub async fn create(
         &self,
@@ -144,7 +158,10 @@ impl AtomoClient {
         data: &HashMap<String, Value>,
         _include: &[String],
     ) -> Result<HashMap<String, Value>> {
-        let model = self.schema.models.get(model_name)
+        let model = self
+            .schema
+            .models
+            .get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
 
         let hook_ctx = crate::hooks::HookContext {
@@ -153,7 +170,10 @@ impl AtomoClient {
             data: data.clone(),
             user_id: None,
         };
-        let hook_result = self.hook_runner.run_before("before_create", &hook_ctx).await?;
+        let hook_result = self
+            .hook_runner
+            .run_before("before_create", &hook_ctx)
+            .await?;
         let data = match hook_result {
             crate::hooks::HookResult::Continue(d) => d,
             crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
@@ -175,12 +195,15 @@ impl AtomoClient {
         let _ = self.event_sender.send(event.clone());
         self.event_store.persist(&event).await.ok();
 
-        self.hook_runner.run_after("after_create", &hook_ctx).await.ok();
+        self.hook_runner
+            .run_after("after_create", &hook_ctx)
+            .await
+            .ok();
         self.cache.invalidate_model(model_name).await;
 
         Ok(record)
     }
-    
+
     /// Update many records
     pub async fn update_many(
         &self,
@@ -189,7 +212,10 @@ impl AtomoClient {
         data: &HashMap<String, Value>,
         _include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
-        let model = self.schema.models.get(model_name)
+        let model = self
+            .schema
+            .models
+            .get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
 
         let hook_ctx = crate::hooks::HookContext {
@@ -198,7 +224,10 @@ impl AtomoClient {
             data: data.clone(),
             user_id: None,
         };
-        let hook_result = self.hook_runner.run_before("before_update", &hook_ctx).await?;
+        let hook_result = self
+            .hook_runner
+            .run_before("before_update", &hook_ctx)
+            .await?;
         let data = match hook_result {
             crate::hooks::HookResult::Continue(d) => d,
             crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
@@ -222,19 +251,25 @@ impl AtomoClient {
             self.event_store.persist(&event).await.ok();
         }
 
-        self.hook_runner.run_after("after_update", &hook_ctx).await.ok();
+        self.hook_runner
+            .run_after("after_update", &hook_ctx)
+            .await
+            .ok();
         self.cache.invalidate_model(model_name).await;
 
         Ok(records)
     }
-    
+
     /// Delete many records (soft delete - sets deleted_at = NOW())
     pub async fn delete_many(
         &self,
         model_name: &str,
         where_clauses: &[WhereClause],
     ) -> Result<usize> {
-        let model = self.schema.models.get(model_name)
+        let model = self
+            .schema
+            .models
+            .get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
 
         let hook_ctx = crate::hooks::HookContext {
@@ -243,7 +278,10 @@ impl AtomoClient {
             data: HashMap::new(),
             user_id: None,
         };
-        let hook_result = self.hook_runner.run_before("before_delete", &hook_ctx).await?;
+        let hook_result = self
+            .hook_runner
+            .run_before("before_delete", &hook_ctx)
+            .await?;
         match hook_result {
             crate::hooks::HookResult::Continue(_) => {}
             crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
@@ -267,24 +305,37 @@ impl AtomoClient {
             self.event_store.persist(&event).await.ok();
         }
 
-        self.hook_runner.run_after("after_delete", &hook_ctx).await.ok();
+        self.hook_runner
+            .run_after("after_delete", &hook_ctx)
+            .await
+            .ok();
         self.cache.invalidate_model(model_name).await;
 
         Ok(count)
     }
-    
+
     /// Count records matching where clauses
     pub async fn count(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
-        let model = self.schema.models.get(model_name)
+        let model = self
+            .schema
+            .models
+            .get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let table = crate::query::sql_builder::table_name_for(model);
         let mut clauses = where_clauses.to_vec();
-        clauses.push(WhereClause { field: "deleted_at".to_string(), operator: crate::query::WhereOperator::IsNull, value: serde_json::Value::Null });
+        clauses.push(WhereClause {
+            field: "deleted_at".to_string(),
+            operator: crate::query::WhereOperator::IsNull,
+            value: serde_json::Value::Null,
+        });
         let (where_sql, params) = crate::query::sql_builder::build_where_pub(&clauses, 0);
         let sql = if where_sql.is_empty() {
             format!("SELECT COUNT(*) as count FROM {}", table)
         } else {
-            format!("SELECT COUNT(*) as count FROM {} WHERE {}", table, where_sql)
+            format!(
+                "SELECT COUNT(*) as count FROM {} WHERE {}",
+                table, where_sql
+            )
         };
         let args = build_args(&params)?;
         let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
@@ -314,49 +365,68 @@ impl AtomoClient {
         include: &'a [String],
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
-        if self.schema.models.get(model_name).is_none() {
-            return Ok(());
-        }
-        for rel_name in include {
-            let fk_field = format!("{}Id", rel_name);
-            let fk_snake = to_snake_case(&fk_field);
+            if !self.schema.models.contains_key(model_name) {
+                return Ok(());
+            }
+            for rel_name in include {
+                let fk_field = format!("{}Id", rel_name);
+                let fk_snake = to_snake_case(&fk_field);
 
-            if let Some(fk_value) = record.get(&fk_snake).or_else(|| record.get(&fk_field)).cloned() {
-                // belongsTo: fetch the related record by ID
-                if let Value::String(id) = fk_value {
-                    let related_model = capitalize(rel_name);
-                    let where_clause = WhereClause {
-                        field: "id".to_string(),
-                        operator: crate::query::WhereOperator::Equals,
-                        value: Value::String(id),
-                    };
-                    if let Ok(Some(related)) = self.find_unique(&related_model, &[where_clause], &[]).await {
-                        record.insert(rel_name.clone(), serde_json::to_value(related).unwrap_or(Value::Null));
+                if let Some(fk_value) = record
+                    .get(&fk_snake)
+                    .or_else(|| record.get(&fk_field))
+                    .cloned()
+                {
+                    // belongsTo: fetch the related record by ID
+                    if let Value::String(id) = fk_value {
+                        let related_model = capitalize(rel_name);
+                        let where_clause = WhereClause {
+                            field: "id".to_string(),
+                            operator: crate::query::WhereOperator::Equals,
+                            value: Value::String(id),
+                        };
+                        if let Ok(Some(related)) =
+                            self.find_unique(&related_model, &[where_clause], &[]).await
+                        {
+                            record.insert(
+                                rel_name.clone(),
+                                serde_json::to_value(related).unwrap_or(Value::Null),
+                            );
+                        }
                     }
-                }
-            } else {
-                // hasMany: fetch records from related model where foreignKey = this record's id
-                if let Some(Value::String(id)) = record.get("id").cloned() {
-                    let related_model = capitalize(rel_name);
-                    let fk = format!("{}_id", to_snake_case(model_name));
-                    let where_clause = WhereClause {
-                        field: fk,
-                        operator: crate::query::WhereOperator::Equals,
-                        value: Value::String(id),
-                    };
-                    let singular = if related_model.ends_with('s') {
-                        related_model[..related_model.len() - 1].to_string()
-                    } else {
-                        related_model.clone()
-                    };
-                    let model_to_query = if self.schema.models.contains_key(&singular) { &singular } else { &related_model };
-                    if let Ok(related) = self.find_many(model_to_query, &[where_clause], &[], None, None, &[]).await {
-                        record.insert(rel_name.clone(), serde_json::to_value(related).unwrap_or(Value::Null));
+                } else {
+                    // hasMany: fetch records from related model where foreignKey = this record's id
+                    if let Some(Value::String(id)) = record.get("id").cloned() {
+                        let related_model = capitalize(rel_name);
+                        let fk = format!("{}_id", to_snake_case(model_name));
+                        let where_clause = WhereClause {
+                            field: fk,
+                            operator: crate::query::WhereOperator::Equals,
+                            value: Value::String(id),
+                        };
+                        let singular = if related_model.ends_with('s') {
+                            related_model[..related_model.len() - 1].to_string()
+                        } else {
+                            related_model.clone()
+                        };
+                        let model_to_query = if self.schema.models.contains_key(&singular) {
+                            &singular
+                        } else {
+                            &related_model
+                        };
+                        if let Ok(related) = self
+                            .find_many(model_to_query, &[where_clause], &[], None, None, &[])
+                            .await
+                        {
+                            record.insert(
+                                rel_name.clone(),
+                                serde_json::to_value(related).unwrap_or(Value::Null),
+                            );
+                        }
                     }
                 }
             }
-        }
-        Ok(())
+            Ok(())
         })
     }
 }
@@ -369,6 +439,12 @@ pub struct AtomoClientBuilder {
     hook_runner: Option<Arc<dyn crate::hooks::HookRunner>>,
 }
 
+impl Default for AtomoClientBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AtomoClientBuilder {
     pub fn new() -> Self {
         Self {
@@ -378,17 +454,17 @@ impl AtomoClientBuilder {
             hook_runner: None,
         }
     }
-    
+
     pub fn database_url(mut self, url: impl Into<String>) -> Self {
         self.database_url = Some(url.into());
         self
     }
-    
+
     pub fn enable_migrations(mut self, enable: bool) -> Self {
         self.enable_migrations = enable;
         self
     }
-    
+
     pub fn enable_ai(mut self, enable: bool) -> Self {
         self.enable_ai = enable;
         self
@@ -398,18 +474,19 @@ impl AtomoClientBuilder {
         self.hook_runner = Some(runner);
         self
     }
-    
+
     pub async fn build(self, schema: &Schema) -> Result<AtomoClient> {
-        let database_url = self.database_url
-            .unwrap_or_else(|| std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string()));
-        
+        let database_url = self.database_url.unwrap_or_else(|| {
+            std::env::var("DATABASE_URL")
+                .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string())
+        });
+
         println!("Connecting to database: {}", database_url);
         let pool = PgPool::connect(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
         let event_store = EventStore::new(pool.clone());
         event_store.init().await?;
-        
+
         // Run migrations if enabled
         if self.enable_migrations {
             let migrations = crate::schema::generate_migrations(schema)?;
@@ -425,14 +502,16 @@ impl AtomoClientBuilder {
         } else {
             None
         };
-        
+
         Ok(AtomoClient {
             pool,
             schema: schema.clone(),
             event_sender,
             event_store,
             embedding_store,
-            hook_runner: self.hook_runner.unwrap_or_else(|| Arc::new(crate::hooks::NoopHookRunner)),
+            hook_runner: self
+                .hook_runner
+                .unwrap_or_else(|| Arc::new(crate::hooks::NoopHookRunner)),
             cache: crate::cache::ReadCache::new(60),
         })
     }
@@ -474,40 +553,54 @@ fn row_to_map(row: &sqlx::postgres::PgRow) -> HashMap<String, Value> {
         let name = col.name().to_string();
         let type_name = col.type_info().name();
         let val = match type_name {
-            "TEXT" | "VARCHAR" | "CHAR" | "NAME" | "BPCHAR" => {
-                row.try_get::<Option<String>, _>(col.ordinal())
-                    .ok().flatten().map(Value::String).unwrap_or(Value::Null)
-            }
-            "INT2" | "INT4" | "INT8" => {
-                row.try_get::<Option<i64>, _>(col.ordinal())
-                    .ok().flatten().map(|n| Value::Number(n.into())).unwrap_or(Value::Null)
-            }
-            "FLOAT4" | "FLOAT8" => {
-                row.try_get::<Option<f64>, _>(col.ordinal())
-                    .ok().flatten()
-                    .and_then(|f| serde_json::Number::from_f64(f))
-                    .map(Value::Number).unwrap_or(Value::Null)
-            }
-            "BOOL" => {
-                row.try_get::<Option<bool>, _>(col.ordinal())
-                    .ok().flatten().map(Value::Bool).unwrap_or(Value::Null)
-            }
-            "UUID" => {
-                row.try_get::<Option<uuid::Uuid>, _>(col.ordinal())
-                    .ok().flatten().map(|u| Value::String(u.to_string())).unwrap_or(Value::Null)
-            }
-            "TIMESTAMPTZ" | "TIMESTAMP" => {
-                row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(col.ordinal())
-                    .ok().flatten().map(|t| Value::String(t.to_rfc3339())).unwrap_or(Value::Null)
-            }
-            "JSONB" | "JSON" => {
-                row.try_get::<Option<Value>, _>(col.ordinal())
-                    .ok().flatten().unwrap_or(Value::Null)
-            }
-            _ => {
-                row.try_get::<Option<String>, _>(col.ordinal())
-                    .ok().flatten().map(Value::String).unwrap_or(Value::Null)
-            }
+            "TEXT" | "VARCHAR" | "CHAR" | "NAME" | "BPCHAR" => row
+                .try_get::<Option<String>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            "INT2" | "INT4" | "INT8" => row
+                .try_get::<Option<i64>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .map(|n| Value::Number(n.into()))
+                .unwrap_or(Value::Null),
+            "FLOAT4" | "FLOAT8" => row
+                .try_get::<Option<f64>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .and_then(serde_json::Number::from_f64)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+            "BOOL" => row
+                .try_get::<Option<bool>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .map(Value::Bool)
+                .unwrap_or(Value::Null),
+            "UUID" => row
+                .try_get::<Option<uuid::Uuid>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .map(|u| Value::String(u.to_string()))
+                .unwrap_or(Value::Null),
+            "TIMESTAMPTZ" | "TIMESTAMP" => row
+                .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .map(|t| Value::String(t.to_rfc3339()))
+                .unwrap_or(Value::Null),
+            "JSONB" | "JSON" => row
+                .try_get::<Option<Value>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .unwrap_or(Value::Null),
+            _ => row
+                .try_get::<Option<String>, _>(col.ordinal())
+                .ok()
+                .flatten()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
         };
         map.insert(name, val);
     }

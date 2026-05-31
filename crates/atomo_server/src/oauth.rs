@@ -1,7 +1,12 @@
 //! OAuth2/OIDC provider integration for enterprise SSO
 
 use anyhow::Result;
-use axum::{extract::{Query, State}, http::StatusCode, response::Redirect, Json};
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    response::Redirect,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -74,9 +79,19 @@ pub struct OAuthManager {
     jwt_secret: Option<String>,
 }
 
+impl Default for OAuthManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OAuthManager {
     pub fn new() -> Self {
-        Self { providers: HashMap::new(), pool: None, jwt_secret: None }
+        Self {
+            providers: HashMap::new(),
+            pool: None,
+            jwt_secret: None,
+        }
     }
 
     /// Load all configured providers from environment
@@ -97,12 +112,24 @@ impl OAuthManager {
     }
 
     /// Find existing user by email or create a new one with viewer role
-    pub async fn find_or_create_user(&self, info: &OAuthUserInfo) -> Result<(String, String, String)> {
-        let pool = self.pool.as_ref().ok_or_else(|| anyhow::anyhow!("No database pool configured"))?;
-        let email = info.email.clone().unwrap_or_else(|| format!("{}@oauth.local", info.sub));
+    pub async fn find_or_create_user(
+        &self,
+        info: &OAuthUserInfo,
+    ) -> Result<(String, String, String)> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No database pool configured"))?;
+        let email = info
+            .email
+            .clone()
+            .unwrap_or_else(|| format!("{}@oauth.local", info.sub));
         let existing = sqlx::query_as::<_, (String, String, String)>(
-            "SELECT id, email, role FROM users WHERE email = $1"
-        ).bind(&email).fetch_optional(pool).await?;
+            "SELECT id, email, role FROM users WHERE email = $1",
+        )
+        .bind(&email)
+        .fetch_optional(pool)
+        .await?;
         if let Some(row) = existing {
             return Ok(row);
         }
@@ -116,8 +143,11 @@ impl OAuthManager {
 
     /// Issue a JWT access token for the given user
     pub fn issue_jwt(&self, user_id: &str, email: &str, role: &str) -> Result<String> {
-        use jsonwebtoken::{encode, Header, EncodingKey};
-        let secret = self.jwt_secret.clone().unwrap_or_else(|| "dev-insecure-secret".to_string());
+        use jsonwebtoken::{encode, EncodingKey, Header};
+        let secret = self
+            .jwt_secret
+            .clone()
+            .unwrap_or_else(|| "dev-insecure-secret".to_string());
         let now = chrono::Utc::now();
         let claims = serde_json::json!({
             "sub": user_id,
@@ -127,7 +157,11 @@ impl OAuthManager {
             "iat": now.timestamp(),
             "jti": uuid::Uuid::new_v4().to_string(),
         });
-        Ok(encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_ref()))?)
+        Ok(encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_ref()),
+        )?)
     }
 
     pub fn get_provider(&self, name: &str) -> Option<&OAuthProvider> {
@@ -140,11 +174,14 @@ impl OAuthManager {
 
     /// Exchange authorization code for tokens
     pub async fn exchange_code(&self, provider_name: &str, code: &str) -> Result<TokenResponse> {
-        let provider = self.providers.get(provider_name)
+        let provider = self
+            .providers
+            .get(provider_name)
             .ok_or_else(|| anyhow::anyhow!("Provider '{}' not configured", provider_name))?;
 
         let client = reqwest::Client::new();
-        let resp = client.post(&provider.token_url)
+        let resp = client
+            .post(&provider.token_url)
             .form(&[
                 ("grant_type", "authorization_code"),
                 ("code", code),
@@ -152,21 +189,32 @@ impl OAuthManager {
                 ("client_secret", &provider.client_secret),
                 ("redirect_uri", &provider.redirect_uri),
             ])
-            .send().await?
-            .json::<TokenResponse>().await?;
+            .send()
+            .await?
+            .json::<TokenResponse>()
+            .await?;
         Ok(resp)
     }
 
     /// Fetch user info using access token
-    pub async fn get_user_info(&self, provider_name: &str, access_token: &str) -> Result<OAuthUserInfo> {
-        let provider = self.providers.get(provider_name)
+    pub async fn get_user_info(
+        &self,
+        provider_name: &str,
+        access_token: &str,
+    ) -> Result<OAuthUserInfo> {
+        let provider = self
+            .providers
+            .get(provider_name)
             .ok_or_else(|| anyhow::anyhow!("Provider '{}' not configured", provider_name))?;
 
         let client = reqwest::Client::new();
-        let resp = client.get(&provider.userinfo_url)
+        let resp = client
+            .get(&provider.userinfo_url)
             .bearer_auth(access_token)
-            .send().await?
-            .json::<OAuthUserInfo>().await?;
+            .send()
+            .await?
+            .json::<OAuthUserInfo>()
+            .await?;
         Ok(resp)
     }
 }
@@ -191,7 +239,8 @@ pub async fn oauth_authorize(
     State(oauth): State<OAuthManager>,
     Query(params): Query<AuthorizeParams>,
 ) -> Result<Redirect, StatusCode> {
-    let provider = oauth.get_provider(&params.provider)
+    let provider = oauth
+        .get_provider(&params.provider)
         .ok_or(StatusCode::NOT_FOUND)?;
     let state = uuid::Uuid::new_v4().to_string();
     let url = provider.authorize_url(&state);
@@ -204,13 +253,20 @@ pub async fn oauth_callback(
     axum::extract::Path(provider_name): axum::extract::Path<String>,
     Query(params): Query<CallbackParams>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let tokens = oauth.exchange_code(&provider_name, &params.code).await
+    let tokens = oauth
+        .exchange_code(&provider_name, &params.code)
+        .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let user_info = oauth.get_user_info(&provider_name, &tokens.access_token).await
+    let user_info = oauth
+        .get_user_info(&provider_name, &tokens.access_token)
+        .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let (user_id, email, role) = oauth.find_or_create_user(&user_info).await
+    let (user_id, email, role) = oauth
+        .find_or_create_user(&user_info)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let jwt = oauth.issue_jwt(&user_id, &email, &role)
+    let jwt = oauth
+        .issue_jwt(&user_id, &email, &role)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({
         "access_token": jwt,
@@ -219,8 +275,12 @@ pub async fn oauth_callback(
 }
 
 /// GET /auth/oauth/providers - list available providers
-pub async fn oauth_providers(
-    State(oauth): State<OAuthManager>,
-) -> Json<Vec<String>> {
-    Json(oauth.available_providers().into_iter().map(String::from).collect())
+pub async fn oauth_providers(State(oauth): State<OAuthManager>) -> Json<Vec<String>> {
+    Json(
+        oauth
+            .available_providers()
+            .into_iter()
+            .map(String::from)
+            .collect(),
+    )
 }

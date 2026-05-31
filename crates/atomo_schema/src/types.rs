@@ -122,7 +122,7 @@ pub struct HookDefinitions {
 pub struct Hook {
     pub name: String,
     pub operation_type: Option<OperationType>, // None means all operations
-    pub function_code: String, // TypeScript function code
+    pub function_code: String,                 // TypeScript function code
     pub async_hook: bool,
 }
 

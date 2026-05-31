@@ -3,11 +3,17 @@
 //! This module generates Rust code for the TypeScript DSL-defined hooks and access control rules.
 //! It creates type-safe Rust functions that can be executed at runtime.
 
-use anyhow::Result;
 use crate::types::*;
+use anyhow::Result;
 
 /// Generator for hooks and access control Rust code
 pub struct HookAccessGenerator;
+
+impl Default for HookAccessGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HookAccessGenerator {
     pub fn new() -> Self {
@@ -17,26 +23,26 @@ impl HookAccessGenerator {
     /// Generate complete hook and access control module
     pub fn generate_module(&self, models: &[Model]) -> Result<String> {
         let mut code = String::new();
-        
+
         // Module header
         code.push_str(&self.generate_header());
-        
+
         // Generate access control structures
         code.push_str(&self.generate_access_structures()?);
-        
+
         // Generate hook structures
         code.push_str(&self.generate_hook_structures()?);
-        
+
         // Generate model-specific implementations
         for model in models {
             if model.access.is_some() || model.hooks.is_some() {
                 code.push_str(&self.generate_model_implementation(model)?);
             }
         }
-        
+
         // Generate runtime execution framework
         code.push_str(&self.generate_runtime_framework()?);
-        
+
         Ok(code)
     }
 
@@ -53,7 +59,8 @@ use chrono::{DateTime, Utc};
 
 // Type definitions for the hook and access control system
 
-"#.to_string()
+"#
+        .to_string()
     }
 
     /// Generate access control type structures
@@ -117,7 +124,8 @@ impl AccessQuery {
     }
 }
 
-"#.to_string())
+"#
+        .to_string())
     }
 
     /// Generate hook type structures
@@ -150,22 +158,20 @@ pub struct FieldChangeContext {
     pub user: Option<Value>,
 }
 
-"#.to_string())
+"#
+        .to_string())
     }
 
     /// Generate model-specific implementation
     fn generate_model_implementation(&self, model: &Model) -> Result<String> {
         let mut code = String::new();
         let model_name = &model.name;
-        
+
         code.push_str(&format!(
             "/// Generated access control and hooks for {} model\n",
             model_name
         ));
-        code.push_str(&format!(
-            "pub struct {}AccessControl;\n\n",
-            model_name
-        ));
+        code.push_str(&format!("pub struct {}AccessControl;\n\n", model_name));
 
         // Generate access control methods
         if let Some(access) = &model.access {
@@ -184,7 +190,7 @@ pub struct FieldChangeContext {
     /// Generate access control methods for a model
     fn generate_access_methods(&self, model_name: &str, access: &AccessControl) -> Result<String> {
         let mut code = String::new();
-        
+
         code.push_str(&format!("impl {}AccessControl {{\n", model_name));
 
         // Generate create access method
@@ -261,7 +267,7 @@ pub struct FieldChangeContext {
                         }
                     }
                 }
-                
+
                 format!(
                     r#"    pub fn check_{}(context: &AccessContext) -> Result<AccessQuery> {{
         Ok(AccessQuery::or(vec![
@@ -324,8 +330,8 @@ pub struct FieldChangeContext {
             }
             QueryValue::UserProperty(prop) => {
                 // Handle user property references like user.id
-                if prop.starts_with("user.") {
-                    let field = &prop[5..]; // Remove "user." prefix
+                if let Some(field) = prop.strip_prefix("user.") {
+                    // Remove "user." prefix
                     Ok(format!(
                         r#"context.user.as_ref()
                             .and_then(|u| u.get("{}"))
@@ -343,14 +349,16 @@ pub struct FieldChangeContext {
     /// Generate hook methods for a model
     fn generate_hook_methods(&self, model_name: &str, hooks: &HookDefinitions) -> Result<String> {
         let mut code = String::new();
-        
+
         code.push_str(&format!("pub struct {}Hooks;\n\n", model_name));
         code.push_str(&format!("impl {}Hooks {{\n", model_name));
 
         // Generate beforeOperation hooks
         if let Some(before_ops) = &hooks.before_operation {
             for (i, hook) in before_ops.iter().enumerate() {
-                code.push_str(&self.generate_hook_method(&format!("before_operation_{}", i), hook)?);
+                code.push_str(
+                    &self.generate_hook_method(&format!("before_operation_{}", i), hook)?,
+                );
             }
         }
 
@@ -371,7 +379,9 @@ pub struct FieldChangeContext {
         // Generate beforeChange hooks
         if let Some(before_changes) = &hooks.before_change {
             for (i, hook) in before_changes.iter().enumerate() {
-                code.push_str(&self.generate_field_hook_method(&format!("before_change_{}", i), hook)?);
+                code.push_str(
+                    &self.generate_field_hook_method(&format!("before_change_{}", i), hook)?,
+                );
             }
         }
 
@@ -382,8 +392,12 @@ pub struct FieldChangeContext {
     /// Generate individual hook method
     fn generate_hook_method(&self, method_name: &str, hook: &Hook) -> Result<String> {
         let async_keyword = if hook.async_hook { "async " } else { "" };
-        let return_type = if hook.async_hook { "Result<HookResult>" } else { "Result<HookResult>" };
-        
+        let return_type = if hook.async_hook {
+            "Result<HookResult>"
+        } else {
+            "Result<HookResult>"
+        };
+
         Ok(format!(
             r#"    pub {}fn {}(context: &mut HookContext) -> {} {{
         // Converted from TypeScript: {}
@@ -409,8 +423,12 @@ pub struct FieldChangeContext {
     /// Generate field-specific hook method
     fn generate_field_hook_method(&self, method_name: &str, hook: &FieldHook) -> Result<String> {
         let async_keyword = if hook.async_hook { "async " } else { "" };
-        let return_type = if hook.async_hook { "Result<HookResult>" } else { "Result<HookResult>" };
-        
+        let return_type = if hook.async_hook {
+            "Result<HookResult>"
+        } else {
+            "Result<HookResult>"
+        };
+
         Ok(format!(
             r#"    pub {}fn {}(context: &FieldChangeContext) -> {} {{
         // Field-specific hook for: {}
@@ -435,7 +453,8 @@ pub struct FieldChangeContext {
 
     /// Generate runtime execution framework
     fn generate_runtime_framework(&self) -> Result<String> {
-        Ok(r#"/// Runtime execution framework for hooks and access control
+        Ok(
+            r#"/// Runtime execution framework for hooks and access control
 pub struct HookAccessRuntime;
 
 impl HookAccessRuntime {
@@ -480,7 +499,9 @@ impl HookAccessRuntime {
     }
 }
 
-"#.to_string())
+"#
+            .to_string(),
+        )
     }
 }
 

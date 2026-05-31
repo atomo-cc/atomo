@@ -1,10 +1,10 @@
 //! Content Management Core Interfaces
-//! 
+//!
 //! This module provides the core content management types and interfaces
 //! for the Atomo platform, including rich text content blocks.
 
+use async_graphql::{Enum, InputObject, SimpleObject};
 use serde::{Deserialize, Serialize};
-use async_graphql::{SimpleObject, Enum, InputObject};
 
 /// Content block type enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Enum)]
@@ -69,7 +69,7 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for ContentBlockType {
 }
 
 /// Core content block structure for rich text and media content
-/// 
+///
 /// This represents a single content block that can contain text, media,
 /// or structured data. Content blocks are the building blocks for
 /// rich content throughout the platform.
@@ -78,19 +78,19 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for ContentBlockType {
 pub struct ContentBlock {
     /// Unique identifier for this content block
     pub id: String,
-    
+
     /// Type of content block
     pub block_type: ContentBlockType,
-    
+
     /// Raw content data (text, JSON, etc.)
     pub content: String,
-    
+
     /// Optional metadata for the content block
     pub metadata: Option<String>,
-    
+
     /// Display order within parent content
     pub order: i32,
-    
+
     /// Whether this block is visible
     pub is_visible: bool,
 }
@@ -139,7 +139,7 @@ impl ContentBlock {
             is_visible: true,
         }
     }
-    
+
     /// Create a new rich text content block
     pub fn new_rich_text(content: impl Into<String>) -> Self {
         Self {
@@ -151,7 +151,7 @@ impl ContentBlock {
             is_visible: true,
         }
     }
-    
+
     /// Create a new image content block
     pub fn new_image(url: impl Into<String>, alt_text: Option<String>) -> Self {
         let metadata = alt_text.map(|alt| serde_json::json!({"alt": alt}).to_string());
@@ -172,7 +172,7 @@ impl Default for ContentBlock {
     }
 }
 
-/// Specialized content block types for CRM and business applications
+// Specialized content block types for CRM and business applications
 
 /// Paragraph content block for formatted text
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject, InputObject)]

@@ -10,7 +10,10 @@ pub struct ValidationError {
 
 /// Validate data against a set of field rules.
 /// Rules format: "required|email|min:1|max:100|numeric"
-pub fn validate(data: &HashMap<String, Value>, rules: &HashMap<String, String>) -> Vec<ValidationError> {
+pub fn validate(
+    data: &HashMap<String, Value>,
+    rules: &HashMap<String, String>,
+) -> Vec<ValidationError> {
     let mut errors = Vec::new();
     for (field, rule_str) in rules {
         let value = data.get(field);
@@ -38,13 +41,21 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
                 _ => false,
             };
             if missing {
-                return Some(ValidationError { field: field.to_string(), message: format!("{} is required", field), code: "required".to_string() });
+                return Some(ValidationError {
+                    field: field.to_string(),
+                    message: format!("{} is required", field),
+                    code: "required".to_string(),
+                });
             }
         }
         "email" => {
             if let Some(Value::String(s)) = value {
                 if !s.is_empty() && (!s.contains('@') || !s.contains('.')) {
-                    return Some(ValidationError { field: field.to_string(), message: format!("{} must be a valid email", field), code: "email".to_string() });
+                    return Some(ValidationError {
+                        field: field.to_string(),
+                        message: format!("{} must be a valid email", field),
+                        code: "email".to_string(),
+                    });
                 }
             }
         }
@@ -52,12 +63,20 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
             let min: usize = param?.parse().ok()?;
             match value {
                 Some(Value::String(s)) if s.len() < min => {
-                    return Some(ValidationError { field: field.to_string(), message: format!("{} must be at least {} characters", field, min), code: "min_length".to_string() });
+                    return Some(ValidationError {
+                        field: field.to_string(),
+                        message: format!("{} must be at least {} characters", field, min),
+                        code: "min_length".to_string(),
+                    });
                 }
                 Some(Value::Number(n)) => {
                     if let Some(v) = n.as_f64() {
                         if v < min as f64 {
-                            return Some(ValidationError { field: field.to_string(), message: format!("{} must be at least {}", field, min), code: "min_value".to_string() });
+                            return Some(ValidationError {
+                                field: field.to_string(),
+                                message: format!("{} must be at least {}", field, min),
+                                code: "min_value".to_string(),
+                            });
                         }
                     }
                 }
@@ -68,12 +87,20 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
             let max: usize = param?.parse().ok()?;
             match value {
                 Some(Value::String(s)) if s.len() > max => {
-                    return Some(ValidationError { field: field.to_string(), message: format!("{} must be at most {} characters", field, max), code: "max_length".to_string() });
+                    return Some(ValidationError {
+                        field: field.to_string(),
+                        message: format!("{} must be at most {} characters", field, max),
+                        code: "max_length".to_string(),
+                    });
                 }
                 Some(Value::Number(n)) => {
                     if let Some(v) = n.as_f64() {
                         if v > max as f64 {
-                            return Some(ValidationError { field: field.to_string(), message: format!("{} must be at most {}", field, max), code: "max_value".to_string() });
+                            return Some(ValidationError {
+                                field: field.to_string(),
+                                message: format!("{} must be at most {}", field, max),
+                                code: "max_value".to_string(),
+                            });
                         }
                     }
                 }
@@ -85,7 +112,13 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
                 match val {
                     Value::Number(_) | Value::Null => {}
                     Value::String(s) if s.parse::<f64>().is_ok() => {}
-                    _ => return Some(ValidationError { field: field.to_string(), message: format!("{} must be numeric", field), code: "numeric".to_string() }),
+                    _ => {
+                        return Some(ValidationError {
+                            field: field.to_string(),
+                            message: format!("{} must be numeric", field),
+                            code: "numeric".to_string(),
+                        })
+                    }
                 }
             }
         }

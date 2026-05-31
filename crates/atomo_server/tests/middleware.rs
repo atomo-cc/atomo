@@ -1,4 +1,9 @@
-use axum::{body::Body, http::{Request, StatusCode}, routing::get, Router};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+    routing::get,
+    Router,
+};
 use tower::ServiceExt;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -50,10 +55,7 @@ async fn cors_layer_adds_headers() {
     let app = Router::new()
         .route("/x", get(|| async { "ok" }))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any));
-    let req = Request::builder()
-        .uri("/x")
-        .body(Body::empty())
-        .unwrap();
+    let req = Request::builder().uri("/x").body(Body::empty()).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(
         resp.headers().get("access-control-allow-origin").unwrap(),

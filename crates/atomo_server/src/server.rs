@@ -1,28 +1,25 @@
 //! Atomo Server implementation using the new library API
 
 use anyhow::Result;
+use axum::http::{header, HeaderName, HeaderValue};
+use axum::middleware;
 use axum::serve;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{Any, CorsLayer, AllowOrigin},
+    cors::{AllowOrigin, Any, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     set_header::SetResponseHeaderLayer,
     trace::{DefaultOnResponse, TraceLayer},
 };
-use axum::http::{HeaderValue, header, HeaderName};
-use axum::middleware;
 // use axum::{body::Body, response::Response};
 // use axum::middleware::Next;
-use tracing::{info, instrument};
-use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 use atomo::prelude::*;
+use tracing::{info, instrument};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use crate::{
-    config::ServerConfig,
-    handlers::create_router,
-};
+use crate::{config::ServerConfig, handlers::create_router};
 
 pub struct AtomoServer {
     config: ServerConfig,
@@ -33,7 +30,7 @@ impl AtomoServer {
     /// Create a new server instance with Atomo library
     pub async fn new(config: ServerConfig) -> Result<Self> {
         info!("📊 Loading schema from: {}", config.schema_path);
-        
+
         // Discover WASM plugins and bridge them into the CRUD hook lifecycle
         let mut plugin_manager = crate::wasm_plugins::WasmPluginManager::new("plugins")?;
         let loaded = plugin_manager.discover_and_load().await.unwrap_or_default();
@@ -50,7 +47,7 @@ impl AtomoServer {
             ));
         }
         let atomo = builder.build().await?;
-        
+
         Ok(Self { config, atomo })
     }
 
@@ -87,12 +84,15 @@ impl AtomoServer {
                 if env_name == "production" {
                     anyhow::bail!("JWT_SECRET must be set in production environment");
                 } else {
-                    tracing::warn!("JWT_SECRET is not set; using insecure default for development only");
+                    tracing::warn!(
+                        "JWT_SECRET is not set; using insecure default for development only"
+                    );
                     "dev-insecure-secret".to_string()
                 }
             }
         };
-        let auth_service = crate::auth::HttpAuthService::new(&jwt_secret, self.atomo.db_pool().clone());
+        let auth_service =
+            crate::auth::HttpAuthService::new(&jwt_secret, self.atomo.db_pool().clone());
         let audit_service = crate::audit::HttpAuditService::new(self.atomo.db_pool().clone());
 
         // Ensure platform tables (users, sessions, audit_log) exist.
@@ -105,19 +105,35 @@ impl AtomoServer {
         // Start CQRS projector listener: convert ModelEvent -> ProjectorEvent and feed projections.
         // Auto-register one TableProjection per schema model (maintains a `{table}_projection` read table).
         let projector_manager = {
-            use atomo_projectors::{ProjectorManager, ProjectorEvent, TableProjection};
+            use atomo_projectors::{ProjectorEvent, ProjectorManager, TableProjection};
             let mut manager = ProjectorManager::new(self.atomo.db_pool().clone());
             for (name, model) in &self.atomo.schema().models {
                 // Skip enum-derived pseudo-models and block sub-types (only real entities have an `id`).
-                if model.fields.contains_key("_enum_type") { continue; }
-                if !model.fields.contains_key("id") { continue; }
+                if model.fields.contains_key("_enum_type") {
+                    continue;
+                }
+                if !model.fields.contains_key("id") {
+                    continue;
+                }
                 let table = format!("{}_projection", crate::pluralize(name));
-                let columns: Vec<String> = model.fields.keys().map(|f| crate::to_snake(f)).collect();
+                let columns: Vec<String> =
+                    model.fields.keys().map(|f| crate::to_snake(f)).collect();
                 // Ensure the projection table exists (id + each column as TEXT/JSONB-agnostic TEXT).
-                let cols_ddl: Vec<String> = columns.iter()
-                    .map(|c| if c == "id" { format!("\"{}\" TEXT PRIMARY KEY", c) } else { format!("\"{}\" TEXT", c) })
+                let cols_ddl: Vec<String> = columns
+                    .iter()
+                    .map(|c| {
+                        if c == "id" {
+                            format!("\"{}\" TEXT PRIMARY KEY", c)
+                        } else {
+                            format!("\"{}\" TEXT", c)
+                        }
+                    })
                     .collect();
-                let ddl = format!("CREATE TABLE IF NOT EXISTS {} ({})", table, cols_ddl.join(", "));
+                let ddl = format!(
+                    "CREATE TABLE IF NOT EXISTS {} ({})",
+                    table,
+                    cols_ddl.join(", ")
+                );
                 let _ = sqlx::query(&ddl).execute(self.atomo.db_pool()).await;
                 manager.register(TableProjection::new(name, &table, columns));
             }
@@ -139,14 +155,18 @@ impl AtomoServer {
         };
 
         // Workflow engine: durable (Postgres-backed), plus ./workflows/*.json files, then listeners.
-        let workflow_engine = std::sync::Arc::new(
-            atomo::workflow::WorkflowEngine::with_pool(self.atomo.db_pool().clone()),
-        );
+        let workflow_engine = std::sync::Arc::new(atomo::workflow::WorkflowEngine::with_pool(
+            self.atomo.db_pool().clone(),
+        ));
         {
             workflow_engine.init().await?; // create table + load persisted definitions
             let loaded = crate::load_workflows(&workflow_engine, "workflows").await;
-            if loaded > 0 { info!("   ✓ Loaded {} workflow(s) from ./workflows", loaded); }
-            workflow_engine.clone().start_event_listener(self.atomo.event_receiver());
+            if loaded > 0 {
+                info!("   ✓ Loaded {} workflow(s) from ./workflows", loaded);
+            }
+            workflow_engine
+                .clone()
+                .start_event_listener(self.atomo.event_receiver());
             workflow_engine.clone().start_scheduler();
             info!("   ✓ Workflow event listener + scheduler started");
         }
@@ -173,7 +193,8 @@ impl AtomoServer {
 
         // Basic security headers (configurable)
         let csp_str = std::env::var("CSP").unwrap_or_else(|_| "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'".to_string());
-        let csp_val = HeaderValue::from_str(&csp_str).unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"));
+        let csp_val = HeaderValue::from_str(&csp_str)
+            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"));
         let csp_name: HeaderName = HeaderName::from_static("content-security-policy");
         let sec_builder = ServiceBuilder::new()
             .layer(SetResponseHeaderLayer::if_not_present(
@@ -198,10 +219,7 @@ impl AtomoServer {
             // Structured tracing with request metadata
             .layer(
                 TraceLayer::new_for_http()
-                    .on_response(
-                        DefaultOnResponse::new()
-                            .level(tracing::Level::INFO)
-                    )
+                    .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)),
             )
             .layer(cors_layer);
 
@@ -210,22 +228,27 @@ impl AtomoServer {
 
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
-            .merge(crate::projector_routes::projector_router(projector_manager.clone()))
+            .merge(crate::projector_routes::projector_router(
+                projector_manager.clone(),
+            ))
             .layer(svc_builder)
-            .layer(middleware::from_fn(crate::tracing_middleware::request_tracing))
+            .layer(middleware::from_fn(
+                crate::tracing_middleware::request_tracing,
+            ))
             .route_layer(middleware::from_fn_with_state(
                 rate_limiter,
                 crate::rate_limit::rate_limit_middleware,
             ));
         // Conditionally apply security headers
-        let disable_headers = std::env::var("DISABLE_SECURITY_HEADERS").map(|v| v == "true" || v == "1").unwrap_or(false);
-        if !disable_headers { app = app.layer(sec_builder); }
+        let disable_headers = std::env::var("DISABLE_SECURITY_HEADERS")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        if !disable_headers {
+            app = app.layer(sec_builder);
+        }
 
         // Start server
-        let addr = SocketAddr::new(
-            self.config.host.parse()?,
-            self.config.port,
-        );
+        let addr = SocketAddr::new(self.config.host.parse()?, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
 
         info!("🌐 Server running at http://{}", addr);

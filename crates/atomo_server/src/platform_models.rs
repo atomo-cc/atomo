@@ -1,10 +1,10 @@
 //! Platform-level models specific to the Atomo server implementation
-//! 
+//!
 //! These models represent core platform concepts like users, sessions,
 //! and system-level entities that are specific to the server implementation.
 
-use atomo_core::EntityId;
 use async_graphql::SimpleObject;
+use atomo_core::EntityId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,9 @@ pub struct UserSession {
 }
 
 /// Platform-level user roles with hierarchical permissions
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, async_graphql::Enum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, async_graphql::Enum, Default,
+)]
 pub enum UserRole {
     /// System administrator with full access
     Admin,
@@ -55,6 +57,7 @@ pub enum UserRole {
     /// Support staff with customer interaction capabilities
     Support,
     /// Read-only viewer access
+    #[default]
     Viewer,
 }
 
@@ -71,7 +74,7 @@ impl UserRole {
             _ => false,
         }
     }
-    
+
     /// Get all roles that this role can manage
     pub fn manageable_roles(&self) -> Vec<UserRole> {
         use UserRole::*;
@@ -83,30 +86,26 @@ impl UserRole {
             Viewer => vec![],
         }
     }
-    
+
     /// Check if this role has permission for the given access pattern
     pub fn has_permission(&self, access_pattern: &str) -> bool {
         let roles: std::collections::HashSet<&str> = access_pattern.split('|').collect();
-        
+
         // Admin has access to everything
         if *self == UserRole::Admin {
             return true;
         }
-        
+
         // Check specific role permissions
         match self {
             UserRole::Admin => true,
-            UserRole::Manager => roles.contains("manager") || roles.contains("sales") || roles.contains("support"),
+            UserRole::Manager => {
+                roles.contains("manager") || roles.contains("sales") || roles.contains("support")
+            }
             UserRole::Sales => roles.contains("sales"),
             UserRole::Support => roles.contains("support"),
             UserRole::Viewer => roles.contains("viewer"),
         }
-    }
-}
-
-impl Default for UserRole {
-    fn default() -> Self {
-        UserRole::Viewer
     }
 }
 
@@ -128,7 +127,7 @@ impl std::fmt::Display for UserRole {
 
 impl std::str::FromStr for UserRole {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "admin" => Ok(UserRole::Admin),

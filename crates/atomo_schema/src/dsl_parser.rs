@@ -3,16 +3,22 @@
 //! This module parses TypeScript DSL syntax for defining hooks and access control
 //! in the enhanced `defineModel` function calls, full type safety.
 
-use anyhow::Result;
 use crate::types::*;
-use std::collections::HashMap;
+use anyhow::Result;
 use regex::Regex;
+use std::collections::HashMap;
 
 /// Parser for TypeScript DSL hooks and access control
 pub struct DslParser {
     /// Extracted function definitions
     #[allow(dead_code)]
     functions: HashMap<String, String>,
+}
+
+impl Default for DslParser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DslParser {
@@ -25,15 +31,15 @@ impl DslParser {
     /// Parse all defineModel calls and extract models with hooks and access control
     pub fn parse_define_model(&mut self, content: &str) -> Result<Vec<Model>> {
         let mut models = Vec::new();
-        
+
         // Find all defineModel calls
         let define_model_regex = Regex::new(r"export\s+const\s+(\w+)Model\s*=\s*defineModel")?;
-        
+
         for captures in define_model_regex.captures_iter(content) {
             let model_name = captures.get(1).unwrap().as_str();
-            
+
             let (access, hooks) = self.parse_model_definition(content, model_name)?;
-            
+
             models.push(Model {
                 name: model_name.to_string(),
                 fields: HashMap::new(), // Fields will be filled from interfaces
@@ -42,12 +48,16 @@ impl DslParser {
                 validation: HashMap::new(),
             });
         }
-        
+
         Ok(models)
     }
 
     /// Parse a specific defineModel call and extract hooks and access control
-    pub fn parse_model_definition(&mut self, content: &str, model_name: &str) -> Result<(Option<AccessControl>, Option<HookDefinitions>)> {
+    pub fn parse_model_definition(
+        &mut self,
+        content: &str,
+        model_name: &str,
+    ) -> Result<(Option<AccessControl>, Option<HookDefinitions>)> {
         // Find the defineModel call for this specific model
         let define_model_regex = Regex::new(&format!(
             r"export\s+const\s+{}Model\s*=\s*defineModel\s*\(\s*\{{([^}}]+)\}}\s*\)",
@@ -56,10 +66,10 @@ impl DslParser {
 
         if let Some(captures) = define_model_regex.captures(content) {
             let model_content = captures.get(1).unwrap().as_str();
-            
+
             let access = self.parse_access_block(model_content)?;
             let hooks = self.parse_hooks_block(model_content)?;
-            
+
             Ok((access, hooks))
         } else {
             // Try to find a more complex multiline defineModel
@@ -68,10 +78,14 @@ impl DslParser {
     }
 
     /// Parse multiline defineModel definitions
-    fn parse_multiline_define_model(&mut self, content: &str, model_name: &str) -> Result<(Option<AccessControl>, Option<HookDefinitions>)> {
+    fn parse_multiline_define_model(
+        &mut self,
+        content: &str,
+        model_name: &str,
+    ) -> Result<(Option<AccessControl>, Option<HookDefinitions>)> {
         let lines: Vec<&str> = content.lines().collect();
         let mut i = 0;
-        
+
         // Find the start of the defineModel call
         while i < lines.len() {
             let line = lines[i].trim();
@@ -92,7 +106,7 @@ impl DslParser {
 
         while i < lines.len() {
             let line = lines[i];
-            
+
             for ch in line.chars() {
                 if ch == '{' {
                     brace_count += 1;
@@ -110,13 +124,13 @@ impl DslParser {
             if found_first_brace && brace_count == 0 {
                 break;
             }
-            
+
             i += 1;
         }
 
         let access = self.parse_access_block(&model_content)?;
         let hooks = self.parse_hooks_block(&model_content)?;
-        
+
         Ok((access, hooks))
     }
 
@@ -126,25 +140,25 @@ impl DslParser {
         // Look for access: { ... } block with proper brace matching
         let mut access_start = None;
         let mut access_content = String::new();
-        
+
         // Find the start of the access block
         if let Some(pos) = content.find("access:") {
             access_start = Some(pos);
         } else {
             return Ok(None);
         }
-        
+
         if let Some(start_pos) = access_start {
             let remaining = &content[start_pos..];
-            
+
             // Find the opening brace
             if let Some(brace_pos) = remaining.find('{') {
                 let after_brace = &remaining[brace_pos + 1..];
-                
+
                 // Count braces to find the matching closing brace
                 let mut brace_count = 1;
                 let mut end_pos = 0;
-                
+
                 for (i, ch) in after_brace.char_indices() {
                     match ch {
                         '{' => brace_count += 1,
@@ -154,21 +168,21 @@ impl DslParser {
                                 end_pos = i;
                                 break;
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
-                
+
                 if brace_count == 0 {
                     access_content = after_brace[..end_pos].to_string();
                 }
             }
         }
-        
+
         if access_content.is_empty() {
             return Ok(None);
         }
-        
+
         let create = self.parse_access_rule(&access_content, "create")?;
         let read = self.parse_access_rule(&access_content, "read")?;
         let update = self.parse_access_rule(&access_content, "update")?;
@@ -192,7 +206,7 @@ impl DslParser {
 
         if let Some(captures) = rule_regex.captures(content) {
             let rule_content = captures.get(1).unwrap().as_str().trim();
-            
+
             // Parse different types of access rules
             if rule_content.starts_with("!!user") {
                 // Simple boolean check
@@ -215,11 +229,11 @@ impl DslParser {
     /// Parse OR conditions like access.or(cond1, cond2)
     fn parse_or_condition(&mut self, content: &str) -> Result<Option<AccessRule>> {
         let or_regex = Regex::new(r"access\.or\s*\(([^)]+)\)")?;
-        
+
         if let Some(captures) = or_regex.captures(content) {
             let conditions_str = captures.get(1).unwrap().as_str();
             let mut conditions = Vec::new();
-            
+
             // Split by comma and parse each condition
             for condition in conditions_str.split(',') {
                 let condition = condition.trim();
@@ -227,7 +241,7 @@ impl DslParser {
                     conditions.push(rule);
                 }
             }
-            
+
             Ok(Some(AccessRule::Or(conditions)))
         } else {
             Ok(None)
@@ -236,13 +250,14 @@ impl DslParser {
 
     /// Parse where conditions like access.where('field').equals('value')
     fn parse_where_condition(&mut self, content: &str) -> Result<Option<AccessRule>> {
-        let where_regex = Regex::new(r#"access\.where\s*\(\s*['"]([^'"]+)['"]\s*\)\.(\w+)\s*\(\s*([^)]+)\s*\)"#)?;
-        
+        let where_regex =
+            Regex::new(r#"access\.where\s*\(\s*['"]([^'"]+)['"]\s*\)\.(\w+)\s*\(\s*([^)]+)\s*\)"#)?;
+
         if let Some(captures) = where_regex.captures(content) {
             let field = captures.get(1).unwrap().as_str().to_string();
             let operator_str = captures.get(2).unwrap().as_str();
             let value_str = captures.get(3).unwrap().as_str().trim();
-            
+
             let operator = match operator_str {
                 "equals" => QueryOperator::Equals,
                 "notEquals" => QueryOperator::NotEquals,
@@ -255,7 +270,7 @@ impl DslParser {
             };
 
             let value = self.parse_query_value(value_str)?;
-            
+
             Ok(Some(AccessRule::Query(QueryCondition {
                 field,
                 operator,
@@ -293,25 +308,25 @@ impl DslParser {
         // Look for hooks: { ... } block with proper brace matching
         let mut hooks_start = None;
         let mut hooks_content = String::new();
-        
+
         // Find the start of the hooks block
         if let Some(pos) = content.find("hooks:") {
             hooks_start = Some(pos);
         } else {
             return Ok(None);
         }
-        
+
         if let Some(start_pos) = hooks_start {
             let remaining = &content[start_pos..];
-            
+
             // Find the opening brace
             if let Some(brace_pos) = remaining.find('{') {
                 let after_brace = &remaining[brace_pos + 1..];
-                
+
                 // Count braces to find the matching closing brace
                 let mut brace_count = 1;
                 let mut end_pos = 0;
-                
+
                 for (i, ch) in after_brace.char_indices() {
                     match ch {
                         '{' => brace_count += 1,
@@ -321,21 +336,21 @@ impl DslParser {
                                 end_pos = i;
                                 break;
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
-                
+
                 if brace_count == 0 {
                     hooks_content = after_brace[..end_pos].to_string();
                 }
             }
         }
-        
+
         if hooks_content.is_empty() {
             return Ok(None);
         }
-        
+
         let before_operation = self.parse_hook_array(&hooks_content, "beforeOperation")?;
         let after_operation = self.parse_hook_array(&hooks_content, "afterOperation")?;
         let before_change = self.parse_field_hook_array(&hooks_content, "beforeChange")?;
@@ -354,15 +369,15 @@ impl DslParser {
         // Find the hook type array
         if let Some(start_pos) = content.find(&format!("{}:", hook_type)) {
             let remaining = &content[start_pos..];
-            
+
             // Find the opening bracket
             if let Some(bracket_pos) = remaining.find('[') {
                 let after_bracket = &remaining[bracket_pos + 1..];
-                
+
                 // Count brackets to find the matching closing bracket
                 let mut bracket_count = 1;
                 let mut end_pos = 0;
-                
+
                 for (i, ch) in after_bracket.char_indices() {
                     match ch {
                         '[' => bracket_count += 1,
@@ -372,16 +387,16 @@ impl DslParser {
                                 end_pos = i;
                                 break;
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
-                
+
                 if bracket_count == 0 {
                     let hooks_str = after_bracket[..end_pos].trim();
-                    
+
                     let mut hooks = Vec::new();
-                    
+
                     // Simple hook parsing - look for hooks.create, hooks.read, etc.
                     if hooks_str.contains("hooks.create") {
                         hooks.push(Hook {
@@ -399,31 +414,35 @@ impl DslParser {
                             operation_type: None, // afterRead hooks don't have operation type
                         });
                     }
-                    
+
                     if !hooks.is_empty() {
                         return Ok(Some(hooks));
                     }
                 }
             }
         }
-        
+
         Ok(None)
     }
 
     /// Parse field hook array like beforeChange: [fieldHook1, fieldHook2]
-    fn parse_field_hook_array(&mut self, content: &str, hook_type: &str) -> Result<Option<Vec<FieldHook>>> {
+    fn parse_field_hook_array(
+        &mut self,
+        content: &str,
+        hook_type: &str,
+    ) -> Result<Option<Vec<FieldHook>>> {
         // Find the hook type array
         if let Some(start_pos) = content.find(&format!("{}:", hook_type)) {
             let remaining = &content[start_pos..];
-            
+
             // Find the opening bracket
             if let Some(bracket_pos) = remaining.find('[') {
                 let after_bracket = &remaining[bracket_pos + 1..];
-                
+
                 // Count brackets to find the matching closing bracket
                 let mut bracket_count = 1;
                 let mut end_pos = 0;
-                
+
                 for (i, ch) in after_bracket.char_indices() {
                     match ch {
                         '[' => bracket_count += 1,
@@ -433,16 +452,16 @@ impl DslParser {
                                 end_pos = i;
                                 break;
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
-                
+
                 if bracket_count == 0 {
                     let hooks_str = after_bracket[..end_pos].trim();
-                    
+
                     let mut hooks = Vec::new();
-                    
+
                     // Simple field hook parsing - look for hooks.change
                     if hooks_str.contains("hooks.change('status'") {
                         hooks.push(FieldHook {
@@ -451,14 +470,14 @@ impl DslParser {
                             async_hook: true,
                         });
                     }
-                    
+
                     if !hooks.is_empty() {
                         return Ok(Some(hooks));
                     }
                 }
             }
         }
-        
+
         Ok(None)
     }
 }
@@ -473,10 +492,10 @@ mod tests {
         let content = r#"
             create: ({ user }: access.Context<User>) => !!user,
         "#;
-        
+
         let result = parser.parse_access_rule(content, "create").unwrap();
         assert!(result.is_some());
-        
+
         match result.unwrap() {
             AccessRule::Boolean(code) => assert_eq!(code, "!!user"),
             _ => panic!("Expected Boolean rule"),
@@ -487,16 +506,16 @@ mod tests {
     fn test_parse_where_condition() {
         let mut parser = DslParser::new();
         let content = r#"access.where('status').equals('published')"#;
-        
+
         let result = parser.parse_where_condition(content).unwrap();
         assert!(result.is_some());
-        
+
         match result.unwrap() {
             AccessRule::Query(condition) => {
                 assert_eq!(condition.field, "status");
                 assert!(matches!(condition.operator, QueryOperator::Equals));
                 assert!(matches!(condition.value, QueryValue::String(ref s) if s == "published"));
-            },
+            }
             _ => panic!("Expected Query rule"),
         }
     }

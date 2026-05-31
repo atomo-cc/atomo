@@ -3,16 +3,16 @@
 //! This module defines the core interfaces for event streams in Atomo's
 //! event sourcing architecture.
 
-use async_trait::async_trait;
-use crate::types::StreamId;
 use super::DomainEvent;
+use crate::types::StreamId;
+use async_trait::async_trait;
 
 /// Event stream interface
-/// 
+///
 /// Represents a sequence of related events that can be replayed
 /// to reconstruct entity state.
 #[async_trait]
-pub trait EventStream<Event>: Send + Sync 
+pub trait EventStream<Event>: Send + Sync
 where
     Event: DomainEvent,
 {
@@ -35,11 +35,11 @@ where
 }
 
 /// Projector interface for building read models from events
-/// 
+///
 /// Projectors consume events and build materialized views
 /// for efficient querying.
 #[async_trait]
-pub trait Projector<Event>: Send + Sync 
+pub trait Projector<Event>: Send + Sync
 where
     Event: DomainEvent,
 {
