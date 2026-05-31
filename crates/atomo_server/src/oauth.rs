@@ -111,6 +111,11 @@ impl OAuthManager {
         self
     }
 
+    /// Register a provider programmatically (alternative to `from_env`).
+    pub fn register_provider(&mut self, provider: OAuthProvider) {
+        self.providers.insert(provider.name.clone(), provider);
+    }
+
     /// Find existing user by email or create a new one with viewer role
     pub async fn find_or_create_user(
         &self,
@@ -335,5 +340,63 @@ mod tests {
             "scopes not encoded: {}",
             url
         );
+    }
+
+    // Item 6: OAuth token round-trip against a mock IdP. A tiny local HTTP server stands in for
+    // the provider's token + userinfo endpoints; we exercise exchange_code -> get_user_info.
+    #[tokio::test]
+    async fn token_round_trip_against_mock_idp() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        // Serve two requests: POST /token -> token JSON, GET /userinfo -> user JSON.
+        let server = tokio::spawn(async move {
+            for _ in 0..2 {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = [0u8; 2048];
+                let n = sock.read(&mut buf).await.unwrap();
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let body = if req.starts_with("POST") {
+                    r#"{"access_token":"tok-abc","token_type":"Bearer","expires_in":3600}"#
+                } else {
+                    r#"{"sub":"idp-user-1","email":"ada@idp.test","name":"Ada"}"#
+                };
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                sock.write_all(resp.as_bytes()).await.unwrap();
+            }
+        });
+
+        let mut mgr = OAuthManager::new();
+        mgr.register_provider(OAuthProvider {
+            name: "mock".into(),
+            client_id: "cid".into(),
+            client_secret: "secret".into(),
+            auth_url: format!("http://{}/auth", addr),
+            token_url: format!("http://{}/token", addr),
+            userinfo_url: format!("http://{}/userinfo", addr),
+            redirect_uri: "http://localhost/cb".into(),
+            scopes: vec!["openid".into(), "email".into()],
+        });
+
+        // code -> token
+        let token = mgr
+            .exchange_code("mock", "auth-code-xyz")
+            .await
+            .expect("exchange_code");
+        assert_eq!(token.access_token, "tok-abc");
+        // token -> userinfo
+        let info = mgr
+            .get_user_info("mock", &token.access_token)
+            .await
+            .expect("get_user_info");
+        assert_eq!(info.sub, "idp-user-1");
+        assert_eq!(info.email.as_deref(), Some("ada@idp.test"));
+
+        server.await.unwrap();
     }
 }
