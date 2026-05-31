@@ -19,6 +19,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Audit logs: ✅ REST endpoints + platform GraphQL
 - TypeScript SDK: ✅ types, React hooks, offline queue with sync-on-reconnect
 - WASM plugin runtime: ✅ fuel metering, permission-checked host functions, plugin lifecycle, CRUD hooks wired at boot
+- Scripting plugins (JS): ✅ `.js` plugins via embedded Javy/QuickJS (no toolchain) — CRUD hooks, permission-gated effects (`emit`/`dbQuery`/`http`), typed `emit` onto the event stream
 - Real-time: ✅ GraphQL subscriptions over WebSocket with model filtering
 - Event sourcing: ✅ event_log persistence, replay, entity history, CQRS projections (listeners started at boot)
 - AI: ✅ pgvector EmbeddingStore with similarity search
@@ -72,6 +73,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Relationship resolution (belongsTo/hasMany)
 - Read cache with TTL and event-driven invalidation
 - WASM plugin hooks in CRUD lifecycle (before/after)
+- Scripting plugins: JS via embedded Javy/QuickJS — runtime selection (`wasm`|`js`), CRUD hooks, permission-gated effects (emit/dbQuery/http) with live fulfillment, typed emit onto the event stream
 - Local-first offline queue with sync-on-reconnect (SDK)
 - Blog and ecommerce project templates
 
@@ -127,12 +129,16 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Collaboration
   - CRDT‑backed models for conflict-free real-time editing
 - Plugins & Workflows
-  - Fulfill WASM host requests: execute the recorded DB/HTTP capability requests (currently captured, not yet acted on)
+  - ✅ Scripting plugins (JS via Javy/QuickJS): drop in a `.js`, no toolchain — CRUD hooks,
+    permission-gated effects (`emit`/`dbQuery`/`http`), typed `emit` onto the event stream
+  - Fulfill **compiled** WASM host requests in the live hook path (the JS effect path is wired;
+    the compiled-plugin `fulfill_requests` helper exists but isn't yet called from the live flow)
   - Optional reactflow drag-and-drop workflow canvas (list-based designer already shipped)
 - Ecosystem
-  - Plugin marketplace / registry (discovery, install, publish)
+  - Plugin marketplace / registry: read API shipped (M1); discovery → install → publish remain
   - Atomo Cloud managed hosting
 - Hardening
-  - Centralize permission checks; expand integration test coverage across the server boot path
+  - Centralize permission checks (compiled host-fn gating + JS effect gating share one seam);
+    expand integration test coverage across the server boot path
 
 If you’re evaluating Atomo, the Guide covers the implemented developer workflows. For platform philosophy and architecture, see Vision & Architecture.

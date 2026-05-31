@@ -1,7 +1,13 @@
 /**
- * Company Data Enrichment Plugin
- * 
- * This WASM plugin automatically enriches company data by calling external APIs
+ * Company Data Enrichment Plugin — ⚠️ ASPIRATIONAL / ILLUSTRATIVE ONLY
+ *
+ * This sketch uses a high-level `@atomo/plugin-sdk` (`onEvent`/`fetch`/`logger`) that does
+ * NOT yet exist. It illustrates the intended ergonomics, not the current ABI.
+ *
+ * For a REAL, working plugin against the actual runtime ABI (stdin `{hook, record}` ->
+ * stdout `{record, effects}`), see ../normalize-contact/index.js.
+ *
+ * This plugin automatically enriches company data by calling external APIs
  * when a company is created or its website is updated.
  */
 

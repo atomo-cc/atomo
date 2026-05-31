@@ -146,10 +146,29 @@ The QuickJS/Javy spike must meet, or we reconsider:
    `js_emit_effect_publishes_custom_event` DB-gated typed emit→stream.)
 
 **Phase 3 — Validation:**
-8. A real JS example plugin in-repo + integration test (mirrors `tests/host_api.rs`).
-9. Perf measurement: JS vs compiled cold-start + per-call; document the gap.
-10. Update `api/plugins.md` + `guide/plugins.md` quickstart ("drop in a `.js`, no toolchain");
-    update the roadmap.
+8. ✅ A real JS example plugin in-repo + integration test.
+   `services/crm-service/plugins/normalize-contact/` (committed `index.js` + `plugin.wasm` +
+   `plugin.toml`): normalizes Contact email/name on before_create/update and emits a typed
+   `Notification.Created` on after_create. (`crates/atomo_server/tests/example_plugin.rs`:
+   normalization asserted; DB-gated test asserts the emitted notification.) The older
+   `enrich-company-data/index.ts` is flagged aspirational (uses a not-yet-built SDK).
+9. ✅ Perf measured (`crates/atomo_wasm_runtime/tests/js_vs_wasm_perf.rs`, ignored;
+   debug build, 50 iters, one machine):
+
+   | metric      | JS (Javy/QuickJS) | compiled wasm | ratio |
+   |-------------|-------------------|---------------|-------|
+   | module size | ~1.26 MB          | tens of bytes | —     |
+   | cold start  | ~20 s             | ~7.5 ms       | ~2700x |
+   | per call    | ~1.75 ms          | ~70 µs        | ~25x  |
+
+   Caveats: **cold start is a debug-build artifact** — Cranelift compiling the ~1.26 MB Javy
+   module unoptimized is pathologically slow; a release build and/or a wasmtime module cache
+   shrink it dramatically, and we already compile once at load (`compile`) not per call.
+   Per-call ~1.75 ms is well within CRUD-hook budgets. Takeaway: JS is the right *default*
+   (zero toolchain, fine per-call latency); reach for the compiled tier only for hot,
+   latency-critical paths or huge fan-out — exactly the two-tier split this proposal chose.
+10. ✅ Quickstart: see `docs/guide/plugins.md` "Scripting plugins (JavaScript, no toolchain)".
+    Roadmap updated (Status Overview + Recently Completed + Next Milestones).
 
 ## Risks / decisions to confirm
 
