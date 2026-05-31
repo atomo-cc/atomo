@@ -272,17 +272,22 @@ impl Query {
         &self,
         ctx: &Context<'_>,
         model: String,
+        #[graphql(name = "where")] where_: Option<Value>,
+        #[graphql(name = "orderBy")] order_by: Option<Value>,
         limit: Option<i32>,
         offset: Option<i32>,
     ) -> GraphQLResult<PaginatedRecords> {
         check_access(&self.schema, &model, "read", ctx)?;
         let lim = limit.unwrap_or(20) as usize;
         let off = offset.unwrap_or(0) as usize;
+        let where_clauses = where_.as_ref().map(parse_where).unwrap_or_default();
         let tenant = ctx.data_opt::<TenantCtx>();
-        let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
+        let where_clauses =
+            crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let orders = order_by.as_ref().map(parse_order_by).unwrap_or_default();
         let data = self
             .client
-            .find_many(&model, &where_clauses, &[], Some(lim), Some(off), &[])
+            .find_many(&model, &where_clauses, &orders, Some(lim), Some(off), &[])
             .await?;
         let total_count = self.client.count(&model, &where_clauses).await.unwrap_or(0);
         let page_info = PageInfo {

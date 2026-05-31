@@ -379,3 +379,58 @@ async fn test_delete_respects_where_filter() {
     assert!(after.iter().any(|r| r["title"] == "keep"), "the non-matching record was wrongly deleted");
     assert!(!after.iter().any(|r| r["title"] == "remove"), "the matching record was not deleted");
 }
+
+
+// Regression: paginatedRecords must accept and apply a `where` filter (admin list view).
+#[tokio::test]
+#[ignore]
+async fn test_paginated_records_with_where_filter() {
+    let (app, _) = build_app().await;
+
+    let login_req = Request::builder()
+        .uri("/auth/login")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"email":"admin@test.dev","password":"admin123"}"#))
+        .unwrap();
+    let (_, login_json) = send(&app, login_req).await;
+    let token = login_json["token"].as_str().expect("no token");
+
+    // Create notes with distinct titles.
+    for title in ["alpha", "beta", "alpha"] {
+        let body = serde_json::json!({
+            "query": format!(r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#, title)
+        });
+        let req = Request::builder()
+            .uri("/graphql").method("POST")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {}", token))
+            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+        let (status, _) = send(&app, req).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // paginatedRecords filtered to title = "beta" should return exactly 1.
+    let body = serde_json::json!({
+        "query": "query($w: JSON){ paginatedRecords(model: \"Note\", where: $w) { data pageInfo { totalCount } } }",
+        "variables": { "w": { "title": { "equals": "beta" } } }
+    });
+    let req = Request::builder()
+        .uri("/graphql").method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+    let (status, json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "query failed: {:?}", json);
+    assert!(
+        json.get("errors").is_none()
+            || json["errors"].as_array().is_none_or(|a| a.is_empty()),
+        "GraphQL errors: {:?}",
+        json
+    );
+    let page = &json["data"]["paginatedRecords"];
+    let data = page["data"].as_array().expect("data array");
+    assert_eq!(data.len(), 1, "where filter should return exactly the matching record");
+    assert_eq!(data[0]["title"], "beta");
+    assert_eq!(page["pageInfo"]["totalCount"], 1, "totalCount should reflect the filter");
+}
