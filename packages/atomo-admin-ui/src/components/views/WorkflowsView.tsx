@@ -6,6 +6,7 @@
 
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { Workflow as WorkflowIcon, Play, Plus, Trash2, Edit } from 'lucide-react'
 import { apiClient } from '../../lib/api'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
@@ -32,6 +33,7 @@ const SAMPLE = JSON.stringify(
 
 export function WorkflowsView() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [definition, setDefinition] = useState(SAMPLE)
   const [error, setError] = useState<string | null>(null)
   const [lastRun, setLastRun] = useState<any>(null)
@@ -92,6 +94,9 @@ export function WorkflowsView() {
           <h1 className="text-3xl font-bold text-gray-900">工作流</h1>
           <p className="text-gray-600 mt-1">注册、查看并手动运行工作流</p>
         </div>
+        <Button className="ml-auto" onClick={() => navigate('/workflows/design')}>
+          <Plus className="h-4 w-4 mr-1" /> 设计器新建
+        </Button>
       </div>
 
       {error && (

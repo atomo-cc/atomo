@@ -13,6 +13,7 @@ import { EntityListView } from './views/EntityListView'
 import { EntityDetailView } from './views/EntityDetailView'
 import { Dashboard } from './views/Dashboard'
 import { WorkflowsView } from './views/WorkflowsView'
+import { WorkflowDesigner } from './views/WorkflowDesigner'
 import { TrashView } from './views/TrashView'
 import { Card, CardContent } from './ui/Card'
 import { Spinner } from './ui/Spinner'
@@ -23,11 +24,12 @@ export interface DynamicRendererProps {
    * 当前路由信息
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows' | 'trash'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows' | 'trash' | 'workflow-design'
     modelName?: string
     entityId?: string
     contactId?: string
     pluginHandler?: any
+    workflowName?: string
   }
 }
 
@@ -91,6 +93,9 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
 
     case 'workflows':
       return <WorkflowsView />
+
+    case 'workflow-design':
+      return <WorkflowDesigner workflowName={route.workflowName} />
 
     case 'trash':
       return <TrashView schema={schema} />
@@ -227,6 +232,15 @@ export function useRouteParser(): DynamicRendererProps['route'] {
     // Dashboard
     if (path === '/' || path === '/dashboard') {
       return { type: 'dashboard' as const }
+    }
+
+    // Workflow designer (must match before the bare /workflows route)
+    const wfDesignEdit = path.match(/^\/workflows\/design\/(.+)$/)
+    if (wfDesignEdit) {
+      return { type: 'workflow-design' as const, workflowName: decodeURIComponent(wfDesignEdit[1]) }
+    }
+    if (path === '/workflows/design') {
+      return { type: 'workflow-design' as const }
     }
 
     // Workflows management page
