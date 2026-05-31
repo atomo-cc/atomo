@@ -30,14 +30,27 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
     let mut migrations = Vec::new();
     
     for (_, model) in &schema.models {
-        let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", to_snake_case(&model.name));
+        let table = crate::query::sql_builder::table_name_for(model);
+        let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", table);
         
         let mut columns = Vec::new();
         for (_, field) in &model.fields {
+            let col = to_snake_case(&field.name);
             let column_type = field_type_to_sql(&field.field_type);
+            // Primary key: id column gets a UUID default and PRIMARY KEY constraint
+            let is_primary = field.name == "id"
+                || field.attributes.iter().any(|a| matches!(a, FieldAttribute::Primary));
+            if is_primary {
+                columns.push(format!("  {} {} PRIMARY KEY DEFAULT gen_random_uuid()", col, column_type));
+                continue;
+            }
+            // Timestamp columns default to NOW()
+            let default = match (col.as_str(), &field.field_type) {
+                ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()",
+                _ => "",
+            };
             let nullable = if field.optional { "" } else { " NOT NULL" };
-            
-            columns.push(format!("  {} {}{}", to_snake_case(&field.name), column_type, nullable));
+            columns.push(format!("  {} {}{}{}", col, column_type, default, nullable));
         }
         
         // Add soft delete column

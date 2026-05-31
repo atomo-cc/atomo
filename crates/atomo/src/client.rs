@@ -431,7 +431,14 @@ fn build_args(params: &[Value]) -> Result<PgArguments> {
     let mut args = PgArguments::default();
     for p in params {
         match p {
-            Value::String(s) => args.add(s.as_str()),
+            Value::String(s) => {
+                // Bind UUID-shaped strings as native UUID so `uuid = $1` comparisons work
+                if let Ok(uuid) = s.parse::<uuid::Uuid>() {
+                    args.add(uuid);
+                } else {
+                    args.add(s.as_str());
+                }
+            }
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     args.add(i);

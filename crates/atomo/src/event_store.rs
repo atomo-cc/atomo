@@ -24,7 +24,7 @@ impl EventStore {
                 model_name TEXT NOT NULL,
                 data JSONB NOT NULL DEFAULT '{}',
                 previous_data JSONB,
-                timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                timestamp TEXT NOT NULL DEFAULT now()::text,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )"
         ).execute(&self.pool).await?;
