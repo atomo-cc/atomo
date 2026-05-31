@@ -58,6 +58,11 @@ overflow-checks = false
 lto = false
 codegen-units = 256
 
+# Strip debuginfo from third-party deps (wasmtime/cranelift alone are ~650M of debug
+# info). Keeps debug = 1 for our own workspace crates. Major disk-pressure relief.
+[profile.dev.package."*"]
+debug = false
+
 # Fast development profile for workspace development
 [profile.fast-workspace-dev]
 inherits = "dev"

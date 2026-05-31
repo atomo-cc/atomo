@@ -222,9 +222,19 @@ impl WasmPluginManager {
             } else if let Some(r) = obj.get("http") {
                 results.push(fulfill_http_request(&r.to_string(), http).await);
             } else if let Some(e) = obj.get("emit") {
-                // Publish as a Custom event on the model-event stream, if a sender is set.
+                // Publish onto the model-event stream, if a sender is set. A plugin may emit
+                // a typed event: { model, event: Created|Updated|Deleted|Custom, data }.
+                // Unspecified fields fall back to model="plugin", event=Custom, data=payload.
                 if let Some(tx) = &self.event_sender {
-                    let data = match e {
+                    let model_name = e.get("model").and_then(|v| v.as_str()).unwrap_or("plugin").to_string();
+                    let event_type = match e.get("event").and_then(|v| v.as_str()) {
+                        Some("Created") => atomo::events::EventType::Created,
+                        Some("Updated") => atomo::events::EventType::Updated,
+                        Some("Deleted") => atomo::events::EventType::Deleted,
+                        _ => atomo::events::EventType::Custom,
+                    };
+                    let payload = e.get("data").unwrap_or(e);
+                    let data = match payload {
                         serde_json::Value::Object(m) => m.clone().into_iter().collect(),
                         other => {
                             let mut m = std::collections::HashMap::new();
@@ -233,8 +243,8 @@ impl WasmPluginManager {
                         }
                     };
                     let event = atomo::events::ModelEvent {
-                        event_type: atomo::events::EventType::Custom,
-                        model_name: "plugin".to_string(),
+                        event_type,
+                        model_name,
                         data,
                         previous_data: None,
                         timestamp: chrono::Utc::now().to_rfc3339(),

@@ -70,7 +70,8 @@ async fn js_emit_effect_publishes_custom_event() {
     let http = reqwest::Client::new();
     let _ = mgr.fulfill_js_effects(&pool, &http).await;
 
-    let ev = rx.try_recv().expect("a Custom event should have been published");
-    assert!(matches!(ev.event_type, atomo::events::EventType::Custom));
-    assert_eq!(ev.model_name, "plugin");
+    let ev = rx.try_recv().expect("a typed event should have been published");
+    assert!(matches!(ev.event_type, atomo::events::EventType::Created), "plugin emitted event=Created");
+    assert_eq!(ev.model_name, "Notification", "plugin emitted model=Notification");
+    assert_eq!(ev.data.get("message").and_then(|v| v.as_str()), Some("welcome"));
 }

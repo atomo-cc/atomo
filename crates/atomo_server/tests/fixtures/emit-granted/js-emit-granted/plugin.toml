@@ -2,6 +2,6 @@ name = "js-emit-granted"
 version = "0.1.0"
 description = "JS effect plugin (granted)"
 author = "test"
-entry_point = "plugin.wasm"
+entry_point = "../../emit-shared.wasm"
 permissions = ["WriteEvents"]
 runtime = "js"
