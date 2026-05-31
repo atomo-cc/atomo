@@ -380,9 +380,26 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
         StepAction::Http {
             method,
             url,
-            body: _,
+            body,
         } => {
-            tracing::info!(method = %method, url = %url, "Workflow HTTP step");
+            // Actually perform the request (was previously a no-op log). Templating of url/body
+            // from context is a future enhancement; this executes the literal request.
+            let client = reqwest::Client::new();
+            let m = reqwest::Method::from_str(&method.to_uppercase())
+                .unwrap_or(reqwest::Method::POST);
+            let mut req = client.request(m, url);
+            if let Some(b) = body {
+                req = req.json(b);
+            }
+            let resp = req.send().await?;
+            let status = resp.status();
+            context.insert(
+                "http_status".to_string(),
+                Value::Number(status.as_u16().into()),
+            );
+            if !status.is_success() {
+                anyhow::bail!("HTTP step to {} failed with status {}", url, status);
+            }
         }
         StepAction::Mutation {
             query,
@@ -405,6 +422,61 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
     use serde_json::json;
+
+    // B1: a workflow triggered by a Deal stage change is found by the event listener path.
+    #[test]
+    fn deal_update_event_finds_workflow() {
+        let engine = WorkflowEngine::new();
+        engine.register(Workflow {
+            name: "sales-pipeline".to_string(),
+            trigger: WorkflowTrigger::OnEvent {
+                model: "Deal".to_string(),
+                event_type: "Updated".to_string(),
+            },
+            steps: vec![],
+        });
+        // Mirrors workflow.rs event listener: find_by_trigger(model, format!("{:?}", event_type)).
+        let found = engine.find_by_trigger("Deal", "Updated");
+        assert_eq!(found.len(), 1, "Deal/Updated event must find the sales-pipeline workflow");
+        assert!(engine.find_by_trigger("Contact", "Updated").is_empty(), "must not match other models");
+    }
+
+    // B1: the Http step actually performs a request (was a no-op log before).
+    #[tokio::test]
+    async fn http_step_actually_sends_request() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        // One-shot local HTTP server that records it was hit and returns 200.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).await.unwrap();
+            sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").await.unwrap();
+            true // hit
+        });
+
+        let engine = WorkflowEngine::new();
+        engine.register(Workflow {
+            name: "wh".to_string(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![WorkflowStep {
+                name: "notify".to_string(),
+                action: StepAction::Http {
+                    method: "POST".to_string(),
+                    url: format!("http://{}/hook", addr),
+                    body: Some(json!({"deal": "x"})),
+                },
+                condition: None,
+                on_failure: FailurePolicy::Stop,
+            }],
+        });
+
+        let exec = engine.execute("wh", HashMap::new()).await.unwrap();
+        assert_eq!(exec.status, ExecutionStatus::Completed, "errors: {:?}", exec.errors);
+        assert_eq!(exec.context.get("http_status").and_then(|v| v.as_u64()), Some(200));
+        assert!(server.await.unwrap(), "the HTTP server should have been hit");
+    }
 
     #[test]
     fn cron_fires_within_window() {

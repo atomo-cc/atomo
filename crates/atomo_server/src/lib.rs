@@ -136,7 +136,8 @@ pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<(
     Ok(())
 }
 
-/// Load workflow definitions from `{dir}/*.json` into the engine. Returns count loaded.
+/// Load workflow definitions from `{dir}/*.{json,yaml,yml}` into the engine. Returns count
+/// loaded. JSON and YAML both deserialize into the same `Workflow` struct (serde-driven).
 pub async fn load_workflows(engine: &atomo::workflow::WorkflowEngine, dir: &str) -> usize {
     let mut count = 0;
     let path = std::path::Path::new(dir);
@@ -146,14 +147,19 @@ pub async fn load_workflows(engine: &atomo::workflow::WorkflowEngine, dir: &str)
     if let Ok(mut entries) = tokio::fs::read_dir(path).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            if let Ok(content) = tokio::fs::read_to_string(&p).await {
-                if let Ok(wf) = serde_json::from_str::<atomo::workflow::Workflow>(&content) {
-                    engine.register(wf);
-                    count += 1;
-                }
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let content = match tokio::fs::read_to_string(&p).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let parsed = match ext {
+                "json" => serde_json::from_str::<atomo::workflow::Workflow>(&content).ok(),
+                "yaml" | "yml" => serde_yaml::from_str::<atomo::workflow::Workflow>(&content).ok(),
+                _ => continue,
+            };
+            if let Some(wf) = parsed {
+                engine.register(wf);
+                count += 1;
             }
         }
     }

@@ -46,7 +46,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
 | RBAC enforcement | yes | ✅ GraphQL | S1: rules now parsed from export-const-schema; `check_access` via shared `decide()` seam. **Data-layer callers still bypass** (no role ctx) — follow-up |
 | Audit logging | yes | 🟡 | synthetic only |
-| Workflows | yes | 🔴 GAP | CRM's `sales-pipeline.yml` is **inert**: loader is JSON-only (`lib.rs:148`, no `serde_yaml`), struct schema mismatch, and Http/Mutation/Plugin steps are **no-ops** (`workflow.rs:230-260`). 3 stacked silent failures. |
+| Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | 🟢 | works (find_many cached, invalidated on writes); minor: `find_unique` uncached, no eviction, Debug-format keys — all LOW |
 | CQRS projections / aggregate | yes | 🔴 GAP | Deleted events never remove rows (empty event data, `id` lookup None); numeric fields stored as `""` (`as_str()` on number → None); rebuild truncates with no replay |
@@ -137,7 +137,17 @@ targets is the bulk of the work.
     generated (defense-in-depth beyond app-layer WHERE).
 
 ### Phase B — Correctness holes
-- [ ] B1. **Workflows**: add a YAML loader (`serde_yaml`) + a deserialization shim from the CRM's YAML shape to the `Workflow` struct; implement the no-op Http/Mutation/Plugin step actions. Test: load `sales-pipeline.yml`, Deal stage change triggers it, step actually runs.
+- [~] B1. **Workflows — engine fixed, CRM yml deferred** (partial): YAML loading added
+  (`load_workflows` now parses `.json`/`.yaml`/`.yml` into the `Workflow` struct via serde); the
+  `Http` step now **actually performs the request** (was a no-op log) and records `http_status`.
+  Tests: `deal_update_event_finds_workflow` (trigger wiring) + `http_step_actually_sends_request`
+  (real HTTP to a local listener). **DEFERRED — the CRM's own `sales-pipeline.yml` still cannot
+  run**: its steps are *inline JavaScript* (`await sendNotification(...)`, `throw new Error(...)`)
+  with `type: validation|action|data_transformation` — a shape the engine has no execution model
+  for. Making it run needs a JS step runtime; the Javy plugin system (Phase-2 scripting) is the
+  natural foundation for that, but it's a large separate feature, not a B1 fix.
+  - [ ] B1a. `Mutation`/`Plugin` step actions are still no-op logs (need client/plugin-manager wired into the engine).
+  - [ ] B1b. A JS-step execution model so the CRM's literal `sales-pipeline.yml` runs.
 - [ ] B2. **Projections**: fix Deleted-row removal (carry `id` in delete events), correct non-string column types, make rebuild replay from the event store. Test: create/delete Deal → projection matches; numeric `value` preserved.
 - [ ] B3. Update-aware validation + the `exists:` referential rule.
 - [ ] B4. Audit-on-CRM-mutation with the real actor.
