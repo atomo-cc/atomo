@@ -27,6 +27,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 
 - ✅ **conformance-tested via CRM** — proven against the real schema
 - 🟡 **synthetic-only** — an integration test exists, but on a toy schema, not the CRM
+- 🔴 **GAP** — investigated and found broken/silently dropping a real-schema declaration
 - 🔬 **read-only** — code read/exists, but no integration test (treat as "unverified")
 - ❌ **no test**
 
@@ -42,49 +43,77 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Pagination + where/orderBy | yes | 🟡 | synthetic (Note) only |
 | Event sourcing + replay | yes | 🟡 | synthetic only |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
-| Subscriptions (WebSocket) | yes | ❌ | no integration test |
-| RBAC enforcement | yes | 🔬 | CRM declares `sales\|manager\|admin`; **likely a silent gap** |
+| Subscriptions (WebSocket) | yes | 🔴 GAP | works + filters by model, but `/graphql/ws` has **NO auth** (`handlers.rs:253`) → full RBAC bypass; SDK `SubscriptionBuilder` filter args are dead code |
+| RBAC enforcement | yes | 🔴 GAP | **access rules never parsed** from `export const schema` (only `defineModel` DSL); `Model.access` always `None` → `check_access` defaults to allow-all (`graphql.rs:49-53`). Verified. Complete bypass. |
 | Audit logging | yes | 🟡 | synthetic only |
-| Workflows | yes | 🟡 | CRM ships `sales-pipeline.yml`; its own flow untested |
+| Workflows | yes | 🔴 GAP | CRM's `sales-pipeline.yml` is **inert**: loader is JSON-only (`lib.rs:148`, no `serde_yaml`), struct schema mismatch, and Http/Mutation/Plugin steps are **no-ops** (`workflow.rs:230-260`). 3 stacked silent failures. |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
-| Caching (TTL + invalidation) | yes | 🔬 | no direct test |
-| CQRS projections / aggregate | yes | ❌ | no integration test |
+| Caching (TTL + invalidation) | yes | 🟢 | works (find_many cached, invalidated on writes); minor: `find_unique` uncached, no eviction, Debug-format keys — all LOW |
+| CQRS projections / aggregate | yes | 🔴 GAP | Deleted events never remove rows (empty event data, `id` lookup None); numeric fields stored as `""` (`as_str()` on number → None); rebuild truncates with no replay |
 | AI / pgvector | partial | ❌ | semantic search over notes; AI path not wired in a test |
-| Multi-tenant (RLS) | no (needs 2-tenant) | ❌ | supplementary harness |
+| Multi-tenant (RLS) | no (needs 2-tenant) | 🔴 GAP | **no `tenant_id` column ever generated** (`schema.rs:29-75`) → tenant-scoped insert/select fail at SQL; subscriptions leak cross-tenant; no header→user validation; no PG RLS. False security. |
 | OAuth/OIDC | no (needs mock IdP) | ❌ | supplementary harness |
 | Rate limiting | infra | ✅ | `middleware.rs` |
 | CLI (init/dev/migrate/codegen) | no (process-level) | ❌ | largest untested surface (`dev.rs`) |
 | SDK offline queue/sync | no (client harness) | ❌ | types only |
 | Admin UI | via E2E | 🟡 | Playwright (timeline, kanban) — may use demo fallback |
 
+## Investigation findings (2026-05-31, parallel discovery + spot-verified)
+
+Read-only investigation of the 5 biggest unknowns. **Every capability probed has at least one
+HIGH-risk silent gap** — same pattern as the dogfood bugs: the platform parses/accepts a
+schema declaration, then silently drops/skips/mismaps it. Two findings spot-verified by direct
+read (RBAC parse gap, tenant_id column gap); the rest are subagent reports with file:line and
+should be reconfirmed by the conformance test that targets them.
+
+Ranked by risk × correctness/security impact:
+
+| # | Capability | Worst gap (file:line) | Class | Risk |
+|---|---|---|---|---|
+| 1 | **RBAC** | access rules never parsed from `export const schema`; `Model.access` always `None`; `check_access` defaults allow-all (`graphql.rs:49-53`) | SECURITY | 🔴 HIGH |
+| 2 | **Subscriptions auth** | `/graphql/ws` mounted with no auth middleware (`handlers.rs:253`) | SECURITY | 🔴 HIGH |
+| 3 | **Multi-tenant** | no `tenant_id` column generated (`schema.rs:29-75`); reads/writes fail or leak; no RLS; no header→user check | SECURITY | 🔴 HIGH |
+| 4 | **Workflows** | YAML never loaded (`lib.rs:148`), schema mismatch, steps are no-ops (`workflow.rs:230-260`) | CORRECTNESS (facade) | 🔴 HIGH |
+| 5 | **Projections** | Deleted never removes rows; numeric→`""`; rebuild = truncate-no-replay | CORRECTNESS (data) | 🔴 HIGH |
+| 6 | Cache | find_unique uncached, no eviction, Debug-format keys | PERF | 🟢 LOW |
+
+**Three are SECURITY holes** (#1 RBAC bypass, #2 unauth WebSocket, #3 tenant bypass/leak) — any
+authenticated (or for #2, unauthenticated) client can read/modify all data. These jump the queue.
+**Two are CORRECTNESS holes** (#4 workflows are facade, #5 projections silently corrupt the read
+model). The shared root cause of #1 (and the earlier validation bug) is the **same parser gap**:
+only the `defineModel` DSL format is parsed for access/validation, not the `export const schema`
+format the real CRM (and the docs' own examples) use.
+
 ## Phases
 
 Each phase grows `crm_dogfood` (or sibling CRM-driven tests) and ends with the platform
-demonstrably running its flagship for that capability. **Expect some phases to be
-bug-discovery sessions** — fixing what the test surfaces is part of the phase, not a clean
-add-on (Phase B especially).
+demonstrably running its flagship for that capability. **These are bug-fix phases, not just
+test-add phases** — the investigation proved the features don't work, so fixing what the test
+targets is the bulk of the work.
 
-### Phase A — Finish the data pipeline (highest ROI, CRM-native)
+### Phase A — Unblocker (must go first, solo)
 - [ ] A1. Honor explicit `tableName`; reconcile/retire the 7 hand-written CRM migrations (kill the drift)
-- [ ] A2. Relationship resolution: `include` company-on-contact, deals-on-contact (nested reads)
-- [ ] A3. Soft-delete / restore / pagination / orderBy re-driven through CRM models
-- [ ] A4. Event sourcing + replay over CRM mutations (rebuild a Deal's history)
-- Exit: the entire data layer is proven on the flagship.
+- Rationale: changes table names; every DB-driven test asserts against them, so it must land before anything else.
 
-### Phase B — Enforcement & correctness (where silent gaps likely hide)
-- [ ] B1. RBAC: prove a `viewer` is denied create, a `sales` is allowed (CRM access rules)
-- [ ] B2. Update-aware validation + the `exists:` referential rule
-- [ ] B3. Audit-on-CRM-mutation with the real actor
-- Exit: declared security/validation rules are provably enforced, not parsed-and-dropped.
+### Phase SEC — Security holes (jumped the queue; do right after A1)
+- [ ] S1. **RBAC**: parse `access` from the `export const schema` format (the missing `parse_access_rules`, mirroring `parse_validation_rules`); enforce in BOTH the GraphQL resolver and the data-layer `client.create/update/delete` (not just GraphQL). Handle `public`/`authenticated` tokens. Test: viewer denied create, sales allowed, delete gated to manager|admin.
+- [ ] S2. **WebSocket auth**: require auth on `/graphql/ws`; inject `UserRoleCtx`/`TenantCtx` into the subscription context; gate `model_changes` by read access. Test: unauth subscribe rejected.
+- [ ] S3. **Multi-tenant**: auto-generate a `tenant_id` column; scope reads AND writes; filter subscriptions by tenant; validate the `x-tenant-id` header against the authenticated user. (Largest; may split.) Test: 2 tenants, assert isolation incl. subscriptions.
 
-### Phase C — Reactive layer
-- [ ] C1. Subscriptions: subscribe to Deal changes, mutate, assert delivery (Kanban real-time)
-- [ ] C2. Workflows: load the CRM's own `sales-pipeline.yml`, trigger via a Deal stage change
-- [ ] C3. CQRS projection + cache invalidation driven by CRM events
-- Exit: the event-driven half of the platform is proven on the flagship.
+### Phase B — Correctness holes
+- [ ] B1. **Workflows**: add a YAML loader (`serde_yaml`) + a deserialization shim from the CRM's YAML shape to the `Workflow` struct; implement the no-op Http/Mutation/Plugin step actions. Test: load `sales-pipeline.yml`, Deal stage change triggers it, step actually runs.
+- [ ] B2. **Projections**: fix Deleted-row removal (carry `id` in delete events), correct non-string column types, make rebuild replay from the event store. Test: create/delete Deal → projection matches; numeric `value` preserved.
+- [ ] B3. Update-aware validation + the `exists:` referential rule.
+- [ ] B4. Audit-on-CRM-mutation with the real actor.
+
+### Phase C — Data-pipeline polish (CRM-native, lower risk)
+- [ ] C1. Relationship resolution: `include` company-on-contact, deals-on-contact (nested reads)
+- [ ] C2. Soft-delete / restore / pagination / orderBy re-driven through CRM models
+- [ ] C3. Event sourcing + replay over CRM mutations (rebuild a Deal's history)
+- [ ] C4. Cache conformance (find_many cached/invalidated) + the LOW-risk cache polish
 
 ### Phase D — Supplementary harnesses (what CRM can't reach alone)
-- [ ] D1. Multi-tenant: two tenants, assert isolation
+- [ ] D1. Multi-tenant isolation harness (pairs with S3)
 - [ ] D2. AI/pgvector: embed Contact notes, semantic search
 - [ ] D3. OAuth: mock-IdP harness
 - [ ] D4. CLI smoke test: `init` → `migrate` → `codegen` on the CRM schema in a temp dir
@@ -95,14 +124,20 @@ add-on (Phase B especially).
 
 ## Known gaps carried in (as of this plan)
 
-- `tableName` ignored → `company` table becomes `companys`; drifts from hand-written migrations (Phase A1)
-- Validation not enforced on **update** (partial updates would wrongly trip `required`) — needs update-aware validation (Phase B2)
-- `exists:<table>,<col>` is a documented no-op in the sync validator (needs a pool; FKs cover integrity) (Phase B2)
-- GraphQL keeps its own inline validation copy; data layer now also validates (harmless dup; consolidate eventually)
+- **SECURITY: RBAC fully bypassed** — access rules never parsed from `export const schema`; every model is allow-all (Phase S1). Verified.
+- **SECURITY: WebSocket `/graphql/ws` unauthenticated** — anyone subscribes to all model changes (Phase S2). Reported.
+- **SECURITY: multi-tenant non-functional + leaky** — no `tenant_id` column generated; subscriptions leak; header unvalidated (Phase S3). Verified (column).
+- **Workflows are a facade** — CRM's `sales-pipeline.yml` never loads; steps are no-ops (Phase B1). Reported.
+- **Projections silently corrupt** — deletes never remove rows; numeric fields → `""`; rebuild loses data (Phase B2). Reported.
+- `tableName` ignored → `company` table becomes `companys`; drifts from hand-written migrations (Phase A1).
+- Validation not enforced on **update** (partial updates would wrongly trip `required`) — needs update-aware validation (Phase B3).
+- `exists:<table>,<col>` is a documented no-op in the sync validator (needs a pool; FKs cover integrity) (Phase B3).
+- GraphQL keeps its own inline validation copy; data layer now also validates (harmless dup; consolidate eventually).
 
 ## Caveats / cost
 
 - DB-gated tests are slow (~20s each with fuel-metered plugins); a full run is minutes. Keep it manual-dispatch, not per-push.
 - Disk is finite (wasmtime builds + `.wasm` fixtures); watch `target/` size.
 - This is a multi-week effort — correct *if* the goal is a trustworthy platform; the wrong call if the near-term goal is shipping features fast. That's a product decision.
-- RBAC, subscriptions, workflows, projections are **read-only/unverified** — do not treat "implemented" as "working" until a conformance test says so.
+- Findings are mostly subagent reports with file:line; RBAC + tenant_id were spot-verified by direct read. **Reconfirm each via its conformance test before trusting** — a couple may be partially inaccurate. Do not treat "implemented" as "working" until a test says so.
+- The docs/roadmap currently claim several of these as "✅ implemented" / "✅ completed" — those claims are **misleading** and should be corrected as each is fixed+tested.
