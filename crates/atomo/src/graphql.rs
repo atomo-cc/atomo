@@ -145,7 +145,7 @@ impl Query {
     }
 }
 
-#[Object]
+#[Object(name = "ServiceQuery")]
 impl Query {
     /// Get records with filtering and pagination
     async fn records(
@@ -226,7 +226,7 @@ impl Mutation {
     }
 }
 
-#[Object]
+#[Object(name = "ServiceMutation")]
 impl Mutation {
     /// Create a new record
     async fn create(

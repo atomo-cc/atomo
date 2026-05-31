@@ -66,6 +66,13 @@ impl WasmPluginManager {
         plugin.call_function(function, args)
     }
 
+    /// Call a hook with JSON marshalling
+    pub fn call_hook(&mut self, plugin_name: &str, hook: &str, input_json: &str) -> Result<Option<String>> {
+        let plugin = self.plugins.get_mut(plugin_name)
+            .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_name))?;
+        plugin.call_hook(hook, input_json)
+    }
+
     pub fn loaded_plugins(&self) -> Vec<&str> {
         self.plugins.keys().map(|s| s.as_str()).collect()
     }

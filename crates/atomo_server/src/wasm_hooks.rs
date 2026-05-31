@@ -1,15 +1,13 @@
 //! Bridge WASM plugins into the CRUD lifecycle as before/after hooks.
 //!
-//! On each lifecycle event the runner invokes a conventionally named exported
-//! function (e.g. `before_create`) on every loaded plugin. A trap/error in a
-//! before-hook aborts the operation; after-hooks are fire-and-forget.
-//!
-//! NOTE: structured record data is not yet marshalled into WASM linear memory;
-//! plugins currently act as validation/notification hooks via their exports.
+//! On each lifecycle event the runner serializes the record as JSON, passes it
+//! into the guest via `call_hook`, and deserializes any modified result back.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use serde_json::Value;
 use atomo::hooks::{HookContext, HookResult, HookRunner};
 use crate::wasm_plugins::WasmPluginManager;
 
@@ -28,23 +26,33 @@ impl HookRunner for WasmHookRunner {
     async fn run_before(&self, hook_name: &str, ctx: &HookContext) -> anyhow::Result<HookResult> {
         let mut mgr = self.manager.lock().await;
         let plugins: Vec<String> = mgr.loaded_plugins().iter().map(|s| s.to_string()).collect();
+        let json = serde_json::to_string(&ctx.data)?;
+        let mut data = ctx.data.clone();
+
         for plugin in plugins {
-            // Only abort if the plugin exposes the hook and it traps.
-            if let Err(e) = mgr.call(&plugin, hook_name, &[]) {
-                let msg = e.to_string();
-                if !msg.contains("not found") {
-                    return Ok(HookResult::Abort(format!("{}: {}", plugin, msg)));
+            match mgr.call_hook(&plugin, hook_name, &json) {
+                Ok(Some(out)) => {
+                    data = serde_json::from_str::<HashMap<String, Value>>(&out)?;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    let msg = e.to_string();
+                    if !msg.contains("not found") && !msg.contains("missing") {
+                        return Ok(HookResult::Abort(format!("{}: {}", plugin, msg)));
+                    }
                 }
             }
         }
-        Ok(HookResult::Continue(ctx.data.clone()))
+        Ok(HookResult::Continue(data))
     }
 
-    async fn run_after(&self, hook_name: &str, _ctx: &HookContext) -> anyhow::Result<()> {
+    async fn run_after(&self, hook_name: &str, ctx: &HookContext) -> anyhow::Result<()> {
         let mut mgr = self.manager.lock().await;
         let plugins: Vec<String> = mgr.loaded_plugins().iter().map(|s| s.to_string()).collect();
+        let json = serde_json::to_string(&ctx.data)?;
+
         for plugin in plugins {
-            let _ = mgr.call(&plugin, hook_name, &[]);
+            let _ = mgr.call_hook(&plugin, hook_name, &json);
         }
         Ok(())
     }

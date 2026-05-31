@@ -85,25 +85,30 @@ pub enum ExecutionStatus {
 
 /// Workflow engine that manages definitions and executions
 pub struct WorkflowEngine {
-    workflows: HashMap<String, Workflow>,
+    workflows: std::sync::RwLock<HashMap<String, Workflow>>,
 }
 
 impl WorkflowEngine {
     pub fn new() -> Self {
-        Self { workflows: HashMap::new() }
+        Self { workflows: std::sync::RwLock::new(HashMap::new()) }
     }
 
-    pub fn register(&mut self, workflow: Workflow) {
-        self.workflows.insert(workflow.name.clone(), workflow);
+    pub fn register(&self, workflow: Workflow) {
+        self.workflows.write().unwrap().insert(workflow.name.clone(), workflow);
     }
 
-    pub fn get(&self, name: &str) -> Option<&Workflow> {
-        self.workflows.get(name)
+    /// List registered workflow names
+    pub fn list(&self) -> Vec<String> {
+        self.workflows.read().unwrap().keys().cloned().collect()
+    }
+
+    pub fn get(&self, name: &str) -> Option<Workflow> {
+        self.workflows.read().unwrap().get(name).cloned()
     }
 
     /// Execute a workflow with initial context
     pub async fn execute(&self, name: &str, initial_context: HashMap<String, Value>) -> Result<WorkflowExecution> {
-        let workflow = self.workflows.get(name)
+        let workflow = self.workflows.read().unwrap().get(name).cloned()
             .ok_or_else(|| anyhow::anyhow!("Workflow '{}' not found", name))?;
 
         let mut execution = WorkflowExecution {
@@ -158,8 +163,11 @@ impl WorkflowEngine {
     }
 
     /// Find workflows triggered by a specific event
-    pub fn find_by_trigger(&self, model: &str, event_type: &str) -> Vec<&Workflow> {
-        self.workflows.values().filter(|w| matches!(&w.trigger, WorkflowTrigger::OnEvent { model: m, event_type: e } if m == model && e == event_type)).collect()
+    pub fn find_by_trigger(&self, model: &str, event_type: &str) -> Vec<Workflow> {
+        self.workflows.read().unwrap().values()
+            .filter(|w| matches!(&w.trigger, WorkflowTrigger::OnEvent { model: m, event_type: e } if m == model && e == event_type))
+            .cloned()
+            .collect()
     }
 
     /// Start listening to model events and auto-trigger matching workflows

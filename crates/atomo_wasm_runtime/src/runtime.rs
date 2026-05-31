@@ -116,4 +116,38 @@ impl WasmPlugin {
     pub fn logs(&self) -> &[String] {
         &self.store.data().logs
     }
+
+    /// Call a hook function passing JSON input, returning optional JSON output.
+    /// ABI: guest exports `alloc(i32)->i32` and `{hook}(ptr:i32,len:i32)->i64`.
+    /// Return value packs ptr<<32 | len; 0 means 'no modification'.
+    pub fn call_hook(&mut self, hook_name: &str, input_json: &str) -> Result<Option<String>> {
+        let memory = self.instance.get_memory(&mut self.store, "memory")
+            .ok_or_else(|| anyhow::anyhow!("plugin has no exported memory"))?;
+
+        let input_bytes = input_json.as_bytes();
+        let len = input_bytes.len() as i32;
+        let ptr = match self.instance.get_typed_func::<i32, i32>(&mut self.store, "alloc") {
+            Ok(alloc) => alloc.call(&mut self.store, len)?,
+            Err(_) => return Err(anyhow::anyhow!("plugin missing required `alloc` export")),
+        };
+
+        memory.write(&mut self.store, ptr as usize, input_bytes)?;
+
+        let hook = match self.instance.get_typed_func::<(i32, i32), i64>(&mut self.store, hook_name) {
+            Ok(f) => f,
+            Err(_) => return Ok(None),
+        };
+        let packed = hook.call(&mut self.store, (ptr, len))?;
+        if packed == 0 {
+            return Ok(None);
+        }
+
+        let out_ptr = (packed >> 32) as u32 as usize;
+        let out_len = (packed & 0xFFFF_FFFF) as u32 as usize;
+        let mut buf = vec![0u8; out_len];
+        memory.read(&self.store, out_ptr, &mut buf)?;
+        let out = String::from_utf8(buf)
+            .map_err(|e| anyhow::anyhow!("invalid utf8 from plugin: {}", e))?;
+        Ok(Some(out))
+    }
 }

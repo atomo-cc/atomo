@@ -36,3 +36,38 @@ pub use aggregate::*;
 pub use platform_graphql::*;
 pub use platform_models::*;
 
+/// Convert camelCase/PascalCase to snake_case.
+pub fn to_snake(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_uppercase() && !out.is_empty() { out.push('_'); }
+        out.extend(c.to_lowercase());
+    }
+    out
+}
+
+/// Pluralized snake_case table name for a model (matches the SQL builder convention).
+pub fn pluralize(model_name: &str) -> String {
+    to_snake(model_name) + "s"
+}
+
+/// Load workflow definitions from `{dir}/*.json` into the engine. Returns count loaded.
+pub async fn load_workflows(engine: &atomo::workflow::WorkflowEngine, dir: &str) -> usize {
+    let mut count = 0;
+    let path = std::path::Path::new(dir);
+    if !path.exists() { return 0; }
+    if let Ok(mut entries) = tokio::fs::read_dir(path).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
+            if let Ok(content) = tokio::fs::read_to_string(&p).await {
+                if let Ok(wf) = serde_json::from_str::<atomo::workflow::Workflow>(&content) {
+                    engine.register(wf);
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+

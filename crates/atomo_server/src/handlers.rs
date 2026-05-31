@@ -235,7 +235,7 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
         // OAuth routes
         .nest("/auth/oauth", Router::new()
             .route("/authorize", get(crate::oauth::oauth_authorize))
-            .route("/callback/:provider", get(crate::oauth::oauth_callback))
+            .route("/callback/{provider}", get(crate::oauth::oauth_callback))
             .route("/providers", get(crate::oauth::oauth_providers))
             .with_state(oauth_manager)
         )
@@ -243,8 +243,8 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
         // Audit log routes
         .nest("/audit", Router::new()
             .route("/logs", get(get_audit_logs))
-            .route("/user/:user_id/activity", get(get_user_activity))
-            .route("/entity/:entity_type/:entity_id/audit", get(get_entity_audit))
+            .route("/user/{user_id}/activity", get(get_user_activity))
+            .route("/entity/{entity_type}/{entity_id}/audit", get(get_entity_audit))
             .route("/statistics", get(get_audit_statistics))
             .with_state(audit_service.clone())
         )
@@ -273,12 +273,14 @@ pub async fn get_audit_logs(
     use atomo_core::types::{EntityId, StreamId};
     
     // Check authentication
-    let _user = req.extensions()
+    let user = req.extensions()
         .get::<crate::auth::AuthUser>()
         .cloned()
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
-    // TODO: Check if user has permission to view audit logs (admin/manager only)
+    if !matches!(user.role, crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager) {
+        return Err(axum::http::StatusCode::FORBIDDEN);
+    }
     
     // Parse query parameters into filter
     let filters = AuditSearchFilters {
@@ -357,10 +359,14 @@ pub async fn get_entity_audit(
     use atomo_core::types::EntityId;
     
     // Check authentication
-    let _user = req.extensions()
+    let user = req.extensions()
         .get::<crate::auth::AuthUser>()
         .cloned()
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
+
+    if !matches!(user.role, crate::platform_models::UserRole::Admin | crate::platform_models::UserRole::Manager) {
+        return Err(axum::http::StatusCode::FORBIDDEN);
+    }
 
     let entity_id = EntityId::from_string(&entity_id)
         .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
@@ -403,5 +409,53 @@ pub async fn get_audit_statistics(
     match audit_service.get_audit_stats(&filters).await {
         Ok(stats) => Ok(Json(stats)),
         Err(_) => Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+// ============================================================================
+// Workflow REST API
+// ============================================================================
+
+use std::sync::Arc;
+use atomo::workflow::{Workflow, WorkflowEngine};
+use serde_json::json;
+
+/// Router for workflow management, scoped to a shared WorkflowEngine.
+pub fn workflow_router(engine: Arc<WorkflowEngine>) -> Router {
+    Router::new()
+        .route("/workflows", get(list_workflows).post(register_workflow))
+        .route("/workflows/{name}/run", post(run_workflow))
+        .with_state(engine)
+}
+
+/// GET /workflows - list registered workflow names
+async fn list_workflows(State(engine): State<Arc<WorkflowEngine>>) -> Json<Vec<String>> {
+    Json(engine.list())
+}
+
+/// POST /workflows - register a workflow definition
+async fn register_workflow(
+    State(engine): State<Arc<WorkflowEngine>>,
+    Json(workflow): Json<Workflow>,
+) -> Result<Json<Value>, StatusCode> {
+    let name = workflow.name.clone();
+    engine.register(workflow);
+    Ok(Json(json!({ "registered": name })))
+}
+
+/// POST /workflows/{name}/run - execute a workflow with the provided context
+async fn run_workflow(
+    State(engine): State<Arc<WorkflowEngine>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+    Json(context): Json<std::collections::HashMap<String, Value>>,
+) -> Result<Json<Value>, StatusCode> {
+    match engine.execute(&name, context).await {
+        Ok(exec) => Ok(Json(json!({
+            "workflow": exec.workflow_name,
+            "status": format!("{:?}", exec.status),
+            "steps_run": exec.current_step + 1,
+            "errors": exec.errors,
+        }))),
+        Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
