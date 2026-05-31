@@ -380,6 +380,25 @@ class AtomoApiClient {
       limit,
     }
   }
+
+  // ── Workflows (REST) ──────────────────────────────────────────────
+  /** List registered workflow names. */
+  async listWorkflows(): Promise<string[]> {
+    const response = await this.client.get('/workflows')
+    return response.data
+  }
+
+  /** Register a workflow definition. */
+  async registerWorkflow(workflow: any): Promise<{ registered: string }> {
+    const response = await this.client.post('/workflows', workflow)
+    return response.data
+  }
+
+  /** Run a workflow by name with an optional context. */
+  async runWorkflow(name: string, context: Record<string, any> = {}): Promise<any> {
+    const response = await this.client.post(`/workflows/${encodeURIComponent(name)}/run`, context)
+    return response.data
+  }
 }
 
 // 导出单例实例

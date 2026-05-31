@@ -17,7 +17,8 @@ import {
   X,
   ChevronDown,
   Settings,
-  HelpCircle
+  HelpCircle,
+  Workflow
 } from 'lucide-react'
 
 import { apiClient } from '../lib/api'
@@ -83,6 +84,17 @@ export function Navigation() {
       }
     ]
   }
+
+  // Workflows management (backend-driven; always available)
+  navigationItems = [
+    ...navigationItems,
+    {
+      name: '工作流',
+      href: '/workflows',
+      icon: Workflow,
+      active: isActive('/workflows')
+    }
+  ]
 
   const sidebarContent = (
     <div className="flex flex-col h-full">

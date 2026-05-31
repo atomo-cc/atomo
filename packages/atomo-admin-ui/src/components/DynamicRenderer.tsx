@@ -12,6 +12,7 @@ import { SchemaMetadata, ModelMetadata } from '../lib/types'
 import { EntityListView } from './views/EntityListView'
 import { EntityDetailView } from './views/EntityDetailView'
 import { Dashboard } from './views/Dashboard'
+import { WorkflowsView } from './views/WorkflowsView'
 import { Card, CardContent } from './ui/Card'
 import { Spinner } from './ui/Spinner'
 import { componentPluginManager } from '../lib/component-plugins'
@@ -21,7 +22,7 @@ export interface DynamicRendererProps {
    * 当前路由信息
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows'
     modelName?: string
     entityId?: string
     contactId?: string
@@ -86,6 +87,9 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
   switch (route.type) {
     case 'dashboard':
       return <Dashboard schema={schema} />
+
+    case 'workflows':
+      return <WorkflowsView />
       
     case 'list':
       if (!route.modelName) {
@@ -219,6 +223,11 @@ export function useRouteParser(): DynamicRendererProps['route'] {
     // Dashboard
     if (path === '/' || path === '/dashboard') {
       return { type: 'dashboard' as const }
+    }
+
+    // Workflows management page
+    if (path === '/workflows') {
+      return { type: 'workflows' as const }
     }
     
     // Entity routes: /entities/:modelName
