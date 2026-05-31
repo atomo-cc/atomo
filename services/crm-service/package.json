@@ -4,16 +4,16 @@
   "description": "CRM service configuration for Atomo platform",
   "private": true,
   "scripts": {
-    "dev": "atomo dev --service crm",
+    "dev": "pnpm --dir ../.. atomo dev --service crm",
     "dev:admin": "webpack serve --config admin-ui/webpack.config.js --port 3001",
-    "build": "atomo build --service crm",
+    "build": "pnpm --dir ../.. atomo build --service crm",
     "build:admin": "webpack --config admin-ui/webpack.config.js --mode production",
-    "deploy": "atomo deploy --service crm",
-    "migrate": "atomo migrate --service crm",
-    "seed": "atomo seed --service crm",
+    "deploy": "pnpm --dir ../.. atomo deploy --service crm",
+    "migrate": "pnpm --dir ../.. atomo migrate --service crm",
+    "seed": "pnpm --dir ../.. atomo seed --service crm",
     "seed:sql": "psql $DATABASE_URL -f seed.sql",
-    "test": "atomo test --service crm",
-    "generate": "atomo codegen generated"
+    "test": "pnpm --dir ../.. atomo test --service crm",
+    "generate": "pnpm --dir ../.. atomo codegen --output services/crm-service/generated"
   },
   "dependencies": {
     "@atomo/client-sdk": "workspace:*",

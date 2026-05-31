@@ -7,10 +7,12 @@
 import axios, { AxiosInstance } from 'axios'
 import { SchemaMetadata, EntityData, QueryOptions } from './types'
 import { loadSchemaMetadata } from './schema-parser'
+import { cloneDemoEntities } from './demo-data'
 
 class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
+  private demoStore: Record<string, EntityData[]> = {}
 
   constructor(baseUrl: string = '') {
     // Simplified URL detection - more reliable than complex logic
@@ -122,20 +124,28 @@ class AtomoApiClient {
 
     const orderBy = sort ? { [sort]: order.toUpperCase() } : undefined
 
-    const result = await this.graphql(`
-      query($model: String!, $where: JSON, $orderBy: JSON, $limit: Int, $offset: Int) {
-        paginatedRecords(model: $model, where: $where, orderBy: $orderBy, limit: $limit, offset: $offset) {
-          data
-          pageInfo { totalCount hasNextPage hasPreviousPage }
+    let result: any
+    try {
+      result = await this.graphql(`
+        query($model: String!, $where: JSON, $orderBy: JSON, $limit: Int, $offset: Int) {
+          paginatedRecords(model: $model, where: $where, orderBy: $orderBy, limit: $limit, offset: $offset) {
+            data
+            pageInfo { totalCount hasNextPage hasPreviousPage }
+          }
         }
+      `, {
+        model: modelName,
+        where: Object.keys(where_).length ? where_ : undefined,
+        orderBy,
+        limit,
+        offset,
+      })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        return this.listDemoEntities(modelName, options)
       }
-    `, {
-      model: modelName,
-      where: Object.keys(where_).length ? where_ : undefined,
-      orderBy,
-      limit,
-      offset,
-    })
+      throw error
+    }
 
     const paginated = result.paginatedRecords
     return {
@@ -150,11 +160,20 @@ class AtomoApiClient {
    * 获取单个实体
    */
   async getEntity(modelName: string, id: string): Promise<EntityData> {
-    const result = await this.graphql(`
-      query($model: String!, $id: String!) {
-        record(model: $model, id: $id)
+    let result: any
+    try {
+      result = await this.graphql(`
+        query($model: String!, $id: String!) {
+          record(model: $model, id: $id)
+        }
+      `, { model: modelName, id })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entity = this.getDemoEntities(modelName).find((item) => item.id === id)
+        if (entity) return entity
       }
-    `, { model: modelName, id })
+      throw error
+    }
     return result.record
   }
 
@@ -162,11 +181,26 @@ class AtomoApiClient {
    * 创建实体
    */
   async createEntity(modelName: string, data: Record<string, any>): Promise<EntityData> {
-    const result = await this.graphql(`
-      mutation($model: String!, $data: JSON!) {
-        create(model: $model, data: $data)
+    let result: any
+    try {
+      result = await this.graphql(`
+        mutation($model: String!, $data: JSON!) {
+          create(model: $model, data: $data)
+        }
+      `, { model: modelName, data })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entity = {
+          id: `${modelName.toLowerCase()}_${Date.now()}`,
+          ...data,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as EntityData
+        this.getDemoEntities(modelName).push(entity)
+        return entity
       }
-    `, { model: modelName, data })
+      throw error
+    }
     return result.create
   }
 
@@ -174,11 +208,28 @@ class AtomoApiClient {
    * 更新实体
    */
   async updateEntity(modelName: string, id: string, data: Record<string, any>): Promise<EntityData> {
-    const result = await this.graphql(`
-      mutation($model: String!, $where: JSON!, $data: JSON!) {
-        update(model: $model, where: $where, data: $data)
+    let result: any
+    try {
+      result = await this.graphql(`
+        mutation($model: String!, $where: JSON!, $data: JSON!) {
+          update(model: $model, where: $where, data: $data)
+        }
+      `, { model: modelName, where: { id: { equals: id } }, data })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entities = this.getDemoEntities(modelName)
+        const index = entities.findIndex((item) => item.id === id)
+        if (index >= 0) {
+          entities[index] = {
+            ...entities[index],
+            ...data,
+            updatedAt: new Date().toISOString(),
+          }
+          return entities[index]
+        }
       }
-    `, { model: modelName, where: { id: { equals: id } }, data })
+      throw error
+    }
     return result.update
   }
 
@@ -186,11 +237,23 @@ class AtomoApiClient {
    * 删除实体
    */
   async deleteEntity(modelName: string, id: string): Promise<void> {
-    await this.graphql(`
-      mutation($model: String!, $where: JSON!) {
-        delete(model: $model, where: $where)
+    try {
+      await this.graphql(`
+        mutation($model: String!, $where: JSON!) {
+          delete(model: $model, where: $where)
+        }
+      `, { model: modelName, where: { id: { equals: id } } })
+    } catch (error) {
+      if (this.canUseDemoData()) {
+        const entities = this.getDemoEntities(modelName)
+        const index = entities.findIndex((item) => item.id === id)
+        if (index >= 0) {
+          entities.splice(index, 1)
+          return
+        }
       }
-    `, { model: modelName, where: { id: { equals: id } } })
+      throw error
+    }
   }
 
   /**
@@ -270,6 +333,52 @@ class AtomoApiClient {
   // Extend method to allow extending the client with custom methods
   extend<T>(methods: T): AtomoApiClient & T {
     return Object.assign(this, methods)
+  }
+
+  private canUseDemoData(): boolean {
+    return Boolean((import.meta as any).env?.DEV)
+  }
+
+  private getDemoEntities(modelName: string): EntityData[] {
+    if (!this.demoStore[modelName]) {
+      this.demoStore[modelName] = cloneDemoEntities(modelName)
+    }
+    return this.demoStore[modelName]
+  }
+
+  private listDemoEntities(modelName: string, options: QueryOptions = {}) {
+    const { page = 1, limit = 20, sort = 'createdAt', order = 'desc', filters = {}, search } = options
+    let data = [...this.getDemoEntities(modelName)]
+
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== '') {
+        data = data.filter((entity) => entity[key] === value)
+      }
+    }
+
+    if (search) {
+      const term = search.toLowerCase()
+      data = data.filter((entity) =>
+        Object.values(entity).some((value) => String(value).toLowerCase().includes(term))
+      )
+    }
+
+    data.sort((a, b) => {
+      const left = a[sort]
+      const right = b[sort]
+      if (left === right) return 0
+      const comparison = left > right ? 1 : -1
+      return order === 'asc' ? comparison : -comparison
+    })
+
+    const total = data.length
+    const offset = (page - 1) * limit
+    return {
+      data: data.slice(offset, offset + limit),
+      total,
+      page,
+      limit,
+    }
   }
 }
 

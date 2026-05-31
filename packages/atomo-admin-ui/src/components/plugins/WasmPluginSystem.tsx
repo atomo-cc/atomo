@@ -29,7 +29,7 @@ export interface WasmPluginConfig {
 }
 
 export interface PluginMessage {
-  type: 'init' | 'props' | 'render' | 'event' | 'error' | 'log'
+  type: 'init' | 'ready' | 'props' | 'render' | 'event' | 'error' | 'log'
   payload: any
 }
 

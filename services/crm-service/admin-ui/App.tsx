@@ -1,5 +1,4 @@
-import React from 'react';
-import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, NavLink, useParams } from 'react-router-dom';
 import { DealsKanban } from './components/DealsKanban';
 import { ContactTimeline } from './components/ContactTimeline';
 
@@ -17,8 +16,8 @@ export function CrmAdminApp() {
           <div className="flex justify-between items-center py-4">
             <h1 className="text-2xl font-bold text-gray-900">CRM Admin</h1>
             <nav className="space-x-4">
-              <a href="/deals" className="text-blue-600 hover:text-blue-800">交易看板</a>
-              <a href="/contacts" className="text-blue-600 hover:text-blue-800">联系人</a>
+              <NavLink to="/deals" className="text-blue-600 hover:text-blue-800">交易看板</NavLink>
+              <NavLink to="/contacts" className="text-blue-600 hover:text-blue-800">联系人</NavLink>
             </nav>
           </div>
         </div>

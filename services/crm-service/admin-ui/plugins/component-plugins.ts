@@ -1,4 +1,4 @@
-import React from 'react';
+import type { ComponentType, LazyExoticComponent } from 'react';
 
 /**
  * Component Plugin System
@@ -9,13 +9,13 @@ import React from 'react';
 
 export interface RouteDefinition {
   pattern: RegExp;
-  component: React.LazyExoticComponent<React.ComponentType<any>>;
+  component: LazyExoticComponent<ComponentType<any>>;
   props: (match?: RegExpMatchArray | undefined) => Record<string, any>;
 }
 
 export interface ComponentPlugin {
   name: string;
-  components: Record<string, React.ComponentType<any>>;
+  components: Record<string, ComponentType<any>>;
   routes: RouteDefinition[];
   init: () => void;
 }

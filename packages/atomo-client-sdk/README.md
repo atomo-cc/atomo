@@ -433,6 +433,17 @@ atomo generate
 # 这会更新 packages/atomo-client-sdk/types.ts 文件
 ```
 
+当前 MVP 循环以 CRM demo schema 为输入，先生成服务 artifacts，再构建 SDK：
+
+```bash
+pnpm --filter atomo-crm-service generate
+pnpm --filter @atomo/client-sdk build
+```
+
+`types.ts` 当前是 CRM demo 的生成类型快照。业务模型类型的源头仍在
+`services/crm-service/packages/atomo-client-sdk/types.ts`；在服务专属 SDK
+发布前，根 SDK 只保留镜像后的生成类型，通用平台类型放在 `core-types.ts`。
+
 ## 贡献指南
 
 1. Fork项目

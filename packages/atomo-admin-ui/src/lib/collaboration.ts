@@ -8,7 +8,27 @@
  * - 协作事件处理
  */
 
-import { EventEmitter } from 'events'
+import React from 'react'
+
+type EventHandler = (...args: any[]) => void
+
+class BrowserEventEmitter {
+  private listeners = new Map<string, Set<EventHandler>>()
+
+  on(event: string, handler: EventHandler): void {
+    const handlers = this.listeners.get(event) ?? new Set<EventHandler>()
+    handlers.add(handler)
+    this.listeners.set(event, handlers)
+  }
+
+  emit(event: string, ...args: any[]): void {
+    this.listeners.get(event)?.forEach((handler) => handler(...args))
+  }
+
+  removeAllListeners(): void {
+    this.listeners.clear()
+  }
+}
 
 export interface CollaborationUser {
   id: string
@@ -42,12 +62,12 @@ export interface CollaborationState {
   isConnected: boolean
 }
 
-export class CollaborationManager extends EventEmitter {
+export class CollaborationManager extends BrowserEventEmitter {
   private ws: WebSocket | null = null
   private state: CollaborationState
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
-  private heartbeatInterval: NodeJS.Timeout | null = null
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(roomId: string, currentUser: Omit<CollaborationUser, 'lastSeen'>) {
     super()
@@ -346,6 +366,3 @@ export function useCollaboration(roomId: string, currentUser: Omit<Collaboration
     isConnected: state.isConnected
   }
 }
-
-// 导入React（用于钩子）
-import React from 'react'

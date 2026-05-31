@@ -63,8 +63,8 @@ export function EntityDetailView({
     mutationFn: (data: Partial<EntityData>) => 
       apiClient.updateEntity(modelName, entityId!, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['entity', modelName, entityId])
-      queryClient.invalidateQueries(['entities', modelName])
+      queryClient.invalidateQueries({ queryKey: ['entity', modelName, entityId] })
+      queryClient.invalidateQueries({ queryKey: ['entities', modelName] })
       setMode('detail')
     },
   })
@@ -74,7 +74,7 @@ export function EntityDetailView({
     mutationFn: (data: Partial<EntityData>) => 
       apiClient.createEntity(modelName, data),
     onSuccess: (newEntity) => {
-      queryClient.invalidateQueries(['entities', modelName])
+      queryClient.invalidateQueries({ queryKey: ['entities', modelName] })
       navigate(`/entities/${modelName}`)
     },
   })
@@ -83,7 +83,7 @@ export function EntityDetailView({
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.deleteEntity(modelName, entityId!),
     onSuccess: () => {
-      queryClient.invalidateQueries(['entities', modelName])
+      queryClient.invalidateQueries({ queryKey: ['entities', modelName] })
       navigate(`/entities/${modelName}`)
     },
   })
@@ -178,7 +178,7 @@ export function EntityDetailView({
               <Button
                 variant="danger"
                 onClick={handleDelete}
-                disabled={deleteMutation.isLoading}
+                disabled={deleteMutation.isPending}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 删除
@@ -229,7 +229,7 @@ export function EntityDetailView({
                   initialData={entity}
                   onSubmit={handleSave}
                   mode={isDetail ? 'view' : isEdit ? 'edit' : 'create'}
-                  loading={updateMutation.isLoading || createMutation.isLoading}
+                  loading={updateMutation.isPending || createMutation.isPending}
                 />
               </CardContent>
             </Card>

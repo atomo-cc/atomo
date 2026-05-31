@@ -16,4 +16,17 @@ pnpm install
 cargo build --workspace
 ```
 
+## Frontend
+```
+
+Current MVP commands:
+
+```bash
+pnpm dev:admin
+pnpm --filter @atomo/client-sdk dev
+pnpm --filter atomo-crm-service generate
+```
+
+Rust workspace builds are still available for core work with `cargo build --workspace`, but they are not the first step for the current Admin UI + SDK + CRM demo loop.
+
 Next: see Quick Start at `/guide/getting-started`.

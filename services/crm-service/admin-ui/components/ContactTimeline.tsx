@@ -1,11 +1,33 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { apiClient } from '../lib/api'
+import type { Contact } from '../../packages/atomo-client-sdk/types'
 
 interface ContactTimelineProps {
   contactId: string
+}
+
+type ActivityType = 'note' | 'call' | 'meeting' | 'email' | 'task'
+
+interface Activity {
+  id: string
+  activityType?: ActivityType
+  type?: string
+  title?: string
+  content?: string
+  createdAt?: string
+  created_at?: string
+}
+
+interface NoteBlock {
+  id?: string
+  type?: string
+  text?: string
+  notes?: string
+  createdAt?: string
+  recordedAt?: string
 }
 
 export function ContactTimeline({ contactId }: ContactTimelineProps) {
@@ -21,18 +43,18 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
     queryKey: ['activities', contactId],
     queryFn: async () => {
       const res = await apiClient.listEntities('Activity', { filters: { contactId }, sort: 'createdAt', order: 'desc', limit: 100 })
-      return res.data as any[]
+      return res.data as Activity[]
     },
     staleTime: 5_000,
   })
 
   const [noteText, setNoteText] = useState('')
-  const [activityType, setActivityType] = useState<'note'|'call'|'meeting'|'email'|'task'>('note')
+  const [activityType, setActivityType] = useState<ActivityType>('note')
   const [activityTitle, setActivityTitle] = useState('')
   const [activityContent, setActivityContent] = useState('')
   const addNote = useMutation({
     mutationFn: async (text: string) => {
-      const existing = (data?.notes as any[]) || []
+      const existing = ((data as Contact | undefined)?.notes || []) as NoteBlock[]
       const newBlock = { id: String(Date.now()), text, order: existing.length + 1, type: 'ParagraphBlock' }
       await apiClient.updateEntity('Contact', contactId, { notes: [...existing, newBlock] })
     },
@@ -43,7 +65,7 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
   })
   const addActivity = useMutation({
     mutationFn: async () => {
-      const metadata: any = {}
+      const metadata: Record<string, unknown> = {}
       if (activityType === 'call') {
         // Example fields for call
         metadata.durationMinutes = Number(prompt('通话时长(分钟)?', '10') || 10)
@@ -80,14 +102,16 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
     )
   }
 
-  const notes: any[] = Array.isArray(data?.notes) ? data?.notes : []
+  const notes = Array.isArray((data as Contact | undefined)?.notes)
+    ? ((data as Contact).notes as NoteBlock[])
+    : []
   const noteItems = notes.map((n, idx) => ({
     id: n.id || String(idx),
     type: n.type || 'Note',
     time: n.createdAt || n.recordedAt || null,
     text: n.text || n.notes || (typeof n === 'string' ? n : JSON.stringify(n))
   }))
-  const activityItems = (activities || []).map((a: any) => ({
+  const activityItems = (activities || []).map((a) => ({
     id: a.id,
     type: a.activityType || a.type,
     time: a.createdAt || a.created_at || null,
@@ -124,7 +148,7 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
         <Card>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
-              <select className="border rounded p-2" value={activityType} onChange={(e) => setActivityType(e.target.value as any)}>
+              <select className="border rounded p-2" value={activityType} onChange={(e) => setActivityType(e.target.value as ActivityType)}>
                 <option value="note">备注</option>
                 <option value="call">通话</option>
                 <option value="meeting">会议</option>

@@ -200,9 +200,9 @@ export function MediaUploader({
 
       try {
         const uploadedFile = await uploadFile(file)
-        onChange((prev: UploadedFile[]) => prev.map(f => f.id === uploadingFile.id ? uploadedFile : f))
+        onChange(value.map(f => f.id === uploadingFile.id ? uploadedFile : f))
       } catch (errorFile) {
-        onChange((prev: UploadedFile[]) => prev.map(f => f.id === uploadingFile.id ? (errorFile as UploadedFile) : f))
+        onChange(value.map(f => f.id === uploadingFile.id ? (errorFile as UploadedFile) : f))
       }
     }
   }, [value, onChange, disabled, multiple, maxFiles, maxFileSize, accept, uploadEndpoint])
@@ -246,7 +246,7 @@ export function MediaUploader({
       // 这里需要重新创建File对象或使用其他方式重试
       // 简化实现：直接标记为成功
       setTimeout(() => {
-        setUploadedFiles((prev: UploadedFile[]) => prev.map(f => 
+        onChange(value.map(f => 
           f.id === file.id 
             ? { ...f, status: 'success' as const, progress: 100, url: '/placeholder-url' }
             : f

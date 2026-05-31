@@ -256,6 +256,13 @@ flowchart LR
   5) 迭代 `/admin`（UI），在 `/graphql` 或 `/playground` 调试 API
   6) `atomo codegen` 更新 SDK 类型与 hooks
 
+- 当前 MVP 循环
+  1) 在 `services/crm-service/schema.ts` 建模
+  2) 用 `pnpm --filter atomo-crm-service generate` 重新生成 CRM demo artifacts
+  3) 用 `pnpm --filter @atomo/client-sdk build` 或 `pnpm --filter @atomo/client-sdk dev` 构建/监听 SDK 类型
+  4) 用 `pnpm dev:admin` 检查 Admin UI 行为
+  5) 用 `pnpm --filter "./packages/*" test` 保持 Admin UI 与 SDK type-check 通过
+
 相关阅读（See also）
 - 指南 → 事件溯源：`/guide/event-sourcing`
 - 指南 → 开发运行时与工作区：`/guide/dev-runtime`
@@ -274,4 +281,3 @@ flowchart LR
 愿景相对稳定，仅在战略转折时变化；交付状态、阶段与时间表请见《路线图》。
 
 - 路线图：`/zh/roadmap`
-

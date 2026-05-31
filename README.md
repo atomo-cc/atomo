@@ -20,6 +20,7 @@ Atomo 是一个现代化的内容管理平台，基于事件溯源架构设计�
 
 ## 🚀 快速开始
 
+
 ### 安装 CLI 工具
 
 ```bash
@@ -62,6 +63,29 @@ atomo build
 atomo deploy
 ```
 
+## 前端
+```bash
+pnpm install
+
+# Terminal 1: Admin UI
+pnpm dev:admin
+
+# Terminal 2: TypeScript SDK watch/build loop
+pnpm --filter @atomo/client-sdk dev
+
+# CRM demo source of truth
+cd services/crm-service
+pnpm generate
+```
+
+推荐 MVP 循环：
+1. 在 `services/crm-service/schema.ts` 调整 CRM 数据模型。
+2. 运行 `pnpm --filter atomo-crm-service generate` 更新 CRM 生成物。
+3. 运行 `pnpm --filter @atomo/client-sdk build` 验证 SDK 类型输出。
+4. 用 `pnpm dev:admin` 检查 Admin UI 对生成 schema/metadata 的消费。
+
+`packages/atomo-admin-ui` 和 `packages/atomo-client-sdk` 都应保持 type-check 通过；用 `pnpm --filter "./packages/*" test` 验证前端/SDK 基线。
+
 ## 📁 项目结构
 
 ```
@@ -75,12 +99,14 @@ atomo/
 │   └── atomo_wasm_runtime/   # 🔌 WASM 插件运行时
 ├── packages/                  # 前端包
 │   ├── atomo-client-sdk/     # 📚 客户端 SDK
-│   ├── atomo-admin-ui/       # 🎛️  管理界面
+│   └── atomo-admin-ui/       # 🎛️  管理界面
 │   └── atomo-crm-app/        # 💼 CRM 旗舰应用
 ├── templates/                 # 📋 项目模板
 │   ├── crm/                  # CRM 模板
 │   ├── blog/                 # 博客模板
 │   └── ecommerce/            # 电商模板
+├── services/
+│   └── crm-service/          # 💼 CRM demo 服务
 └── docs/                      # � 文档
 ```
 
@@ -171,6 +197,17 @@ pnpm install
 
 # 启动开发服务器
 cargo run -p atomo_cli -- dev
+
+# 前端
+
+git clone https://github.com/your-org/atomo.git
+cd atomo
+pnpm install
+
+# 当前推荐开发入口
+pnpm dev:admin
+pnpm --filter @atomo/client-sdk dev
+pnpm --filter atomo-crm-service generate
 ```
 
 ### Schema 驱动开发

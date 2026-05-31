@@ -1,13 +1,13 @@
 /**
  * CRM Data Schema Definition
- * 
+ *
  * This file defines the complete data model for our CRM system.
  * Atomo will automatically generate:
  * - Database tables and relationships
  * - GraphQL types and resolvers
  * - Admin UI forms and views
  * - TypeScript types for the frontend
- * 
+ *
  * Note: Platform-level models (User, Session, UserRole) are now defined
  * in atomo_core and will be automatically available in all services.
  */
@@ -69,7 +69,7 @@ export interface Contact {
   phone?: string;
   companyId?: string;
   tags: string[];
-  notes: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
+  notes: ContentBlock[]; // Using platform-level ContentBlock from atomo_core
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,7 +81,7 @@ export interface Company {
   address?: string;
   industry?: string;
   size?: CompanySize;
-  notes: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
+  notes: ContentBlock[]; // Using platform-level ContentBlock from atomo_core
   createdAt: Date;
   updatedAt: Date;
 }
@@ -95,7 +95,7 @@ export interface Deal {
   position: number;
   contactId: string;
   companyId?: string;
-  description: ContentBlock[];  // Using platform-level ContentBlock from atomo_core
+  description: ContentBlock[]; // Using platform-level ContentBlock from atomo_core
   expectedCloseDate?: Date;
   actualCloseDate?: Date;
   createdAt: Date;
@@ -128,19 +128,19 @@ export enum ActivityType {
 
 export enum CompanySize {
   STARTUP = "startup",
-  SMALL = "small", 
+  SMALL = "small",
   MEDIUM = "medium",
   LARGE = "large",
-  ENTERPRISE = "enterprise"
+  ENTERPRISE = "enterprise",
 }
 
 export enum DealStage {
   LEAD = "lead",
-  QUALIFIED = "qualified", 
+  QUALIFIED = "qualified",
   PROPOSAL = "proposal",
   NEGOTIATION = "negotiation",
   WON = "won",
-  LOST = "lost"
+  LOST = "lost",
 }
 
 // =============================================================================
@@ -153,156 +153,181 @@ export enum DealStage {
  * - Validation rules
  * - UI generation hints
  * - Search and indexing configuration
- * 
+ *
  * Note: Platform-level models (User, Session) are configured in atomo_core
  */
 export const schema = {
   models: {
     Contact: {
-      tableName: 'contacts',
-      primaryKey: 'id',
-      searchable: ['firstName', 'lastName', 'email'],
+      tableName: "contact",
+      primaryKey: "id",
+      searchable: ["firstName", "lastName", "email"],
       access: {
-        create: 'sales|manager|admin',
-        read: 'authenticated',
-        update: 'sales|manager|admin',
-        delete: 'manager|admin'
+        create: "sales|manager|admin",
+        read: "authenticated",
+        update: "sales|manager|admin",
+        delete: "manager|admin",
       },
       relationships: {
         company: {
-          type: 'belongsTo',
-          model: 'Company',
-          foreignKey: 'companyId'
+          type: "belongsTo",
+          model: "Company",
+          foreignKey: "companyId",
         },
         deals: {
-          type: 'hasMany',
-          model: 'Deal',
-          foreignKey: 'contactId'
-        }
+          type: "hasMany",
+          model: "Deal",
+          foreignKey: "contactId",
+        },
       },
       validation: {
-        email: 'email',
-        firstName: 'required|min:1|max:100',
-        lastName: 'max:100'
+        email: "email",
+        firstName: "required|min:1|max:100",
+        lastName: "max:100",
       },
       ui: {
-        displayField: ['firstName', 'lastName'],
-        listView: ['firstName', 'lastName', 'email', 'company', 'createdAt'],
-        editForm: ['firstName', 'lastName', 'email', 'phone', 'companyId', 'tags', 'notes']
-      }
+        displayField: ["firstName", "lastName"],
+        listView: ["firstName", "lastName", "email", "company", "createdAt"],
+        editForm: [
+          "firstName",
+          "lastName",
+          "email",
+          "phone",
+          "companyId",
+          "tags",
+          "notes",
+        ],
+      },
     },
-    
+
     Company: {
-      tableName: 'companies',
-      primaryKey: 'id',
-      searchable: ['name', 'website', 'industry'],
+      tableName: "company",
+      primaryKey: "id",
+      searchable: ["name", "website", "industry"],
       access: {
-        create: 'sales|manager|admin',
-        read: 'authenticated',
-        update: 'sales|manager|admin',
-        delete: 'manager|admin'
+        create: "sales|manager|admin",
+        read: "authenticated",
+        update: "sales|manager|admin",
+        delete: "manager|admin",
       },
       relationships: {
         contacts: {
-          type: 'hasMany',
-          model: 'Contact',
-          foreignKey: 'companyId'
+          type: "hasMany",
+          model: "Contact",
+          foreignKey: "companyId",
         },
         deals: {
-          type: 'hasMany',
-          model: 'Deal',
-          foreignKey: 'companyId'
-        }
+          type: "hasMany",
+          model: "Deal",
+          foreignKey: "companyId",
+        },
       },
       validation: {
-        name: 'required|min:1|max:255',
-        website: 'url',
-        email: 'email'
+        name: "required|min:1|max:255",
+        website: "url",
+        email: "email",
       },
       ui: {
-        displayField: 'name',
-        listView: ['name', 'website', 'industry', 'size', 'createdAt'],
-        editForm: ['name', 'website', 'address', 'industry', 'size', 'notes']
-      }
+        displayField: "name",
+        listView: ["name", "website", "industry", "size", "createdAt"],
+        editForm: ["name", "website", "address", "industry", "size", "notes"],
+      },
     },
-    
+
     Deal: {
-      tableName: 'deals',
-      primaryKey: 'id',
-      searchable: ['title'],
+      tableName: "deal",
+      primaryKey: "id",
+      searchable: ["title"],
       access: {
-        create: 'sales|manager|admin',
-        read: 'authenticated',
-        update: 'sales|manager|admin',
-        delete: 'manager|admin'
+        create: "sales|manager|admin",
+        read: "authenticated",
+        update: "sales|manager|admin",
+        delete: "manager|admin",
       },
       relationships: {
         contact: {
-          type: 'belongsTo',
-          model: 'Contact',
-          foreignKey: 'contactId'
+          type: "belongsTo",
+          model: "Contact",
+          foreignKey: "contactId",
         },
         company: {
-          type: 'belongsTo',
-          model: 'Company',
-          foreignKey: 'companyId'
-        }
+          type: "belongsTo",
+          model: "Company",
+          foreignKey: "companyId",
+        },
       },
       validation: {
-        title: 'required|min:1|max:255',
-        value: 'numeric|min:0',
-        contactId: 'required|exists:contacts,id'
+        title: "required|min:1|max:255",
+        value: "numeric|min:0",
+        contactId: "required|exists:contact,id",
       },
       ui: {
-        displayField: 'title',
-        listView: ['title', 'value', 'stage', 'contact', 'company', 'expectedCloseDate'],
-        editForm: ['title', 'value', 'stage', 'position', 'contactId', 'companyId', 'description', 'expectedCloseDate']
-      }
+        displayField: "title",
+        listView: [
+          "title",
+          "value",
+          "stage",
+          "position",
+          "contact",
+          "company",
+          "expectedCloseDate",
+        ],
+        editForm: [
+          "title",
+          "value",
+          "stage",
+          "position",
+          "contactId",
+          "companyId",
+          "description",
+          "expectedCloseDate",
+        ],
+      },
     },
 
     Activity: {
-      tableName: 'activity',
-      primaryKey: 'id',
-      searchable: ['title', 'content', 'activityType'],
+      tableName: "activity",
+      primaryKey: "id",
+      searchable: ["title", "content", "activityType"],
       access: {
-        create: 'sales|manager|admin',
-        read: 'authenticated',
-        update: 'sales|manager|admin',
-        delete: 'manager|admin'
+        create: "sales|manager|admin",
+        read: "authenticated",
+        update: "sales|manager|admin",
+        delete: "manager|admin",
       },
       relationships: {
         contact: {
-          type: 'belongsTo',
-          model: 'Contact',
-          foreignKey: 'contactId'
-        }
+          type: "belongsTo",
+          model: "Contact",
+          foreignKey: "contactId",
+        },
       },
       validation: {
-        contactId: 'required|exists:contacts,id',
-        activityType: 'required|in:note,call,meeting,email,task'
+        contactId: "required|exists:contact,id",
+        activityType: "required|in:note,call,meeting,email,task",
       },
       ui: {
-        displayField: 'title',
-        listView: ['activityType', 'title', 'contact', 'createdAt'],
-        editForm: ['activityType', 'title', 'content', 'contactId']
-      }
-    }
+        displayField: "title",
+        listView: ["activityType", "title", "contact", "createdAt"],
+        editForm: ["activityType", "title", "content", "contactId", "metadata"],
+      },
+    },
   },
-  
+
   // Global configuration
   config: {
     // Enable audit logging for all models
     auditLog: true,
-    
+
     // Enable soft deletes
     softDeletes: true,
-    
+
     // Default pagination size
     defaultPageSize: 20,
-    
+
     // Enable real-time subscriptions
-    subscriptions: true
-  }
+    subscriptions: true,
+  },
 };
 
 export default schema;

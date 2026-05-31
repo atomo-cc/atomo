@@ -25,8 +25,17 @@ export const crmApiMethods = {
         updateDealPositions(updates: $updates)
       }
     `
-    const result = await atomoApiClient.graphql(query, { updates })
-    return !!result.updateDealPositions
+    try {
+      const result = await atomoApiClient.graphql(query, { updates })
+      return !!result.updateDealPositions
+    } catch (error) {
+      await Promise.all(
+        updates.map(({ id, position, stage }) =>
+          atomoApiClient.updateEntity('Deal', id, stage ? { position, stage } : { position })
+        )
+      )
+      return true
+    }
   }
 }
 
