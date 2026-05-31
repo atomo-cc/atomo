@@ -204,13 +204,21 @@ fn build_where(where_clauses: &[WhereClause], param_offset: usize) -> (String, V
             WhereOperator::Equals => {
                 // For string values, cast the column to text so the comparison works
                 // against both TEXT and UUID columns (e.g. id). Numbers/bools compare directly.
-                let cast = if clause.value.is_string() { "::text" } else { "" };
+                let cast = if clause.value.is_string() {
+                    "::text"
+                } else {
+                    ""
+                };
                 parts.push(format!("{}{} = ${}", col, cast, idx));
                 params.push(clause.value.clone());
                 idx += 1;
             }
             WhereOperator::NotEquals => {
-                let cast = if clause.value.is_string() { "::text" } else { "" };
+                let cast = if clause.value.is_string() {
+                    "::text"
+                } else {
+                    ""
+                };
                 parts.push(format!("{}{} != ${}", col, cast, idx));
                 params.push(clause.value.clone());
                 idx += 1;

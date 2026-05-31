@@ -438,7 +438,11 @@ impl AtomoClient {
     }
 
     /// Count only soft-deleted records (for the trash view's total).
-    pub async fn count_deleted(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
+    pub async fn count_deleted(
+        &self,
+        model_name: &str,
+        where_clauses: &[WhereClause],
+    ) -> Result<i64> {
         let model = self
             .schema
             .models
@@ -452,7 +456,10 @@ impl AtomoClient {
             value: serde_json::Value::Null,
         });
         let (where_sql, params) = crate::query::sql_builder::build_where_pub(&clauses, 0);
-        let sql = format!("SELECT COUNT(*) as count FROM {} WHERE {}", table, where_sql);
+        let sql = format!(
+            "SELECT COUNT(*) as count FROM {} WHERE {}",
+            table, where_sql
+        );
         let args = build_args(&params)?;
         let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
         Ok(row.try_get::<i64, _>("count").unwrap_or(0))
@@ -485,16 +492,29 @@ impl AtomoClient {
     /// `AccessControl::decide` seam the GraphQL `check_access` uses. No `access` rule = allow.
     pub fn enforce_access(&self, model_name: &str, action: &str, role: Option<&str>) -> Result<()> {
         use atomo_schema::AccessDecision;
-        let access = match self.schema.models.get(model_name).and_then(|m| m.access.as_ref()) {
+        let access = match self
+            .schema
+            .models
+            .get(model_name)
+            .and_then(|m| m.access.as_ref())
+        {
             Some(a) => a,
             None => return Ok(()),
         };
         match access.decide(action, role) {
             AccessDecision::Allow => Ok(()),
             AccessDecision::Forbidden => {
-                anyhow::bail!("Access denied: '{}' on '{}' requires a permitted role", action, model_name)
+                anyhow::bail!(
+                    "Access denied: '{}' on '{}' requires a permitted role",
+                    action,
+                    model_name
+                )
             }
-            AccessDecision::NeedsAuth => anyhow::bail!("Authentication required for '{}' on '{}'", action, model_name),
+            AccessDecision::NeedsAuth => anyhow::bail!(
+                "Authentication required for '{}' on '{}'",
+                action,
+                model_name
+            ),
         }
     }
 
@@ -516,6 +536,68 @@ impl AtomoClient {
                 return Ok(());
             }
             for rel_name in include {
+                // Schema-driven first: if the model declares this relationship, use its declared
+                // target model / kind / foreignKey (so a rel named differently from its model —
+                // e.g. `owner: { model: "User" }` — resolves correctly). Falls back to the
+                // name-convention heuristic when no declaration exists.
+                let declared = self
+                    .schema
+                    .models
+                    .get(model_name)
+                    .and_then(|m| m.relationships.get(rel_name));
+
+                if let Some(rel) = declared {
+                    if rel.kind == "belongsTo" {
+                        let fk = rel
+                            .foreign_key
+                            .clone()
+                            .unwrap_or_else(|| format!("{}Id", rel_name));
+                        let fk_snake = to_snake_case(&fk);
+                        if let Some(Value::String(id)) =
+                            record.get(&fk_snake).or_else(|| record.get(&fk)).cloned()
+                        {
+                            let wc = WhereClause {
+                                field: "id".to_string(),
+                                operator: crate::query::WhereOperator::Equals,
+                                value: Value::String(id),
+                            };
+                            if let Ok(Some(related)) =
+                                self.find_unique(&rel.model, &[wc], &[]).await
+                            {
+                                record.insert(
+                                    rel_name.clone(),
+                                    serde_json::to_value(related).unwrap_or(Value::Null),
+                                );
+                            }
+                        }
+                    } else {
+                        // hasMany: related.<foreignKey or this_model_id> == this record's id
+                        if let Some(Value::String(id)) = record.get("id").cloned() {
+                            let fk = rel
+                                .foreign_key
+                                .clone()
+                                .map(|f| to_snake_case(&f))
+                                .unwrap_or_else(|| format!("{}_id", to_snake_case(model_name)));
+                            let wc = WhereClause {
+                                field: fk,
+                                operator: crate::query::WhereOperator::Equals,
+                                value: Value::String(id),
+                            };
+                            if let Ok(related) = self
+                                .find_many(&rel.model, &[wc], &[], None, None, &[])
+                                .await
+                            {
+                                record.insert(
+                                    rel_name.clone(),
+                                    serde_json::to_value(related).unwrap_or(Value::Null),
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                // --- Convention fallback (no declared relationship) ---
                 let fk_field = format!("{}Id", rel_name);
                 let fk_snake = to_snake_case(&fk_field);
 

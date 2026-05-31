@@ -17,6 +17,19 @@ pub struct Model {
     /// Explicit `tableName` from the schema metadata; falls back to pluralized name when None.
     #[serde(default)]
     pub table_name: Option<String>,
+    /// Declared relationships from the schema metadata, keyed by relationship name (e.g.
+    /// `company`, `deals`). Lets relationship resolution be schema-driven instead of guessing
+    /// the target model from the name.
+    #[serde(default)]
+    pub relationships: HashMap<String, Relationship>,
+}
+
+/// A declared relationship: `{ type: 'belongsTo'|'hasMany', model: 'Company', foreignKey: 'companyId' }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Relationship {
+    pub kind: String,  // "belongsTo" | "hasMany"
+    pub model: String, // target model name
+    pub foreign_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

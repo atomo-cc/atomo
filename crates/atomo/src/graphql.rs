@@ -35,7 +35,11 @@ fn check_access(
     action: &str,
     ctx: &Context<'_>,
 ) -> GraphQLResult<()> {
-    let access = match schema.models.get(model_name).and_then(|m| m.access.as_ref()) {
+    let access = match schema
+        .models
+        .get(model_name)
+        .and_then(|m| m.access.as_ref())
+    {
         Some(a) => a,
         None => return Ok(()),
     };
@@ -410,11 +414,17 @@ impl Mutation {
     }
 
     /// Restore soft-deleted records matching the where filter.
-    async fn restore(&self, ctx: &Context<'_>, model: String, r#where: Value) -> GraphQLResult<i32> {
+    async fn restore(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+        r#where: Value,
+    ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();
         let mut where_clauses = parse_where(&r#where);
-        where_clauses = crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        where_clauses =
+            crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let count = self.client.restore_many(&model, &where_clauses).await?;
         Ok(count as i32)
     }
@@ -429,11 +439,9 @@ impl Mutation {
         check_access(&self.schema, &model, "delete", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();
         let mut where_clauses = parse_where(&r#where);
-        where_clauses = crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
-        let count = self
-            .client
-            .hard_delete_many(&model, &where_clauses)
-            .await?;
+        where_clauses =
+            crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let count = self.client.hard_delete_many(&model, &where_clauses).await?;
         Ok(count as i32)
     }
 }
@@ -458,7 +466,13 @@ impl Subscription {
         ctx: &Context<'_>,
         model: String,
     ) -> async_graphql::Result<impl futures::Stream<Item = ModelEvent> + '_> {
-        if let Some(access) = self.client.schema().models.get(&model).and_then(|m| m.access.as_ref()) {
+        if let Some(access) = self
+            .client
+            .schema()
+            .models
+            .get(&model)
+            .and_then(|m| m.access.as_ref())
+        {
             let role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.as_str());
             match access.decide("read", role) {
                 atomo_schema::AccessDecision::Allow => {}
@@ -490,7 +504,9 @@ impl Subscription {
                         return false;
                     }
                     match &t {
-                        Some(tid) => e.data.get("tenant_id").and_then(|v| v.as_str()) == Some(tid.as_str()),
+                        Some(tid) => {
+                            e.data.get("tenant_id").and_then(|v| v.as_str()) == Some(tid.as_str())
+                        }
                         None => true,
                     }
                 })

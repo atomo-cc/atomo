@@ -46,12 +46,14 @@ already-working**, all driven by the real CRM schema:
 Security holes closed: unauthenticated `/graphql/ws` (S2), tenant scoping non-functional (S3).
 Verified already-working: audit (B4), relationship `include` (C1).
 
-**Key insight:** the bugs cluster in the **parse/codegen layer** — anything that reads a
-declaration from the `export const schema` metadata (validation, RBAC, tableName, and the
-latent relationships gap) tends to be broken the same way. The runtime/reactive layer is
-mostly healthy (audit, events, subscriptions delivery, relationships) with isolated
-correctness bugs (projection corruption, the pagination cache collision). A future
-root-cause fix would be a single robust schema-metadata parser all features read from.
+**Key insight (now addressed):** the bugs clustered in the **parse/codegen layer** — anything
+reading a declaration from the `export const schema` metadata (validation, RBAC, tableName, and
+the latent relationships gap) was broken the same way, because each feature had its own fragile
+brace-walk pass. **Resolved**: a single `parse_model_metadata` now extracts tableName / validation
+/ access / relationships from each model block via one shared brace-balanced `sub_block` +
+`top_level_entries` helper. The three duplicate passes were deleted; relationship resolution is
+now schema-driven (the C1 latent gap fell out for free). This kills the recurring bug class at
+the source.
 
 **Deferred backlog** (each documented inline below): data-layer RBAC *auto-enforcement* (the
 `client.enforce_access(model, action, role)` seam now exists + is tested, but isn't yet called
@@ -69,9 +71,9 @@ B2a projection rebuild-replay (was truncate-only data-loss → now replays from 
   `WorkflowEngine` (it holds only a pool); risks a dependency cycle — real architectural change.
 - **B1b JS workflow steps** — the CRM's `sales-pipeline.yml` uses inline JS; needs a JS step
   runtime (the Javy plugin system is the foundation). Large feature.
-- **Relationship `relationships`-block reading** — `resolve_includes` is convention-based and
-  works for the CRM (C1); making it schema-driven needs a new `Model.relationships` type +
-  parser + rewrite with **zero CRM-visible payoff**. Deferred deliberately.
+- **Relationship `relationships`-block reading** — ✅ DONE: `resolve_includes` now reads the
+  declared `relationships` block (via the unified parser); a rel whose name ≠ model resolves
+  correctly. Convention fallback retained for undeclared relationships.
 - **S3b per-user tenant binding** — no `users.tenant_id`; needs a user→tenant data model + JWT claim.
 - **S3c event-store tenant scoping + PG row-level-security**.
 - **AI/pgvector (D2)** — needs the pgvector extension + an embedding provider; not available
@@ -96,7 +98,7 @@ B2a projection rebuild-replay (was truncate-only data-loss → now replays from 
 | Schema→codegen→migrations | yes | ✅ | dogfood fixed enum/array; A1 honors `tableName`; enums still emit junk tables (pre-existing, noted) |
 | CRUD | yes | ✅ | `crm_dogfood` + `integration_test` |
 | Validation rules | yes | ✅ | data-layer enforced on create + update (update-aware via `validate_partial`); `exists:` deferred to FKs |
-| Relationships (belongsTo/hasMany) | yes | ✅ CRM | C1: `include` resolves contact.company + contact.deals (nested), proven in dogfood. Latent: convention-based, ignores the declared `relationships` block (works only when rel name == model name) |
+| Relationships (belongsTo/hasMany) | yes | ✅ | C1: `include` resolves contact.company + contact.deals (dogfood). Now **schema-driven** — `resolve_includes` reads the declared `relationships` block (unified parser), so a rel whose name ≠ model resolves too (`schema_driven_include_resolves_renamed_relationship`) |
 | Soft delete / restore / hard delete | yes | ✅ | C2: full delete→trash→restore lifecycle via CRM Deals |
 | Pagination + where/orderBy | yes | ✅ fixed | C2: orderBy+limit+offset via CRM; **fixed cache-key collision** (page 2 returned page 1) |
 | Event sourcing + replay | yes | ✅ | C3: Deal Created→Updated→Updated→Deleted reconstructs via `entity_history` (`crm_deal_event_history_replays`); confirms B2 delete-event id fix |
@@ -279,17 +281,29 @@ targets is the bulk of the work.
 - [x] Roadmap honesty: `roadmap.md` Status Overview + README Phase 2 corrected — RBAC
   (GraphQL-only), multi-tenant/workflows/AI downgraded to 🟡/[~] with a conformance-status note.
 
-## Known gaps carried in (as of this plan)
+## Gaps found by the conformance pass — and how they were resolved
 
-- **SECURITY: RBAC fully bypassed** — access rules never parsed from `export const schema`; every model is allow-all (Phase S1). Verified.
-- **SECURITY: WebSocket `/graphql/ws` unauthenticated** — anyone subscribes to all model changes (Phase S2). Reported.
-- **SECURITY: multi-tenant non-functional + leaky** — no `tenant_id` column generated; subscriptions leak; header unvalidated (Phase S3). Verified (column).
-- **Workflows are a facade** — CRM's `sales-pipeline.yml` never loads; steps are no-ops (Phase B1). Reported.
-- **Projections silently corrupt** — deletes never remove rows; numeric fields → `""`; rebuild loses data (Phase B2). Reported.
-- `tableName` ignored → `company` table becomes `companys`; drifts from hand-written migrations (Phase A1).
-- Validation not enforced on **update** (partial updates would wrongly trip `required`) — needs update-aware validation (Phase B3).
-- `exists:<table>,<col>` is a documented no-op in the sync validator (needs a pool; FKs cover integrity) (Phase B3).
-- GraphQL keeps its own inline validation copy; data layer now also validates (harmless dup; consolidate eventually).
+This section is a historical record: what the investigation found broken, and the fix. (Originally
+written present-tense as open gaps; updated as each was closed.)
+
+- **SECURITY: RBAC was fully bypassed** — access rules were never parsed from `export const schema`
+  (only the `defineModel` DSL form), so every model defaulted to allow-all. ✅ Fixed in **S1**
+  (`parse_access_rules` + shared `AccessControl::decide`). Data-layer auto-enforcement still TODO.
+- **SECURITY: WebSocket `/graphql/ws` was unauthenticated** — anyone could subscribe to all model
+  changes. ✅ Fixed in **S2** (connection_init JWT + read-gating).
+- **SECURITY: multi-tenant was non-functional + leaky** — no `tenant_id` column was generated;
+  subscriptions leaked; header unvalidated. ✅ Fixed in **S3**/**S3a**/**D1** (column generated;
+  read/write/subscription scoping; auth-gated header). Per-user binding + PG-RLS still TODO.
+- **Workflows were a facade** — CRM's `sales-pipeline.yml` never loaded; steps were no-ops.
+  🟡 Partially fixed in **B1** (YAML loads; HTTP step executes). JS-step workflows still TODO.
+- **Projections silently corrupted** — deletes never removed rows; numeric fields → `""`; rebuild
+  lost data. ✅ Fixed in **B2**/**B2a** (delete-event ids; `value_to_text`; rebuild replays).
+- **`tableName` was ignored** → `company` became `companys`; drifted from hand-written migrations.
+  ✅ Fixed in **A1** (honored). Retiring the stale hand-written migrations is the remaining cleanup.
+- **Validation wasn't enforced on update** (partial updates would wrongly trip `required`).
+  ✅ Fixed in **B3** (`validate_partial`). `exists:` stays a documented no-op (FKs cover it).
+- GraphQL keeps its own inline validation copy; the data layer now also validates (harmless dup;
+  consolidate eventually).
 
 ## Caveats / cost
 

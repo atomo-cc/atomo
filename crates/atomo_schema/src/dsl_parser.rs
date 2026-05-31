@@ -47,6 +47,7 @@ impl DslParser {
                 hooks,
                 validation: HashMap::new(),
                 table_name: None,
+                relationships: std::collections::HashMap::new(),
             });
         }
 

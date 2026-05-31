@@ -377,16 +377,12 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
         StepAction::SetVariable { key, value } => {
             context.insert(key.clone(), value.clone());
         }
-        StepAction::Http {
-            method,
-            url,
-            body,
-        } => {
+        StepAction::Http { method, url, body } => {
             // Actually perform the request (was previously a no-op log). Templating of url/body
             // from context is a future enhancement; this executes the literal request.
             let client = reqwest::Client::new();
-            let m = reqwest::Method::from_str(&method.to_uppercase())
-                .unwrap_or(reqwest::Method::POST);
+            let m =
+                reqwest::Method::from_str(&method.to_uppercase()).unwrap_or(reqwest::Method::POST);
             let mut req = client.request(m, url);
             if let Some(b) = body {
                 req = req.json(b);
@@ -437,8 +433,15 @@ mod tests {
         });
         // Mirrors workflow.rs event listener: find_by_trigger(model, format!("{:?}", event_type)).
         let found = engine.find_by_trigger("Deal", "Updated");
-        assert_eq!(found.len(), 1, "Deal/Updated event must find the sales-pipeline workflow");
-        assert!(engine.find_by_trigger("Contact", "Updated").is_empty(), "must not match other models");
+        assert_eq!(
+            found.len(),
+            1,
+            "Deal/Updated event must find the sales-pipeline workflow"
+        );
+        assert!(
+            engine.find_by_trigger("Contact", "Updated").is_empty(),
+            "must not match other models"
+        );
     }
 
     // B1: the Http step actually performs a request (was a no-op log before).
@@ -452,7 +455,9 @@ mod tests {
             let (mut sock, _) = listener.accept().await.unwrap();
             let mut buf = [0u8; 1024];
             let _ = sock.read(&mut buf).await.unwrap();
-            sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").await.unwrap();
+            sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .unwrap();
             true // hit
         });
 
@@ -473,9 +478,20 @@ mod tests {
         });
 
         let exec = engine.execute("wh", HashMap::new()).await.unwrap();
-        assert_eq!(exec.status, ExecutionStatus::Completed, "errors: {:?}", exec.errors);
-        assert_eq!(exec.context.get("http_status").and_then(|v| v.as_u64()), Some(200));
-        assert!(server.await.unwrap(), "the HTTP server should have been hit");
+        assert_eq!(
+            exec.status,
+            ExecutionStatus::Completed,
+            "errors: {:?}",
+            exec.errors
+        );
+        assert_eq!(
+            exec.context.get("http_status").and_then(|v| v.as_u64()),
+            Some(200)
+        );
+        assert!(
+            server.await.unwrap(),
+            "the HTTP server should have been hit"
+        );
     }
 
     #[test]

@@ -4,6 +4,15 @@ use anyhow::Result;
 use regex::Regex;
 use std::collections::HashMap;
 
+/// Per-model metadata extracted from the `export const schema` object in one unified pass.
+#[derive(Default)]
+struct ModelMetadata {
+    table_name: Option<String>,
+    validation: HashMap<String, String>,
+    access: Option<AccessControl>,
+    relationships: HashMap<String, Relationship>,
+}
+
 /// TypeScript parser that implements true "Dual-Mode Schema"
 /// Parses TypeScript interface definitions and extracts complete field information
 ///
@@ -74,29 +83,24 @@ impl TypeScriptParser {
             }
         }
 
-        // Fourth pass: parse validation rules from schema const and attach to models
-        let mut validation_map = Self::parse_validation_rules(content);
+        // Unified metadata pass: parse tableName / validation / access / relationships from each
+        // model's block in the `export const schema` object in ONE place (replaces the prior
+        // three near-identical brace-walk passes — the recurring source of parse-layer bugs).
+        let mut meta = Self::parse_model_metadata(content);
         for model in &mut models {
-            if let Some(rules) = validation_map.remove(&model.name) {
-                model.validation = rules;
-            }
-        }
-
-        // Fifth pass: parse explicit `tableName` from the schema const and attach.
-        let mut table_names = Self::parse_table_names(content);
-        for model in &mut models {
-            if let Some(t) = table_names.remove(&model.name) {
-                model.table_name = Some(t);
-            }
-        }
-
-        // Sixth pass: parse `access` rules from the schema const and attach. Only set when the
-        // DSL pass didn't already provide access (DSL/defineModel form takes precedence).
-        let mut access_map = Self::parse_access_rules(content);
-        for model in &mut models {
-            if model.access.is_none() {
-                if let Some(ac) = access_map.remove(&model.name) {
-                    model.access = Some(ac);
+            if let Some(m) = meta.remove(&model.name) {
+                if model.table_name.is_none() {
+                    model.table_name = m.table_name;
+                }
+                if !m.validation.is_empty() {
+                    model.validation = m.validation;
+                }
+                // DSL/defineModel access takes precedence if already set.
+                if model.access.is_none() {
+                    model.access = m.access;
+                }
+                if !m.relationships.is_empty() {
+                    model.relationships = m.relationships;
                 }
             }
         }
@@ -104,53 +108,43 @@ impl TypeScriptParser {
         Ok(models)
     }
 
-    /// Extract per-model `access` rules from the `export const schema` object, e.g.
-    /// `Contact: { access: { create: "sales|manager|admin", read: "authenticated" } }`.
-    /// Produces `AccessRule::Boolean(roles_str)` which `check_access` already understands
-    /// (pipe-OR roles + the `authenticated`/`public` tokens). Accepts single/double quotes.
-    fn parse_access_rules(content: &str) -> HashMap<String, AccessControl> {
-        let mut result = HashMap::new();
-        // Find each `ModelName: { ... access: { ... } }` and pull the access block, then the
-        // per-op string rules within it.
-        let model_re = Regex::new(r"(\w+)\s*:\s*\{").unwrap();
-        let op_re = Regex::new(r#"(create|read|update|delete)\s*:\s*['"]([^'"]+)['"]"#).unwrap();
-        let bytes = content.as_bytes();
-        for cap in model_re.captures_iter(content) {
-            let model_name = cap[1].to_string();
-            let block_start = cap.get(0).unwrap().end();
-            // Walk the model block to find a nested `access: {` and capture it (brace-balanced).
-            let mut depth = 1usize;
-            let mut idx = block_start;
-            let mut access_block: Option<String> = None;
-            while idx < bytes.len() && depth > 0 {
-                match bytes[idx] {
-                    b'{' => {
-                        let prefix = &content[..idx];
-                        if depth == 1 && prefix.trim_end().ends_with("access:") {
-                            let mut d = 1usize;
-                            let mut j = idx + 1;
-                            let astart = j;
-                            while j < bytes.len() && d > 0 {
-                                match bytes[j] {
-                                    b'{' => d += 1,
-                                    b'}' => d -= 1,
-                                    _ => {}
-                                }
-                                j += 1;
-                            }
-                            access_block = Some(content[astart..j.saturating_sub(1)].to_string());
-                        }
-                        depth += 1;
-                    }
-                    b'}' => depth -= 1,
-                    _ => {}
-                }
-                idx += 1;
+    /// Parse per-model metadata (`tableName`, `validation`, `access`, `relationships`) from the
+    /// `export const schema = { models: { Name: { ... } } }` object. One robust brace-balanced
+    /// extractor for ALL features — the prior code had three separate passes that each re-walked
+    /// braces and drifted (quote-style, format), causing the validation/RBAC/tableName silent gaps.
+    fn parse_model_metadata(content: &str) -> HashMap<String, ModelMetadata> {
+        let mut result: HashMap<String, ModelMetadata> = HashMap::new();
+        // Locate the `models: {` container and iterate its direct children (model blocks).
+        let models_block = match Self::sub_block(content, "models") {
+            Some(b) => b,
+            None => return result,
+        };
+        for (name, block) in Self::top_level_entries(&models_block) {
+            let mut m = ModelMetadata::default();
+            // tableName: "x"
+            let tn_re = Regex::new(r#"tableName\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+            if let Some(c) = tn_re.captures(&block) {
+                m.table_name = Some(c[1].to_string());
             }
-            if let Some(block) = access_block {
-                let mut ac = AccessControl { create: None, read: None, update: None, delete: None };
+            // validation: { field: 'rule', ... }
+            if let Some(vblock) = Self::sub_block(&block, "validation") {
+                let kv = Regex::new(r#"(\w+)\s*:\s*['"]([^'"]*)['"]"#).unwrap();
+                for c in kv.captures_iter(&vblock) {
+                    m.validation.insert(c[1].to_string(), c[2].to_string());
+                }
+            }
+            // access: { create: 'roles', ... }
+            if let Some(ablock) = Self::sub_block(&block, "access") {
+                let op =
+                    Regex::new(r#"(create|read|update|delete)\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+                let mut ac = AccessControl {
+                    create: None,
+                    read: None,
+                    update: None,
+                    delete: None,
+                };
                 let mut any = false;
-                for c in op_re.captures_iter(&block) {
+                for c in op.captures_iter(&ablock) {
                     let rule = Some(AccessRule::Boolean(c[2].to_string()));
                     any = true;
                     match &c[1] {
@@ -162,80 +156,90 @@ impl TypeScriptParser {
                     }
                 }
                 if any {
-                    result.insert(model_name, ac);
+                    m.access = Some(ac);
                 }
+            }
+            // relationships: { rel: { type: 'belongsTo', model: 'X', foreignKey: 'y' }, ... }
+            if let Some(rblock) = Self::sub_block(&block, "relationships") {
+                for (rel_name, rdef) in Self::top_level_entries(&rblock) {
+                    let field = |k: &str| {
+                        Regex::new(&format!(r#"{}\s*:\s*['"]([^'"]+)['"]"#, k))
+                            .ok()
+                            .and_then(|re| re.captures(&rdef).map(|c| c[1].to_string()))
+                    };
+                    if let (Some(kind), Some(model)) = (field("type"), field("model")) {
+                        m.relationships.insert(
+                            rel_name,
+                            crate::types::Relationship {
+                                kind,
+                                model,
+                                foreign_key: field("foreignKey"),
+                            },
+                        );
+                    }
+                }
+            }
+            if m.table_name.is_some()
+                || !m.validation.is_empty()
+                || m.access.is_some()
+                || !m.relationships.is_empty()
+            {
+                result.insert(name, m);
             }
         }
         result
     }
 
-    /// Extract per-model `tableName` from the `export const schema` object, e.g.
-    /// `Contact: { tableName: "contact", ... }`. Accepts single- or double-quotes.
-    fn parse_table_names(content: &str) -> HashMap<String, String> {
-        let mut result = HashMap::new();
-        // `ModelName: { ... tableName: "x"` — capture the model name then its tableName within
-        // a short window (the metadata block opens with tableName as its first key in practice).
-        let re = Regex::new(r#"(\w+)\s*:\s*\{\s*tableName\s*:\s*['"]([^'"]+)['"]"#).unwrap();
-        for cap in re.captures_iter(content) {
-            result.insert(cap[1].to_string(), cap[2].to_string());
+    /// Return the brace-balanced body of `key: { ... }` (content between the matching braces),
+    /// or None. Shared by all metadata extraction so brace-walking lives in exactly one place.
+    fn sub_block(content: &str, key: &str) -> Option<String> {
+        let key_re = Regex::new(&format!(r"{}\s*:\s*\{{", regex::escape(key))).ok()?;
+        let m = key_re.find(content)?;
+        let bytes = content.as_bytes();
+        let mut depth = 1usize;
+        let mut j = m.end();
+        let start = j;
+        while j < bytes.len() && depth > 0 {
+            match bytes[j] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            j += 1;
         }
-        result
+        Some(content[start..j.saturating_sub(1)].to_string())
     }
 
-    /// Extract per-model validation rules from the `export const schema` object
-    fn parse_validation_rules(content: &str) -> HashMap<String, HashMap<String, String>> {
-        let mut result: HashMap<String, HashMap<String, String>> = HashMap::new();
-        // Field rules may be single- OR double-quoted (the real CRM schema uses double quotes;
-        // a single-quote-only regex silently extracted zero rules from it).
-        let field_rule_re = Regex::new(r#"(\w+):\s*['"]([^'"]*)['"]"#).unwrap();
-        // Find each `ModelName: {` then, within its (brace-balanced) block, locate `validation: { ... }`.
-        let model_open_re = Regex::new(r"(\w+)\s*:\s*\{").unwrap();
-        let bytes = content.as_bytes();
-        for cap in model_open_re.captures_iter(content) {
-            let model_name = cap[1].to_string();
-            let block_start = cap.get(0).unwrap().end(); // just after the opening '{'
-                                                         // Walk forward tracking brace depth to find this block's matching close.
-            let mut depth = 1usize;
-            let mut idx = block_start;
-            let mut val_block: Option<String> = None;
-            while idx < bytes.len() && depth > 0 {
-                match bytes[idx] {
-                    b'{' => {
-                        // Check if this is the start of a `validation: {` sub-block.
-                        let prefix = &content[..idx];
-                        if depth == 1 && prefix.trim_end().ends_with("validation:") {
-                            // Capture the balanced validation block.
-                            let mut d = 1usize;
-                            let mut j = idx + 1;
-                            let vstart = j;
-                            while j < bytes.len() && d > 0 {
-                                match bytes[j] {
-                                    b'{' => d += 1,
-                                    b'}' => d -= 1,
-                                    _ => {}
-                                }
-                                j += 1;
-                            }
-                            val_block = Some(content[vstart..j.saturating_sub(1)].to_string());
-                        }
-                        depth += 1;
-                    }
-                    b'}' => depth -= 1,
+    /// Split a block into its direct (depth-1) `Name: { ... }` entries → (name, inner-block).
+    /// Used for both the `models` container and a `relationships` block.
+    fn top_level_entries(block: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let entry_re = Regex::new(r"(\w+)\s*:\s*\{").unwrap();
+        let bytes = block.as_bytes();
+        for cap in entry_re.captures_iter(block) {
+            // Only depth-0 entries within `block` (not keys nested inside a child).
+            let open = cap.get(0).unwrap();
+            let before = &block[..open.start()];
+            let depth = before.bytes().filter(|&b| b == b'{').count() as i64
+                - before.bytes().filter(|&b| b == b'}').count() as i64;
+            if depth != 0 {
+                continue;
+            }
+            let name = cap[1].to_string();
+            let mut d = 1usize;
+            let mut j = open.end();
+            let start = j;
+            while j < bytes.len() && d > 0 {
+                match bytes[j] {
+                    b'{' => d += 1,
+                    b'}' => d -= 1,
                     _ => {}
                 }
-                idx += 1;
+                j += 1;
             }
-            if let Some(block) = val_block {
-                let mut rules = HashMap::new();
-                for field_cap in field_rule_re.captures_iter(&block) {
-                    rules.insert(field_cap[1].to_string(), field_cap[2].to_string());
-                }
-                if !rules.is_empty() {
-                    result.insert(model_name, rules);
-                }
-            }
+            out.push((name, block[start..j.saturating_sub(1)].to_string()));
         }
-        result
+        out
     }
 
     /// Collect enum and type alias definitions
@@ -341,6 +345,7 @@ impl TypeScriptParser {
                 hooks: None,
                 validation: HashMap::new(),
                 table_name: None,
+                relationships: std::collections::HashMap::new(),
             });
         }
 
@@ -421,6 +426,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         hooks: None,  // Will be populated later by DSL parser
         validation: HashMap::new(),
         table_name: None,
+        relationships: std::collections::HashMap::new(),
     };
     let lines_consumed = i - start_index;
 
@@ -575,14 +581,15 @@ mod validation_tests {
 
     #[test]
     fn parses_validation_with_nested_blocks() {
-        // Mirrors the real CRM schema: nested access/relationships blocks precede validation.
+        // Mirrors the real CRM schema: nested access/relationships/validation in one model block.
+        // Exercises the UNIFIED parser extracting all four metadata features from one block.
         let content = r#"
         export const schema = {
           models: {
             Contact: {
               tableName: 'contacts',
               access: { create: 'sales|manager', read: 'authenticated' },
-              relationships: { company: { type: 'belongsTo', model: 'Company' } },
+              relationships: { company: { type: 'belongsTo', model: 'Company', foreignKey: 'companyId' } },
               validation: {
                 email: 'email',
                 firstName: 'required|min:1|max:100'
@@ -591,15 +598,26 @@ mod validation_tests {
           }
         };
         "#;
-        let rules = TypeScriptParser::parse_validation_rules(content);
-        let contact = rules
-            .get("Contact")
-            .expect("Contact validation rules missing");
-        assert_eq!(contact.get("email").map(|s| s.as_str()), Some("email"));
+        let meta = TypeScriptParser::parse_model_metadata(content);
+        let c = meta.get("Contact").expect("Contact metadata missing");
+        // tableName
+        assert_eq!(c.table_name.as_deref(), Some("contacts"));
+        // validation (must not be confused by the nested access/relationships blocks)
+        assert_eq!(c.validation.get("email").map(|s| s.as_str()), Some("email"));
         assert_eq!(
-            contact.get("firstName").map(|s| s.as_str()),
+            c.validation.get("firstName").map(|s| s.as_str()),
             Some("required|min:1|max:100")
         );
+        // access
+        assert!(c.access.is_some(), "access parsed");
+        // relationships — schema-driven (name → declared target model + fk)
+        let rel = c
+            .relationships
+            .get("company")
+            .expect("company relationship parsed");
+        assert_eq!(rel.kind, "belongsTo");
+        assert_eq!(rel.model, "Company");
+        assert_eq!(rel.foreign_key.as_deref(), Some("companyId"));
     }
 
     #[test]
@@ -608,15 +626,25 @@ mod validation_tests {
         // silently dropped, producing tables with missing columns and no error.
         let single = "export interface Contact { id: string; email: string; name: string; }";
         let models = TypeScriptParser::new().parse_interfaces(single).unwrap();
-        let c = models.iter().find(|m| m.name == "Contact").expect("Contact parsed");
+        let c = models
+            .iter()
+            .find(|m| m.name == "Contact")
+            .expect("Contact parsed");
         for f in ["id", "email", "name"] {
-            assert!(c.fields.contains_key(f), "single-line field '{}' must be parsed", f);
+            assert!(
+                c.fields.contains_key(f),
+                "single-line field '{}' must be parsed",
+                f
+            );
         }
 
         // Multi-line still works, including a comment and an optional field.
         let multi = "export interface Note {\n  id: string;\n  title?: string; // heading\n}";
         let models = TypeScriptParser::new().parse_interfaces(multi).unwrap();
-        let n = models.iter().find(|m| m.name == "Note").expect("Note parsed");
+        let n = models
+            .iter()
+            .find(|m| m.name == "Note")
+            .expect("Note parsed");
         assert!(n.fields.contains_key("id") && n.fields.contains_key("title"));
     }
 
@@ -632,17 +660,47 @@ mod validation_tests {
         } } };
         "#;
         let models = TypeScriptParser::new().parse(content).unwrap();
-        let c = models.iter().find(|m| m.name == "Contact").expect("Contact parsed");
-        let ac = c.access.as_ref().expect("access rules must be parsed (RBAC bypass fix)");
+        let c = models
+            .iter()
+            .find(|m| m.name == "Contact")
+            .expect("Contact parsed");
+        let ac = c
+            .access
+            .as_ref()
+            .expect("access rules must be parsed (RBAC bypass fix)");
 
         // create requires sales|manager|admin
-        assert_eq!(ac.decide("create", Some("Viewer")), AccessDecision::Forbidden, "viewer denied create");
-        assert_eq!(ac.decide("create", Some("Sales")), AccessDecision::Allow, "sales allowed create");
-        assert_eq!(ac.decide("create", None), AccessDecision::NeedsAuth, "anon needs auth");
+        assert_eq!(
+            ac.decide("create", Some("Viewer")),
+            AccessDecision::Forbidden,
+            "viewer denied create"
+        );
+        assert_eq!(
+            ac.decide("create", Some("Sales")),
+            AccessDecision::Allow,
+            "sales allowed create"
+        );
+        assert_eq!(
+            ac.decide("create", None),
+            AccessDecision::NeedsAuth,
+            "anon needs auth"
+        );
         // read is authenticated → any logged-in role allowed
-        assert_eq!(ac.decide("read", Some("Viewer")), AccessDecision::Allow, "viewer can read");
+        assert_eq!(
+            ac.decide("read", Some("Viewer")),
+            AccessDecision::Allow,
+            "viewer can read"
+        );
         // delete gated to manager|admin
-        assert_eq!(ac.decide("delete", Some("Sales")), AccessDecision::Forbidden, "sales cannot delete");
-        assert_eq!(ac.decide("delete", Some("Admin")), AccessDecision::Allow, "admin can delete");
+        assert_eq!(
+            ac.decide("delete", Some("Sales")),
+            AccessDecision::Forbidden,
+            "sales cannot delete"
+        );
+        assert_eq!(
+            ac.decide("delete", Some("Admin")),
+            AccessDecision::Allow,
+            "admin can delete"
+        );
     }
 }

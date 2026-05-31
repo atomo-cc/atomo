@@ -174,7 +174,6 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
     None
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,21 +192,30 @@ mod tests {
     #[test]
     fn partial_update_omitting_required_passes() {
         // Patch only sets `value` — `title` (required) is absent and must NOT trip.
-        let patch: HashMap<String, Value> = [("value".to_string(), json!(100))].into_iter().collect();
+        let patch: HashMap<String, Value> =
+            [("value".to_string(), json!(100))].into_iter().collect();
         assert!(validate_partial(&patch, &rules()).is_empty());
     }
 
     #[test]
     fn partial_update_with_invalid_present_field_fails() {
         // Patch sets `title` to empty — present, so `required|min:1` must fire.
-        let patch: HashMap<String, Value> = [("title".to_string(), json!(""))].into_iter().collect();
-        assert!(!validate_partial(&patch, &rules()).is_empty(), "empty title in patch must fail");
+        let patch: HashMap<String, Value> =
+            [("title".to_string(), json!(""))].into_iter().collect();
+        assert!(
+            !validate_partial(&patch, &rules()).is_empty(),
+            "empty title in patch must fail"
+        );
     }
 
     #[test]
     fn full_validate_still_requires_absent_field() {
         // Create-time `validate` (not partial) must still flag the missing required title.
-        let data: HashMap<String, Value> = [("value".to_string(), json!(100))].into_iter().collect();
-        assert!(!validate(&data, &rules()).is_empty(), "create must still require title");
+        let data: HashMap<String, Value> =
+            [("value".to_string(), json!(100))].into_iter().collect();
+        assert!(
+            !validate(&data, &rules()).is_empty(),
+            "create must still require title"
+        );
     }
 }

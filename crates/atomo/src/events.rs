@@ -118,7 +118,6 @@ pub struct ModelEvent {
     pub actor: Option<String>, // user_id of the actor that caused the event, if known
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,8 +145,8 @@ mod tests {
             event_types: vec![EventType::Created],
         };
         tx.send(ev("Contact", EventType::Created)).unwrap(); // wrong model — skipped
-        tx.send(ev("Deal", EventType::Updated)).unwrap();    // wrong type — skipped
-        tx.send(ev("Deal", EventType::Created)).unwrap();    // match
+        tx.send(ev("Deal", EventType::Updated)).unwrap(); // wrong type — skipped
+        tx.send(ev("Deal", EventType::Created)).unwrap(); // match
         let got = stream.next().await.expect("a matching event");
         assert_eq!(got.model_name, "Deal");
         assert!(matches!(got.event_type, EventType::Created));
