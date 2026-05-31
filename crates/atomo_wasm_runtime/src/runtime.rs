@@ -221,6 +221,16 @@ impl WasmPlugin {
         &self.store.data().http_requests
     }
 
+    /// Drain (return and clear) the DB read requests the plugin recorded.
+    pub fn take_db_requests(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.store.data_mut().db_requests)
+    }
+
+    /// Drain (return and clear) the HTTP requests the plugin recorded.
+    pub fn take_http_requests(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.store.data_mut().http_requests)
+    }
+
     /// Seed events the plugin can read via host_read_event.
     pub fn set_readable_events(&mut self, events: Vec<String>) {
         self.store.data_mut().readable_events = events;

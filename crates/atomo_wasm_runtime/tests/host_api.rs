@@ -149,3 +149,25 @@ async fn http_request_recorded_with_permission() {
         &[r#"{"method":"GET","url":"http://x"}"#.to_string()]
     );
 }
+
+
+#[tokio::test]
+async fn take_requests_drains_buffers() {
+    let rt = WasmRuntime::new().unwrap();
+    let path = wasm_path();
+    let mut plugin = rt
+        .load_plugin(&path, &manifest(vec![Permission::ReadDatabase, Permission::HttpRequests]))
+        .await
+        .unwrap();
+    plugin.call_function("do_db", &[]).unwrap();
+    plugin.call_function("do_http", &[]).unwrap();
+
+    let db = plugin.take_db_requests();
+    let http = plugin.take_http_requests();
+    assert_eq!(db, vec![r#"{"sql":"SELECT 1"}"#.to_string()]);
+    assert_eq!(http, vec![r#"{"method":"GET","url":"http://x"}"#.to_string()]);
+
+    // After draining, the buffers are empty.
+    assert!(plugin.db_requests().is_empty());
+    assert!(plugin.http_requests().is_empty());
+}
