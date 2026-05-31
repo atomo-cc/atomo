@@ -87,6 +87,9 @@ pub mod errors;
 pub mod graphql;
 pub mod ai;
 pub mod validation;
+pub mod cache;
+pub mod hooks;
+pub mod workflow;
 
 use schema::Schema;
 use client::AtomoClient;

@@ -11,6 +11,7 @@ pub mod server;
 pub mod handlers;
 pub mod tracing_middleware;
 pub mod auth;
+pub mod oauth;
 pub mod audit;
 pub mod rate_limit;
 pub mod event_store;

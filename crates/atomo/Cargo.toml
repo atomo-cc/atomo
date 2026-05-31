@@ -50,6 +50,9 @@ console = "0.15"
 atomo_core = { path = "../atomo_core" }
 atomo_schema = { path = "../atomo_schema" }
 
+# Hooks
+async-trait = "0.1"
+
 # Utilities
 futures = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }

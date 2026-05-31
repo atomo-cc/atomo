@@ -1,6 +1,7 @@
 //! Core client for database operations and event streaming
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use anyhow::Result;
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -33,6 +34,8 @@ pub struct AtomoClient {
     event_sender: broadcast::Sender<ModelEvent>,
     event_store: EventStore,
     embedding_store: Option<std::sync::Arc<crate::ai::EmbeddingStore>>,
+    hook_runner: Arc<dyn crate::hooks::HookRunner>,
+    cache: crate::cache::ReadCache,
 }
 
 impl AtomoClient {
@@ -69,6 +72,8 @@ impl AtomoClient {
             event_sender,
             event_store,
             embedding_store: None,
+            hook_runner: Arc::new(crate::hooks::NoopHookRunner),
+            cache: crate::cache::ReadCache::new(60),
         })
     }
     
@@ -86,6 +91,10 @@ impl AtomoClient {
         offset: Option<usize>,
         include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
+        let cache_key = crate::cache::ReadCache::key(model_name, &format!("{:?}{:?}", where_clauses, order_by));
+        if let Some(cached) = self.cache.get(&cache_key).await {
+            if let Ok(records) = serde_json::from_value(cached) { return Ok(records); }
+        }
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let (sql, params) = SqlBuilder::select_active(model, where_clauses, order_by, limit, offset);
@@ -97,6 +106,7 @@ impl AtomoClient {
                 self.resolve_includes(model_name, record, include).await?;
             }
         }
+        self.cache.set(&cache_key, serde_json::to_value(&records)?).await;
         Ok(records)
     }
     
@@ -136,7 +146,20 @@ impl AtomoClient {
     ) -> Result<HashMap<String, Value>> {
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
-        let (sql, params) = SqlBuilder::insert(model, data);
+
+        let hook_ctx = crate::hooks::HookContext {
+            model_name: model_name.to_string(),
+            operation: "create".to_string(),
+            data: data.clone(),
+            user_id: None,
+        };
+        let hook_result = self.hook_runner.run_before("before_create", &hook_ctx).await?;
+        let data = match hook_result {
+            crate::hooks::HookResult::Continue(d) => d,
+            crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
+        };
+
+        let (sql, params) = SqlBuilder::insert(model, &data);
         let args = build_args(&params)?;
         let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
         let record = row_to_map(&row);
@@ -152,6 +175,9 @@ impl AtomoClient {
         let _ = self.event_sender.send(event.clone());
         self.event_store.persist(&event).await.ok();
 
+        self.hook_runner.run_after("after_create", &hook_ctx).await.ok();
+        self.cache.invalidate_model(model_name).await;
+
         Ok(record)
     }
     
@@ -165,7 +191,20 @@ impl AtomoClient {
     ) -> Result<Vec<HashMap<String, Value>>> {
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
-        let (sql, params) = SqlBuilder::update(model, where_clauses, data);
+
+        let hook_ctx = crate::hooks::HookContext {
+            model_name: model_name.to_string(),
+            operation: "update".to_string(),
+            data: data.clone(),
+            user_id: None,
+        };
+        let hook_result = self.hook_runner.run_before("before_update", &hook_ctx).await?;
+        let data = match hook_result {
+            crate::hooks::HookResult::Continue(d) => d,
+            crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
+        };
+
+        let (sql, params) = SqlBuilder::update(model, where_clauses, &data);
         let args = build_args(&params)?;
         let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
         let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
@@ -183,6 +222,9 @@ impl AtomoClient {
             self.event_store.persist(&event).await.ok();
         }
 
+        self.hook_runner.run_after("after_update", &hook_ctx).await.ok();
+        self.cache.invalidate_model(model_name).await;
+
         Ok(records)
     }
     
@@ -194,6 +236,19 @@ impl AtomoClient {
     ) -> Result<usize> {
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+
+        let hook_ctx = crate::hooks::HookContext {
+            model_name: model_name.to_string(),
+            operation: "delete".to_string(),
+            data: HashMap::new(),
+            user_id: None,
+        };
+        let hook_result = self.hook_runner.run_before("before_delete", &hook_ctx).await?;
+        match hook_result {
+            crate::hooks::HookResult::Continue(_) => {}
+            crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
+        };
+
         let (sql, params) = SqlBuilder::soft_delete(model, where_clauses);
         let args = build_args(&params)?;
         let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
@@ -211,6 +266,9 @@ impl AtomoClient {
             let _ = self.event_sender.send(event.clone());
             self.event_store.persist(&event).await.ok();
         }
+
+        self.hook_runner.run_after("after_delete", &hook_ctx).await.ok();
+        self.cache.invalidate_model(model_name).await;
 
         Ok(count)
     }
@@ -362,6 +420,8 @@ impl AtomoClientBuilder {
             event_sender,
             event_store,
             embedding_store,
+            hook_runner: Arc::new(crate::hooks::NoopHookRunner),
+            cache: crate::cache::ReadCache::new(60),
         })
     }
 }
