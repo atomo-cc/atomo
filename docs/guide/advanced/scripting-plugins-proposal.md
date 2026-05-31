@@ -125,8 +125,11 @@ The QuickJS/Javy spike must meet, or we reconsider:
 5. ✅ M1: load a `.js` plugin, run it via the embedded Javy engine (WASI stdin/stdout),
    capture stdout. (`js_runtime.rs` `JsRuntime::run_js_plugin`; `tests/js_plugin.rs` with a
    committed `tests/fixtures/tag_plugin.wasm` — transform, empty-record, and fuel-metering tests.)
-6. M2: bridge the CRUD hook ABI — JS `beforeCreate(record)` flows through `HookRunner`.
-   Test: JS hook mutates a record end-to-end.
+6. ✅ M2: bridge the CRUD hook ABI — JS plugins flow through `HookRunner`.
+   `PluginManifest.runtime` (`wasm`|`js`); `WasmPluginManager` loads `runtime="js"` plugins
+   into `JsRuntime` and `call_hook` re-runs the Javy module with a `{hook, record}` stdin
+   envelope, returning the modified record. (`tests/js_hook.rs` + fixture
+   `tests/fixtures/js-hook-plugin`: a JS `before_create` adds a tag through `WasmHookRunner`.)
 7. M3: permission-gated `atomo.emit`/`dbQuery`/`http` onto existing host functions.
    Test: denied without permission, works with.
 

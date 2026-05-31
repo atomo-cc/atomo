@@ -29,6 +29,7 @@ fn manifest(perms: Vec<Permission>) -> PluginManifest {
         author: "".into(),
         entry_point: "t.wasm".into(),
         permissions: perms,
+        runtime: atomo_wasm_runtime::PluginRuntime::Wasm,
     }
 }
 

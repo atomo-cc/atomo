@@ -2,12 +2,15 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use atomo_wasm_runtime::{PluginManifest, WasmPlugin, WasmRuntime};
+use atomo_wasm_runtime::{JsRuntime, PluginManifest, PluginRuntime, WasmPlugin, WasmRuntime};
 use tracing::info;
 
 pub struct WasmPluginManager {
     runtime: WasmRuntime,
+    js_runtime: JsRuntime,
     plugins: HashMap<String, WasmPlugin>,
+    /// JS (Javy) plugins: name -> compiled .wasm path (re-run per hook call).
+    js_plugins: HashMap<String, PathBuf>,
     plugin_dir: PathBuf,
 }
 
@@ -15,7 +18,9 @@ impl WasmPluginManager {
     pub fn new(plugin_dir: impl Into<PathBuf>) -> Result<Self> {
         Ok(Self {
             runtime: WasmRuntime::new()?,
+            js_runtime: JsRuntime::new()?,
             plugins: HashMap::new(),
+            js_plugins: HashMap::new(),
             plugin_dir: plugin_dir.into(),
         })
     }
@@ -46,9 +51,17 @@ impl WasmPluginManager {
         let manifest: PluginManifest = toml::from_str(&manifest_content)?;
         let wasm_path = dir.join(&manifest.entry_point);
         let name = manifest.name.clone();
-        info!(plugin = %name, "Loading WASM plugin");
-        let plugin = self.runtime.load_plugin(&wasm_path, &manifest).await?;
-        self.plugins.insert(name.clone(), plugin);
+        match manifest.runtime {
+            PluginRuntime::Js => {
+                info!(plugin = %name, "Loading JS plugin");
+                self.js_plugins.insert(name.clone(), wasm_path);
+            }
+            PluginRuntime::Wasm => {
+                info!(plugin = %name, "Loading WASM plugin");
+                let plugin = self.runtime.load_plugin(&wasm_path, &manifest).await?;
+                self.plugins.insert(name.clone(), plugin);
+            }
+        }
         Ok(name)
     }
 
@@ -66,13 +79,30 @@ impl WasmPluginManager {
         plugin.call_function(function, args)
     }
 
-    /// Call a hook with JSON marshalling
+    /// Call a hook with JSON marshalling.
+    ///
+    /// For compiled plugins this calls the exported `{hook}` function. For JS plugins it
+    /// re-runs the Javy module with a `{ "hook": <name>, "record": <input> }` envelope on
+    /// stdin; the script returns the modified record JSON (or empty/identical = no change).
     pub fn call_hook(
         &mut self,
         plugin_name: &str,
         hook: &str,
         input_json: &str,
     ) -> Result<Option<String>> {
+        if let Some(wasm_path) = self.js_plugins.get(plugin_name) {
+            let envelope = serde_json::json!({
+                "hook": hook,
+                "record": serde_json::from_str::<serde_json::Value>(input_json).unwrap_or(serde_json::Value::Null),
+            })
+            .to_string();
+            let out = self.js_runtime.run_js_plugin(wasm_path, &envelope)?;
+            let trimmed = out.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(trimmed.to_string()));
+        }
         let plugin = self
             .plugins
             .get_mut(plugin_name)
@@ -81,7 +111,11 @@ impl WasmPluginManager {
     }
 
     pub fn loaded_plugins(&self) -> Vec<&str> {
-        self.plugins.keys().map(|s| s.as_str()).collect()
+        self.plugins
+            .keys()
+            .chain(self.js_plugins.keys())
+            .map(|s| s.as_str())
+            .collect()
     }
 
     /// Fulfill the DB/HTTP requests a plugin recorded during its last call.
