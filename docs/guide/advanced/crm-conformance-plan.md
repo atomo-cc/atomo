@@ -23,6 +23,42 @@ capabilities (multi-tenant, OAuth, CLI, SDK offline sync) need their own harness
 the CRM can't naturally express them. So: **CRM as the primary conformance driver, plus
 targeted supplementary harnesses for what it structurally can't reach.**
 
+## Progress (as of 2026-05-31)
+
+**Phases A, SEC, B, and C are complete. Phase D (supplementary harnesses) remains.**
+
+Outcome so far — **7 silent gaps fixed, 2 security holes closed, 2 capabilities verified
+already-working**, all driven by the real CRM schema:
+
+| Silent gap fixed | Phase | Layer |
+|---|---|---|
+| enum field → JSONB column | (dogfood) | codegen |
+| array field `NOT NULL` no default | (dogfood) | codegen |
+| validation regex single-quote-only | (dogfood) | parse |
+| validation never enforced in data layer | (dogfood) | data |
+| explicit `tableName` ignored | A1 | codegen |
+| RBAC access rules never parsed → allow-all | S1 | parse |
+| projection: delete never removed rows | B2 | runtime |
+| projection: numeric stored as `""` | B2 | runtime |
+| pagination cache-key collision (page 2 == page 1) | C2 | runtime |
+
+Security holes closed: unauthenticated `/graphql/ws` (S2), tenant scoping non-functional (S3).
+Verified already-working: audit (B4), relationship `include` (C1).
+
+**Key insight:** the bugs cluster in the **parse/codegen layer** — anything that reads a
+declaration from the `export const schema` metadata (validation, RBAC, tableName, and the
+latent relationships gap) tends to be broken the same way. The runtime/reactive layer is
+mostly healthy (audit, events, subscriptions delivery, relationships) with isolated
+correctness bugs (projection corruption, the pagination cache collision). A future
+root-cause fix would be a single robust schema-metadata parser all features read from.
+
+**Deferred backlog** (each documented inline below): data-layer RBAC enforcement;
+S3a subscription tenant-filter; S3b per-user tenant binding; S3c event-store/PG-RLS;
+B1a Mutation/Plugin workflow steps; B1b JS workflow-step runtime; B2a projection rebuild-replay;
+relationship resolution reading the declared `relationships` block; SDK `SubscriptionBuilder`
+filtering; `exists:` rule (FK-deferred); LOW-risk cache polish. Worth a prioritization pass
+after Phase D — several (esp. data-layer RBAC) are real, others are acceptable scope cuts.
+
 ## Status legend
 
 - ✅ **conformance-tested via CRM** — proven against the real schema
@@ -35,7 +71,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 
 | Capability | CRM can drive? | Status | Notes |
 |---|---|---|---|
-| Schema→codegen→migrations | yes | 🟡→partial | dogfood fixed enum/array; **`tableName` still ignored** |
+| Schema→codegen→migrations | yes | ✅ | dogfood fixed enum/array; A1 honors `tableName`; enums still emit junk tables (pre-existing, noted) |
 | CRUD | yes | ✅ | `crm_dogfood` + `integration_test` |
 | Validation rules | yes | ✅ | data-layer enforced on create + update (update-aware via `validate_partial`); `exists:` deferred to FKs |
 | Relationships (belongsTo/hasMany) | yes | ✅ CRM | C1: `include` resolves contact.company + contact.deals (nested), proven in dogfood. Latent: convention-based, ignores the declared `relationships` block (works only when rel name == model name) |
@@ -197,10 +233,14 @@ targets is the bulk of the work.
   Deferred LOW-risk polish: `find_unique` uncached, no background eviction, Debug-format keys.
 
 ### Phase D — Supplementary harnesses (what CRM can't reach alone)
-- [ ] D1. Multi-tenant isolation harness (pairs with S3)
-- [ ] D2. AI/pgvector: embed Contact notes, semantic search
-- [ ] D3. OAuth: mock-IdP harness
-- [ ] D4. CLI smoke test: `init` → `migrate` → `codegen` on the CRM schema in a temp dir
+- [ ] D1. **Multi-tenant isolation harness** (NEXT) — pairs with S3 core; extend
+  `test_two_tenant_isolation` to also assert update/delete are tenant-scoped (not just read/create).
+- [ ] D2. AI/pgvector: embed Contact notes, semantic search. **Testability risk**: likely needs the
+  pgvector Postgres extension (the EmbeddingStore init has a "don't fail if pgvector not installed"
+  guard) and possibly an OpenAI key. If that infra isn't available locally, the right call is to
+  **document D2 as requiring it** rather than force a hollow test — assess before implementing.
+- [ ] D3. OAuth: mock-IdP harness.
+- [ ] D4. CLI smoke test: `init` → `migrate` → `codegen` on the CRM schema in a temp dir.
 
 ### Cross-cutting (do alongside, not after)
 - [ ] CI: wire the DB-gated suite into the existing **manual `workflow_dispatch`** job (auto-triggers stay off for cost); make "run conformance" a one-click gate before any release tag
