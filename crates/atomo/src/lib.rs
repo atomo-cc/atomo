@@ -82,7 +82,9 @@ pub mod client;
 pub mod query;
 pub mod schema;
 pub mod events;
+pub mod event_store;
 pub mod graphql;
+pub mod ai;
 
 use schema::Schema;
 use client::AtomoClient;

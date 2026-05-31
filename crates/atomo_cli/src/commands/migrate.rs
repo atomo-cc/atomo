@@ -396,24 +396,93 @@ fn generate_create_table_sql(model: &Model) -> Result<String> {
     Ok(sql)
 }
 
+fn pg_type_matches(field_type: &atomo_schema::FieldType, db_type: &str) -> bool {
+    let expected = match field_type {
+        atomo_schema::FieldType::String => "text",
+        atomo_schema::FieldType::Number => "numeric",
+        atomo_schema::FieldType::Boolean => "boolean",
+        atomo_schema::FieldType::Date => "date",
+        atomo_schema::FieldType::DateTime => "timestamp with time zone",
+        atomo_schema::FieldType::EntityId => "uuid",
+        atomo_schema::FieldType::Json => "jsonb",
+        atomo_schema::FieldType::Reference(_) => "uuid",
+        atomo_schema::FieldType::Array(_) => "jsonb",
+        atomo_schema::FieldType::Blocks => "jsonb",
+        atomo_schema::FieldType::Custom(_) => "text",
+    };
+    db_type == expected
+}
+
+fn field_type_to_pg(field_type: &atomo_schema::FieldType) -> &'static str {
+    match field_type {
+        atomo_schema::FieldType::String => "TEXT",
+        atomo_schema::FieldType::Number => "NUMERIC",
+        atomo_schema::FieldType::Boolean => "BOOLEAN",
+        atomo_schema::FieldType::Date => "DATE",
+        atomo_schema::FieldType::DateTime => "TIMESTAMPTZ",
+        atomo_schema::FieldType::EntityId => "UUID",
+        atomo_schema::FieldType::Json => "JSONB",
+        atomo_schema::FieldType::Reference(_) => "UUID",
+        atomo_schema::FieldType::Array(_) => "JSONB",
+        atomo_schema::FieldType::Blocks => "JSONB",
+        atomo_schema::FieldType::Custom(_) => "TEXT",
+    }
+}
+
 fn generate_table_alterations(model: &Model, existing_table: &DatabaseTable) -> Result<String> {
     let mut sql = String::new();
     let table_name = model.name.to_lowercase();
-    
-    // Check for new columns
+
+    // Track which DB columns are accounted for by schema fields
+    let mut matched_db_columns: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     for (field_name, field) in &model.fields {
-        if !existing_table.columns.contains_key(field_name) {
+        let db_col_name = camel_to_snake_case(field_name);
+
+        if let Some(existing_col) = existing_table.columns.get(&db_col_name) {
+            matched_db_columns.insert(db_col_name.clone());
+
+            // Detect type changes
+            if !pg_type_matches(&field.field_type, &existing_col.data_type) {
+                let new_type = field_type_to_pg(&field.field_type);
+                sql.push_str(&format!(
+                    "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{};\n",
+                    table_name, db_col_name, new_type, db_col_name, new_type
+                ));
+            }
+
+            // Detect nullable changes
+            if !field.optional && existing_col.is_nullable {
+                sql.push_str(&format!(
+                    "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;\n",
+                    table_name, db_col_name
+                ));
+            } else if field.optional && !existing_col.is_nullable && !existing_col.is_primary_key {
+                sql.push_str(&format!(
+                    "ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;\n",
+                    table_name, db_col_name
+                ));
+            }
+        } else {
+            // New column
             sql.push_str(&format!(
-                "ALTER TABLE {} ADD COLUMN {};\n", 
-                table_name, 
+                "ALTER TABLE {} ADD COLUMN {};\n",
+                table_name,
                 generate_column_definition(field_name, field)?
             ));
         }
     }
-    
-    // TODO: Check for modified columns (type changes, etc.)
-    // TODO: Check for dropped columns
-    
+
+    // Detect dropped columns (in DB but not in schema)
+    for col_name in existing_table.columns.keys() {
+        if !matched_db_columns.contains(col_name) {
+            sql.push_str(&format!(
+                "-- ALTER TABLE {} DROP COLUMN {}; -- Uncomment to drop\n",
+                table_name, col_name
+            ));
+        }
+    }
+
     Ok(sql)
 }
 

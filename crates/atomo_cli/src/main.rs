@@ -84,6 +84,15 @@ enum Commands {
         #[arg(short, long, default_value = "production")]
         env: String,
     },
+    /// Run service tests
+    Test {
+        /// Path to service directory
+        #[arg(long)]
+        service_path: Option<String>,
+        /// Filter test names
+        #[arg(short, long)]
+        filter: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -122,6 +131,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Seed { file } => {
             seed_command(file).await?;
+        }
+        Commands::Test { service_path, filter } => {
+            test_command(service_path, filter).await?;
         }
     }
 

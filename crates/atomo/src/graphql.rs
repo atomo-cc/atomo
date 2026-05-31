@@ -5,16 +5,69 @@
 
 use std::sync::Arc;
 use std::collections::HashMap;
-use async_graphql::{Schema as GraphQLSchema, Object, Subscription, Context, Result as GraphQLResult, EmptySubscription};
+use async_graphql::{Schema as GraphQLSchema, Object, SimpleObject, Subscription, Context, Result as GraphQLResult, EmptySubscription};
 use serde_json::Value;
 use futures;
 use futures::StreamExt;
 use sqlx;
 use tokio_stream::wrappers::BroadcastStream;
 
+use atomo_schema::AccessRule;
+
 use crate::client::AtomoClient;
 use crate::schema::Schema;
 use crate::events::ModelEvent;
+
+/// User role context data for RBAC checks
+pub struct UserRoleCtx(pub String);
+
+fn check_access(schema: &Schema, model_name: &str, action: &str, ctx: &Context<'_>) -> GraphQLResult<()> {
+    let access = schema.models.get(model_name).and_then(|m| m.access.as_ref());
+    let rule = match (access, action) {
+        (Some(a), "create") => a.create.as_ref(),
+        (Some(a), "read") => a.read.as_ref(),
+        (Some(a), "update") => a.update.as_ref(),
+        (Some(a), "delete") => a.delete.as_ref(),
+        _ => return Ok(()),
+    };
+    let rule = match rule {
+        Some(r) => r,
+        None => return Ok(()),
+    };
+    let user_role = ctx.data_opt::<UserRoleCtx>();
+    match rule {
+        AccessRule::Boolean(roles_str) => {
+            if roles_str == "authenticated" {
+                if user_role.is_none() {
+                    return Err(async_graphql::Error::new("Authentication required"));
+                }
+                return Ok(());
+            }
+            let allowed: Vec<&str> = roles_str.split('|').collect();
+            match user_role {
+                Some(r) if allowed.iter().any(|a| a.eq_ignore_ascii_case(&r.0)) => Ok(()),
+                Some(_) => Err(async_graphql::Error::new(format!("Access denied: requires one of [{}]", roles_str))),
+                None => Err(async_graphql::Error::new("Authentication required")),
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+#[derive(SimpleObject)]
+struct PageInfo {
+    total_count: i64,
+    has_next_page: bool,
+    has_previous_page: bool,
+    page_size: i32,
+    offset: i32,
+}
+
+#[derive(SimpleObject)]
+struct PaginatedRecords {
+    data: Value,
+    page_info: PageInfo,
+}
 
 /// Service-specific GraphQL queries
 /// Platform queries are handled separately in the server layer
@@ -41,6 +94,7 @@ impl Query {
         limit: Option<i32>,
         offset: Option<i32>,
     ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
+        check_access(&self.schema, &model, "read", ctx)?;
         let result = self.client.find_many(
             &model,
             &[], // where_clauses  
@@ -60,6 +114,7 @@ impl Query {
         model: String,
         id: String,
     ) -> GraphQLResult<Option<HashMap<String, Value>>> {
+        check_access(&self.schema, &model, "read", ctx)?;
         let result = self.client.find_unique(
             &model,
             &[], // where_clauses
@@ -67,6 +122,29 @@ impl Query {
         ).await?;
         
         Ok(result)
+    }
+
+    /// Get records with pagination metadata
+    async fn paginated_records(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+        limit: Option<i32>,
+        offset: Option<i32>,
+    ) -> GraphQLResult<PaginatedRecords> {
+        check_access(&self.schema, &model, "read", ctx)?;
+        let lim = limit.unwrap_or(20) as usize;
+        let off = offset.unwrap_or(0) as usize;
+        let data = self.client.find_many(&model, &[], &[], Some(lim), Some(off), &[]).await?;
+        let total_count = self.client.count(&model, &[]).await.unwrap_or(0);
+        let page_info = PageInfo {
+            total_count,
+            has_next_page: (off + lim) < total_count as usize,
+            has_previous_page: off > 0,
+            page_size: lim as i32,
+            offset: off as i32,
+        };
+        Ok(PaginatedRecords { data: serde_json::to_value(&data)?, page_info })
     }
 }
 
@@ -91,6 +169,7 @@ impl Mutation {
         model: String,
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
+        check_access(&self.schema, &model, "create", ctx)?;
         let result = self.client.create(
             &model,
             &data,
@@ -108,6 +187,7 @@ impl Mutation {
         where_: Value,
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
+        check_access(&self.schema, &model, "update", ctx)?;
         let results = self.client.update_many(
             &model,
             &[], // where_clauses
@@ -126,6 +206,7 @@ impl Mutation {
         model: String,
         where_: Value,
     ) -> GraphQLResult<i32> {
+        check_access(&self.schema, &model, "delete", ctx)?;
         let count = self.client.delete_many(
             &model,
             &[], // where_clauses

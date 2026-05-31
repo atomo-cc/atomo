@@ -10,6 +10,7 @@ use crate::schema::Schema;
 use crate::query::{WhereClause, OrderDirection};
 use crate::query::sql_builder::SqlBuilder;
 use crate::events::{EventType, ModelEvent};
+use crate::event_store::EventStore;
 
 /// Core Atomo client that handles all database operations
 #[derive(Clone)]
@@ -17,12 +18,19 @@ pub struct AtomoClient {
     pool: PgPool,
     schema: Schema,
     event_sender: broadcast::Sender<ModelEvent>,
+    event_store: EventStore,
+    embedding_store: Option<std::sync::Arc<crate::ai::EmbeddingStore>>,
 }
 
 impl AtomoClient {
     /// Get the database connection pool
     pub fn db_pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Get the embedding store (if AI is enabled)
+    pub fn embedding_store(&self) -> Option<&crate::ai::EmbeddingStore> {
+        self.embedding_store.as_deref()
     }
 
     pub async fn new(schema: &Schema) -> Result<Self> {
@@ -32,11 +40,15 @@ impl AtomoClient {
         println!("Connecting to database: {}", database_url);
         let pool = PgPool::connect(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
+        let event_store = EventStore::new(pool.clone());
+        event_store.init().await?;
         
         Ok(Self {
             pool,
             schema: schema.clone(),
             event_sender,
+            event_store,
+            embedding_store: None,
         })
     }
     
@@ -52,14 +64,20 @@ impl AtomoClient {
         order_by: &[(String, OrderDirection)],
         limit: Option<usize>,
         offset: Option<usize>,
-        _include: &[String],
+        include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
-        let (sql, params) = SqlBuilder::select(model, where_clauses, order_by, limit, offset);
+        let (sql, params) = SqlBuilder::select_active(model, where_clauses, order_by, limit, offset);
         let args = build_args(&params)?;
         let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
-        Ok(rows.iter().map(row_to_map).collect())
+        let mut records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
+        if !include.is_empty() {
+            for record in &mut records {
+                self.resolve_includes(model_name, record, include).await?;
+            }
+        }
+        Ok(records)
     }
     
     /// Find a unique record
@@ -67,14 +85,26 @@ impl AtomoClient {
         &self,
         model_name: &str,
         where_clauses: &[WhereClause],
-        _include: &[String],
+        include: &[String],
     ) -> Result<Option<HashMap<String, Value>>> {
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
-        let (sql, params) = SqlBuilder::select_one(model, where_clauses);
+        let mut clauses = where_clauses.to_vec();
+        clauses.push(WhereClause {
+            field: "deleted_at".to_string(),
+            operator: crate::query::WhereOperator::IsNull,
+            value: Value::Null,
+        });
+        let (sql, params) = SqlBuilder::select_one(model, &clauses);
         let args = build_args(&params)?;
         let row = sqlx::query_with(&sql, args).fetch_optional(&self.pool).await?;
-        Ok(row.as_ref().map(row_to_map))
+        let mut record = row.as_ref().map(row_to_map);
+        if !include.is_empty() {
+            if let Some(ref mut rec) = record {
+                self.resolve_includes(model_name, rec, include).await?;
+            }
+        }
+        Ok(record)
     }
     
     /// Create a new record
@@ -91,14 +121,16 @@ impl AtomoClient {
         let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
         let record = row_to_map(&row);
 
-        let _ = self.event_sender.send(ModelEvent {
+        let event = ModelEvent {
             event_type: EventType::Created,
             model_name: model_name.to_string(),
             data: record.clone(),
             previous_data: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
             event_id: uuid::Uuid::new_v4().to_string(),
-        });
+        };
+        let _ = self.event_sender.send(event.clone());
+        self.event_store.persist(&event).await.ok();
 
         Ok(record)
     }
@@ -119,20 +151,22 @@ impl AtomoClient {
         let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
 
         for record in &records {
-            let _ = self.event_sender.send(ModelEvent {
+            let event = ModelEvent {
                 event_type: EventType::Updated,
                 model_name: model_name.to_string(),
                 data: record.clone(),
                 previous_data: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
-            });
+            };
+            let _ = self.event_sender.send(event.clone());
+            self.event_store.persist(&event).await.ok();
         }
 
         Ok(records)
     }
     
-    /// Delete many records
+    /// Delete many records (soft delete - sets deleted_at = NOW())
     pub async fn delete_many(
         &self,
         model_name: &str,
@@ -140,25 +174,45 @@ impl AtomoClient {
     ) -> Result<usize> {
         let model = self.schema.models.get(model_name)
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
-        let (sql, params) = SqlBuilder::delete(model, where_clauses);
+        let (sql, params) = SqlBuilder::soft_delete(model, where_clauses);
         let args = build_args(&params)?;
         let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
         let count = result.rows_affected() as usize;
 
         if count > 0 {
-            let _ = self.event_sender.send(ModelEvent {
+            let event = ModelEvent {
                 event_type: EventType::Deleted,
                 model_name: model_name.to_string(),
                 data: HashMap::new(),
                 previous_data: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
-            });
+            };
+            let _ = self.event_sender.send(event.clone());
+            self.event_store.persist(&event).await.ok();
         }
 
         Ok(count)
     }
     
+    /// Count records matching where clauses
+    pub async fn count(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
+        let model = self.schema.models.get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+        let table = crate::query::sql_builder::table_name_for(model);
+        let mut clauses = where_clauses.to_vec();
+        clauses.push(WhereClause { field: "deleted_at".to_string(), operator: crate::query::WhereOperator::IsNull, value: serde_json::Value::Null });
+        let (where_sql, params) = crate::query::sql_builder::build_where_pub(&clauses, 0);
+        let sql = if where_sql.is_empty() {
+            format!("SELECT COUNT(*) as count FROM {}", table)
+        } else {
+            format!("SELECT COUNT(*) as count FROM {} WHERE {}", table, where_sql)
+        };
+        let args = build_args(&params)?;
+        let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
+        Ok(row.try_get::<i64, _>("count").unwrap_or(0))
+    }
+
     /// Subscribe to model events
     pub async fn subscribe(
         &self,
@@ -167,6 +221,60 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
     ) -> broadcast::Receiver<ModelEvent> {
         self.event_sender.subscribe()
+    }
+
+    /// Resolve relationships for a record based on include list
+    pub fn resolve_includes<'a>(
+        &'a self,
+        model_name: &'a str,
+        record: &'a mut HashMap<String, Value>,
+        include: &'a [String],
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+        if self.schema.models.get(model_name).is_none() {
+            return Ok(());
+        }
+        for rel_name in include {
+            let fk_field = format!("{}Id", rel_name);
+            let fk_snake = to_snake_case(&fk_field);
+
+            if let Some(fk_value) = record.get(&fk_snake).or_else(|| record.get(&fk_field)).cloned() {
+                // belongsTo: fetch the related record by ID
+                if let Value::String(id) = fk_value {
+                    let related_model = capitalize(rel_name);
+                    let where_clause = WhereClause {
+                        field: "id".to_string(),
+                        operator: crate::query::WhereOperator::Equals,
+                        value: Value::String(id),
+                    };
+                    if let Ok(Some(related)) = self.find_unique(&related_model, &[where_clause], &[]).await {
+                        record.insert(rel_name.clone(), serde_json::to_value(related).unwrap_or(Value::Null));
+                    }
+                }
+            } else {
+                // hasMany: fetch records from related model where foreignKey = this record's id
+                if let Some(Value::String(id)) = record.get("id").cloned() {
+                    let related_model = capitalize(rel_name);
+                    let fk = format!("{}_id", to_snake_case(model_name));
+                    let where_clause = WhereClause {
+                        field: fk,
+                        operator: crate::query::WhereOperator::Equals,
+                        value: Value::String(id),
+                    };
+                    let singular = if related_model.ends_with('s') {
+                        related_model[..related_model.len() - 1].to_string()
+                    } else {
+                        related_model.clone()
+                    };
+                    let model_to_query = if self.schema.models.contains_key(&singular) { &singular } else { &related_model };
+                    if let Ok(related) = self.find_many(model_to_query, &[where_clause], &[], None, None, &[]).await {
+                        record.insert(rel_name.clone(), serde_json::to_value(related).unwrap_or(Value::Null));
+                    }
+                }
+            }
+        }
+        Ok(())
+        })
     }
 }
 
@@ -209,17 +317,29 @@ impl AtomoClientBuilder {
         println!("Connecting to database: {}", database_url);
         let pool = PgPool::connect(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
+        let event_store = EventStore::new(pool.clone());
+        event_store.init().await?;
         
         // Run migrations if enabled
         if self.enable_migrations {
             // TODO: Run database migrations based on schema
             println!("Migrations enabled but not yet implemented");
         }
+
+        let embedding_store = if self.enable_ai {
+            let store = crate::ai::EmbeddingStore::new(pool.clone());
+            store.init().await.ok(); // Don't fail if pgvector not installed
+            Some(std::sync::Arc::new(store))
+        } else {
+            None
+        };
         
         Ok(AtomoClient {
             pool,
             schema: schema.clone(),
             event_sender,
+            event_store,
+            embedding_store,
         })
     }
 }
@@ -290,4 +410,23 @@ fn row_to_map(row: &sqlx::postgres::PgRow) -> HashMap<String, Value> {
         map.insert(name, val);
     }
     map
+}
+
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for c in s.chars() {
+        if c.is_uppercase() && !result.is_empty() {
+            result.push('_');
+        }
+        result.push(c.to_lowercase().next().unwrap());
+    }
+    result
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
 }

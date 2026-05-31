@@ -117,6 +117,36 @@ impl SqlBuilder {
         }
         (sql, params)
     }
+
+    /// Build a soft-delete UPDATE (sets deleted_at = NOW())
+    pub fn soft_delete(
+        model: &Model,
+        where_clauses: &[WhereClause],
+    ) -> (String, Vec<Value>) {
+        let mut sql = format!("UPDATE {} SET deleted_at = NOW()", table_name(model));
+        let (where_sql, params) = build_where(where_clauses, 0);
+        if !where_sql.is_empty() {
+            sql.push_str(&format!(" WHERE {}", where_sql));
+        }
+        (sql, params)
+    }
+
+    /// Build SELECT with soft-delete filter (excludes deleted records)
+    pub fn select_active(
+        model: &Model,
+        where_clauses: &[WhereClause],
+        order_by: &[(String, OrderDirection)],
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> (String, Vec<Value>) {
+        let mut clauses = where_clauses.to_vec();
+        clauses.push(WhereClause {
+            field: "deleted_at".to_string(),
+            operator: WhereOperator::IsNull,
+            value: Value::Null,
+        });
+        Self::select(model, &clauses, order_by, limit, offset)
+    }
 }
 
 fn to_snake_case(s: &str) -> String {
@@ -129,6 +159,9 @@ fn to_snake_case(s: &str) -> String {
     }
     result
 }
+
+pub fn table_name_for(model: &Model) -> String { table_name(model) }
+pub fn build_where_pub(where_clauses: &[WhereClause], param_offset: usize) -> (String, Vec<Value>) { build_where(where_clauses, param_offset) }
 
 fn table_name(model: &Model) -> String {
     to_snake_case(&model.name) + "s"
