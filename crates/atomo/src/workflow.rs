@@ -404,7 +404,10 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
             tracing::warn!(query = %query, "Workflow Mutation step is not yet executable");
             anyhow::bail!("workflow Mutation step not implemented (needs a GraphQL executor wired into the engine)");
         }
-        StepAction::Plugin { plugin_name, function } => {
+        StepAction::Plugin {
+            plugin_name,
+            function,
+        } => {
             tracing::warn!(plugin = %plugin_name, function = %function, "Workflow Plugin step is not yet executable");
             anyhow::bail!("workflow Plugin step not implemented (needs the plugin manager wired into the engine)");
         }
@@ -502,14 +505,25 @@ mod tests {
             trigger: WorkflowTrigger::Manual,
             steps: vec![WorkflowStep {
                 name: "mut".to_string(),
-                action: StepAction::Mutation { query: "mutation { noop }".into(), variables: HashMap::new() },
+                action: StepAction::Mutation {
+                    query: "mutation { noop }".into(),
+                    variables: HashMap::new(),
+                },
                 condition: None,
                 on_failure: FailurePolicy::Stop,
             }],
         });
         let exec = engine.execute("m", HashMap::new()).await.unwrap();
-        assert_eq!(exec.status, ExecutionStatus::Failed, "Mutation step must fail, not silently pass");
-        assert!(exec.errors.iter().any(|e| e.contains("not implemented")), "errors: {:?}", exec.errors);
+        assert_eq!(
+            exec.status,
+            ExecutionStatus::Failed,
+            "Mutation step must fail, not silently pass"
+        );
+        assert!(
+            exec.errors.iter().any(|e| e.contains("not implemented")),
+            "errors: {:?}",
+            exec.errors
+        );
     }
 
     #[test]

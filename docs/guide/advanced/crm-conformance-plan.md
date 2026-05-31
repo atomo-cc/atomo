@@ -71,10 +71,11 @@ by model+event-type); S3a subscription tenant-filter (cross-tenant real-time lea
 B2a projection rebuild-replay (was truncate-only data-loss → now replays from `event_log`).
 
 **Remaining backlog, with the honest blocker for each** (these are *not* minimal-code items):
-- **RBAC auto-enforcement** — thread a role through the data-layer API (~40 call sites) or a
-  context field; the `enforce_access` seam exists, auto-calling it is the refactor.
-- **B1a Mutation/Plugin workflow steps** — need the `AtomoClient`/plugin-manager wired into
-  `WorkflowEngine` (it holds only a pool); risks a dependency cycle — real architectural change.
+- **RBAC** — ✅ data-layer enforcement landed (`*_checked` mutations; GraphQL routes through them).
+  Direct callers of the *unchecked* variants still bypass by choice (tests/internal); fully removing
+  that path means deleting the unchecked variants + threading role through ~40 sites — deferred.
+- **B1a Mutation/Plugin workflow steps** — now **fail loudly** (no longer silent no-ops); actually
+  executing them needs a GraphQL executor / plugin-manager wired into the engine — real follow-up.
 - **B1b JS workflow steps** — the CRM's `sales-pipeline.yml` uses inline JS; needs a JS step
   runtime (the Javy plugin system is the foundation). Large feature.
 - **Relationship `relationships`-block reading** — ✅ DONE: `resolve_includes` now reads the
@@ -112,13 +113,13 @@ B2a projection rebuild-replay (was truncate-only data-loss → now replays from 
 | Event sourcing + replay | yes | ✅ | C3: Deal Created→Updated→Updated→Deleted reconstructs via `entity_history` (`crm_deal_event_history_replays`); confirms B2 delete-event id fix |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
 | Subscriptions (WebSocket) | yes | ✅ | S2 auth (connection_init JWT + read-gating) + S3a tenant-filter; SDK `SubscriptionBuilder` now filters by model+event-type (`stream_filters_by_model_and_event_type`) |
-| RBAC enforcement | yes | ✅ GraphQL + seam | S1: rules parsed from export-const-schema, `check_access` via shared `decide()`. Data-layer `client.enforce_access(model,action,role)` seam added + tested (`data_layer_enforce_access_gates_by_role`); **not yet auto-called** on every mutation (needs role threaded in) |
+| RBAC enforcement | yes | ✅ | S1 parse + decide seam; data-layer enforced via `create_checked`/`update_many_checked`/`delete_many_checked` (GraphQL routes through them). Unchecked variants remain for tests/internal (bypass by choice) |
 | Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
 | Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | ✅ | C4: populate + invalidate-on-create confirmed via CRM (dogfood 7b). LOW polish deferred (find_unique uncached, no eviction) |
 | CQRS projections / aggregate | yes | ✅ | B2: Deleted removes rows; non-string columns via `value_to_text`; B2a rebuild now replays from `event_log` (`projection_correctness` 2 tests) |
-| AI / pgvector | partial | 🔒 infra | D2: **blocked** — needs pgvector extension + embedding provider, not available locally |
+| AI / pgvector | partial | ✅ CI | D2/item5: `crm_ai.rs` embeds Contact notes → cosine search ranks nearest (needs pgvector; runs in CI, `#[ignore]` locally) |
 | Multi-tenant (RLS) | yes | 🟡 core+ | S3+D1: tenant_id generated; read/write scoping + S3a subscription tenant-filter done. Deferred: per-user binding (S3b), PG-RLS (S3c) |
 | OAuth/OIDC | no (needs mock IdP) | 🟡 partial | D3: authorize-URL params unit-tested; token round-trip needs a mock IdP (deferred) |
 | Rate limiting | infra | ✅ | `middleware.rs` |
@@ -215,7 +216,9 @@ targets is the bulk of the work.
   with `type: validation|action|data_transformation` — a shape the engine has no execution model
   for. Making it run needs a JS step runtime; the Javy plugin system (Phase-2 scripting) is the
   natural foundation for that, but it's a large separate feature, not a B1 fix.
-  - [ ] B1a. `Mutation`/`Plugin` step actions are still no-op logs (need client/plugin-manager wired into the engine).
+  - [~] B1a. `Mutation`/`Plugin` steps now **fail loudly** (was silent no-op "success" — a
+    facade). Actually executing them needs a GraphQL executor / plugin-manager wired into the
+    engine (it holds only `Option<pool>`); dep-cycle risk — a real follow-up, not minimal.
   - [ ] B1b. A JS-step execution model so the CRM's literal `sales-pipeline.yml` runs.
 - [~] B2. **Projections — corruption fixed, rebuild deferred**: (1) ✅ Deleted now removes the
   projection row — `soft_delete` gained `RETURNING id` and `delete_many` emits a Deleted event
