@@ -56,12 +56,30 @@ root-cause fix would be a single robust schema-metadata parser all features read
 **Deferred backlog** (each documented inline below): data-layer RBAC *auto-enforcement* (the
 `client.enforce_access(model, action, role)` seam now exists + is tested, but isn't yet called
 automatically on every `create`/`update`/`delete` — that needs a role threaded into the data
-layer; callers can enforce on demand today);
-S3a subscription tenant-filter; S3b per-user tenant binding; S3c event-store/PG-RLS;
-B1a Mutation/Plugin workflow steps; B1b JS workflow-step runtime; B2a projection rebuild-replay;
-relationship resolution reading the declared `relationships` block; SDK `SubscriptionBuilder`
-filtering; `exists:` rule (FK-deferred); LOW-risk cache polish. Worth a prioritization pass
-after Phase D — several (esp. data-layer RBAC) are real, others are acceptable scope cuts.
+layer; callers can enforce on demand today).
+
+**Recently closed** (this pass): SDK `SubscriptionBuilder` filtering (was dead code → now filters
+by model+event-type); S3a subscription tenant-filter (cross-tenant real-time leak closed);
+B2a projection rebuild-replay (was truncate-only data-loss → now replays from `event_log`).
+
+**Remaining backlog, with the honest blocker for each** (these are *not* minimal-code items):
+- **RBAC auto-enforcement** — thread a role through the data-layer API (~40 call sites) or a
+  context field; the `enforce_access` seam exists, auto-calling it is the refactor.
+- **B1a Mutation/Plugin workflow steps** — need the `AtomoClient`/plugin-manager wired into
+  `WorkflowEngine` (it holds only a pool); risks a dependency cycle — real architectural change.
+- **B1b JS workflow steps** — the CRM's `sales-pipeline.yml` uses inline JS; needs a JS step
+  runtime (the Javy plugin system is the foundation). Large feature.
+- **Relationship `relationships`-block reading** — `resolve_includes` is convention-based and
+  works for the CRM (C1); making it schema-driven needs a new `Model.relationships` type +
+  parser + rewrite with **zero CRM-visible payoff**. Deferred deliberately.
+- **S3b per-user tenant binding** — no `users.tenant_id`; needs a user→tenant data model + JWT claim.
+- **S3c event-store tenant scoping + PG row-level-security**.
+- **AI/pgvector (D2)** — needs the pgvector extension + an embedding provider; not available
+  locally but **runs in CI** (the CI Postgres is `pgvector/pgvector`).
+- **OAuth token round-trip (D3)** — needs a mock IdP; the authorize-URL slice is tested.
+- **CLI migrate/codegen smoke (D4)** — heavier (DB / full parser); `init` is smoke-tested.
+- **`exists:` validation rule** — deferred to FK constraints (DB enforces referential integrity).
+- LOW-risk cache polish (find_unique uncached, no eviction, Debug keys).
 
 ## Status legend
 
@@ -83,15 +101,15 @@ after Phase D — several (esp. data-layer RBAC) are real, others are acceptable
 | Pagination + where/orderBy | yes | ✅ fixed | C2: orderBy+limit+offset via CRM; **fixed cache-key collision** (page 2 returned page 1) |
 | Event sourcing + replay | yes | ✅ | C3: Deal Created→Updated→Updated→Deleted reconstructs via `entity_history` (`crm_deal_event_history_replays`); confirms B2 delete-event id fix |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
-| Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
+| Subscriptions (WebSocket) | yes | ✅ | S2 auth (connection_init JWT + read-gating) + S3a tenant-filter; SDK `SubscriptionBuilder` now filters by model+event-type (`stream_filters_by_model_and_event_type`) |
 | RBAC enforcement | yes | ✅ GraphQL + seam | S1: rules parsed from export-const-schema, `check_access` via shared `decide()`. Data-layer `client.enforce_access(model,action,role)` seam added + tested (`data_layer_enforce_access_gates_by_role`); **not yet auto-called** on every mutation (needs role threaded in) |
 | Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
 | Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | ✅ | C4: populate + invalidate-on-create confirmed via CRM (dogfood 7b). LOW polish deferred (find_unique uncached, no eviction) |
-| CQRS projections / aggregate | yes | 🟡 fixed | B2: Deleted removes rows (RETURNING id + per-id events); non-string columns stored via `value_to_text`. `projection_correctness` test. **Rebuild still truncate-no-replay** (deferred, operator action) |
+| CQRS projections / aggregate | yes | ✅ | B2: Deleted removes rows; non-string columns via `value_to_text`; B2a rebuild now replays from `event_log` (`projection_correctness` 2 tests) |
 | AI / pgvector | partial | 🔒 infra | D2: **blocked** — needs pgvector extension + embedding provider, not available locally |
-| Multi-tenant (RLS) | yes | 🟡 core+ | S3+D1: tenant_id generated; read AND write scoping proven (`test_two_tenant_isolation`). Deferred: subscription tenant-filter, per-user binding, PG-RLS |
+| Multi-tenant (RLS) | yes | 🟡 core+ | S3+D1: tenant_id generated; read/write scoping + S3a subscription tenant-filter done. Deferred: per-user binding (S3b), PG-RLS (S3c) |
 | OAuth/OIDC | no (needs mock IdP) | 🟡 partial | D3: authorize-URL params unit-tested; token round-trip needs a mock IdP (deferred) |
 | Rate limiting | infra | ✅ | `middleware.rs` |
 | CLI (init/dev/migrate/codegen) | no (process-level) | 🟡 init | D4: `init` scaffold smoke-tested via the built binary; migrate/codegen/dev deferred (heavier) |
@@ -167,9 +185,9 @@ targets is the bulk of the work.
   `x-tenant-id` is now only honored for **authenticated** requests (was: anyone could claim any
   tenant). Test: `test_two_tenant_isolation` (A and B each see only their own rows).
   **Deferred (documented, not done):**
-  - [ ] S3a. **Subscription tenant-filtering** — `model_changes` filters by model only; events
-    still leak across tenants on the WS stream. Needs TenantCtx threaded into the subscription
-    filter (the WS handler can inject it from a tenant in connection_init).
+  - [x] S3a. **Subscription tenant-filtering** (✅ done): `model_changes` now filters events by the
+    subscriber's `TenantCtx` (injected from the WS connection_init `tenant` field); None = unscoped.
+    Cross-tenant real-time leak closed.
   - [ ] S3b. **Per-user tenant binding** — there is no `tenant_id` on users to validate the header
     against, so a user can still claim *any* tenant (just not anonymously). Real validation needs
     a user→tenant data model (users.tenant_id + JWT claim). Substantial; separate feature.
@@ -193,9 +211,9 @@ targets is the bulk of the work.
   per affected id (was empty data → row never removed). (2) ✅ non-string columns stored correctly
   — projection binds via `value_to_text` (was `as_str().unwrap_or_default()` → numerics became `""`).
   Test: `projection_correctness` (numeric `value` stored as "50000"; delete removes the row).
-  - [ ] B2a. **Rebuild still truncate-only (no replay)** — `TableProjection::rebuild` only
-    `TRUNCATE`s; true replay needs the event store fed into the projection (signature only has
-    `pool`). Operator action, not silent corruption — deferred.
+  - [x] B2a. **Rebuild now replays** (✅ done): `TableProjection::rebuild` TRUNCATEs then replays
+    the model's events from `event_log` via the same `handle_event` path (test
+    `rebuild_replays_from_event_log`). Was truncate-only (silently emptied the read model).
 - [x] B3. **Update-aware validation** (✅ done): `validate_partial` only checks rules for fields
   present in the patch, enforced in `update_many` after `before_update`. A stage-only update no
   longer trips `title: required`, but setting `title: ""` is still rejected. Tests: 3 unit
