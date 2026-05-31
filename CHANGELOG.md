@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server**: Input validation enforcement (required, email, min, max, numeric)
 - **Projectors**: ProjectorManager with event stream listener
 
+### Added (Integration & Wiring)
+- **Schema**: Validation rules parsed from `schema.ts` (brace-balanced, handles nested access/relationships blocks) and enforced in create mutation
+- **Plugins**: `WasmHookRunner` bridges loaded WASM plugins into the CRUD before/after hook lifecycle
+- **Server**: WASM plugins auto-discovered from `plugins/` at boot
+- **Server**: CQRS projector and workflow event listeners started at server boot
+- **Auth**: OAuth callback now find-or-creates a user and issues a JWT session
+- **Client**: `event_receiver()` accessor exposing the model-event broadcast stream
+
 ### Changed
 - 无
 
@@ -61,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复 GraphQL 标量特征实现
 - 修复 handlebars 模板类型兼容性
 - 修复编译错误和依赖冲突
+- Migration table names now match the SQL builder's pluralized convention (was `test_user` vs `test_users`)
+- Generated `id`/primary-key columns get `PRIMARY KEY DEFAULT gen_random_uuid()`; `created_at`/`updated_at` default to `NOW()`
+- UUID-shaped strings bound as native `uuid` to fix `operator does not exist: uuid = text`
+- `event_log.timestamp` stored as `TEXT` to match `ModelEvent` RFC3339 string (events were being silently dropped)
+- Validation rule extraction regex replaced with brace-balanced parser (rules in nested model blocks were never matched)
 
 ### Security
 - 无

@@ -18,17 +18,18 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforcement in resolvers, OAuth2/OIDC SSO
 - Audit logs: ✅ REST endpoints + platform GraphQL
 - TypeScript SDK: ✅ types, React hooks, offline queue with sync-on-reconnect
-- WASM plugin runtime: ✅ fuel metering, permission-checked host functions, plugin lifecycle, CRUD hooks
+- WASM plugin runtime: ✅ fuel metering, permission-checked host functions, plugin lifecycle, CRUD hooks wired at boot
 - Real-time: ✅ GraphQL subscriptions over WebSocket with model filtering
-- Event sourcing: ✅ event_log persistence, replay, entity history, CQRS projections
+- Event sourcing: ✅ event_log persistence, replay, entity history, CQRS projections (listeners started at boot)
 - AI: ✅ pgvector EmbeddingStore with similarity search
 - Multi-tenant: ✅ TenantCtx with row-level isolation
-- Workflow engine: ✅ triggers, conditions, retry policies, event-driven execution
+- Workflow engine: ✅ triggers, conditions, retry policies, event-driven listener started at boot
 - Caching: ✅ read cache with TTL and event-driven invalidation
 - Rate limiting: ✅ per-IP token bucket middleware
 - Observability: ✅ structured tracing with request ID propagation
-- Validation: ✅ required, email, min, max, numeric enforcement
+- Validation: ✅ rules parsed from schema.ts and enforced (required, email, min, max, numeric)
 - Soft deletes: ✅ automatic query filtering, deleted_at column
+- Verification: ✅ CRUD → event store → subscription pipeline tested against PostgreSQL (4 integration tests)
 
 ## Implemented Highlights
 
