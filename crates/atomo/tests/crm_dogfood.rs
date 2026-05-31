@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use atomo::query::{WhereClause, WhereOperator};
+use atomo::query::{OrderDirection, WhereClause, WhereOperator};
 use serde_json::{json, Value};
 
 fn crm_schema_path() -> String {
@@ -132,6 +132,37 @@ async fn crm_schema_drives_the_platform() {
         .create("Company", &rec(&[("name", json!(""))]), &[], None)
         .await;
     assert!(bad_company.is_err(), "empty required name should fail validation");
+
+    // 7. Pagination + orderBy via CRM. Add a second, higher-value deal, then order by value DESC
+    //    with limit 1 → the bigger deal comes first.
+    c.create("Deal", &rec(&[("title", json!("Big deal")), ("value", json!(99000)), ("stage", json!("lead")), ("position", json!(1)), ("contactId", json!(contact_id))]), &[], None)
+        .await
+        .expect("create second Deal");
+    let top = c
+        .find_many("Deal", &[], &[("value".into(), OrderDirection::Desc)], Some(1), None, &[])
+        .await
+        .expect("orderBy+limit query");
+    assert_eq!(top.len(), 1, "limit 1 returns one row");
+    assert_eq!(top[0].get("title").and_then(|v| v.as_str()), Some("Big deal"), "orderBy value DESC returns the biggest first");
+    // offset 1 → the second (smaller) deal.
+    let next = c
+        .find_many("Deal", &[], &[("value".into(), OrderDirection::Desc)], Some(1), Some(1), &[])
+        .await
+        .expect("orderBy+offset query");
+    assert_eq!(next[0].get("title").and_then(|v| v.as_str()), Some("Acme renewal"), "offset paginates");
+
+    // 8. Soft-delete lifecycle via CRM: delete the first Deal → hidden from find_many, present in
+    //    trash, then restore → visible again.
+    let deleted = c.delete_many("Deal", &[eq("id", json!(deal_id))], None).await.expect("soft delete");
+    assert_eq!(deleted, 1, "one deal soft-deleted");
+    let live = c.find_many("Deal", &[], &[], None, None, &[]).await.unwrap();
+    assert!(!live.iter().any(|d| d.get("id").and_then(|v| v.as_str()) == Some(deal_id.as_str())), "soft-deleted deal hidden");
+    let trashed = c.find_deleted("Deal", &[], &[], None, None).await.expect("trash view");
+    assert!(trashed.iter().any(|d| d.get("id").and_then(|v| v.as_str()) == Some(deal_id.as_str())), "deleted deal in trash");
+    let restored = c.restore_many("Deal", &[eq("id", json!(deal_id))]).await.expect("restore");
+    assert_eq!(restored, 1, "one deal restored");
+    let live2 = c.find_many("Deal", &[], &[], None, None, &[]).await.unwrap();
+    assert!(live2.iter().any(|d| d.get("id").and_then(|v| v.as_str()) == Some(deal_id.as_str())), "restored deal visible again");
 
     // Cleanup the tables this test generated.
     for t in ["deal", "contact", "company", "activity"] {

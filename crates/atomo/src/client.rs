@@ -91,8 +91,13 @@ impl AtomoClient {
         offset: Option<usize>,
         include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
-        let cache_key =
-            crate::cache::ReadCache::key(model_name, &format!("{:?}{:?}", where_clauses, order_by));
+        // Include limit/offset in the key — otherwise two queries that differ ONLY in pagination
+        // collide and the second returns the first's cached rows (page 2 == page 1). Bug caught
+        // by the CRM dogfood (orderBy + offset).
+        let cache_key = crate::cache::ReadCache::key(
+            model_name,
+            &format!("{:?}{:?}{:?}{:?}", where_clauses, order_by, limit, offset),
+        );
         if let Some(cached) = self.cache.get(&cache_key).await {
             if let Ok(records) = serde_json::from_value(cached) {
                 return Ok(records);

@@ -39,8 +39,8 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | CRUD | yes | ✅ | `crm_dogfood` + `integration_test` |
 | Validation rules | yes | ✅ | data-layer enforced on create + update (update-aware via `validate_partial`); `exists:` deferred to FKs |
 | Relationships (belongsTo/hasMany) | yes | ✅ CRM | C1: `include` resolves contact.company + contact.deals (nested), proven in dogfood. Latent: convention-based, ignores the declared `relationships` block (works only when rel name == model name) |
-| Soft delete / restore / hard delete | yes | 🟡 | synthetic only |
-| Pagination + where/orderBy | yes | 🟡 | synthetic (Note) only |
+| Soft delete / restore / hard delete | yes | ✅ | C2: full delete→trash→restore lifecycle via CRM Deals |
+| Pagination + where/orderBy | yes | ✅ fixed | C2: orderBy+limit+offset via CRM; **fixed cache-key collision** (page 2 returned page 1) |
 | Event sourcing + replay | yes | 🟡 | synthetic only |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
 | Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
@@ -179,7 +179,12 @@ targets is the bulk of the work.
   model. Fixing = make `resolve_includes` read the `relationships` block (needs parsing it from
   the export-const-schema first — same parser-format family as access/validation). Deferred: no
   CRM-visible payoff.
-- [ ] C2. Soft-delete / restore / pagination / orderBy re-driven through CRM models
+- [x] C2. **Soft-delete/restore/pagination/orderBy via CRM** (✅ done — **found+fixed a real bug**):
+  the dogfood now exercises orderBy(value DESC)+limit+offset and the full soft-delete→trash→restore
+  lifecycle on Deals. **Bug caught**: the `find_many` cache key was `{where}{orderBy}` and omitted
+  `limit`/`offset`, so two queries differing only in pagination collided — **page 2 returned page 1's
+  rows**. A silent correctness hazard for every paginated view (Kanban, lists). Fixed: key now
+  includes limit+offset. (Soft-delete/restore/orderBy themselves worked.)
 - [ ] C3. Event sourcing + replay over CRM mutations (rebuild a Deal's history)
 - [ ] C4. Cache conformance (find_many cached/invalidated) + the LOW-risk cache polish
 
