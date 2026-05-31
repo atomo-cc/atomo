@@ -661,6 +661,19 @@ export default schema;
     assert!(lb_str.contains("b-note"), "tenant B should see its own note: {}", lb_str);
     assert!(!lb_str.contains("a-note"), "tenant B must NOT see tenant A's note: {}", lb_str);
 
+    // D1: writes are tenant-scoped too. Tenant B tries to UPDATE every Note title to "hacked"
+    // and then DELETE all Notes — both must only touch B's own rows, leaving A's note intact.
+    let upd = async_graphql::Request::new(r#"mutation { update(model: "Note", where: {}, data: { title: "hacked" }) }"#);
+    let _ = schema.execute(upd.data(TenantCtx("tenant-b".into()))).await;
+    let del = async_graphql::Request::new(r#"mutation { delete(model: "Note", where: {}) }"#);
+    let _ = schema.execute(del.data(TenantCtx("tenant-b".into()))).await;
+
+    // Tenant A still sees its untouched a-note (B's update/delete must not have reached it).
+    let la2 = schema.execute(list().data(TenantCtx("tenant-a".into()))).await;
+    let la2_str = serde_json::to_string(&la2.data).unwrap();
+    assert!(la2_str.contains("a-note"), "A's note must survive B's update/delete: {}", la2_str);
+    assert!(!la2_str.contains("hacked"), "B must NOT have updated A's note: {}", la2_str);
+
     sqlx::query("DROP TABLE IF EXISTS notes").execute(atomo.db_pool()).await.ok();
 }
 

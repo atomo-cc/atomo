@@ -284,3 +284,33 @@ pub async fn oauth_providers(State(oauth): State<OAuthManager>) -> Json<Vec<Stri
             .collect(),
     )
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // D3 (infra-free slice): the authorization URL must carry the security-relevant params —
+    // client_id, redirect_uri, response_type=code, scope, and the CSRF state. A full token
+    // round-trip needs a mock IdP (deferred); this proves the request we send is well-formed.
+    #[test]
+    fn authorize_url_contains_required_params() {
+        let p = OAuthProvider {
+            name: "google".into(),
+            client_id: "cid-123".into(),
+            client_secret: "secret".into(),
+            auth_url: "https://accounts.example.com/o/oauth2/auth".into(),
+            token_url: "https://example.com/token".into(),
+            userinfo_url: "https://example.com/userinfo".into(),
+            redirect_uri: "http://localhost:3000/auth/callback/google".into(),
+            scopes: vec!["openid".into(), "email".into()],
+        };
+        let url = p.authorize_url("csrf-state-xyz");
+        assert!(url.starts_with("https://accounts.example.com/o/oauth2/auth?"), "base auth_url: {}", url);
+        assert!(url.contains("client_id=cid-123"), "client_id missing: {}", url);
+        assert!(url.contains("response_type=code"), "response_type missing: {}", url);
+        assert!(url.contains("state=csrf-state-xyz"), "CSRF state missing: {}", url);
+        assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback%2Fgoogle"), "redirect not encoded: {}", url);
+        assert!(url.contains("scope=openid%20email"), "scopes not encoded: {}", url);
+    }
+}

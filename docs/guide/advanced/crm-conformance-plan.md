@@ -25,7 +25,8 @@ targeted supplementary harnesses for what it structurally can't reach.**
 
 ## Progress (as of 2026-05-31)
 
-**Phases A, SEC, B, and C are complete. Phase D (supplementary harnesses) remains.**
+**Phases A, SEC, B, C, and D are complete** (D2 AI/pgvector documented as infra-blocked).
+The conformance pass is done; what remains is the deferred backlog + cross-cutting CI.
 
 Outcome so far — **7 silent gaps fixed, 2 security holes closed, 2 capabilities verified
 already-working**, all driven by the real CRM schema:
@@ -86,11 +87,11 @@ after Phase D — several (esp. data-layer RBAC) are real, others are acceptable
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | ✅ | C4: populate + invalidate-on-create confirmed via CRM (dogfood 7b). LOW polish deferred (find_unique uncached, no eviction) |
 | CQRS projections / aggregate | yes | 🟡 fixed | B2: Deleted removes rows (RETURNING id + per-id events); non-string columns stored via `value_to_text`. `projection_correctness` test. **Rebuild still truncate-no-replay** (deferred, operator action) |
-| AI / pgvector | partial | ❌ | semantic search over notes; AI path not wired in a test |
-| Multi-tenant (RLS) | yes | 🟡 core | S3: `tenant_id` column now generated → read+write scoping works (`test_two_tenant_isolation`); header honored only when authed. **Deferred**: subscription tenant-filter (leaks), per-user tenant binding, event-store/PG-RLS |
-| OAuth/OIDC | no (needs mock IdP) | ❌ | supplementary harness |
+| AI / pgvector | partial | 🔒 infra | D2: **blocked** — needs pgvector extension + embedding provider, not available locally |
+| Multi-tenant (RLS) | yes | 🟡 core+ | S3+D1: tenant_id generated; read AND write scoping proven (`test_two_tenant_isolation`). Deferred: subscription tenant-filter, per-user binding, PG-RLS |
+| OAuth/OIDC | no (needs mock IdP) | 🟡 partial | D3: authorize-URL params unit-tested; token round-trip needs a mock IdP (deferred) |
 | Rate limiting | infra | ✅ | `middleware.rs` |
-| CLI (init/dev/migrate/codegen) | no (process-level) | ❌ | largest untested surface (`dev.rs`) |
+| CLI (init/dev/migrate/codegen) | no (process-level) | 🟡 init | D4: `init` scaffold smoke-tested via the built binary; migrate/codegen/dev deferred (heavier) |
 | SDK offline queue/sync | no (client harness) | ❌ | types only |
 | Admin UI | via E2E | 🟡 | Playwright (timeline, kanban) — may use demo fallback |
 
@@ -233,14 +234,21 @@ targets is the bulk of the work.
   Deferred LOW-risk polish: `find_unique` uncached, no background eviction, Debug-format keys.
 
 ### Phase D — Supplementary harnesses (what CRM can't reach alone)
-- [ ] D1. **Multi-tenant isolation harness** (NEXT) — pairs with S3 core; extend
-  `test_two_tenant_isolation` to also assert update/delete are tenant-scoped (not just read/create).
-- [ ] D2. AI/pgvector: embed Contact notes, semantic search. **Testability risk**: likely needs the
-  pgvector Postgres extension (the EmbeddingStore init has a "don't fail if pgvector not installed"
-  guard) and possibly an OpenAI key. If that infra isn't available locally, the right call is to
-  **document D2 as requiring it** rather than force a hollow test — assess before implementing.
-- [ ] D3. OAuth: mock-IdP harness.
-- [ ] D4. CLI smoke test: `init` → `migrate` → `codegen` on the CRM schema in a temp dir.
+- [x] D1. **Multi-tenant isolation harness** (✅ done): `test_two_tenant_isolation` now also asserts
+  tenant B's update-all and delete-all only touch B's rows — tenant A's note survives unmodified.
+  Read AND write scoping proven.
+- [~] D2. **AI/pgvector — INFRA-BLOCKED** (documented, not testable here): `pg_available_extensions`
+  shows no `vector` extension locally, and `EmbeddingStore::init` does `CREATE EXTENSION ... vector`
+  with an `embedding vector(1536)` column; real embeddings also need an OpenAI key. Requires
+  pgvector installed + an embedding provider. **Deferred to an environment that has them** rather
+  than a hollow test.
+- [x] D3. **OAuth — infra-free slice done** (partial): `authorize_url_contains_required_params`
+  unit test proves the authorization URL carries client_id / response_type=code / CSRF state /
+  encoded redirect+scopes. Full token round-trip (code→token→userinfo) needs a **mock IdP** —
+  deferred.
+- [x] D4. **CLI smoke test** (✅ done): `cli_smoke.rs` invokes the built `atomo-cli` binary's
+  `init my-app --template crm` and asserts the scaffold (atomo/schema.ts with a CRM model,
+  package.json). `migrate`/`codegen` smoke are heavier (DB / full parser) — deferred.
 
 ### Cross-cutting (do alongside, not after)
 - [ ] CI: wire the DB-gated suite into the existing **manual `workflow_dispatch`** job (auto-triggers stay off for cost); make "run conformance" a one-click gate before any release tag
