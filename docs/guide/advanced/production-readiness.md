@@ -16,6 +16,9 @@ Security & Auth
   - Argon2id hashing (bcrypt hashes still verified for migration); enforce minimum length and complexity
   - Env: `PASSWORD_MIN_LENGTH`, `PASSWORD_REQUIRE_COMPLEXITY`
   - Consider 2FA for Admin; add refresh-token flow
+- Admin bootstrap
+  - On first boot, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` to seed an initial admin (idempotent; skips if the email exists)
+  - Use a strong password from your secret manager; rotate or change it in-app after first login (re-running with new env values does NOT overwrite an existing user)
 - RBAC enforcement
   - Centralize permission checks; review CRUD and audit routes
   - Deny-by-default for unrecognized actions/resources
