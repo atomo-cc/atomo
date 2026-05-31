@@ -145,6 +145,23 @@ impl SqlBuilder {
         });
         Self::select(model, &clauses, order_by, limit, offset)
     }
+
+    /// Build SELECT for only soft-deleted records (deleted_at IS NOT NULL).
+    pub fn select_deleted(
+        model: &Model,
+        where_clauses: &[WhereClause],
+        order_by: &[(String, OrderDirection)],
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> (String, Vec<Value>) {
+        let mut clauses = where_clauses.to_vec();
+        clauses.push(WhereClause {
+            field: "deleted_at".to_string(),
+            operator: WhereOperator::IsNotNull,
+            value: Value::Null,
+        });
+        Self::select(model, &clauses, order_by, limit, offset)
+    }
 }
 
 fn to_snake_case(s: &str) -> String {

@@ -218,6 +218,35 @@ impl Query {
         Ok(result)
     }
 
+    /// List soft-deleted records (the "trash" view).
+    async fn deleted_records(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+        #[graphql(name = "where")] where_: Option<Value>,
+        #[graphql(name = "orderBy")] order_by: Option<Value>,
+        limit: Option<i32>,
+        offset: Option<i32>,
+    ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
+        check_access(&self.schema, &model, "read", ctx)?;
+        let where_clauses = where_.as_ref().map(parse_where).unwrap_or_default();
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let where_clauses =
+            crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let orders = order_by.as_ref().map(parse_order_by).unwrap_or_default();
+        let result = self
+            .client
+            .find_deleted(
+                &model,
+                &where_clauses,
+                &orders,
+                limit.map(|l| l as usize),
+                offset.map(|o| o as usize),
+            )
+            .await?;
+        Ok(result)
+    }
+
     /// Get a single record by ID
     async fn record(
         &self,

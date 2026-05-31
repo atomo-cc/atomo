@@ -119,6 +119,27 @@ impl AtomoClient {
         Ok(records)
     }
 
+    /// Find only soft-deleted records (the "trash" view). Not cached.
+    pub async fn find_deleted(
+        &self,
+        model_name: &str,
+        where_clauses: &[WhereClause],
+        order_by: &[(String, OrderDirection)],
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<HashMap<String, Value>>> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+        let (sql, params) =
+            SqlBuilder::select_deleted(model, where_clauses, order_by, limit, offset);
+        let args = build_args(&params)?;
+        let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
+        Ok(rows.iter().map(row_to_map).collect())
+    }
+
     /// Find a unique record
     pub async fn find_unique(
         &self,

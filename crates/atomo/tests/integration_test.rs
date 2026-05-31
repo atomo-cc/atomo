@@ -378,10 +378,14 @@ async fn test_restore_and_hard_delete() {
     // Soft delete -> hidden
     assert_eq!(client.delete_many("TestUser", &where_clauses, None).await.unwrap(), 1);
     assert!(client.find_many("TestUser", &where_clauses, &[], None, None, &[]).await.unwrap().is_empty());
+    // ...but visible in the trash (find_deleted)
+    assert_eq!(client.find_deleted("TestUser", &where_clauses, &[], None, None).await.unwrap().len(), 1);
 
     // Restore -> visible again
     assert_eq!(client.restore_many("TestUser", &where_clauses).await.unwrap(), 1);
     assert_eq!(client.find_many("TestUser", &where_clauses, &[], None, None, &[]).await.unwrap().len(), 1);
+    // ...and no longer in the trash
+    assert!(client.find_deleted("TestUser", &where_clauses, &[], None, None).await.unwrap().is_empty());
 
     // Hard delete -> gone permanently (count of affected rows == 1)
     assert_eq!(client.hard_delete_many("TestUser", &where_clauses).await.unwrap(), 1);
