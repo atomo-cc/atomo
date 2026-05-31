@@ -34,12 +34,15 @@ impl JsRuntime {
         Ok(Self { engine, fuel_limit })
     }
 
-    /// Run a Javy-compiled JS plugin: write `input_json` to its stdin, execute, and
-    /// return whatever it wrote to stdout (expected to be JSON). Fuel-metered.
-    pub fn run_js_plugin<P: AsRef<Path>>(&self, wasm_path: P, input_json: &str) -> Result<String> {
-        let module = Module::from_file(&self.engine, wasm_path)
-            .context("failed to load JS plugin wasm")?;
+    /// Compile a Javy-built `.wasm` to a reusable `Module`. Do this once at load time;
+    /// `Module` is cheap to clone and re-run, avoiding per-call recompilation.
+    pub fn compile<P: AsRef<Path>>(&self, wasm_path: P) -> Result<Module> {
+        Module::from_file(&self.engine, wasm_path).context("failed to load JS plugin wasm")
+    }
 
+    /// Run a pre-compiled JS plugin module with `input_json` on stdin; returns stdout.
+    /// A fresh fuel-metered store + WASI context is created per call (isolated state).
+    pub fn run_module(&self, module: &Module, input_json: &str) -> Result<String> {
         let stdin = wasi_common::pipe::ReadPipe::from(input_json.to_string());
         let stdout = wasi_common::pipe::WritePipe::new_in_memory();
 
@@ -55,7 +58,7 @@ impl JsRuntime {
         let mut store = Store::new(&self.engine, JsState { wasi });
         store.set_fuel(self.fuel_limit)?;
 
-        let instance = linker.instantiate(&mut store, &module)?;
+        let instance = linker.instantiate(&mut store, module)?;
         let start = instance
             .get_typed_func::<(), ()>(&mut store, "_start")
             .context("JS plugin missing `_start` export (not a Javy module?)")?;
@@ -70,5 +73,12 @@ impl JsRuntime {
             .map_err(|_| anyhow::anyhow!("stdout still referenced"))?
             .into_inner();
         String::from_utf8(bytes).context("JS plugin stdout was not valid UTF-8")
+    }
+
+    /// Convenience: compile + run in one call (recompiles each time — prefer
+    /// `compile` once + `run_module` per call on hot paths).
+    pub fn run_js_plugin<P: AsRef<Path>>(&self, wasm_path: P, input_json: &str) -> Result<String> {
+        let module = self.compile(wasm_path)?;
+        self.run_module(&module, input_json)
     }
 }

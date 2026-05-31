@@ -9,8 +9,8 @@ pub struct WasmPluginManager {
     runtime: WasmRuntime,
     js_runtime: JsRuntime,
     plugins: HashMap<String, WasmPlugin>,
-    /// JS (Javy) plugins: name -> compiled .wasm path (re-run per hook call).
-    js_plugins: HashMap<String, PathBuf>,
+    /// JS (Javy) plugins: name -> pre-compiled module (re-run per hook call, no recompile).
+    js_plugins: HashMap<String, wasmtime::Module>,
     plugin_dir: PathBuf,
 }
 
@@ -54,7 +54,8 @@ impl WasmPluginManager {
         match manifest.runtime {
             PluginRuntime::Js => {
                 info!(plugin = %name, "Loading JS plugin");
-                self.js_plugins.insert(name.clone(), wasm_path);
+                let module = self.js_runtime.compile(&wasm_path)?;
+                self.js_plugins.insert(name.clone(), module);
             }
             PluginRuntime::Wasm => {
                 info!(plugin = %name, "Loading WASM plugin");
@@ -90,13 +91,13 @@ impl WasmPluginManager {
         hook: &str,
         input_json: &str,
     ) -> Result<Option<String>> {
-        if let Some(wasm_path) = self.js_plugins.get(plugin_name) {
+        if let Some(module) = self.js_plugins.get(plugin_name) {
             let envelope = serde_json::json!({
                 "hook": hook,
                 "record": serde_json::from_str::<serde_json::Value>(input_json).unwrap_or(serde_json::Value::Null),
             })
             .to_string();
-            let out = self.js_runtime.run_js_plugin(wasm_path, &envelope)?;
+            let out = self.js_runtime.run_module(module, &envelope)?;
             let trimmed = out.trim();
             if trimmed.is_empty() {
                 return Ok(None);
