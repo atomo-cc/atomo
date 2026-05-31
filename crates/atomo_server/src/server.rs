@@ -34,14 +34,22 @@ impl AtomoServer {
     pub async fn new(config: ServerConfig) -> Result<Self> {
         info!("📊 Loading schema from: {}", config.schema_path);
         
-        // Initialize Atomo from schema file
-        let atomo = Atomo::builder()
+        // Discover WASM plugins and bridge them into the CRUD hook lifecycle
+        let mut plugin_manager = crate::wasm_plugins::WasmPluginManager::new("plugins")?;
+        let loaded = plugin_manager.discover_and_load().await.unwrap_or_default();
+        let mut builder = Atomo::builder()
             .schema_file(&config.schema_path)
             .database_url(&config.database_url)
             .enable_migrations(true)
-            .enable_ai(config.enable_ai)
-            .build()
-            .await?;
+            .enable_ai(config.enable_ai);
+        if !loaded.is_empty() {
+            info!("🔌 Loaded {} WASM plugin(s): {:?}", loaded.len(), loaded);
+            let manager = std::sync::Arc::new(tokio::sync::Mutex::new(plugin_manager));
+            builder = builder.hook_runner(std::sync::Arc::new(
+                crate::wasm_hooks::WasmHookRunner::new(manager),
+            ));
+        }
+        let atomo = builder.build().await?;
         
         Ok(Self { config, atomo })
     }
@@ -86,6 +94,32 @@ impl AtomoServer {
         };
         let auth_service = crate::auth::HttpAuthService::new(&jwt_secret, self.atomo.db_pool().clone());
         let audit_service = crate::audit::HttpAuditService::new(self.atomo.db_pool().clone());
+
+        // Start CQRS projector listener: convert ModelEvent -> ProjectorEvent and feed projections
+        {
+            use atomo_projectors::{ProjectorManager, ProjectorEvent};
+            let manager = std::sync::Arc::new(ProjectorManager::new(self.atomo.db_pool().clone()));
+            let (proj_tx, proj_rx) = tokio::sync::broadcast::channel::<ProjectorEvent>(1000);
+            manager.start_event_listener(proj_rx);
+            let mut model_rx = self.atomo.event_receiver();
+            tokio::spawn(async move {
+                while let Ok(ev) = model_rx.recv().await {
+                    let _ = proj_tx.send(ProjectorEvent {
+                        event_type: format!("{:?}", ev.event_type),
+                        model_name: ev.model_name,
+                        data: ev.data,
+                    });
+                }
+            });
+            info!("   ✓ CQRS projector listener started");
+        }
+
+        // Start workflow engine listener (workflows registered via API/config at runtime)
+        {
+            let engine = std::sync::Arc::new(atomo::workflow::WorkflowEngine::new());
+            engine.start_event_listener(self.atomo.event_receiver());
+            info!("   ✓ Workflow event listener started");
+        }
 
         // Build CORS layer from configured origins
         let cors_layer = {

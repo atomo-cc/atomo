@@ -241,10 +241,14 @@ impl Mutation {
             data.insert("tenant_id".to_string(), Value::String(t.0.clone()));
         }
         if let Some(model_def) = self.schema.models.get(&model) {
-            let rules: HashMap<String, String> = model_def.fields.iter()
-                .filter(|(_, f)| !f.optional && f.name != "id" && f.name != "createdAt" && f.name != "updatedAt")
-                .map(|(name, _)| (name.clone(), "required".to_string()))
-                .collect();
+            let rules: HashMap<String, String> = if !model_def.validation.is_empty() {
+                model_def.validation.clone()
+            } else {
+                model_def.fields.iter()
+                    .filter(|(_, f)| !f.optional && f.name != "id" && f.name != "createdAt" && f.name != "updatedAt")
+                    .map(|(name, _)| (name.clone(), "required".to_string()))
+                    .collect()
+            };
             let errors = crate::validation::validate(&data, &rules);
             if !errors.is_empty() {
                 let field_errors: Vec<FieldError> = errors.into_iter().map(|e| FieldError {

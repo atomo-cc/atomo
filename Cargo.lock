@@ -449,6 +449,7 @@ dependencies = [
  "async-trait",
  "atomo",
  "atomo_core",
+ "atomo_projectors",
  "atomo_wasm_runtime",
  "axum",
  "bcrypt",

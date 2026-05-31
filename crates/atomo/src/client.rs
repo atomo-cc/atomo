@@ -301,6 +301,11 @@ impl AtomoClient {
         self.event_sender.subscribe()
     }
 
+    /// Get a broadcast receiver for all model events (for projectors/workflows)
+    pub fn event_receiver(&self) -> broadcast::Receiver<ModelEvent> {
+        self.event_sender.subscribe()
+    }
+
     /// Resolve relationships for a record based on include list
     pub fn resolve_includes<'a>(
         &'a self,
@@ -361,6 +366,7 @@ pub struct AtomoClientBuilder {
     database_url: Option<String>,
     enable_migrations: bool,
     enable_ai: bool,
+    hook_runner: Option<Arc<dyn crate::hooks::HookRunner>>,
 }
 
 impl AtomoClientBuilder {
@@ -369,6 +375,7 @@ impl AtomoClientBuilder {
             database_url: None,
             enable_migrations: true,
             enable_ai: false,
+            hook_runner: None,
         }
     }
     
@@ -384,6 +391,11 @@ impl AtomoClientBuilder {
     
     pub fn enable_ai(mut self, enable: bool) -> Self {
         self.enable_ai = enable;
+        self
+    }
+
+    pub fn hook_runner(mut self, runner: Arc<dyn crate::hooks::HookRunner>) -> Self {
+        self.hook_runner = Some(runner);
         self
     }
     
@@ -420,7 +432,7 @@ impl AtomoClientBuilder {
             event_sender,
             event_store,
             embedding_store,
-            hook_runner: Arc::new(crate::hooks::NoopHookRunner),
+            hook_runner: self.hook_runner.unwrap_or_else(|| Arc::new(crate::hooks::NoopHookRunner)),
             cache: crate::cache::ReadCache::new(60),
         })
     }

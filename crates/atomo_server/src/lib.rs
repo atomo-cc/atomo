@@ -25,6 +25,7 @@ pub mod schema_metadata;
 pub mod model_registry;
 pub mod plugins;
 pub mod wasm_plugins;
+pub mod wasm_hooks;
 
 pub use config::*;
 pub use server::*;

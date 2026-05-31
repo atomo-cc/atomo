@@ -39,6 +39,7 @@ impl DslParser {
                 fields: HashMap::new(), // Fields will be filled from interfaces
                 access,
                 hooks,
+                validation: HashMap::new(),
             });
         }
         

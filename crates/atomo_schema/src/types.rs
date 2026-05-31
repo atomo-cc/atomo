@@ -12,6 +12,8 @@ pub struct Model {
     pub fields: HashMap<String, Field>,
     pub access: Option<AccessControl>,
     pub hooks: Option<HookDefinitions>,
+    #[serde(default)]
+    pub validation: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

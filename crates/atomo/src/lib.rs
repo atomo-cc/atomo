@@ -153,6 +153,11 @@ impl Atomo {
     pub fn db_pool(&self) -> &sqlx::PgPool {
         self.client.db_pool()
     }
+
+    /// Get a broadcast receiver for model events (for projectors/workflows)
+    pub fn event_receiver(&self) -> tokio::sync::broadcast::Receiver<events::ModelEvent> {
+        self.client.event_receiver()
+    }
 }
 
 /// Builder for Atomo configuration
@@ -162,6 +167,7 @@ pub struct AtomoBuilder {
     schema_file: Option<String>,
     enable_migrations: bool,
     enable_ai: bool,
+    hook_runner: Option<Arc<dyn hooks::HookRunner>>,
 }
 
 impl AtomoBuilder {
@@ -172,7 +178,14 @@ impl AtomoBuilder {
             schema_file: None,
             enable_migrations: true,
             enable_ai: false,
+            hook_runner: None,
         }
+    }
+
+    /// Set a custom hook runner (e.g. WASM plugin bridge)
+    pub fn hook_runner(mut self, runner: Arc<dyn hooks::HookRunner>) -> Self {
+        self.hook_runner = Some(runner);
+        self
     }
     
     pub fn database_url(mut self, url: impl Into<String>) -> Self {
@@ -212,6 +225,9 @@ impl AtomoBuilder {
         
         if let Some(url) = self.database_url {
             client_builder = client_builder.database_url(url);
+        }
+        if let Some(runner) = self.hook_runner {
+            client_builder = client_builder.hook_runner(runner);
         }
         
         let client = client_builder

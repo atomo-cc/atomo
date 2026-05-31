@@ -55,7 +55,69 @@ impl TypeScriptParser {
             }
         }
         
+        // Fourth pass: parse validation rules from schema const and attach to models
+        let mut validation_map = Self::parse_validation_rules(content);
+        for model in &mut models {
+            if let Some(rules) = validation_map.remove(&model.name) {
+                model.validation = rules;
+            }
+        }
+        
         Ok(models)
+    }
+    
+    /// Extract per-model validation rules from the `export const schema` object
+    fn parse_validation_rules(content: &str) -> HashMap<String, HashMap<String, String>> {
+        let mut result: HashMap<String, HashMap<String, String>> = HashMap::new();
+        let field_rule_re = Regex::new(r"(\w+):\s*'([^']*)'").unwrap();
+        // Find each `ModelName: {` then, within its (brace-balanced) block, locate `validation: { ... }`.
+        let model_open_re = Regex::new(r"(\w+)\s*:\s*\{").unwrap();
+        let bytes = content.as_bytes();
+        for cap in model_open_re.captures_iter(content) {
+            let model_name = cap[1].to_string();
+            let block_start = cap.get(0).unwrap().end(); // just after the opening '{'
+            // Walk forward tracking brace depth to find this block's matching close.
+            let mut depth = 1usize;
+            let mut idx = block_start;
+            let mut val_block: Option<String> = None;
+            while idx < bytes.len() && depth > 0 {
+                match bytes[idx] {
+                    b'{' => {
+                        // Check if this is the start of a `validation: {` sub-block.
+                        let prefix = &content[..idx];
+                        if depth == 1 && prefix.trim_end().ends_with("validation:") {
+                            // Capture the balanced validation block.
+                            let mut d = 1usize;
+                            let mut j = idx + 1;
+                            let vstart = j;
+                            while j < bytes.len() && d > 0 {
+                                match bytes[j] {
+                                    b'{' => d += 1,
+                                    b'}' => d -= 1,
+                                    _ => {}
+                                }
+                                j += 1;
+                            }
+                            val_block = Some(content[vstart..j.saturating_sub(1)].to_string());
+                        }
+                        depth += 1;
+                    }
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                idx += 1;
+            }
+            if let Some(block) = val_block {
+                let mut rules = HashMap::new();
+                for field_cap in field_rule_re.captures_iter(&block) {
+                    rules.insert(field_cap[1].to_string(), field_cap[2].to_string());
+                }
+                if !rules.is_empty() {
+                    result.insert(model_name, rules);
+                }
+            }
+        }
+        result
     }
     
     /// Collect enum and type alias definitions
@@ -147,6 +209,7 @@ impl TypeScriptParser {
                 fields,
                 access: None,
                 hooks: None,
+                validation: HashMap::new(),
             });
         }
         
@@ -208,6 +271,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         fields,
         access: None, // Will be populated later by DSL parser
         hooks: None,  // Will be populated later by DSL parser
+        validation: HashMap::new(),
     };
     let lines_consumed = i - start_index + 1;
     
@@ -349,4 +413,33 @@ fn parse_type_alias(lines: &[&str], start_index: usize) -> Result<(String, Strin
     let lines_consumed = i - start_index + 1;
     let placeholder_definition = "any".to_string(); // Placeholder for complex types
     Ok((type_name, placeholder_definition, lines_consumed))
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    #[test]
+    fn parses_validation_with_nested_blocks() {
+        // Mirrors the real CRM schema: nested access/relationships blocks precede validation.
+        let content = r#"
+        export const schema = {
+          models: {
+            Contact: {
+              tableName: 'contacts',
+              access: { create: 'sales|manager', read: 'authenticated' },
+              relationships: { company: { type: 'belongsTo', model: 'Company' } },
+              validation: {
+                email: 'email',
+                firstName: 'required|min:1|max:100'
+              }
+            }
+          }
+        };
+        "#;
+        let rules = TypeScriptParser::parse_validation_rules(content);
+        let contact = rules.get("Contact").expect("Contact validation rules missing");
+        assert_eq!(contact.get("email").map(|s| s.as_str()), Some("email"));
+        assert_eq!(contact.get("firstName").map(|s| s.as_str()), Some("required|min:1|max:100"));
+    }
 }

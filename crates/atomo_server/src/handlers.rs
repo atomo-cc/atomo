@@ -202,7 +202,8 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
     use crate::auth::{auth_middleware, optional_auth_middleware, handlers};
     use axum::middleware;
 
-    let oauth_manager = crate::oauth::OAuthManager::from_env();
+    let oauth_manager = crate::oauth::OAuthManager::from_env()
+        .with_pool(atomo.db_pool().clone());
 
     let protected_routes = Router::new()
         .route("/graphql", post(graphql_handler))

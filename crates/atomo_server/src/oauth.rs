@@ -70,22 +70,64 @@ pub struct OAuthUserInfo {
 #[derive(Clone)]
 pub struct OAuthManager {
     providers: HashMap<String, OAuthProvider>,
+    pool: Option<sqlx::PgPool>,
+    jwt_secret: Option<String>,
 }
 
 impl OAuthManager {
     pub fn new() -> Self {
-        Self { providers: HashMap::new() }
+        Self { providers: HashMap::new(), pool: None, jwt_secret: None }
     }
 
     /// Load all configured providers from environment
     pub fn from_env() -> Self {
         let mut mgr = Self::new();
+        mgr.jwt_secret = std::env::var("JWT_SECRET").ok();
         for name in ["google", "github", "microsoft", "okta"] {
             if let Some(provider) = OAuthProvider::from_env(name) {
                 mgr.providers.insert(name.to_string(), provider);
             }
         }
         mgr
+    }
+
+    pub fn with_pool(mut self, pool: sqlx::PgPool) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    /// Find existing user by email or create a new one with viewer role
+    pub async fn find_or_create_user(&self, info: &OAuthUserInfo) -> Result<(String, String, String)> {
+        let pool = self.pool.as_ref().ok_or_else(|| anyhow::anyhow!("No database pool configured"))?;
+        let email = info.email.clone().unwrap_or_else(|| format!("{}@oauth.local", info.sub));
+        let existing = sqlx::query_as::<_, (String, String, String)>(
+            "SELECT id, email, role FROM users WHERE email = $1"
+        ).bind(&email).fetch_optional(pool).await?;
+        if let Some(row) = existing {
+            return Ok(row);
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let name = info.name.clone().unwrap_or_default();
+        sqlx::query(
+            "INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active, created_at, updated_at) VALUES ($1, $2, '', $3, '', 'viewer', true, NOW(), NOW())"
+        ).bind(&id).bind(&email).bind(&name).execute(pool).await?;
+        Ok((id, email, "viewer".to_string()))
+    }
+
+    /// Issue a JWT access token for the given user
+    pub fn issue_jwt(&self, user_id: &str, email: &str, role: &str) -> Result<String> {
+        use jsonwebtoken::{encode, Header, EncodingKey};
+        let secret = self.jwt_secret.clone().unwrap_or_else(|| "dev-insecure-secret".to_string());
+        let now = chrono::Utc::now();
+        let claims = serde_json::json!({
+            "sub": user_id,
+            "email": email,
+            "role": role,
+            "exp": (now + chrono::Duration::hours(24)).timestamp(),
+            "iat": now.timestamp(),
+            "jti": uuid::Uuid::new_v4().to_string(),
+        });
+        Ok(encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_ref()))?)
     }
 
     pub fn get_provider(&self, name: &str) -> Option<&OAuthProvider> {
@@ -166,11 +208,13 @@ pub async fn oauth_callback(
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
     let user_info = oauth.get_user_info(&provider_name, &tokens.access_token).await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    // In production: find-or-create user, issue JWT, return session
+    let (user_id, email, role) = oauth.find_or_create_user(&user_info).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let jwt = oauth.issue_jwt(&user_id, &email, &role)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(serde_json::json!({
-        "provider": provider_name,
-        "user": user_info,
-        "access_token": tokens.access_token,
+        "access_token": jwt,
+        "user": { "id": user_id, "email": email, "role": role }
     })))
 }
 
