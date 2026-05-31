@@ -25,6 +25,9 @@ use crate::schema::Schema;
 /// User role context data for RBAC checks
 pub struct UserRoleCtx(pub String);
 
+/// User id context data for audit actor attribution
+pub struct UserIdCtx(pub String);
+
 /// Tenant context for multi-tenant isolation
 pub struct TenantCtx(pub String);
 
@@ -325,12 +328,14 @@ impl Mutation {
                 .into());
             }
         }
+        let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
         let result = self
             .client
             .create(
                 &model,
                 &data,
                 &[], // include
+                actor.as_deref(),
             )
             .await?;
 
@@ -348,6 +353,7 @@ impl Mutation {
         check_access(&self.schema, &model, "update", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();
         let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
+        let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
         let results = self
             .client
             .update_many(
@@ -355,6 +361,7 @@ impl Mutation {
                 &where_clauses,
                 &data,
                 &[], // include
+                actor.as_deref(),
             )
             .await?;
 
@@ -367,7 +374,11 @@ impl Mutation {
         check_access(&self.schema, &model, "delete", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();
         let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
-        let count = self.client.delete_many(&model, &where_clauses).await?;
+        let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
+        let count = self
+            .client
+            .delete_many(&model, &where_clauses, actor.as_deref())
+            .await?;
 
         Ok(count as i32)
     }

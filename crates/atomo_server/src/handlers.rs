@@ -116,6 +116,7 @@ pub async fn graphql_handler(
     // Inject user role into GraphQL context
     if let Some(user) = auth_user {
         inner = inner.data(UserRoleCtx(format!("{:?}", user.role)));
+        inner = inner.data(atomo::graphql::UserIdCtx(user.id.clone()));
     }
     if let Some(tid) = tenant_id {
         inner = inner.data(atomo::graphql::TenantCtx(tid));

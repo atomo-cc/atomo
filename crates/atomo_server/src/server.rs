@@ -117,7 +117,7 @@ impl AtomoServer {
                         .and_then(|s| EntityId::from_string(s).ok())
                         .unwrap_or_else(EntityId::new);
                     let details = serde_json::to_string(&ev.data).unwrap_or_default();
-                    let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, None);
+                    let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, ev.actor.clone());
                     if let Err(e) = audit.log_audit_entry(entry).await {
                         tracing::warn!(error = %e, "Failed to write audit entry");
                     }

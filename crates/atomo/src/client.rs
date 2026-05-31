@@ -157,6 +157,7 @@ impl AtomoClient {
         model_name: &str,
         data: &HashMap<String, Value>,
         _include: &[String],
+        actor: Option<&str>,
     ) -> Result<HashMap<String, Value>> {
         let model = self
             .schema
@@ -191,6 +192,7 @@ impl AtomoClient {
             previous_data: None,
             timestamp: chrono::Utc::now().to_rfc3339(),
             event_id: uuid::Uuid::new_v4().to_string(),
+            actor: actor.map(|s| s.to_string()),
         };
         let _ = self.event_sender.send(event.clone());
         self.event_store.persist(&event).await.ok();
@@ -211,6 +213,7 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         data: &HashMap<String, Value>,
         _include: &[String],
+        actor: Option<&str>,
     ) -> Result<Vec<HashMap<String, Value>>> {
         let model = self
             .schema
@@ -246,6 +249,7 @@ impl AtomoClient {
                 previous_data: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
+                actor: actor.map(|s| s.to_string()),
             };
             let _ = self.event_sender.send(event.clone());
             self.event_store.persist(&event).await.ok();
@@ -265,6 +269,7 @@ impl AtomoClient {
         &self,
         model_name: &str,
         where_clauses: &[WhereClause],
+        actor: Option<&str>,
     ) -> Result<usize> {
         let model = self
             .schema
@@ -300,6 +305,7 @@ impl AtomoClient {
                 previous_data: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
+                actor: actor.map(|s| s.to_string()),
             };
             let _ = self.event_sender.send(event.clone());
             self.event_store.persist(&event).await.ok();

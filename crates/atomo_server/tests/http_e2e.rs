@@ -126,7 +126,7 @@ async fn test_login_then_create_and_list() {
         create_json.get("errors").is_none()
             || create_json["errors"]
                 .as_array()
-                .map_or(true, |a| a.is_empty()),
+                .is_none_or(|a| a.is_empty()),
         "GraphQL errors on create: {:?}",
         create_json
     );
@@ -231,4 +231,80 @@ async fn test_workflow_register_list_run_delete() {
         .unwrap();
     let (status, _) = send(&app, req).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+
+// B1: a model mutation produces an audit_log entry, attributed to the actor.
+#[tokio::test]
+#[ignore]
+async fn test_mutation_writes_audit_entry_with_actor() {
+    use atomo_core::audit::{AuditLogEntry, AuditOperation, AuditService};
+    use atomo_core::types::EntityId;
+    use std::collections::HashMap;
+
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let schema_ts = r#"
+export interface Note {
+  id: string;
+  title: string;
+}
+export const schema = { models: { Note: { tableName: 'notes' } } };
+export default schema;
+"#;
+    let atomo = atomo::Atomo::builder()
+        .schema_content(schema_ts)
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .unwrap();
+    let audit = atomo_server::audit::HttpAuditService::new(atomo.db_pool().clone());
+    atomo_server::ensure_platform_tables(atomo.db_pool()).await.unwrap();
+
+    // Wire the same audit listener the server boot uses.
+    {
+        let audit = audit.clone();
+        let mut rx = atomo.event_receiver();
+        tokio::spawn(async move {
+            while let Ok(ev) = rx.recv().await {
+                let op = match ev.event_type {
+                    atomo::events::EventType::Created => AuditOperation::Create,
+                    atomo::events::EventType::Updated => AuditOperation::Update,
+                    atomo::events::EventType::Deleted => AuditOperation::Delete,
+                };
+                let entity_id = ev
+                    .data
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| EntityId::from_string(s).ok())
+                    .unwrap_or_else(EntityId::new);
+                let details = serde_json::to_string(&ev.data).unwrap_or_default();
+                let entry = AuditLogEntry::new(ev.model_name.clone(), entity_id, op, details, ev.actor.clone());
+                let _ = audit.log_audit_entry(entry).await;
+            }
+        });
+    }
+
+    // Create a Note with an explicit actor.
+    let mut data = HashMap::new();
+    data.insert("title".to_string(), serde_json::json!("audit me"));
+    atomo
+        .client()
+        .create("Note", &data, &[], Some("user-42"))
+        .await
+        .unwrap();
+
+    // Give the listener a moment to persist.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    let row: (String, i16, Option<String>) = sqlx::query_as(
+        "SELECT entity_type, operation, user_id FROM audit_log WHERE entity_type = 'Note' ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_one(atomo.db_pool())
+    .await
+    .expect("no audit row written");
+
+    assert_eq!(row.0, "Note");
+    assert_eq!(row.1, AuditOperation::Create as i16);
+    assert_eq!(row.2.as_deref(), Some("user-42"), "audit entry should capture the actor");
 }

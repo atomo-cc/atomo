@@ -71,7 +71,7 @@ async fn test_create_emits_event_and_persists() {
     data.insert("name".to_string(), json!("Alice"));
     data.insert("email".to_string(), json!("alice@example.com"));
     let record = client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
     assert!(!record.is_empty());
@@ -104,7 +104,7 @@ async fn test_find_many_returns_created_records() {
     let mut data = HashMap::new();
     data.insert("name".to_string(), json!("Bob"));
     client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
 
@@ -131,7 +131,7 @@ async fn test_soft_delete_hides_records() {
     let mut data = HashMap::new();
     data.insert("name".to_string(), json!("ToDelete"));
     let record = client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
 
@@ -144,7 +144,7 @@ async fn test_soft_delete_hides_records() {
         value: id,
     }];
     let count = client
-        .delete_many("TestUser", &where_clauses)
+        .delete_many("TestUser", &where_clauses, None)
         .await
         .expect("delete failed");
     assert_eq!(count, 1);
@@ -173,7 +173,7 @@ async fn test_event_store_replay() {
     let mut data = HashMap::new();
     data.insert("name".to_string(), json!("EventTest"));
     client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
 
@@ -199,7 +199,7 @@ async fn test_update_many_modifies_and_emits() {
     let mut data = HashMap::new();
     data.insert("name".to_string(), json!("Before"));
     let record = client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
     let id = record.get("id").cloned().unwrap();
@@ -215,7 +215,7 @@ async fn test_update_many_modifies_and_emits() {
     let mut update_data = HashMap::new();
     update_data.insert("name".to_string(), json!("After"));
     let updated = client
-        .update_many("TestUser", &where_clauses, &update_data, &[])
+        .update_many("TestUser", &where_clauses, &update_data, &[], None)
         .await
         .expect("update failed");
     assert_eq!(updated[0].get("name").unwrap(), &json!("After"));
@@ -246,7 +246,7 @@ async fn test_delete_emits_deleted_event() {
     let mut data = HashMap::new();
     data.insert("name".to_string(), json!("DeleteMe"));
     let record = client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
     let id = record.get("id").cloned().unwrap();
@@ -260,7 +260,7 @@ async fn test_delete_emits_deleted_event() {
         value: id,
     }];
     let count = client
-        .delete_many("TestUser", &where_clauses)
+        .delete_many("TestUser", &where_clauses, None)
         .await
         .expect("delete failed");
     assert_eq!(count, 1);
@@ -291,14 +291,14 @@ async fn test_count_excludes_soft_deleted() {
     let mut data1 = HashMap::new();
     data1.insert("name".to_string(), json!("CountA"));
     let rec1 = client
-        .create("TestUser", &data1, &[])
+        .create("TestUser", &data1, &[], None)
         .await
         .expect("create failed");
 
     let mut data2 = HashMap::new();
     data2.insert("name".to_string(), json!("CountB"));
     client
-        .create("TestUser", &data2, &[])
+        .create("TestUser", &data2, &[], None)
         .await
         .expect("create failed");
 
@@ -313,7 +313,7 @@ async fn test_count_excludes_soft_deleted() {
         value: id,
     }];
     client
-        .delete_many("TestUser", &where_clauses)
+        .delete_many("TestUser", &where_clauses, None)
         .await
         .expect("delete failed");
 
@@ -337,7 +337,7 @@ async fn test_find_unique_by_id() {
     let mut data = HashMap::new();
     data.insert("name".to_string(), json!("UniqueFind"));
     let record = client
-        .create("TestUser", &data, &[])
+        .create("TestUser", &data, &[], None)
         .await
         .expect("create failed");
     let id = record.get("id").cloned().unwrap();

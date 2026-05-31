@@ -508,7 +508,6 @@ impl HookAccessRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::*;
 
     #[test]
     fn test_generate_access_structures() {

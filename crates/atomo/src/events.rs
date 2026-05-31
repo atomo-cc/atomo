@@ -97,4 +97,6 @@ pub struct ModelEvent {
     pub previous_data: Option<HashMap<String, Value>>, // For updates
     pub timestamp: String,                             // Use String instead of chrono for now
     pub event_id: String,
+    #[graphql(default)]
+    pub actor: Option<String>, // user_id of the actor that caused the event, if known
 }
