@@ -608,3 +608,58 @@ export default schema;
     let res = tokio::time::timeout(std::time::Duration::from_millis(300), authed.next()).await;
     assert!(res.is_err(), "authorized subscription should stay open (no immediate error)");
 }
+
+
+// Phase S3: multi-tenant isolation. With the generated tenant_id column, writes are tagged by
+// TenantCtx and reads are scoped to it — tenant A and tenant B must not see each other's rows.
+#[tokio::test]
+#[ignore]
+async fn test_two_tenant_isolation() {
+    use atomo::graphql::TenantCtx;
+
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let schema_ts = r#"
+export interface Note {
+  id: string;
+  title: string;
+}
+export const schema = { models: { Note: { tableName: 'notes', access: { read: 'public', create: 'public' } } } };
+export default schema;
+"#;
+    let atomo = atomo::Atomo::builder()
+        .schema_content(schema_ts)
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .unwrap();
+    let schema = atomo_server::handlers::build_extended_schema(&atomo);
+
+    let create = |title: &str| {
+        async_graphql::Request::new(format!(
+            r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#,
+            title
+        ))
+    };
+    let list = || async_graphql::Request::new(r#"{ records(model: "Note") }"#);
+
+    // tenant A creates "a-note"; tenant B creates "b-note".
+    let ra = schema.execute(create("a-note").data(TenantCtx("tenant-a".into()))).await;
+    assert!(ra.errors.is_empty(), "tenant A create failed: {:?}", ra.errors);
+    let rb = schema.execute(create("b-note").data(TenantCtx("tenant-b".into()))).await;
+    assert!(rb.errors.is_empty(), "tenant B create failed: {:?}", rb.errors);
+
+    // tenant A lists → only a-note.
+    let la = schema.execute(list().data(TenantCtx("tenant-a".into()))).await;
+    let la_str = serde_json::to_string(&la.data).unwrap();
+    assert!(la_str.contains("a-note"), "tenant A should see its own note: {}", la_str);
+    assert!(!la_str.contains("b-note"), "tenant A must NOT see tenant B's note: {}", la_str);
+
+    // tenant B lists → only b-note.
+    let lb = schema.execute(list().data(TenantCtx("tenant-b".into()))).await;
+    let lb_str = serde_json::to_string(&lb.data).unwrap();
+    assert!(lb_str.contains("b-note"), "tenant B should see its own note: {}", lb_str);
+    assert!(!lb_str.contains("a-note"), "tenant B must NOT see tenant A's note: {}", lb_str);
+
+    sqlx::query("DROP TABLE IF EXISTS notes").execute(atomo.db_pool()).await.ok();
+}

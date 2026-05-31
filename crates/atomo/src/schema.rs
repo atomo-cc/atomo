@@ -64,6 +64,10 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
 
         // Add soft delete column
         columns.push("  deleted_at TIMESTAMPTZ".to_string());
+        // Multi-tenant scoping column. Nullable so single-tenant deployments (no TenantCtx)
+        // simply insert NULL and the tenant WHERE clause is never added — fully backward
+        // compatible. When a TenantCtx is present, writes set it and reads filter on it.
+        columns.push("  tenant_id TEXT".to_string());
         sql.push_str(&columns.join(",\n"));
         sql.push_str("\n);");
 

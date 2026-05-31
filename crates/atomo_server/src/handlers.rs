@@ -150,12 +150,19 @@ pub async fn graphql_handler(
     };
 
     // Inject user role into GraphQL context
+    let authenticated = auth_user.is_some();
     if let Some(user) = auth_user {
         inner = inner.data(UserRoleCtx(format!("{:?}", user.role)));
         inner = inner.data(atomo::graphql::UserIdCtx(user.id.clone()));
     }
+    // Only honor a tenant header for AUTHENTICATED requests — otherwise an anonymous caller
+    // could claim any tenant. NOTE: there is not yet a per-user tenant binding to validate the
+    // claimed tenant against (users carry no tenant_id); enforcing that the header matches the
+    // user's own tenant is a follow-up once that data model exists.
     if let Some(tid) = tenant_id {
-        inner = inner.data(atomo::graphql::TenantCtx(tid));
+        if authenticated {
+            inner = inner.data(atomo::graphql::TenantCtx(tid));
+        }
     }
 
     let op = inner

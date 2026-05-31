@@ -51,7 +51,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Caching (TTL + invalidation) | yes | 🟢 | works (find_many cached, invalidated on writes); minor: `find_unique` uncached, no eviction, Debug-format keys — all LOW |
 | CQRS projections / aggregate | yes | 🔴 GAP | Deleted events never remove rows (empty event data, `id` lookup None); numeric fields stored as `""` (`as_str()` on number → None); rebuild truncates with no replay |
 | AI / pgvector | partial | ❌ | semantic search over notes; AI path not wired in a test |
-| Multi-tenant (RLS) | no (needs 2-tenant) | 🔴 GAP | **no `tenant_id` column ever generated** (`schema.rs:29-75`) → tenant-scoped insert/select fail at SQL; subscriptions leak cross-tenant; no header→user validation; no PG RLS. False security. |
+| Multi-tenant (RLS) | yes | 🟡 core | S3: `tenant_id` column now generated → read+write scoping works (`test_two_tenant_isolation`); header honored only when authed. **Deferred**: subscription tenant-filter (leaks), per-user tenant binding, event-store/PG-RLS |
 | OAuth/OIDC | no (needs mock IdP) | ❌ | supplementary harness |
 | Rate limiting | infra | ✅ | `middleware.rs` |
 | CLI (init/dev/migrate/codegen) | no (process-level) | ❌ | largest untested surface (`dev.rs`) |
@@ -120,7 +120,21 @@ targets is the bulk of the work.
   rejects missing/invalid tokens. Second layer: `model_changes` resolver now takes `ctx` and gates
   by the model's `read` rule via `AccessControl::decide` (errors on Forbidden/NeedsAuth). Test:
   `test_subscription_requires_auth_role` (no role → rejected; role → stream stays open).
-- [ ] S3. **Multi-tenant**: auto-generate a `tenant_id` column; scope reads AND writes; filter subscriptions by tenant; validate the `x-tenant-id` header against the authenticated user. (Largest; may split.) Test: 2 tenants, assert isolation incl. subscriptions.
+- [x] S3. **Multi-tenant — core done** (✅): `generate_migrations` now emits a nullable
+  `tenant_id TEXT` column on every table, so the pre-existing `scope_by_tenant` (reads) +
+  create-resolver injection (writes) finally work — they failed before because the column never
+  existed. Nullable = backward-compatible for single-tenant (no TenantCtx → NULL, no scoping).
+  `x-tenant-id` is now only honored for **authenticated** requests (was: anyone could claim any
+  tenant). Test: `test_two_tenant_isolation` (A and B each see only their own rows).
+  **Deferred (documented, not done):**
+  - [ ] S3a. **Subscription tenant-filtering** — `model_changes` filters by model only; events
+    still leak across tenants on the WS stream. Needs TenantCtx threaded into the subscription
+    filter (the WS handler can inject it from a tenant in connection_init).
+  - [ ] S3b. **Per-user tenant binding** — there is no `tenant_id` on users to validate the header
+    against, so a user can still claim *any* tenant (just not anonymously). Real validation needs
+    a user→tenant data model (users.tenant_id + JWT claim). Substantial; separate feature.
+  - [ ] S3c. **Event-store + PG RLS** — events carry no tenant; no row-level-security policies
+    generated (defense-in-depth beyond app-layer WHERE).
 
 ### Phase B — Correctness holes
 - [ ] B1. **Workflows**: add a YAML loader (`serde_yaml`) + a deserialization shim from the CRM's YAML shape to the `Workflow` struct; implement the no-op Http/Mutation/Plugin step actions. Test: load `sales-pipeline.yml`, Deal stage change triggers it, step actually runs.
