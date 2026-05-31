@@ -42,9 +42,12 @@ impl AtomoServer {
         if !loaded.is_empty() {
             info!("🔌 Loaded {} WASM plugin(s): {:?}", loaded.len(), loaded);
             let manager = std::sync::Arc::new(tokio::sync::Mutex::new(plugin_manager));
-            builder = builder.hook_runner(std::sync::Arc::new(
-                crate::wasm_hooks::WasmHookRunner::new(manager),
-            ));
+            let mut runner = crate::wasm_hooks::WasmHookRunner::new(manager);
+            // Enable JS effect fulfillment with a pool from the same database.
+            if let Ok(pool) = sqlx::PgPool::connect(&config.database_url).await {
+                runner = runner.with_fulfillment(pool);
+            }
+            builder = builder.hook_runner(std::sync::Arc::new(runner));
         }
         let atomo = builder.build().await?;
 

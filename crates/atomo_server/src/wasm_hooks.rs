@@ -13,11 +13,20 @@ use serde_json::Value;
 
 pub struct WasmHookRunner {
     manager: Arc<Mutex<WasmPluginManager>>,
+    /// When set, JS plugin effects are fulfilled after after-hooks run.
+    pool: Option<sqlx::PgPool>,
+    http: reqwest::Client,
 }
 
 impl WasmHookRunner {
     pub fn new(manager: Arc<Mutex<WasmPluginManager>>) -> Self {
-        Self { manager }
+        Self { manager, pool: None, http: reqwest::Client::new() }
+    }
+
+    /// Enable JS effect fulfillment (dbQuery/http) using the given pool.
+    pub fn with_fulfillment(mut self, pool: sqlx::PgPool) -> Self {
+        self.pool = Some(pool);
+        self
     }
 }
 
@@ -53,6 +62,14 @@ impl HookRunner for WasmHookRunner {
 
         for plugin in plugins {
             let _ = mgr.call_hook(&plugin, hook_name, &json);
+        }
+
+        // Fulfill any effects the JS plugins recorded (emit/dbQuery/http), if enabled.
+        if let Some(pool) = &self.pool {
+            let results = mgr.fulfill_js_effects(pool, &self.http).await;
+            for r in results {
+                tracing::debug!(effect_result = %r, "fulfilled JS plugin effect");
+            }
         }
         Ok(())
     }

@@ -181,6 +181,41 @@ impl WasmPluginManager {
         std::mem::take(&mut self.js_effects)
     }
 
+    /// Drain and execute the recorded JS plugin effects.
+    /// - `dbQuery` → constrained read via `fulfill_db_request`
+    /// - `http` → request via `fulfill_http_request`
+    /// - `emit` → returned in the result list (tag `"emit"`) for the caller to push to
+    ///   the event stream (the manager has no event sender).
+    ///
+    /// Returns one JSON result string per effect. Permissions were already checked when
+    /// the effects were recorded (`apply_js_effects`).
+    pub async fn fulfill_js_effects(
+        &mut self,
+        pool: &sqlx::PgPool,
+        http: &reqwest::Client,
+    ) -> Vec<String> {
+        let effects = self.take_js_effects();
+        let mut results = Vec::new();
+        for raw in effects {
+            let effect: serde_json::Value = match serde_json::from_str(&raw) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let obj = match effect.as_object() {
+                Some(o) => o,
+                None => continue,
+            };
+            if let Some(q) = obj.get("dbQuery") {
+                results.push(fulfill_db_request(&q.to_string(), pool).await);
+            } else if let Some(r) = obj.get("http") {
+                results.push(fulfill_http_request(&r.to_string(), http).await);
+            } else if let Some(e) = obj.get("emit") {
+                results.push(serde_json::json!({ "emit": e }).to_string());
+            }
+        }
+        results
+    }
+
     /// Fulfill the DB/HTTP requests a plugin recorded during its last call.
     ///
     /// Drains `take_db_requests`/`take_http_requests` and executes them:
