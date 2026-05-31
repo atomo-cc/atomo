@@ -15,18 +15,22 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Schema → Rust/GraphQL/codegen: ✅ implemented with hot reload
 - GraphQL API: ✅ full CRUD with where/orderBy parsing, pagination, relationships
 - Admin UI: ✅ dynamic rendering with aligned API client
-- Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforcement in resolvers, OAuth2/OIDC SSO
-- Audit logs: ✅ REST endpoints + platform GraphQL
-- TypeScript SDK: ✅ types, React hooks, offline queue with sync-on-reconnect
+- Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforced in GraphQL resolvers (parsed from schema + conformance-tested in S1; **data-layer callers not yet gated**), OAuth2/OIDC SSO
+- Audit logs: ✅ REST endpoints + platform GraphQL; conformance-tested through CRM models (B4)
+- TypeScript SDK: ✅ types, React hooks, offline queue with sync-on-reconnect (not yet integration-tested)
 - WASM plugin runtime: ✅ fuel metering, permission-checked host functions, plugin lifecycle, CRUD hooks wired at boot
 - Scripting plugins (JS): ✅ `.js` plugins via embedded Javy/QuickJS (no toolchain) — CRUD hooks, permission-gated effects (`emit`/`dbQuery`/`http`), typed `emit` onto the event stream
-- Real-time: ✅ GraphQL subscriptions over WebSocket with model filtering
-- Event sourcing: ✅ event_log persistence, replay, entity history, CQRS projections (listeners started at boot)
-- AI: ✅ pgvector EmbeddingStore with similarity search
-- Multi-tenant: ✅ TenantCtx with row-level isolation
-- Workflow engine: ✅ triggers, conditions, retry policies, event-driven listener started at boot
-- Caching: ✅ read cache with TTL and event-driven invalidation
+- Real-time: ✅ GraphQL subscriptions over WebSocket with model filtering; **WS auth added in S2** (was unauthenticated)
+- Event sourcing: ✅ event_log persistence, replay, entity history (conformance-tested C3), CQRS projections (corruption fixed in B2; rebuild-replay still TODO)
+- AI: 🟡 pgvector EmbeddingStore with similarity search — code exists, not yet conformance-tested (needs pgvector infra; runs in CI not locally)
+- Multi-tenant: 🟡 `tenant_id` column generated + read/write scoping (S3+D1); subscription tenant-filter, per-user binding, and PG-RLS still TODO
+- Workflow engine: 🟡 triggers/conditions/retry + YAML loading + real HTTP steps (B1); Mutation/Plugin steps and JS-step workflows still TODO
+- Caching: ✅ read cache with TTL and event-driven invalidation (conformance-tested C4; pagination cache-key bug fixed C2)
 - Rate limiting: ✅ per-IP token bucket middleware
+
+> **Conformance status**: capability claims above are validated against the flagship CRM by the
+> CRM Conformance Suite (`/guide/advanced/crm-conformance-plan`), which fixed 8 silent gaps and
+> 2 security holes. 🟡 marks capabilities that work in part with documented follow-ups.
 - Observability: ✅ structured tracing with request ID propagation
 - Validation: ✅ rules parsed from schema.ts and enforced (required, email, min, max, numeric)
 - Soft deletes: ✅ full lifecycle — delete / restore / hardDelete / trash (deletedRecords) with query filtering

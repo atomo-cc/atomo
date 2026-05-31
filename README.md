@@ -270,19 +270,21 @@ pub fn process_content(content: &str) -> String {
 - [x] Schema 解析器 (TypeScript → Rust/GraphQL)
 - [x] 基础 CRUD 操作 (动态 SQL, 参数化查询)
 - [x] GraphQL 订阅 (WebSocket, 模型过滤)
-- [x] 认证授权 (Argon2id, JWT, RBAC, OAuth2/OIDC)
+- [x] 认证授权 (Argon2id, JWT, RBAC 在 GraphQL 层强制；数据层调用方待补, OAuth2/OIDC)
 - [x] 软删除, 分页, 关系解析
 - [x] 输入验证, 结构化错误
 - [x] 速率限制, 请求追踪
 
-### Phase 2: 智能化升级 (✅ 完成)
-- [x] AI 工作流集成 (pgvector, 相似度搜索)
-- [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子)
-- [x] CQRS 读投影 (事件驱动物化视图)
-- [x] 工作流引擎 (触发器, 条件, 重试策略)
-- [x] 多租户隔离 (行级安全)
+### Phase 2: 智能化升级 (大部分完成)
+- [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子) + JS 脚本插件 (Javy)
+- [x] CQRS 读投影 (事件驱动物化视图；删除/数值修正见 B2)
 - [x] 读缓存 (TTL + 事件失效)
-- [x] 本地优先 SDK (离线队列, 重连同步)
+- [~] 工作流引擎 (触发器, 条件, 重试, YAML 加载, HTTP 步骤；Mutation/Plugin 步骤待实现)
+- [~] 多租户隔离 (`tenant_id` 列 + 读写隔离；订阅过滤/用户绑定/PG RLS 待实现)
+- [~] AI 工作流集成 (pgvector EmbeddingStore；尚未端到端验证，需 pgvector 环境)
+- [~] 本地优先 SDK (离线队列, 重连同步；尚未集成测试)
+
+> 各能力的真实验证状态以 CRM 一致性测试套件为准，详见 docs/guide/advanced/crm-conformance-plan。
 
 ### Phase 3: 生态系统 (进行中)
 - [x] OAuth2/OIDC SSO (Google, GitHub, Microsoft, Okta)

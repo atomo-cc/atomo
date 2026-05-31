@@ -56,7 +56,13 @@ jobs:
       - name: Run cargo test
         run: cargo test --workspace
 
-      - name: Run DB-gated integration tests
+      # CRM Conformance Suite + other DB-gated integration tests. Serial (--test-threads=1)
+      # because they share the atomo_test database. This is the release gate: it drives the
+      # real services/crm-service/schema.ts through the platform (schema→codegen→CRUD→RBAC→
+      # subscriptions→workflows→projections→events→cache→multi-tenant). See
+      # docs/guide/advanced/crm-conformance-plan.md. pgvector is available (pgvector/pgvector
+      # image) so the AI/pgvector path (D2) can be exercised here even though it can't locally.
+      - name: Run DB-gated conformance + integration tests
         run: cargo test --workspace -- --ignored --test-threads=1
         
   lint:
@@ -113,18 +119,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: atomo-cli-linux
-          path: target/release/atomo
+          path: target/release/atomo-cli
           
       - name: Upload CLI binary (Windows)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: atomo-cli-windows
-          path: target/release/atomo.exe
+          path: target/release/atomo-cli.exe
           
       - name: Upload CLI binary (macOS)
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: atomo-cli-macos
-          path: target/release/atomo
+          path: target/release/atomo-cli
