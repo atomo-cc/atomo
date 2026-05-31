@@ -8,8 +8,8 @@ Auth and sessions
 - Roles: `Admin | Manager | Sales | Support | Viewer` (baseline RBAC patterns).
 
 Passwords
-- Development: hashing/verification is stubbed for convenience.
-- Production: argon2id hashing is enabled by default (bcrypt verified for migration); enforce policies (length, rotation, lockout).
+- Hashing: argon2id is used in all environments; legacy bcrypt hashes are still verified so existing users migrate automatically on next login.
+- Production: enforce password policies (length, complexity) via `PASSWORD_MIN_LENGTH` / `PASSWORD_REQUIRE_COMPLEXITY`.
 - Secrets: use `.env` locally; secret manager in production; never commit secrets.
 
 Multi‑tenancy

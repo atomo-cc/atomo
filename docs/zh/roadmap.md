@@ -40,25 +40,30 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 - SDK
   - 在 `packages/atomo-client-sdk` 生成类型与 React hooks 脚手架
 
-## 进行中 / 近期计划
+## 近期已完成
 
-- WASM 运行时执行与沙箱（wasmtime 集成）
-- 生产级密码哈希（bcrypt/argon2）与策略
-- 实时订阅与协作（WebSocket/CRDT 接线）
-- AI 集成（pgvector、内容理解 API）
-- 安全加固、权限矩阵与多租户支持
+- WASM 运行时：燃料计量、权限校验的宿主函数、插件生命周期、CRUD 钩子
+- 生产级密码哈希（argon2id，兼容验证旧的 bcrypt 哈希）
+- 实时 GraphQL 订阅（WebSocket，按模型过滤）
+- AI 集成（pgvector EmbeddingStore，相似度搜索）
+- 多租户隔离（TenantCtx 行级作用域）
+- GraphQL 解析器中基于 schema access 规则的 RBAC 强制
+- 事件溯源：event_log 持久化与回放；CQRS 读投影
+- 工作流引擎：触发器、条件、重试策略、cron 调度
+- OAuth2/OIDC SSO（Google、GitHub、Microsoft、Okta）
+- 限流中间件（按 IP 令牌桶）
+- 结构化追踪与请求 ID 传播
+- 输入校验（required、email、min、max、numeric）
+- 软删除与自动查询过滤
+- 启动时从 ADMIN_EMAIL/ADMIN_PASSWORD 引导管理员用户
 
 ## 文档 vs 代码（真实状态）
 
-- 密码哈希
-  - 代码：当前为开发占位实现
-  - 文档：在认证章节已明确；生产启用 bcrypt/argon2
-- 限流
-  - 文档：API 概览中提供了示例头
-  - 代码：服务尚未内置限流 → 未来工作
-- WASM 插件
-  - 代码：存在 `PluginManifest`/`Permission`/`PluginContext`
-  - 文档：已记录清单与权限；执行运行时待完成
+- 密码哈希：默认 argon2id；兼容验证旧的 bcrypt 哈希
+- 限流：按 IP 令牌桶中间件，通过 RATE_LIMIT_RPS / RATE_LIMIT_WINDOW_SECS 配置
+- WASM 插件：完整生命周期，含燃料计量、权限校验、宿主函数
+- 订阅：通过 /graphql/ws 工作，支持按模型过滤
+- 验证：CRUD → 事件存储 → 订阅链路已对 PostgreSQL 做集成测试
 
 ## 阶段（高层级）
 
@@ -102,18 +107,16 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 ## 下一步里程碑
 
-- 安全
-  - 切换密码哈希为 bcrypt/argon2；增加迁移与配置门禁
-  - 强化认证中间件与权限模式
-- 运行时与 DX
-  - 集成 wasmtime 沙箱与权限检查
-  - 稳定更广范围的热重载；优化防抖
 - 协作
-  - 启用 GraphQL 订阅 / WebSocket 通道
-  - 在合适场景引入 CRDT 支撑
-- 可观测
-  - 结构化日志、Tracing spans、请求 ID
-  - 可选限流与指标端点
+  - CRDT 支撑的模型，实现无冲突的实时编辑
+- 插件与工作流
+  - 更丰富的 WASM 宿主 API（数据库/HTTP 能力），超越当前钩子 ABI
+  - 可视化工作流设计器 UI；定时（cron）触发执行
+- 生态
+  - 插件市场 / 注册中心（发现、安装、发布）
+  - Atomo Cloud 托管平台
+- 加固
+  - 集中化权限检查；扩展服务启动路径的集成测试覆盖
 
 若评估 Atomo，可先阅读“指南”中的开发流程；若需平台理念与架构，请参阅“愿景与架构”。
 
