@@ -434,3 +434,66 @@ async fn test_paginated_records_with_where_filter() {
     assert_eq!(data[0]["title"], "beta");
     assert_eq!(page["pageInfo"]["totalCount"], 1, "totalCount should reflect the filter");
 }
+
+
+// Update must apply data to only the where-matched record and persist the change.
+#[tokio::test]
+#[ignore]
+async fn test_update_scoped_and_persists() {
+    let (app, _) = build_app().await;
+
+    let login_req = Request::builder()
+        .uri("/auth/login")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"email":"admin@test.dev","password":"admin123"}"#))
+        .unwrap();
+    let (_, login_json) = send(&app, login_req).await;
+    let token = login_json["token"].as_str().expect("no token");
+
+    let create = |title: &str| {
+        let body = serde_json::json!({
+            "query": format!(r#"mutation {{ create(model: "Note", data: {{ title: "{}" }}) }}"#, title)
+        });
+        Request::builder()
+            .uri("/graphql").method("POST")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {}", token))
+            .body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap()
+    };
+    let (_, c1) = send(&app, create("orig")).await;
+    let target_id = c1["data"]["create"]["id"].as_str().expect("id").to_string();
+    send(&app, create("untouched")).await;
+
+    // Update only the target note's title.
+    let upd = serde_json::json!({
+        "query": "mutation($w: JSON!, $d: JSON!){ update(model: \"Note\", where: $w, data: $d) }",
+        "variables": { "w": { "id": { "equals": target_id } }, "d": { "title": "changed" } }
+    });
+    let req = Request::builder()
+        .uri("/graphql").method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&upd).unwrap())).unwrap();
+    let (status, upd_json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "update failed: {:?}", upd_json);
+    assert!(
+        upd_json.get("errors").is_none()
+            || upd_json["errors"].as_array().is_none_or(|a| a.is_empty()),
+        "GraphQL errors on update: {:?}",
+        upd_json
+    );
+
+    // Read back: target is "changed", the other note is still "untouched".
+    let list = serde_json::json!({ "query": r#"{ records(model: "Note") }"# });
+    let req = Request::builder()
+        .uri("/graphql").method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&list).unwrap())).unwrap();
+    let (_, list_json) = send(&app, req).await;
+    let recs = list_json["data"]["records"].as_array().expect("records");
+    assert!(recs.iter().any(|r| r["title"] == "changed"), "target update did not persist");
+    assert!(recs.iter().any(|r| r["title"] == "untouched"), "non-target was wrongly modified");
+    assert!(!recs.iter().any(|r| r["title"] == "orig"), "old value still present");
+}
