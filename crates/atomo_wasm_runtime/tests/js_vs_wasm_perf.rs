@@ -5,6 +5,7 @@
 //! Measured (one machine, debug build):
 //! - cold start = compile the module from bytes (the once-per-load cost)
 //! - per call   = instantiate + run the hook (the per-invocation cost)
+//!
 //! The takeaway documented in the proposal: JS cold-start is dominated by compiling the
 //! ~1.2MB Javy/QuickJS module (far larger than a hand-written wasm); per-call both pay
 //! fresh-instance + fuel setup, with JS additionally running the JS interpreter.

@@ -79,9 +79,7 @@ impl WasmRuntime {
              ptr: i32,
              cap: i32|
              -> Result<i32, anyhow::Error> {
-                if !caller.data().permissions.contains(&Permission::ReadEvents) {
-                    anyhow::bail!("Permission denied: ReadEvents required");
-                }
+                Permission::ensure(&caller.data().permissions, &Permission::ReadEvents)?;
                 let cursor = caller.data().read_cursor;
                 if cursor >= caller.data().readable_events.len() {
                     return Ok(0);
@@ -104,9 +102,7 @@ impl WasmRuntime {
              ptr: i32,
              len: i32|
              -> Result<(), anyhow::Error> {
-                if !caller.data().permissions.contains(&Permission::WriteEvents) {
-                    anyhow::bail!("Permission denied: WriteEvents required");
-                }
+                Permission::ensure(&caller.data().permissions, &Permission::WriteEvents)?;
                 let mem = caller.get_export("memory").and_then(|e| e.into_memory());
                 if let Some(mem) = mem {
                     let data = mem.data(&caller);
@@ -126,9 +122,7 @@ impl WasmRuntime {
              ptr: i32,
              len: i32|
              -> Result<(), anyhow::Error> {
-                if !caller.data().permissions.contains(&Permission::ReadDatabase) {
-                    anyhow::bail!("Permission denied: ReadDatabase required");
-                }
+                Permission::ensure(&caller.data().permissions, &Permission::ReadDatabase)?;
                 let mem = caller.get_export("memory").and_then(|e| e.into_memory());
                 if let Some(mem) = mem {
                     let data = mem.data(&caller);
@@ -148,9 +142,7 @@ impl WasmRuntime {
              ptr: i32,
              len: i32|
              -> Result<(), anyhow::Error> {
-                if !caller.data().permissions.contains(&Permission::HttpRequests) {
-                    anyhow::bail!("Permission denied: HttpRequests required");
-                }
+                Permission::ensure(&caller.data().permissions, &Permission::HttpRequests)?;
                 let mem = caller.get_export("memory").and_then(|e| e.into_memory());
                 if let Some(mem) = mem {
                     let data = mem.data(&caller);
@@ -194,11 +186,7 @@ impl WasmPlugin {
     }
 
     pub fn check_permission(&self, perm: &Permission) -> Result<()> {
-        if self.store.data().permissions.contains(perm) {
-            Ok(())
-        } else {
-            anyhow::bail!("Permission denied: {:?}", perm)
-        }
+        Permission::ensure(&self.store.data().permissions, perm)
     }
 
     pub fn fuel_consumed(&self) -> u64 {

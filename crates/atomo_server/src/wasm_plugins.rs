@@ -171,9 +171,9 @@ impl WasmPluginManager {
             } else {
                 continue;
             };
-            if !perms.contains(&required) {
-                anyhow::bail!("plugin '{}' requested '{}' without {:?} permission", plugin, kind, required);
-            }
+            // Same permission seam the compiled host functions use.
+            Permission::ensure(perms, &required)
+                .map_err(|e| anyhow::anyhow!("plugin '{}' effect '{}': {}", plugin, kind, e))?;
             self.js_effects.push(effect.to_string());
         }
         Ok(())

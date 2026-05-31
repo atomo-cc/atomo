@@ -33,6 +33,20 @@ pub enum Permission {
     HttpRequests,
 }
 
+impl Permission {
+    /// The single permission-check seam used by BOTH plugin tiers: compiled host functions
+    /// (`runtime.rs`) and JS effects (`atomo_server::wasm_plugins`). Centralizing it keeps the
+    /// gating logic and the error wording consistent — a plugin that lacks `required` is denied
+    /// the same way regardless of tier.
+    pub fn ensure(perms: &std::collections::HashSet<Permission>, required: &Permission) -> anyhow::Result<()> {
+        if perms.contains(required) {
+            Ok(())
+        } else {
+            anyhow::bail!("Permission denied: {:?} required", required)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginContext {
     pub event_data: serde_json::Value,
