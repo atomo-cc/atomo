@@ -152,7 +152,8 @@ targets is the bulk of the work.
 ### Phase A — Unblocker (must go first, solo)
 - [x] A1. Honor explicit `tableName` (✅ done — `Model.table_name`, parsed via `parse_table_names`,
   used in `sql_builder::table_name` + migrations; falls back to pluralized name). `crm_dogfood`
-  now creates `company`/`contact`/`deal` (not `companys`). Parser test `parses_explicit_table_name`.
+  now creates `company`/`contact`/`deal` (not `companys`). `tableName` parsing is covered by the
+  `parses_and_enforces_access_rules` unit test (its fixture sets `tableName: "contact"`).
   - **Migration-drift assessment**: the 7 hand-written CRM migrations are **stale artifacts of an
     older, buggier codegen** — they predate this session's fixes. With `tableName` honored the
     *table names* now match (`contact`/`company`/`deal`), but the hand-written SQL also has:
@@ -272,8 +273,11 @@ targets is the bulk of the work.
   package.json). `migrate`/`codegen` smoke are heavier (DB / full parser) — deferred.
 
 ### Cross-cutting (do alongside, not after)
-- [ ] CI: wire the DB-gated suite into the existing **manual `workflow_dispatch`** job (auto-triggers stay off for cost); make "run conformance" a one-click gate before any release tag
-- [ ] Roadmap honesty: as each capability passes, update `roadmap.md` from "✅ implemented" to "✅ conformance-tested via CRM"
+- [x] CI: the DB-gated suite runs in the manual `workflow_dispatch` job as the "CRM Conformance
+  release gate" (`--ignored --test-threads=1`); auto-triggers stay off for cost. Also fixed the
+  release artifact paths (`atomo` → `atomo-cli`).
+- [x] Roadmap honesty: `roadmap.md` Status Overview + README Phase 2 corrected — RBAC
+  (GraphQL-only), multi-tenant/workflows/AI downgraded to 🟡/[~] with a conformance-status note.
 
 ## Known gaps carried in (as of this plan)
 
