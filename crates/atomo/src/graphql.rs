@@ -451,14 +451,37 @@ impl Subscription {
 
 #[Subscription]
 impl Subscription {
-    /// Subscribe to model changes
-    async fn model_changes(&self, model: String) -> impl futures::Stream<Item = ModelEvent> + '_ {
+    /// Subscribe to model changes. Gated by the model's `read` access rule using the role
+    /// injected at WebSocket connection_init — closes the unauthenticated-subscription bypass.
+    async fn model_changes(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+    ) -> async_graphql::Result<impl futures::Stream<Item = ModelEvent> + '_> {
+        if let Some(access) = self.client.schema().models.get(&model).and_then(|m| m.access.as_ref()) {
+            let role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.as_str());
+            match access.decide("read", role) {
+                atomo_schema::AccessDecision::Allow => {}
+                atomo_schema::AccessDecision::Forbidden => {
+                    return Err(AtomoError::Forbidden {
+                        message: format!("Subscription denied: read access to '{}'", model),
+                    }
+                    .into())
+                }
+                atomo_schema::AccessDecision::NeedsAuth => {
+                    return Err(AtomoError::Unauthorized {
+                        message: "Authentication required to subscribe".to_string(),
+                    }
+                    .into())
+                }
+            }
+        }
         let rx = self.client.subscribe(&model, &[], &[]).await;
         let model_filter = model;
-        BroadcastStream::new(rx).filter_map(move |result| {
+        Ok(BroadcastStream::new(rx).filter_map(move |result| {
             let m = model_filter.clone();
             async move { result.ok().filter(|e| e.model_name == m) }
-        })
+        }))
     }
 }
 

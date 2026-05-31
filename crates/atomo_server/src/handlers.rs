@@ -2,8 +2,7 @@
 
 use crate::platform_graphql::{PlatformMutation, PlatformQuery};
 use async_graphql::{MergedObject, Schema as GraphQLSchema};
-use async_graphql_axum::{GraphQLResponse, GraphQLSubscription};
-use atomo::graphql::UserRoleCtx;
+use async_graphql_axum::GraphQLResponse;use atomo::graphql::UserRoleCtx;
 use atomo::graphql::{Mutation as ServiceMutation, Query as ServiceQuery, Subscription};
 use atomo::prelude::*;
 use atomo_core::types::EntityId;
@@ -28,6 +27,43 @@ pub struct Query(ServiceQuery, PlatformQuery);
 pub struct Mutation(ServiceMutation, PlatformMutation);
 
 pub type AtomoGraphQLSchema = GraphQLSchema<Query, Mutation, Subscription>;
+
+/// Authenticated WebSocket handler for GraphQL subscriptions. Closes the prior bypass where
+/// `/graphql/ws` was mounted with no auth. The JWT must arrive in the `connection_init` payload
+/// (`{"authorization":"Bearer <jwt>"}` or a bare `token`/`authorization`); it is verified and the
+/// resulting role is injected as `UserRoleCtx` so the subscription resolver can gate by access.
+async fn graphql_ws_handler(
+    schema: AtomoGraphQLSchema,
+    auth: crate::auth::HttpAuthService,
+    protocol: async_graphql_axum::GraphQLProtocol,
+    ws: axum::extract::WebSocketUpgrade,
+) -> axum::response::Response {
+    use async_graphql_axum::GraphQLWebSocket;
+    ws.protocols(async_graphql::http::ALL_WEBSOCKET_PROTOCOLS)
+        .on_upgrade(move |stream| async move {
+            GraphQLWebSocket::new(stream, schema, protocol)
+                .on_connection_init(move |value: serde_json::Value| async move {
+                    let raw = value
+                        .get("authorization")
+                        .or_else(|| value.get("Authorization"))
+                        .or_else(|| value.get("token"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.strip_prefix("Bearer ").unwrap_or(s).to_string());
+                    let token = raw.ok_or_else(|| {
+                        async_graphql::Error::new("WebSocket auth required: missing token in connection_init")
+                    })?;
+                    let user = auth.verify_token(&token).await.map_err(|_| {
+                        async_graphql::Error::new("WebSocket auth failed: invalid or expired token")
+                    })?;
+                    let mut data = async_graphql::Data::default();
+                    data.insert(UserRoleCtx(format!("{:?}", user.role)));
+                    data.insert(atomo::graphql::UserIdCtx(user.id.clone()));
+                    Ok(data)
+                })
+                .serve()
+                .await
+        })
+}
 
 /// Build extended GraphQL schema that includes both service and platform queries
 pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
@@ -264,7 +300,16 @@ pub fn create_router(
         .route("/ready", get(ready_check))
         .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
-        .route_service("/graphql/ws", GraphQLSubscription::new(schema.clone()))
+        .route(
+            "/graphql/ws",
+            get({
+                let schema = schema.clone();
+                let auth = auth_service.clone();
+                move |protocol: async_graphql_axum::GraphQLProtocol, ws: axum::extract::WebSocketUpgrade| {
+                    graphql_ws_handler(schema.clone(), auth.clone(), protocol, ws)
+                }
+            }),
+        )
         // Authentication routes
         .nest(
             "/auth",

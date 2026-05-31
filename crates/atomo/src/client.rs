@@ -451,6 +451,11 @@ impl AtomoClient {
         self.event_sender.subscribe()
     }
 
+    /// The loaded schema (used by the subscription resolver to gate by access rules).
+    pub fn schema(&self) -> &crate::schema::Schema {
+        &self.schema
+    }
+
     /// Get a clonable sender to publish events onto the model-event stream
     /// (used to surface plugin-emitted events to projectors/audit/subscriptions).
     pub fn event_sender(&self) -> broadcast::Sender<ModelEvent> {

@@ -43,8 +43,8 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Pagination + where/orderBy | yes | 🟡 | synthetic (Note) only |
 | Event sourcing + replay | yes | 🟡 | synthetic only |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
-| Subscriptions (WebSocket) | yes | 🔴 GAP | works + filters by model, but `/graphql/ws` has **NO auth** (`handlers.rs:253`) → full RBAC bypass; SDK `SubscriptionBuilder` filter args are dead code |
-| RBAC enforcement | yes | 🔴 GAP | **access rules never parsed** from `export const schema` (only `defineModel` DSL); `Model.access` always `None` → `check_access` defaults to allow-all (`graphql.rs:49-53`). Verified. Complete bypass. |
+| Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
+| RBAC enforcement | yes | ✅ GraphQL | S1: rules now parsed from export-const-schema; `check_access` via shared `decide()` seam. **Data-layer callers still bypass** (no role ctx) — follow-up |
 | Audit logging | yes | 🟡 | synthetic only |
 | Workflows | yes | 🔴 GAP | CRM's `sales-pipeline.yml` is **inert**: loader is JSON-only (`lib.rs:148`, no `serde_yaml`), struct schema mismatch, and Http/Mutation/Plugin steps are **no-ops** (`workflow.rs:230-260`). 3 stacked silent failures. |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
@@ -114,7 +114,12 @@ targets is the bulk of the work.
   NOT yet enforce** — it has no role context (only `actor` user_id); the decide() seam is shared
   and ready, but plumbing role through the data-layer API is a follow-up. GraphQL is the external
   boundary, so the API-level bypass is closed; direct SDK/internal/plugin callers still bypass.
-- [ ] S2. **WebSocket auth**: require auth on `/graphql/ws`; inject `UserRoleCtx`/`TenantCtx` into the subscription context; gate `model_changes` by read access. Test: unauth subscribe rejected.
+- [x] S2. **WebSocket auth** (✅ done): `/graphql/ws` now routes to an authenticated handler
+  (`graphql_ws_handler`) that verifies a JWT from the `connection_init` payload
+  (`{"authorization":"Bearer <jwt>"}` / bare `token`) and injects `UserRoleCtx`/`UserIdCtx` —
+  rejects missing/invalid tokens. Second layer: `model_changes` resolver now takes `ctx` and gates
+  by the model's `read` rule via `AccessControl::decide` (errors on Forbidden/NeedsAuth). Test:
+  `test_subscription_requires_auth_role` (no role → rejected; role → stream stays open).
 - [ ] S3. **Multi-tenant**: auto-generate a `tenant_id` column; scope reads AND writes; filter subscriptions by tenant; validate the `x-tenant-id` header against the authenticated user. (Largest; may split.) Test: 2 tenants, assert isolation incl. subscriptions.
 
 ### Phase B — Correctness holes

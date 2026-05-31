@@ -562,3 +562,49 @@ async fn test_rbac_viewer_denied_create_admin_allowed() {
         "admin create should be allowed, got: {:?}", ajson
     );
 }
+
+
+// Phase S2: the model_changes subscription is gated by read access using the injected role.
+// Without a role (the unauth WS case) it must error; with a valid role it must open a stream.
+// (The WebSocket connection_init auth that injects the role is exercised at the handler level;
+// here we prove the second-layer access gate that closes the bypass.)
+#[tokio::test]
+#[ignore]
+async fn test_subscription_requires_auth_role() {
+    use atomo::graphql::UserRoleCtx;
+    use async_graphql::futures_util::StreamExt;
+
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    // Note has read: 'authenticated' in build_app's schema.
+    let schema_ts = r#"
+export interface Note {
+  id: string;
+  title: string;
+}
+export const schema = { models: { Note: { tableName: 'notes', access: { read: 'authenticated', create: 'admin' } } } };
+export default schema;
+"#;
+    let atomo = atomo::Atomo::builder()
+        .schema_content(schema_ts)
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .unwrap();
+    let schema = atomo_server::handlers::build_extended_schema(&atomo);
+
+    let sub_query = r#"subscription { modelChanges(model: "Note") { modelName eventType } }"#;
+
+    // No role injected (unauthenticated): the stream's first item must be an error.
+    let mut anon = schema.execute_stream(async_graphql::Request::new(sub_query));
+    let first = anon.next().await.expect("a response");
+    assert!(!first.errors.is_empty(), "unauthenticated subscription must be rejected");
+
+    // With a role injected (as connection_init would do): no auth error.
+    let req = async_graphql::Request::new(sub_query).data(UserRoleCtx("Viewer".to_string()));
+    let mut authed = schema.execute_stream(req);
+    // The stream stays open (pending) for an authorized subscriber; just assert it didn't
+    // immediately yield an auth error. Use a short timeout since no events will arrive.
+    let res = tokio::time::timeout(std::time::Duration::from_millis(300), authed.next()).await;
+    assert!(res.is_err(), "authorized subscription should stay open (no immediate error)");
+}
