@@ -97,6 +97,7 @@ export default defineConfig({
             { text: 'Auth (REST)', link: '/api/auth' },
             { text: 'Audit (REST)', link: '/api/audit' },
             { text: 'Workflows (REST)', link: '/api/workflows' },
+            { text: 'Projections (REST)', link: '/api/projections' },
             { text: 'Schema Metadata', link: '/api/metadata' },
             { text: 'Content Blocks', link: '/api/content-blocks' },
             { text: 'TypeScript SDK', link: '/api/typescript-sdk' },

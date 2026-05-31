@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auth**: OAuth callback now find-or-creates a user and issues a JWT session
 - **Client**: `event_receiver()` accessor exposing the model-event broadcast stream
 
+### Added (Bootstrap & Ops)
+- **Auth**: Admin bootstrap from `ADMIN_EMAIL`/`ADMIN_PASSWORD` env vars on server start (ULID id, argon2id hash, idempotent)
+- **Server**: `ensure_platform_tables()` creates `users`/`sessions`/`audit_log` at boot (idempotent)
+- **Workflow**: cron scheduler (`start_scheduler`) fires `Schedule { cron }` workflows on a 30s tick
+- **Projectors**: REST routes `GET /projections` and `POST /projections/rebuild`; per-projection failures are non-fatal
+- **Projectors**: auto-register a `TableProjection` per real entity model at boot (creates `{table}_projection` read tables)
+
 ### Changed
 - 无
 
@@ -74,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - UUID-shaped strings bound as native `uuid` to fix `operator does not exist: uuid = text`
 - `event_log.timestamp` stored as `TEXT` to match `ModelEvent` RFC3339 string (events were being silently dropped)
 - Validation rule extraction regex replaced with brace-balanced parser (rules in nested model blocks were never matched)
+- JSON array/object params bound as native `jsonb` (previously stringified → `column is of type jsonb but expression is of type text` on every create with array fields)
+- New user IDs use ULID (`EntityId::new()`) instead of UUID, fixing a login 500 (`EntityId` parses ULIDs, not UUIDs)
+- Projection table DDL quotes column identifiers (reserved word `order` in block types broke table creation)
+- Projection auto-registration skips block sub-types (no `id`) and avoids the doubled `_projection` table suffix
 
 ### Security
 - 无

@@ -6,6 +6,12 @@ Environment
 - `JWT_SECRET` — HMAC secret for signing tokens (required in production)
  - `PASSWORD_MIN_LENGTH` — default 8
  - `PASSWORD_REQUIRE_COMPLEXITY` — require letters and numbers (default true)
+ - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — bootstrap an admin user on server start
+
+Admin bootstrap
+- On startup the server ensures platform tables exist and, if `ADMIN_EMAIL` and `ADMIN_PASSWORD` are both set, creates an admin user when that email does not already exist.
+- The user is created with a ULID id, the `admin` role, and an argon2id password hash.
+- Idempotent: restarting does not duplicate the user, and an existing user's password is left unchanged.
 
 Endpoints
 ```http

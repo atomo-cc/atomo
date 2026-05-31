@@ -3,10 +3,9 @@
 ## Environment
 - Copy `.env.example` to `.env` in repo root or service dir.
 - Common vars: `DATABASE_URL`, `RUST_LOG`, `JWT_SECRET` (prod), `CORS_ORIGINS`, `ATOMO_ENV` (set to `production` in prod).
+- Admin bootstrap: `ADMIN_EMAIL`, `ADMIN_PASSWORD` — create an admin user on server start (idempotent; see Auth).
 - GraphQL limits: `GRAPHQL_MAX_DEPTH` (default 20), `GRAPHQL_MAX_COMPLEXITY` (default 200).
-- Optional global rate limit: `RATE_LIMIT_RPS` (requests per second, global).
-- Per-IP rate limit: `RATE_LIMIT_PER_IP_RPS` (default 20), `RATE_LIMIT_PER_IP_BURST` (default 2x RPS).
-- Per-key (Authorization) rate limit: `RATE_LIMIT_PER_KEY_RPS` (default 50), `RATE_LIMIT_PER_KEY_BURST`.
+- Rate limiting (per-IP token bucket): `RATE_LIMIT_RPS` (default 100), `RATE_LIMIT_WINDOW_SECS` (default 60).
 - Observability: `/metrics` exports Prometheus metrics; enable logs via `RUST_LOG` (e.g., `info`).
  - Log format: `LOG_FORMAT=json` for JSON logs; otherwise pretty logs.
  - Security headers: override CSP with `CSP` if needed; disable all security headers via `DISABLE_SECURITY_HEADERS=true` (not recommended).
