@@ -26,6 +26,28 @@ pub fn validate(
     errors
 }
 
+/// Update-aware validation: only validate rules for fields actually present in the patch.
+/// A partial update that omits a `required` field must NOT fail (the field keeps its stored
+/// value); but a field that IS being set must still satisfy its rules (e.g. non-empty title).
+pub fn validate_partial(
+    data: &HashMap<String, Value>,
+    rules: &HashMap<String, String>,
+) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+    for (field, rule_str) in rules {
+        if !data.contains_key(field) {
+            continue; // field not in this patch — leave its stored value untouched
+        }
+        let value = data.get(field);
+        for rule in rule_str.split('|') {
+            if let Some(err) = check_rule(field, value, rule) {
+                errors.push(err);
+            }
+        }
+    }
+    errors
+}
+
 fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<ValidationError> {
     let (rule_name, param) = if let Some(idx) = rule.find(':') {
         (&rule[..idx], Some(&rule[idx + 1..]))
@@ -150,4 +172,42 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
         _ => {}
     }
     None
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn rules() -> HashMap<String, String> {
+        // Mirrors CRM Deal: title required + bounded, value numeric.
+        [
+            ("title".to_string(), "required|min:1|max:255".to_string()),
+            ("value".to_string(), "numeric|min:0".to_string()),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn partial_update_omitting_required_passes() {
+        // Patch only sets `value` — `title` (required) is absent and must NOT trip.
+        let patch: HashMap<String, Value> = [("value".to_string(), json!(100))].into_iter().collect();
+        assert!(validate_partial(&patch, &rules()).is_empty());
+    }
+
+    #[test]
+    fn partial_update_with_invalid_present_field_fails() {
+        // Patch sets `title` to empty — present, so `required|min:1` must fire.
+        let patch: HashMap<String, Value> = [("title".to_string(), json!(""))].into_iter().collect();
+        assert!(!validate_partial(&patch, &rules()).is_empty(), "empty title in patch must fail");
+    }
+
+    #[test]
+    fn full_validate_still_requires_absent_field() {
+        // Create-time `validate` (not partial) must still flag the missing required title.
+        let data: HashMap<String, Value> = [("value".to_string(), json!(100))].into_iter().collect();
+        assert!(!validate(&data, &rules()).is_empty(), "create must still require title");
+    }
 }

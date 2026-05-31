@@ -87,6 +87,13 @@ async fn crm_schema_drives_the_platform() {
     assert_eq!(moved.len(), 1, "exactly one deal updated");
     assert_eq!(moved[0].get("stage").and_then(|v| v.as_str()), Some("qualified"), "stage advanced");
 
+    // Update-aware validation: the stage-only patch above succeeded despite `title` (required)
+    // being absent. But setting title to empty in a patch must still be rejected.
+    let bad_update = c
+        .update_many("Deal", &[eq("id", json!(deal_id))], &rec(&[("title", json!(""))]), &[], None)
+        .await;
+    assert!(bad_update.is_err(), "empty title in an update patch must fail validation, got {:?}", bad_update);
+
     // 5. Relationship: the contact's deals (hasMany via contactId).
     let deals = c
         .find_many("Deal", &[eq("contactId", json!(contact_id))], &[], None, None, &[])

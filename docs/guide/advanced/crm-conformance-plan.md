@@ -37,7 +37,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 |---|---|---|---|
 | Schema→codegen→migrations | yes | 🟡→partial | dogfood fixed enum/array; **`tableName` still ignored** |
 | CRUD | yes | ✅ | `crm_dogfood` + `integration_test` |
-| Validation rules | yes | ✅ | now data-layer enforced; `exists`/update-aware missing |
+| Validation rules | yes | ✅ | data-layer enforced on create + update (update-aware via `validate_partial`); `exists:` deferred to FKs |
 | Relationships (belongsTo/hasMany) | yes | 🟡 | dogfood queries deals-by-contact; `include`/nested untested |
 | Soft delete / restore / hard delete | yes | 🟡 | synthetic only |
 | Pagination + where/orderBy | yes | 🟡 | synthetic (Note) only |
@@ -156,7 +156,12 @@ targets is the bulk of the work.
   - [ ] B2a. **Rebuild still truncate-only (no replay)** — `TableProjection::rebuild` only
     `TRUNCATE`s; true replay needs the event store fed into the projection (signature only has
     `pool`). Operator action, not silent corruption — deferred.
-- [ ] B3. Update-aware validation + the `exists:` referential rule.
+- [x] B3. **Update-aware validation** (✅ done): `validate_partial` only checks rules for fields
+  present in the patch, enforced in `update_many` after `before_update`. A stage-only update no
+  longer trips `title: required`, but setting `title: ""` is still rejected. Tests: 3 unit
+  (`partial_update_*`, `full_validate_still_requires_absent_field`) + dogfood partial-update
+  assertion. `exists:<table>,<col>` stays a **documented no-op** — referential integrity is the
+  DB's job (FK constraints); a sync validator can't query, and an async pass would duplicate the FK.
 - [ ] B4. Audit-on-CRM-mutation with the real actor.
 
 ### Phase C — Data-pipeline polish (CRM-native, lower risk)

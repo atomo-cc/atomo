@@ -267,6 +267,16 @@ impl AtomoClient {
             crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
         };
 
+        // Update-aware validation: only the fields present in this patch are checked, so a
+        // partial update never trips `required` on an omitted field, but a field being set must
+        // still satisfy its rules. Enforced in the data layer (every update path), not just GraphQL.
+        if !model.validation.is_empty() {
+            let errors = crate::validation::validate_partial(&data, &model.validation);
+            if let Some(e) = errors.first() {
+                return Err(anyhow::anyhow!("validation failed: {}", e.message));
+            }
+        }
+
         let (sql, params) = SqlBuilder::update(model, where_clauses, &data);
         let args = build_args(&params)?;
         let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
