@@ -22,6 +22,8 @@ pub mod platform_graphql;
 pub mod platform_models;
 pub mod plugins;
 pub mod projector_routes;
+pub mod registry;
+pub mod registry_routes;
 pub mod rate_limit;
 pub mod schema_metadata;
 pub mod server;

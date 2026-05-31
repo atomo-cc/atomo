@@ -94,8 +94,8 @@ and `artifact` (the `.wasm` bytes); server computes/stores the checksum.
 
 ## Milestones
 
-1. Registry data model + read API (`search`, `get`, `download`) against Postgres + a local
-   blob dir. No publish yet. Unit/integration-test the index queries.
+1. ✅ Registry data model + read API (`search`, `get`, `download`) against Postgres + a local
+   blob dir. No publish yet. (`registry.rs`, `registry_routes.rs`; tested in `tests/registry.rs`.)
 2. `atomo plugin install` with checksum verification + `plugins.lock`. Integration test:
    install from a local registry fixture, assert files materialized + lockfile written.
 3. `atomo plugin publish` (auth-gated) + the upload path. Round-trip test: publish then

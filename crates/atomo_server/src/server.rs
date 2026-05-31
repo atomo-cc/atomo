@@ -99,6 +99,14 @@ impl AtomoServer {
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
         info!("   ✓ Platform tables ensured");
 
+        // Plugin marketplace registry (read API). Artifacts live in ./plugin-registry.
+        let registry_store = std::sync::Arc::new(crate::registry::RegistryStore::new(
+            self.atomo.db_pool().clone(),
+            std::env::var("ATOMO_REGISTRY_DIR").unwrap_or_else(|_| "plugin-registry".to_string()),
+        ));
+        registry_store.init().await?;
+        info!("   ✓ Plugin registry ready");
+
         // Audit listener: record an audit entry for every model mutation event.
         {
             let audit = audit_service.clone();
@@ -258,6 +266,7 @@ impl AtomoServer {
             .merge(crate::projector_routes::projector_router(
                 projector_manager.clone(),
             ))
+            .merge(crate::registry_routes::registry_router(registry_store.clone()))
             .layer(svc_builder)
             .layer(middleware::from_fn(
                 crate::tracing_middleware::request_tracing,
