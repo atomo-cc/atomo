@@ -478,9 +478,23 @@ impl Subscription {
         }
         let rx = self.client.subscribe(&model, &[], &[]).await;
         let model_filter = model;
+        // S3a: scope the stream to the subscriber's tenant (from connection_init), so events
+        // don't leak across tenants. None = single-tenant/unscoped → no tenant filtering.
+        let tenant = ctx.data_opt::<TenantCtx>().map(|t| t.0.clone());
         Ok(BroadcastStream::new(rx).filter_map(move |result| {
             let m = model_filter.clone();
-            async move { result.ok().filter(|e| e.model_name == m) }
+            let t = tenant.clone();
+            async move {
+                result.ok().filter(|e| {
+                    if e.model_name != m {
+                        return false;
+                    }
+                    match &t {
+                        Some(tid) => e.data.get("tenant_id").and_then(|v| v.as_str()) == Some(tid.as_str()),
+                        None => true,
+                    }
+                })
+            }
         }))
     }
 }

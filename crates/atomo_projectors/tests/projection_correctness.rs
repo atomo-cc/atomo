@@ -47,3 +47,38 @@ async fn projection_stores_numeric_and_removes_on_delete() {
 
     sqlx::query("DROP TABLE IF EXISTS deals_projection").execute(&pool).await.ok();
 }
+
+#[tokio::test]
+#[ignore]
+async fn rebuild_replays_from_event_log() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    // Minimal event_log (matches EventStore's schema) + a logged Created event, via raw SQL so
+    // this test needs no dependency on the `atomo` crate.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS event_log (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), \
+         event_id TEXT NOT NULL UNIQUE, event_type TEXT NOT NULL, model_name TEXT NOT NULL, \
+         data JSONB NOT NULL DEFAULT '{}', previous_data JSONB, timestamp TEXT NOT NULL DEFAULT now()::text, \
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    ).execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM event_log WHERE model_name = 'Widget'").execute(&pool).await.ok();
+    sqlx::query("DROP TABLE IF EXISTS widgets_projection").execute(&pool).await.ok();
+    sqlx::query("CREATE TABLE widgets_projection (id TEXT PRIMARY KEY, name TEXT)").execute(&pool).await.unwrap();
+
+    sqlx::query("INSERT INTO event_log (event_id, event_type, model_name, data, timestamp) VALUES ($1,$2,$3,$4,$5)")
+        .bind("evt-w1").bind("Created").bind("Widget")
+        .bind(json!({"id": "w1", "name": "widget-one"}))
+        .bind("2026-01-01T00:00:00Z")
+        .execute(&pool).await.unwrap();
+
+    let proj = TableProjection::new("Widget", "widgets_projection", vec!["id".into(), "name".into()]);
+    // Projection table is empty; rebuild must REPLAY the logged event to repopulate it (not just
+    // truncate — the old behavior left it permanently empty).
+    proj.rebuild(&pool).await.unwrap();
+    let row: (String,) = sqlx::query_as("SELECT name FROM widgets_projection WHERE id = 'w1'")
+        .fetch_one(&pool).await.expect("rebuild must replay the event into the projection");
+    assert_eq!(row.0, "widget-one", "rebuild should repopulate from the event log");
+
+    sqlx::query("DELETE FROM event_log WHERE model_name = 'Widget'").execute(&pool).await.ok();
+    sqlx::query("DROP TABLE IF EXISTS widgets_projection").execute(&pool).await.ok();
+}

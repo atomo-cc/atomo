@@ -74,19 +74,34 @@ impl SubscriptionBuilder {
             .subscribe(&self.model_name, &self.event_types, &self.where_clauses)
             .await;
 
-        ModelEventStream { receiver }
+        ModelEventStream {
+            receiver,
+            model_name: self.model_name,
+            event_types: self.event_types,
+        }
     }
 }
 
-/// Stream of model events
+/// Stream of model events, filtered by the builder's model + event-type criteria.
 pub struct ModelEventStream {
     receiver: broadcast::Receiver<ModelEvent>,
+    model_name: String,
+    event_types: Vec<EventType>,
 }
 
 impl ModelEventStream {
-    /// Get the next event
+    /// Get the next event matching the subscription filter (skips non-matching events).
+    /// Empty `event_types` means "any type". This is where the builder's filtering is applied
+    /// (the broadcast channel itself carries every model's events).
     pub async fn next(&mut self) -> Option<ModelEvent> {
-        self.receiver.recv().await.ok()
+        loop {
+            let ev = self.receiver.recv().await.ok()?;
+            let model_ok = ev.model_name == self.model_name;
+            let type_ok = self.event_types.is_empty() || self.event_types.contains(&ev.event_type);
+            if model_ok && type_ok {
+                return Some(ev);
+            }
+        }
     }
 }
 
@@ -101,4 +116,40 @@ pub struct ModelEvent {
     pub event_id: String,
     #[graphql(default)]
     pub actor: Option<String>, // user_id of the actor that caused the event, if known
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(model: &str, et: EventType) -> ModelEvent {
+        ModelEvent {
+            event_type: et,
+            model_name: model.into(),
+            data: HashMap::new(),
+            previous_data: None,
+            timestamp: String::new(),
+            event_id: String::new(),
+            actor: None,
+        }
+    }
+
+    // The SDK SubscriptionBuilder filter args were dead code; ModelEventStream::next now applies
+    // them. Subscribing to Deal/Created must skip Contact events and Deal/Updated events.
+    #[tokio::test]
+    async fn stream_filters_by_model_and_event_type() {
+        let (tx, rx) = broadcast::channel(16);
+        let mut stream = ModelEventStream {
+            receiver: rx,
+            model_name: "Deal".into(),
+            event_types: vec![EventType::Created],
+        };
+        tx.send(ev("Contact", EventType::Created)).unwrap(); // wrong model — skipped
+        tx.send(ev("Deal", EventType::Updated)).unwrap();    // wrong type — skipped
+        tx.send(ev("Deal", EventType::Created)).unwrap();    // match
+        let got = stream.next().await.expect("a matching event");
+        assert_eq!(got.model_name, "Deal");
+        assert!(matches!(got.event_type, EventType::Created));
+    }
 }

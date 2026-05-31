@@ -134,9 +134,25 @@ impl Projection for TableProjection {
     }
 
     async fn rebuild(&self, pool: &PgPool) -> Result<()> {
+        // Truncate, then REPLAY the model's events from the event_log in order (was previously
+        // truncate-only, which permanently emptied the read model — a data-loss hazard).
         sqlx::query(&format!("TRUNCATE TABLE {} CASCADE", self.table_name))
             .execute(pool)
             .await?;
+        let rows: Vec<(String, Value)> = sqlx::query_as(
+            "SELECT event_type, data FROM event_log WHERE model_name = $1 ORDER BY timestamp, created_at",
+        )
+        .bind(&self.source_model)
+        .fetch_all(pool)
+        .await?;
+        for (event_type, data) in rows {
+            let map: HashMap<String, Value> = match data {
+                Value::Object(m) => m.into_iter().collect(),
+                _ => HashMap::new(),
+            };
+            // Reuse the same event handler the live listener uses, so replay == live semantics.
+            self.handle_event(&event_type, &map, pool).await?;
+        }
         Ok(())
     }
 }

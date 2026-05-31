@@ -58,6 +58,11 @@ async fn graphql_ws_handler(
                     let mut data = async_graphql::Data::default();
                     data.insert(UserRoleCtx(format!("{:?}", user.role)));
                     data.insert(atomo::graphql::UserIdCtx(user.id.clone()));
+                    // Optional tenant scoping for the subscription (S3a): pass `tenant` in the
+                    // connection_init payload to receive only that tenant's events.
+                    if let Some(tid) = value.get("tenant").and_then(|v| v.as_str()) {
+                        data.insert(atomo::graphql::TenantCtx(tid.to_string()));
+                    }
                     Ok(data)
                 })
                 .serve()
