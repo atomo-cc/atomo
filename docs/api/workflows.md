@@ -7,6 +7,7 @@ The workflow engine runs multi-step workflows with triggers, conditions, and ret
 ```http
 GET /workflows                 # list registered workflow names
 POST /workflows                # register a workflow definition (JSON body)
+DELETE /workflows/{name}        # remove a registered workflow (404 if absent)
 POST /workflows/{name}/run     # execute a workflow with a JSON context body
 ```
 

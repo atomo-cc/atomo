@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Workflow as WorkflowIcon, Play, Plus } from 'lucide-react'
+import { Workflow as WorkflowIcon, Play, Plus, Trash2 } from 'lucide-react'
 import { apiClient } from '../../lib/api'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -56,6 +56,15 @@ export function WorkflowsView() {
     onError: (e: any) => setError(e?.message || 'Failed to run workflow'),
   })
 
+  const remove = useMutation({
+    mutationFn: (name: string) => apiClient.deleteWorkflow(name),
+    onSuccess: () => {
+      setError(null)
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    },
+    onError: (e: any) => setError(e?.message || 'Failed to delete workflow'),
+  })
+
   const handleRegister = () => {
     try {
       const parsed = JSON.parse(definition)
@@ -96,14 +105,24 @@ export function WorkflowsView() {
               {workflows.map((name) => (
                 <li key={name} className="flex items-center justify-between py-3">
                   <span className="font-medium text-gray-900">{name}</span>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => run.mutate(name)}
-                    disabled={run.isPending}
-                  >
-                    <Play className="h-4 w-4 mr-1" /> 运行
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => run.mutate(name)}
+                      disabled={run.isPending}
+                    >
+                      <Play className="h-4 w-4 mr-1" /> 运行
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => remove.mutate(name)}
+                      disabled={remove.isPending}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" /> 删除
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>

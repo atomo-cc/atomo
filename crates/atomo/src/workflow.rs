@@ -98,6 +98,11 @@ impl WorkflowEngine {
         self.workflows.write().unwrap().insert(workflow.name.clone(), workflow);
     }
 
+    /// Remove a workflow by name. Returns true if it existed.
+    pub fn remove(&self, name: &str) -> bool {
+        self.workflows.write().unwrap().remove(name).is_some()
+    }
+
     /// List registered workflow names
     pub fn list(&self) -> Vec<String> {
         self.workflows.read().unwrap().keys().cloned().collect()

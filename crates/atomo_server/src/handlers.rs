@@ -424,6 +424,7 @@ use serde_json::json;
 pub fn workflow_router(engine: Arc<WorkflowEngine>) -> Router {
     Router::new()
         .route("/workflows", get(list_workflows).post(register_workflow))
+        .route("/workflows/{name}", axum::routing::delete(delete_workflow))
         .route("/workflows/{name}/run", post(run_workflow))
         .with_state(engine)
 }
@@ -431,6 +432,18 @@ pub fn workflow_router(engine: Arc<WorkflowEngine>) -> Router {
 /// GET /workflows - list registered workflow names
 async fn list_workflows(State(engine): State<Arc<WorkflowEngine>>) -> Json<Vec<String>> {
     Json(engine.list())
+}
+
+/// DELETE /workflows/{name} - remove a registered workflow
+async fn delete_workflow(
+    State(engine): State<Arc<WorkflowEngine>>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    if engine.remove(&name) {
+        Ok(Json(json!({ "removed": name })))
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
 }
 
 /// POST /workflows - register a workflow definition

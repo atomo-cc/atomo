@@ -399,6 +399,11 @@ class AtomoApiClient {
     const response = await this.client.post(`/workflows/${encodeURIComponent(name)}/run`, context)
     return response.data
   }
+
+  /** Remove a registered workflow by name. */
+  async deleteWorkflow(name: string): Promise<void> {
+    await this.client.delete(`/workflows/${encodeURIComponent(name)}`)
+  }
 }
 
 // 导出单例实例
