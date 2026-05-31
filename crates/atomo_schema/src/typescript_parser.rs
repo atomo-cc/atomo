@@ -258,36 +258,52 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
     while i < lines.len() && !lines[i].contains('{') {
         i += 1;
     }
-    i += 1; // Move past the opening brace line
 
-    // Parse fields until we hit the closing brace at the beginning of a line
-    while i < lines.len() {
-        let line = lines[i].trim();
-
-        // Check for closing brace at start of line (end of interface)
-        if line == "}" {
-            break;
+    // Collect the interface body — from the content after `{` on the brace line, through the
+    // line containing the closing `}` (content before it). This handles single-line interfaces
+    // (`interface X { a: string; b: string; }`) and multiple fields packed onto one line, both
+    // of which the old line-at-a-time scan silently dropped.
+    let mut body = String::new();
+    let mut closed = false;
+    if i < lines.len() {
+        if let Some(pos) = lines[i].find('{') {
+            let rest = &lines[i][pos + 1..];
+            if let Some(end) = rest.find('}') {
+                body.push_str(&rest[..end]);
+                closed = true;
+            } else {
+                body.push_str(rest);
+                body.push('\n');
+            }
         }
+        i += 1;
+    }
+    while !closed && i < lines.len() {
+        if let Some(end) = lines[i].find('}') {
+            body.push_str(&lines[i][..end]);
+            closed = true;
+        } else {
+            body.push_str(lines[i]);
+            body.push('\n');
+        }
+        i += 1;
+    }
 
-        // Skip comments, empty lines, and other non-field lines
-        if line.is_empty()
-            || line.starts_with("//")
-            || line.starts_with("/*")
-            || line.starts_with("*")
-            || line.starts_with("export ")  // Skip nested exports
-            || line.contains("|")
-        // Skip union type members
+    // Each field is `;`-separated (and may also span newlines). Strip inline/line comments,
+    // skip union members and stray exports, then parse the rest as field definitions.
+    for raw in body.split(['\n', ';']) {
+        let seg = raw.split("//").next().unwrap_or("").trim();
+        if seg.is_empty()
+            || seg.starts_with("/*")
+            || seg.starts_with('*')
+            || seg.starts_with("export ")
+            || seg.contains('|')
         {
-            i += 1;
             continue;
         }
-
-        // Try to parse as field definition
-        if let Some(field) = parse_field_definition(line) {
+        if let Some(field) = parse_field_definition(seg) {
             fields.insert(field.name.clone(), field);
         }
-
-        i += 1;
     }
 
     let model = Model {
@@ -297,7 +313,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         hooks: None,  // Will be populated later by DSL parser
         validation: HashMap::new(),
     };
-    let lines_consumed = i - start_index + 1;
+    let lines_consumed = i - start_index;
 
     Ok((model, lines_consumed))
 }
@@ -475,5 +491,23 @@ mod validation_tests {
             contact.get("firstName").map(|s| s.as_str()),
             Some("required|min:1|max:100")
         );
+    }
+
+    #[test]
+    fn parses_single_line_and_packed_interfaces() {
+        // The footgun: a single-line interface (and multiple fields on one line) used to be
+        // silently dropped, producing tables with missing columns and no error.
+        let single = "export interface Contact { id: string; email: string; name: string; }";
+        let models = TypeScriptParser::new().parse_interfaces(single).unwrap();
+        let c = models.iter().find(|m| m.name == "Contact").expect("Contact parsed");
+        for f in ["id", "email", "name"] {
+            assert!(c.fields.contains_key(f), "single-line field '{}' must be parsed", f);
+        }
+
+        // Multi-line still works, including a comment and an optional field.
+        let multi = "export interface Note {\n  id: string;\n  title?: string; // heading\n}";
+        let models = TypeScriptParser::new().parse_interfaces(multi).unwrap();
+        let n = models.iter().find(|m| m.name == "Note").expect("Note parsed");
+        assert!(n.fields.contains_key("id") && n.fields.contains_key("title"));
     }
 }
