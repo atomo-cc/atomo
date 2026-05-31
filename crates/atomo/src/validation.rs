@@ -122,6 +122,31 @@ fn check_rule(field: &str, value: Option<&Value>, rule: &str) -> Option<Validati
                 }
             }
         }
+        "url" => {
+            if let Some(Value::String(s)) = value {
+                if !(s.is_empty() || s.starts_with("http://") || s.starts_with("https://")) {
+                    return Some(ValidationError {
+                        field: field.to_string(),
+                        message: format!("{} must be a valid URL", field),
+                        code: "url".to_string(),
+                    });
+                }
+            }
+        }
+        "in" => {
+            // `in:a,b,c` — value must be one of the listed options.
+            if let (Some(Value::String(s)), Some(opts)) = (value, param) {
+                if !opts.split(',').any(|o| o == s) {
+                    return Some(ValidationError {
+                        field: field.to_string(),
+                        message: format!("{} must be one of: {}", field, opts),
+                        code: "in".to_string(),
+                    });
+                }
+            }
+        }
+        // `exists:<table>,<col>` needs a DB lookup; the sync validator can't do it (no pool),
+        // so it is intentionally a no-op here. Referential integrity is the DB's job (FKs).
         _ => {}
     }
     None

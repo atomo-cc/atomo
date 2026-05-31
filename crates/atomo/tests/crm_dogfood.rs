@@ -94,6 +94,18 @@ async fn crm_schema_drives_the_platform() {
         .expect("query deals by contact");
     assert_eq!(deals.len(), 1, "contact should have exactly one deal");
 
+    // 6. Validation is enforced in the DATA layer (not just GraphQL). The CRM declares
+    //    title: required and Company name: required — empty values must be rejected here.
+    let bad_deal = c
+        .create("Deal", &rec(&[("title", json!("")), ("value", json!(1)), ("stage", json!("lead")), ("position", json!(0)), ("contactId", json!(contact_id))]), &[], None)
+        .await;
+    assert!(bad_deal.is_err(), "empty required title should fail validation, got {:?}", bad_deal);
+
+    let bad_company = c
+        .create("Company", &rec(&[("name", json!(""))]), &[], None)
+        .await;
+    assert!(bad_company.is_err(), "empty required name should fail validation");
+
     // Cleanup the tables this test generated.
     for t in ["deal", "contact", "company", "activity"] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();

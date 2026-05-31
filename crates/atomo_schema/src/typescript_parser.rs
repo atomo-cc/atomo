@@ -88,7 +88,9 @@ impl TypeScriptParser {
     /// Extract per-model validation rules from the `export const schema` object
     fn parse_validation_rules(content: &str) -> HashMap<String, HashMap<String, String>> {
         let mut result: HashMap<String, HashMap<String, String>> = HashMap::new();
-        let field_rule_re = Regex::new(r"(\w+):\s*'([^']*)'").unwrap();
+        // Field rules may be single- OR double-quoted (the real CRM schema uses double quotes;
+        // a single-quote-only regex silently extracted zero rules from it).
+        let field_rule_re = Regex::new(r#"(\w+):\s*['"]([^'"]*)['"]"#).unwrap();
         // Find each `ModelName: {` then, within its (brace-balanced) block, locate `validation: { ... }`.
         let model_open_re = Regex::new(r"(\w+)\s*:\s*\{").unwrap();
         let bytes = content.as_bytes();
@@ -149,11 +151,6 @@ impl TypeScriptParser {
 
             if line.starts_with("export enum ") {
                 let (enum_name, enum_values, lines_consumed) = parse_enum(&lines, i)?;
-                println!(
-                    "DEBUG: Collected enum {} with {} values",
-                    enum_name,
-                    enum_values.len()
-                );
                 self.enums.insert(enum_name, enum_values);
                 i += lines_consumed;
             } else if line.starts_with("export type ") {
