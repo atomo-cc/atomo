@@ -119,6 +119,16 @@ impl SqlBuilder {
         (sql, params)
     }
 
+    /// Build a restore UPDATE (clears deleted_at) for soft-deleted records.
+    pub fn restore(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
+        let mut sql = format!("UPDATE {} SET deleted_at = NULL", table_name(model));
+        let (where_sql, params) = build_where(where_clauses, 0);
+        if !where_sql.is_empty() {
+            sql.push_str(&format!(" WHERE {}", where_sql));
+        }
+        (sql, params)
+    }
+
     /// Build SELECT with soft-delete filter (excludes deleted records)
     pub fn select_active(
         model: &Model,

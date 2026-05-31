@@ -320,6 +320,42 @@ impl AtomoClient {
         Ok(count)
     }
 
+    /// Restore soft-deleted records (clears deleted_at). Returns affected count.
+    pub async fn restore_many(
+        &self,
+        model_name: &str,
+        where_clauses: &[WhereClause],
+    ) -> Result<usize> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+        let (sql, params) = SqlBuilder::restore(model, where_clauses);
+        let args = build_args(&params)?;
+        let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
+        self.cache.invalidate_model(model_name).await;
+        Ok(result.rows_affected() as usize)
+    }
+
+    /// Permanently delete records (hard delete - row is removed). Returns affected count.
+    pub async fn hard_delete_many(
+        &self,
+        model_name: &str,
+        where_clauses: &[WhereClause],
+    ) -> Result<usize> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+        let (sql, params) = SqlBuilder::delete(model, where_clauses);
+        let args = build_args(&params)?;
+        let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
+        self.cache.invalidate_model(model_name).await;
+        Ok(result.rows_affected() as usize)
+    }
+
     /// Count records matching where clauses
     pub async fn count(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
         let model = self

@@ -382,6 +382,34 @@ impl Mutation {
 
         Ok(count as i32)
     }
+
+    /// Restore soft-deleted records matching the where filter.
+    async fn restore(&self, ctx: &Context<'_>, model: String, r#where: Value) -> GraphQLResult<i32> {
+        check_access(&self.schema, &model, "delete", ctx)?;
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let mut where_clauses = parse_where(&r#where);
+        where_clauses = crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let count = self.client.restore_many(&model, &where_clauses).await?;
+        Ok(count as i32)
+    }
+
+    /// Permanently delete (purge) records matching the where filter.
+    async fn hard_delete(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+        r#where: Value,
+    ) -> GraphQLResult<i32> {
+        check_access(&self.schema, &model, "delete", ctx)?;
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let mut where_clauses = parse_where(&r#where);
+        where_clauses = crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let count = self
+            .client
+            .hard_delete_many(&model, &where_clauses)
+            .await?;
+        Ok(count as i32)
+    }
 }
 
 /// Service-specific GraphQL subscriptions

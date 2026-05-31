@@ -355,3 +355,37 @@ async fn test_find_unique_by_id() {
     assert!(found.is_some());
     assert_eq!(found.unwrap().get("name").unwrap(), &json!("UniqueFind"));
 }
+
+
+#[tokio::test]
+#[ignore]
+async fn test_restore_and_hard_delete() {
+    use atomo::query::{WhereClause, WhereOperator};
+    let schema = test_schema();
+    let client = atomo::client::AtomoClient::builder()
+        .database_url(std::env::var("DATABASE_URL").unwrap_or("postgresql://localhost/atomo_test".into()))
+        .enable_migrations(true)
+        .build(&schema)
+        .await
+        .expect("Failed to build client");
+
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), json!("Restorable"));
+    let record = client.create("TestUser", &data, &[], None).await.expect("create failed");
+    let id = record.get("id").cloned().unwrap();
+    let where_clauses = vec![WhereClause { field: "id".to_string(), operator: WhereOperator::Equals, value: id }];
+
+    // Soft delete -> hidden
+    assert_eq!(client.delete_many("TestUser", &where_clauses, None).await.unwrap(), 1);
+    assert!(client.find_many("TestUser", &where_clauses, &[], None, None, &[]).await.unwrap().is_empty());
+
+    // Restore -> visible again
+    assert_eq!(client.restore_many("TestUser", &where_clauses).await.unwrap(), 1);
+    assert_eq!(client.find_many("TestUser", &where_clauses, &[], None, None, &[]).await.unwrap().len(), 1);
+
+    // Hard delete -> gone permanently (count of affected rows == 1)
+    assert_eq!(client.hard_delete_many("TestUser", &where_clauses).await.unwrap(), 1);
+    assert!(client.find_many("TestUser", &where_clauses, &[], None, None, &[]).await.unwrap().is_empty());
+    // A second restore affects 0 rows (the row no longer exists)
+    assert_eq!(client.restore_many("TestUser", &where_clauses).await.unwrap(), 0);
+}
