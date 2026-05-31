@@ -98,6 +98,36 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Create an admin user from `ADMIN_EMAIL`/`ADMIN_PASSWORD` env vars if it doesn't already exist.
+/// No-op when the vars are unset. Idempotent (skips if the email already exists).
+pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<()> {
+    let (email, password) = match (std::env::var("ADMIN_EMAIL"), std::env::var("ADMIN_PASSWORD")) {
+        (Ok(e), Ok(p)) if !e.is_empty() && !p.is_empty() => (e, p),
+        _ => return Ok(()),
+    };
+    let pool = auth.db_pool();
+    let exists: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(pool)
+        .await?;
+    if exists.is_some() {
+        return Ok(());
+    }
+    let id = atomo_core::types::EntityId::new().to_string();
+    let hash = auth.hash_password(&password)?;
+    sqlx::query(
+        "INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active)
+         VALUES ($1, $2, $3, 'Admin', 'User', 'admin', true)",
+    )
+    .bind(&id)
+    .bind(&email)
+    .bind(&hash)
+    .execute(pool)
+    .await?;
+    tracing::info!(%email, "Seeded admin user from ADMIN_EMAIL/ADMIN_PASSWORD");
+    Ok(())
+}
+
 /// Load workflow definitions from `{dir}/*.json` into the engine. Returns count loaded.
 pub async fn load_workflows(engine: &atomo::workflow::WorkflowEngine, dir: &str) -> usize {
     let mut count = 0;

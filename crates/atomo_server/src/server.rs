@@ -99,6 +99,9 @@ impl AtomoServer {
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
         info!("   ✓ Platform tables ensured");
 
+        // Optionally seed an admin user from ADMIN_EMAIL/ADMIN_PASSWORD env vars.
+        crate::seed_admin(&auth_service).await?;
+
         // Start CQRS projector listener: convert ModelEvent -> ProjectorEvent and feed projections.
         // Auto-register one TableProjection per schema model (maintains a `{table}_projection` read table).
         let projector_manager = {
