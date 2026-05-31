@@ -107,11 +107,23 @@ The QuickJS/Javy spike must meet, or we reconsider:
 3. Finalize the `atomo` JS API contract (the draft above) with examples.
 
 **Phase 1 — Spike (decision gate):**
-4. Embed Javy/QuickJS as a `.wasm` in `atomo_wasm_runtime`; eval a trivial JS string under
-   wasmtime with fuel metering. Measure against the performance budget. Go/No-go here.
+**Phase 1 — Spike (decision gate): ✅ DONE — GO.**
+4. Validated with Javy v8.1.1: compiled a JS plugin to `plugin.wasm` and ran it under
+   our wasmtime 16 config (`consume_fuel(true)`) + WASI. Findings:
+   - **Size: 1.2 MB** (engine embedded) — well under the 5 MB budget. ✅
+   - **Runs fuel-metered**: a real `record -> JSON.parse -> mutate -> stringify -> stdout`
+     hook executed and consumed ~237k fuel (deterministically bounded). ✅
+   - **Integration requirement**: the Javy module imports `wasi_snapshot_preview1`
+     (`fd_read`/`fd_write` for stdin/stdout I/O) and exports `_start`. So Phase 2 must add
+     `wasmtime-wasi` to `atomo_wasm_runtime` and bridge JS I/O via stdin (record JSON in)
+     / stdout (result JSON out) — Javy's I/O model is std streams, NOT our custom `env`
+     host functions. The `atomo.*` API will be a JS shim that marshals through stdin/stdout
+     (or, later, custom imports) onto the existing host functions.
+   - Build note: the spike's full-wasmtime test binary is large; expect significant disk use.
 
 **Phase 2 — Implement (milestone-gated, each tested):**
-5. M1: load a `.js` plugin, run it, wire `atomo.log` → `host_log`. Test: JS plugin logs.
+5. M1: load a `.js` plugin, run it via the embedded Javy engine (WASI stdin/stdout),
+   capture stdout. Test: JS plugin transforms a JSON record end-to-end.
 6. M2: bridge the CRUD hook ABI — JS `beforeCreate(record)` flows through `HookRunner`.
    Test: JS hook mutates a record end-to-end.
 7. M3: permission-gated `atomo.emit`/`dbQuery`/`http` onto existing host functions.
