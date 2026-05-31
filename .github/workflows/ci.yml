@@ -41,7 +41,7 @@ jobs:
           override: true
           
       - name: Cache cargo dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -95,7 +95,7 @@ jobs:
           override: true
           
       - name: Cache cargo dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -108,21 +108,21 @@ jobs:
         
       - name: Upload CLI binary (Linux)
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: atomo-cli-linux
           path: target/release/atomo
           
       - name: Upload CLI binary (Windows)
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: atomo-cli-windows
           path: target/release/atomo.exe
           
       - name: Upload CLI binary (macOS)
         if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: atomo-cli-macos
           path: target/release/atomo
