@@ -8,7 +8,7 @@
 ## From Source (Monorepo)
 ```bash
 # Clone and install
-git clone https://github.com/atomo-org/atomo.git
+git clone https://github.com/Chris533/atomo.git
 cd atomo
 pnpm install
 

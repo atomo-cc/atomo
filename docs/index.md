@@ -14,7 +14,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/atomo-org/atomo
+      link: https://github.com/Chris533/atomo
     - theme: alt
       text: Try Playground
       link: https://playground.atomo.cc
@@ -115,7 +115,7 @@ atomo dev
 Your complete application stack is ready in under 30 seconds! 🚀
 
 
-git clone https://github.com/atomo-org/atomo.git
+git clone https://github.com/Chris533/atomo.git
 cd atomo
 pnpm install
 pnpm dev:admin

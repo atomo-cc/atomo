@@ -33,7 +33,7 @@ atomo --version
 
 ```bash
 # Clone and build from source
-git clone https://github.com/atomo-org/atomo.git
+git clone https://github.com/Chris533/atomo.git
 cd atomo
 cargo install --path crates/atomo_cli
 ```
@@ -60,7 +60,7 @@ cd my-crm
 
 ### Manual Installation - Frontend
 ```bash
-git clone https://github.com/atomo-org/atomo.git
+git clone https://github.com/Chris533/atomo.git
 cd atomo
 pnpm install
 ```
@@ -232,7 +232,7 @@ Now that you have a running application, explore these features:
 
 - 📖 **[Core Concepts](/guide/event-sourcing)** - Understand Atomo's architecture
 - 💬 **[Discord Community](https://discord.gg/atomo)** - Get help from other developers
-- 🐛 **[GitHub Issues](https://github.com/atomo-org/atomo/issues)** - Report bugs or request features
+- 🐛 **[GitHub Issues](https://github.com/Chris533/atomo/issues)** - Report bugs or request features
 - 📧 **[Email Support](mailto:support@atomo.cc)** - Direct support from the team
 
 Welcome to the future of application development! 🚀

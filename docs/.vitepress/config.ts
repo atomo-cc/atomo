@@ -128,7 +128,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/atomo-org/atomo' },
+      { icon: 'github', link: 'https://github.com/Chris533/atomo' },
       { icon: 'discord', link: 'https://discord.gg/atomo' }
     ],
 
@@ -142,7 +142,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: 'https://github.com/atomo-org/atomo/edit/main/docs/:path',
+      pattern: 'https://github.com/Chris533/atomo/edit/main/docs/:path',
       text: 'Edit this page on GitHub'
     }
   },

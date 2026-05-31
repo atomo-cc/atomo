@@ -195,5 +195,5 @@ Need help with the APIs?
 
 - 📖 **[Guides](/guide/)** - Step-by-step tutorials
 - 💬 **[Discord](https://discord.gg/atomo)** - Community support
-- 🐛 **[GitHub Issues](https://github.com/atomo-org/atomo/issues)** - Bug reports
+- 🐛 **[GitHub Issues](https://github.com/Chris533/atomo/issues)** - Bug reports
 - 📧 **[Email](mailto:api-support@atomo.cc)** - Direct API support

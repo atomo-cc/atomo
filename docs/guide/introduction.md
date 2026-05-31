@@ -165,7 +165,7 @@ Or explore these key concepts:
 Join thousands of developers building the future:
 
 - 💬 **[Discord](https://discord.gg/atomo)** - Real-time community chat
-- 📖 **[GitHub](https://github.com/atomo-org/atomo)** - Source code and issues
+- 📖 **[GitHub](https://github.com/Chris533/atomo)** - Source code and issues
 - 🐦 **[Twitter](https://twitter.com/atomo_cc)** - Latest updates and announcements
 - 📧 **[Newsletter](https://atomo.cc/newsletter)** - Monthly development updates
 
