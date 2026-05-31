@@ -12,7 +12,7 @@ use atomo::Atomo;
 /// This function analyzes the Atomo schema and returns a JSON structure
 /// containing all the metadata needed by the Admin UI to dynamically
 /// render the interface.
-pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
+pub fn extract_schema_metadata(_atomo: &Atomo) -> Value {
     // For now, return a basic structure that matches what the Admin UI expects
     // TODO: Implement actual schema introspection from the Atomo instance
     

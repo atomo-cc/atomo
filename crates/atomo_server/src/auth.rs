@@ -16,15 +16,12 @@ use axum::{
     http::{StatusCode},
     middleware::Next,
     response::Response,
-    Json,
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::collections::HashSet;
 use uuid::Uuid;
-use chrono::DateTime;
 
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -246,7 +243,7 @@ impl AuthProvider<PlatformUser, UserSession> for HttpAuthService {
         Ok(None)
     }
 
-    async fn authorize(&self, user: &PlatformUser, resource: &str, action: &str) -> Result<bool, Self::Error> {
+    async fn authorize(&self, user: &PlatformUser, _resource: &str, action: &str) -> Result<bool, Self::Error> {
         // For now, implement basic role-based authorization
         let access_pattern = match action {
             "read" => "admin|manager|sales|support|viewer",
@@ -426,7 +423,7 @@ impl AuthorizationService<PlatformUser> for HttpAuthService {
         }
     }
 
-    async fn create_user(&self, email: &str, password: &str, first_name: &str, last_name: &str, role: impl Send) -> Result<PlatformUser, Self::Error> {
+    async fn create_user(&self, email: &str, password: &str, first_name: &str, last_name: &str, _role: impl Send) -> Result<PlatformUser, Self::Error> {
         // Enforce password policy
         self.validate_password_policy(password)?;
         let user_id = EntityId::new();
@@ -658,6 +655,7 @@ pub mod handlers {
 
     /// Refresh handler
     #[derive(Deserialize)]
+    #[allow(non_snake_case)]
     pub struct RefreshRequest { pub refreshToken: String }
 
     pub async fn refresh(

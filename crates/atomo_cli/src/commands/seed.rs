@@ -1,8 +1,7 @@
 use anyhow::Result;
-use console::style;
 use colored::Colorize;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn current_service_dir() -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;

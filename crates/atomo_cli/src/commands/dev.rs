@@ -161,13 +161,13 @@ fn detect_service_context(current_dir: &Path) -> Result<String> {
 }
 
 /// 创建临时工作区
-async fn create_runtime_workspace(service_dir: &Path, service_name: &str) -> Result<PathBuf> {
+async fn create_runtime_workspace(service_dir: &Path, _service_name: &str) -> Result<PathBuf> {
     let runtime_dir = service_dir.join(".atomo").join("runtime");
     
     // 检查是否需要重新生成（增量编译优化）
     let schema_path = service_dir.join("schema.ts");
-    let cargo_toml_path = runtime_dir.join("Cargo.toml");
-    let models_path = runtime_dir.join("src").join("models.rs");
+    let _cargo_toml_path = runtime_dir.join("Cargo.toml");
+    let _models_path = runtime_dir.join("src").join("models.rs");
     
     let should_regenerate = if !runtime_dir.exists() {
         println!("   🔄 First run detected - generating runtime");
@@ -388,8 +388,8 @@ async fn graphql_playground() -> impl IntoResponse {{
 /// 生成业务代码 (models.rs, resolvers.rs) - 增强版本
 /// 真正的细粒度增量代码生成 - 只重新生成变更的部分
 pub(crate) async fn generate_business_code_incremental(runtime_dir: &Path, schema_path: &Path) -> Result<()> {
-    let models_path = runtime_dir.join("src").join("models.rs");
-    let resolvers_path = runtime_dir.join("src").join("resolvers.rs");
+    let _models_path = runtime_dir.join("src").join("models.rs");
+    let _resolvers_path = runtime_dir.join("src").join("resolvers.rs");
     
     // 首先生成GraphQL schema文件用于开发工具
     let schema_graphql_path = runtime_dir.join("schema.graphql");
@@ -421,7 +421,7 @@ pub(crate) async fn generate_business_code_incremental(runtime_dir: &Path, schem
                 let resolvers_task = generate_resolvers_only(runtime_dir, schema_path, &models);
                 
                 // 并行执行两个生成任务
-                let (models_result, resolvers_result) = tokio::try_join!(models_task, resolvers_task)?;
+                let (_models_result, _resolvers_result) = tokio::try_join!(models_task, resolvers_task)?;
                 println!("   ✅ Parallel generation completed successfully");
             },
             (true, false) => {
@@ -875,7 +875,7 @@ async fn schema_first_generation(runtime_dir: &Path, schema_path: &Path) -> Resu
     let schema_content = std::fs::read_to_string(schema_path)
         .context("Failed to read schema.ts")?;
     
-    let mut parser = TypeScriptParser::new();
+    let parser = TypeScriptParser::new();
     let models = parser.parse(&schema_content)
         .context("Failed to parse schema.ts")?;
     
@@ -1235,7 +1235,7 @@ async fn update_incremental_cache(runtime_dir: &Path, changes: &IncrementalChang
 }
 
 /// 只生成模型代码
-async fn generate_models_only(runtime_dir: &Path, schema_path: &Path, models: &[atomo_schema::types::Model]) -> Result<()> {
+async fn generate_models_only(runtime_dir: &Path, _schema_path: &Path, models: &[atomo_schema::types::Model]) -> Result<()> {
     let type_generator = HasuraV2TypeGenerator::new();
     let models_code = type_generator.generate_types(models)
         .with_context(|| "Failed to generate models")?;
@@ -1247,7 +1247,7 @@ async fn generate_models_only(runtime_dir: &Path, schema_path: &Path, models: &[
 }
 
 /// 只生成解析器代码
-async fn generate_resolvers_only(runtime_dir: &Path, schema_path: &Path, models: &[atomo_schema::types::Model]) -> Result<()> {
+async fn generate_resolvers_only(runtime_dir: &Path, _schema_path: &Path, models: &[atomo_schema::types::Model]) -> Result<()> {
     let resolver_generator = HasuraV2ResolverGenerator::new();
     let resolvers_code = resolver_generator.generate_resolvers(models)
         .with_context(|| "Failed to generate resolvers")?;

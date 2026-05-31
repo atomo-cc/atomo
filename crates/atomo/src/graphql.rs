@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 use std::collections::HashMap;
-use async_graphql::{Schema as GraphQLSchema, Object, SimpleObject, Subscription, Context, Result as GraphQLResult, EmptySubscription};
+use async_graphql::{Schema as GraphQLSchema, Object, SimpleObject, Subscription, Context, Result as GraphQLResult};
 use serde_json::Value;
 use futures;
 use futures::StreamExt;
@@ -269,7 +269,7 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         model: String,
-        where_: Value,
+        _where_: Value,
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "update", ctx)?;
@@ -291,7 +291,7 @@ impl Mutation {
         &self,
         ctx: &Context<'_>,
         model: String,
-        where_: Value,
+        _where_: Value,
     ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
         let tenant = ctx.data_opt::<TenantCtx>();

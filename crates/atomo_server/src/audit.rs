@@ -7,10 +7,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use atomo_core::{
     audit::{AuditService, AuditOperation, AuditSearchFilters, AuditStats, UserAuditStats, AuditLogEntry},
-    types::{EntityId, StreamId}
+    types::EntityId
 };
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
@@ -187,7 +186,6 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
         if let Some(end_time) = &filters.end_time {
             query.push_str(&format!(" AND created_at <= ${}", param_count));
             bind_values.push(Box::new(*end_time));
-            param_count += 1;
         }
 
         query.push_str(" ORDER BY created_at DESC");
@@ -257,7 +255,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
 
     async fn get_audit_stats(
         &self,
-        filters: &AuditSearchFilters
+        _filters: &AuditSearchFilters
     ) -> Result<AuditStats, Self::Error> {
         // Get total count
         let total_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM audit_log")

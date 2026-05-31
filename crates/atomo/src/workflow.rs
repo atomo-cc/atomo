@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// A workflow definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +160,30 @@ impl WorkflowEngine {
     /// Find workflows triggered by a specific event
     pub fn find_by_trigger(&self, model: &str, event_type: &str) -> Vec<&Workflow> {
         self.workflows.values().filter(|w| matches!(&w.trigger, WorkflowTrigger::OnEvent { model: m, event_type: e } if m == model && e == event_type)).collect()
+    }
+
+    /// Start listening to model events and auto-trigger matching workflows
+    pub fn start_event_listener(self: Arc<Self>, mut rx: tokio::sync::broadcast::Receiver<crate::events::ModelEvent>) {
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        let event_type_str = format!("{:?}", event.event_type);
+                        let workflows = self.find_by_trigger(&event.model_name, &event_type_str);
+                        for workflow in workflows {
+                            let ctx = event.data.clone();
+                            if let Err(e) = self.execute(&workflow.name, ctx).await {
+                                tracing::error!(workflow = %workflow.name, error = %e, "Workflow execution failed");
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("Workflow listener lagged by {} events", n);
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
     }
 }
 

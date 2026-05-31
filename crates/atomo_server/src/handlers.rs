@@ -15,7 +15,7 @@ use std::time::Instant;
 use atomo_core::types::EntityId;
 use atomo::graphql::{Query as ServiceQuery, Mutation as ServiceMutation, Subscription};
 use crate::platform_graphql::{PlatformQuery, PlatformMutation};
-use serde_json::{json, Value};
+use serde_json::Value;
 use prometheus::{Encoder, TextEncoder};
 use axum::http::{header, HeaderMap};
 
@@ -86,6 +86,7 @@ pub async fn graphql_handler(
 
     // Extract auth user from request extensions (set by auth middleware)
     let auth_user = req.extensions().get::<crate::auth::AuthUser>().cloned();
+    let tenant_id = req.headers().get("x-tenant-id").and_then(|v| v.to_str().ok()).map(String::from);
 
     // Parse GraphQL request from body
     let body = axum::body::to_bytes(req.into_body(), 2_000_000).await.unwrap_or_default();
@@ -97,6 +98,9 @@ pub async fn graphql_handler(
     // Inject user role into GraphQL context
     if let Some(user) = auth_user {
         inner = inner.data(UserRoleCtx(format!("{:?}", user.role)));
+    }
+    if let Some(tid) = tenant_id {
+        inner = inner.data(atomo::graphql::TenantCtx(tid));
     }
 
     let op = inner.operation_name.clone().unwrap_or_else(|| "anonymous".to_string());
@@ -182,7 +186,7 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
 
     // Extend with dynamically registered models
     let mut extended_metadata = metadata;
-    if let Some(models) = extended_metadata.get_mut("models") {
+    if let Some(_models) = extended_metadata.get_mut("models") {
         // Note: In the future, models will be registered dynamically from service schemas
         // For now, we rely on the schema metadata extraction from Atomo instance
         // TODO: Implement dynamic model registration from individual services
@@ -197,6 +201,8 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
 ) -> Router {
     use crate::auth::{auth_middleware, optional_auth_middleware, handlers};
     use axum::middleware;
+
+    let oauth_manager = crate::oauth::OAuthManager::from_env();
 
     let protected_routes = Router::new()
         .route("/graphql", post(graphql_handler))
@@ -223,6 +229,14 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
             .route("/refresh", post(handlers::refresh))
             .route("/me", get(handlers::me))
             .with_state(auth_service.clone())
+        )
+        
+        // OAuth routes
+        .nest("/auth/oauth", Router::new()
+            .route("/authorize", get(crate::oauth::oauth_authorize))
+            .route("/callback/:provider", get(crate::oauth::oauth_callback))
+            .route("/providers", get(crate::oauth::oauth_providers))
+            .with_state(oauth_manager)
         )
         
         // Audit log routes
@@ -317,7 +331,7 @@ pub async fn get_user_activity(
         return Err(axum::http::StatusCode::FORBIDDEN);
     }
 
-    let limit = params.get("limit")
+    let _limit = params.get("limit")
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
 

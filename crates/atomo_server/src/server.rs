@@ -12,12 +12,11 @@ use tower_http::{
     trace::{DefaultOnResponse, TraceLayer},
 };
 use axum::http::{HeaderValue, header, HeaderName};
-use axum::{middleware, http::Request};
+use axum::middleware;
 // use axum::{body::Body, response::Response};
 // use axum::middleware::Next;
 use tracing::{info, instrument};
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
-use std::time::Duration;
 use atomo::prelude::*;
 
 use crate::{
@@ -128,7 +127,7 @@ impl AtomoServer {
             .layer(SetResponseHeaderLayer::if_not_present(csp_name, csp_val));
 
         // Create router with Atomo context and services
-        let mut svc_builder = ServiceBuilder::new()
+        let svc_builder = ServiceBuilder::new()
             // Generate/propagate request IDs
             .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
             .layer(PropagateRequestIdLayer::x_request_id())

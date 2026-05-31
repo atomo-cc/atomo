@@ -3,10 +3,10 @@
 //! This module provides the concrete implementations of platform functionality 
 //! (users, sessions, audit logs) with actual database queries.
 
-use async_graphql::{Context, Object, FieldResult, Error as GraphQLError, InputObject};
+use async_graphql::{Context, Object, FieldResult, Error as GraphQLError};
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::str::FromStr;
 
 use atomo_core::types::EntityId;

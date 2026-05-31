@@ -3,6 +3,7 @@
 //! This crate implements Hasura v2 style GraphQL code generation:
 //! parsing TypeScript interface definitions and generating corresponding 
 //! Rust structs and GraphQL resolvers for Hasura v2 compatibility.
+#![allow(dead_code)]
 
 pub mod parser;
 pub mod types;

@@ -14,6 +14,5 @@ pub use codegen::*;
 pub use dev::*;
 pub use build::*;
 pub use deploy::*;
-pub use workspace_dev::*;
 pub use seed::*;
 pub use test::*;

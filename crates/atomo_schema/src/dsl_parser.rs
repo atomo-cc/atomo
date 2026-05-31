@@ -11,6 +11,7 @@ use regex::Regex;
 /// Parser for TypeScript DSL hooks and access control
 pub struct DslParser {
     /// Extracted function definitions
+    #[allow(dead_code)]
     functions: HashMap<String, String>,
 }
 
@@ -119,6 +120,7 @@ impl DslParser {
     }
 
     /// Parse access control block from TypeScript DSL
+    #[allow(unused_assignments)]
     fn parse_access_block(&mut self, content: &str) -> Result<Option<AccessControl>> {
         // Look for access: { ... } block with proper brace matching
         let mut access_start = None;
@@ -285,6 +287,7 @@ impl DslParser {
     }
 
     /// Parse hooks block from TypeScript DSL
+    #[allow(unused_assignments)]
     fn parse_hooks_block(&mut self, content: &str) -> Result<Option<HookDefinitions>> {
         // Look for hooks: { ... } block with proper brace matching
         let mut hooks_start = None;

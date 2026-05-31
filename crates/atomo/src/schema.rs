@@ -40,6 +40,8 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             columns.push(format!("  {} {}{}", to_snake_case(&field.name), column_type, nullable));
         }
         
+        // Add soft delete column
+        columns.push(format!("  deleted_at TIMESTAMPTZ"));
         sql.push_str(&columns.join(",\n"));
         sql.push_str("\n);");
         

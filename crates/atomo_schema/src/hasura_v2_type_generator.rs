@@ -541,7 +541,7 @@ impl From<{model_name}> for {core_type} {{
     }
     
     /// Generate field mappings for Block types
-    fn generate_block_field_mappings(&self, model_name: &str, fields: &std::collections::HashMap<String, Field>) -> (String, String) {
+    fn generate_block_field_mappings(&self, _model_name: &str, fields: &std::collections::HashMap<String, Field>) -> (String, String) {
         let mut from_fields = Vec::new();
         let mut to_fields = Vec::new();
         

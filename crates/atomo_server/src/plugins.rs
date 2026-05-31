@@ -4,9 +4,9 @@
 //! to extend the server's GraphQL schema and HTTP handlers without modifying
 //! the core platform code.
 
-use async_graphql::{Object, Context, FieldResult, SchemaBuilder};
+use async_graphql::SchemaBuilder;
 use axum::Router;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use crate::handlers::{Query, Mutation};
 use atomo::graphql::Subscription;
@@ -88,7 +88,7 @@ impl GraphQLPlugin for CrmGraphQLPlugin {
         "crm"
     }
 
-    async fn register_mutations(&self, schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>) {
+    async fn register_mutations(&self, _schema_builder: &mut SchemaBuilder<Query, Mutation, Subscription>) {
         // Register CRM-specific mutations
         // This would include deal position updates, etc.
     }

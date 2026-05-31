@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_assignments)]
 use clap::{Parser, Subcommand};
 use colored::*;
 

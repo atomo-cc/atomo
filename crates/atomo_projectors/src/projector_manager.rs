@@ -1,9 +1,20 @@
 use anyhow::Result;
+use serde_json::Value;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::Projection;
+
+/// Event received from the broadcast channel
+#[derive(Debug, Clone)]
+pub struct ProjectorEvent {
+    pub event_type: String,
+    pub model_name: String,
+    pub data: HashMap<String, Value>,
+}
 
 pub struct ProjectorManager {
     projections: Vec<Arc<dyn Projection>>,
@@ -40,5 +51,24 @@ impl ProjectorManager {
 
     pub fn projections(&self) -> &[Arc<dyn Projection>] {
         &self.projections
+    }
+
+    /// Start listening to model events and process them through projections
+    pub fn start_event_listener(self: Arc<Self>, mut rx: broadcast::Receiver<ProjectorEvent>) {
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if let Err(e) = self.process_event(&event.event_type, &event.model_name, &event.data).await {
+                            tracing::error!(error = %e, "Projection processing failed");
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("Projector listener lagged by {} events", n);
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
     }
 }

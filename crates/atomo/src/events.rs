@@ -60,7 +60,7 @@ impl SubscriptionBuilder {
     }
     
     /// Add a where filter
-    pub fn where_(mut self, field: &str, condition: impl Into<WhereClause>) -> Self {
+    pub fn where_(mut self, _field: &str, condition: impl Into<WhereClause>) -> Self {
         self.where_clauses.push(condition.into());
         self
     }

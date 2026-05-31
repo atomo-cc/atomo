@@ -3,7 +3,7 @@
 //! These models represent core platform concepts like users, sessions,
 //! and system-level entities that are specific to the server implementation.
 
-use atomo_core::{EntityId, audit::AuditLogEntry};
+use atomo_core::EntityId;
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

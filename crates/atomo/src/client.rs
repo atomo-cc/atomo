@@ -294,9 +294,9 @@ impl AtomoClient {
     /// Subscribe to model events
     pub async fn subscribe(
         &self,
-        model_name: &str,
-        event_types: &[EventType],
-        where_clauses: &[WhereClause],
+        _model_name: &str,
+        _event_types: &[EventType],
+        _where_clauses: &[WhereClause],
     ) -> broadcast::Receiver<ModelEvent> {
         self.event_sender.subscribe()
     }

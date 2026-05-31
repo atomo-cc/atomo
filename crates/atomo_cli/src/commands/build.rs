@@ -1,5 +1,4 @@
 use anyhow::Result;
-use colored::*;
 use console::style;
 
 pub async fn build_command() -> Result<()> {

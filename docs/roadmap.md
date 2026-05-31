@@ -40,25 +40,35 @@ This page is the single source of truth for delivery status and upcoming milesto
 - SDK
   - Type generation and React hooks scaffolding in `packages/atomo-client-sdk`
 
-## In Progress / Planned (Near‑Term)
+## Recently Completed
 
-- WASM runtime execution and sandboxing (wasmtime integration)
-- Production‑grade password hashing (bcrypt/argon2) and policy
-- Real‑time subscriptions and collaboration (WebSocket/CRDT wiring)
-- AI integrations (pgvector, content understanding APIs)
-- Security hardening, permission matrix, and multi‑tenant support
+- WASM runtime with fuel metering, permission-checked host functions, plugin lifecycle
+- Production password hashing (argon2id with bcrypt fallback)
+- Real-time GraphQL subscriptions over WebSocket with model filtering
+- AI integrations (pgvector EmbeddingStore with similarity search)
+- Multi-tenant isolation (TenantCtx with row-level scoping)
+- RBAC enforcement in GraphQL resolvers from schema access rules
+- Event sourcing with event_log persistence and replay
+- CQRS read projections (TableProjection with event-driven updates)
+- Workflow engine with triggers, conditions, and retry policies
+- OAuth2/OIDC SSO (Google, GitHub, Microsoft, Okta)
+- Rate limiting middleware (per-IP token bucket)
+- Structured tracing with request ID propagation
+- Input validation (required, email, min, max, numeric)
+- Soft deletes with automatic query filtering
+- Pagination metadata (total count, has_next/prev)
+- Relationship resolution (belongsTo/hasMany)
+- Read cache with TTL and event-driven invalidation
+- WASM plugin hooks in CRUD lifecycle (before/after)
+- Local-first offline queue with sync-on-reconnect (SDK)
+- Blog and ecommerce project templates
 
 ## Docs vs Code Notes (Ground Truth)
 
-- Password hashing
-  - Code: hashing/verification is stubbed for development
-  - Docs: clearly marked in Auth docs; enable bcrypt/argon2 before production
-- Rate limiting
-  - Docs: example headers shown in API Overview
-  - Code: no limiter in server code yet → future work
-- WASM plugins
-  - Code: `PluginManifest`/`Permission`/`PluginContext` present
-  - Docs: manifest and permissions documented; execution runtime pending
+- Password hashing: argon2id in production, bcrypt fallback for existing hashes
+- Rate limiting: token-bucket middleware, configurable via RATE_LIMIT_RPS env
+- WASM plugins: full lifecycle with fuel metering, permission checks, host functions
+- Subscriptions: working over WebSocket at /graphql/ws with model filtering
 
 ## Phases (High‑Level)
 

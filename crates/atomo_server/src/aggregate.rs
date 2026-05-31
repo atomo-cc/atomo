@@ -5,7 +5,7 @@
 
 use atomo_core::{
     traits::{Entity, AggregateRoot},
-    events::{DomainEvent, EventMetadata, EventEnvelope},
+    events::{DomainEvent, EventEnvelope},
     types::{EntityId, StreamId, Timestamp},
     AtomoError, Result,
 };
@@ -79,7 +79,7 @@ where
     
     /// Create an aggregate from historical events
     pub async fn from_events(
-        mut initial_state: T,
+        initial_state: T,
         stream_id: StreamId,
         events: Vec<Event>,
     ) -> Result<Self> {
@@ -244,7 +244,7 @@ where
     type Event = Event;
     type Error = AtomoError;
     
-    async fn load(&self, id: &EntityId) -> Result<Option<AggregateBase<T, Event>>> {
+    async fn load(&self, _id: &EntityId) -> Result<Option<AggregateBase<T, Event>>> {
         // For now, this is a simplified implementation
         // In a real implementation, you would need to:
         // 1. Map entity ID to stream ID (could be same or different)
@@ -275,7 +275,7 @@ where
         Ok(())
     }
     
-    async fn exists(&self, id: &EntityId) -> Result<bool> {
+    async fn exists(&self, _id: &EntityId) -> Result<bool> {
         // This would require mapping entity ID to stream ID
         todo!("Implement aggregate existence check")
     }

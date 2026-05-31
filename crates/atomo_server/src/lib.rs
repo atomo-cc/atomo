@@ -5,6 +5,7 @@
 //! - Real-time subscriptions
 //! - High-performance Rust backend
 //! - Integration with the Atomo ecosystem
+#![allow(dead_code)]
 
 pub mod config;
 pub mod server;
@@ -31,7 +32,6 @@ pub use auth::*;
 pub use audit::*;
 pub use event_store::*;
 pub use aggregate::*;
-pub use domain::*;
 pub use platform_graphql::*;
 pub use platform_models::*;
 

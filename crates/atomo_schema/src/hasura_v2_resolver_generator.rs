@@ -615,7 +615,7 @@ pub struct Mutation;
             }
             
             let model_name = &model.name;
-            let model_lower = model_name.to_lowercase();
+            let _model_lower = model_name.to_lowercase();
             
             // Generate insert_one mutation
             mutation_impl.push_str(&self.generate_insert_one_mutation(model)?);
