@@ -397,17 +397,16 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
                 anyhow::bail!("HTTP step to {} failed with status {}", url, status);
             }
         }
-        StepAction::Mutation {
-            query,
-            variables: _,
-        } => {
-            tracing::info!(query = %query, "Workflow mutation step");
+        StepAction::Mutation { query, .. } => {
+            // Executing a GraphQL mutation needs a schema executor the engine doesn't hold
+            // (it lives in the server layer). Until that's wired, FAIL LOUDLY rather than
+            // silently logging success — a no-op "success" made workflows a facade.
+            tracing::warn!(query = %query, "Workflow Mutation step is not yet executable");
+            anyhow::bail!("workflow Mutation step not implemented (needs a GraphQL executor wired into the engine)");
         }
-        StepAction::Plugin {
-            plugin_name,
-            function,
-        } => {
-            tracing::info!(plugin = %plugin_name, function = %function, "Workflow plugin step");
+        StepAction::Plugin { plugin_name, function } => {
+            tracing::warn!(plugin = %plugin_name, function = %function, "Workflow Plugin step is not yet executable");
+            anyhow::bail!("workflow Plugin step not implemented (needs the plugin manager wired into the engine)");
         }
     }
     Ok(())
@@ -492,6 +491,25 @@ mod tests {
             server.await.unwrap(),
             "the HTTP server should have been hit"
         );
+    }
+
+    // Item 4: the unimplemented Mutation step must FAIL the workflow (not silently "succeed").
+    #[tokio::test]
+    async fn mutation_step_fails_loudly() {
+        let engine = WorkflowEngine::new();
+        engine.register(Workflow {
+            name: "m".to_string(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![WorkflowStep {
+                name: "mut".to_string(),
+                action: StepAction::Mutation { query: "mutation { noop }".into(), variables: HashMap::new() },
+                condition: None,
+                on_failure: FailurePolicy::Stop,
+            }],
+        });
+        let exec = engine.execute("m", HashMap::new()).await.unwrap();
+        assert_eq!(exec.status, ExecutionStatus::Failed, "Mutation step must fail, not silently pass");
+        assert!(exec.errors.iter().any(|e| e.contains("not implemented")), "errors: {:?}", exec.errors);
     }
 
     #[test]
