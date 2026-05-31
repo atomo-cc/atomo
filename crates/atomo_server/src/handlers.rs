@@ -116,6 +116,45 @@ pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
     builder.finish()
 }
 
+/// Implements the workflow `MutationExecutor` seam by running the step's GraphQL query against
+/// the built schema. Lets workflow `Mutation` steps actually execute (item 3) without the
+/// engine depending on the server/GraphQL layer.
+pub struct GraphQlMutationExecutor {
+    schema: AtomoGraphQLSchema,
+}
+
+impl GraphQlMutationExecutor {
+    pub fn new(schema: AtomoGraphQLSchema) -> Self {
+        Self { schema }
+    }
+}
+
+#[async_trait::async_trait]
+impl atomo::workflow::MutationExecutor for GraphQlMutationExecutor {
+    async fn execute(
+        &self,
+        query: &str,
+        variables: &std::collections::HashMap<String, Value>,
+    ) -> anyhow::Result<()> {
+        let vars = async_graphql::Variables::from_json(serde_json::json!(variables));
+        let resp = self
+            .schema
+            .execute(async_graphql::Request::new(query).variables(vars))
+            .await;
+        if resp.is_ok() {
+            Ok(())
+        } else {
+            let msg = resp
+                .errors
+                .iter()
+                .map(|e| e.message.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+            anyhow::bail!("workflow mutation failed: {}", msg)
+        }
+    }
+}
+
 pub async fn graphql_handler(
     Extension(schema): Extension<AtomoGraphQLSchema>,
     req: axum::extract::Request,

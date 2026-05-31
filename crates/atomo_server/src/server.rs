@@ -220,9 +220,12 @@ impl AtomoServer {
         };
 
         // Workflow engine: durable (Postgres-backed), plus ./workflows/*.json files, then listeners.
-        let workflow_engine = std::sync::Arc::new(atomo::workflow::WorkflowEngine::with_pool(
-            self.atomo.db_pool().clone(),
+        let mut engine = atomo::workflow::WorkflowEngine::with_pool(self.atomo.db_pool().clone());
+        // Inject the executor so workflow `Mutation` steps run against the GraphQL schema (item 3).
+        engine.set_mutation_executor(std::sync::Arc::new(
+            crate::handlers::GraphQlMutationExecutor::new(graphql_schema.clone()),
         ));
+        let workflow_engine = std::sync::Arc::new(engine);
         {
             workflow_engine.init().await?; // create table + load persisted definitions
             let loaded = crate::load_workflows(&workflow_engine, "workflows").await;

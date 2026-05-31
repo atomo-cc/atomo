@@ -98,6 +98,18 @@ pub enum ExecutionStatus {
 pub struct WorkflowEngine {
     workflows: std::sync::RwLock<HashMap<String, Workflow>>,
     pool: Option<sqlx::PgPool>,
+    /// Executes a workflow `Mutation` step's GraphQL query. Implemented by the server (which
+    /// holds the GraphQL schema) and injected here, so the engine stays decoupled from the
+    /// GraphQL/server layer (no dependency cycle).
+    mutation_executor: Option<Arc<dyn MutationExecutor>>,
+}
+
+/// Seam for executing a workflow `Mutation` step. The engine defines it; the server implements
+/// it against the built GraphQL schema.
+#[async_trait::async_trait]
+pub trait MutationExecutor: Send + Sync {
+    /// Run a GraphQL mutation `query` with `variables`; return Ok on success.
+    async fn execute(&self, query: &str, variables: &HashMap<String, Value>) -> Result<()>;
 }
 
 impl Default for WorkflowEngine {
@@ -111,6 +123,7 @@ impl WorkflowEngine {
         Self {
             workflows: std::sync::RwLock::new(HashMap::new()),
             pool: None,
+            mutation_executor: None,
         }
     }
 
@@ -119,7 +132,13 @@ impl WorkflowEngine {
         Self {
             workflows: std::sync::RwLock::new(HashMap::new()),
             pool: Some(pool),
+            mutation_executor: None,
         }
+    }
+
+    /// Inject the executor that runs `Mutation` steps (set at server boot).
+    pub fn set_mutation_executor(&mut self, exec: Arc<dyn MutationExecutor>) {
+        self.mutation_executor = Some(exec);
     }
 
     /// Ensure the workflows table exists and load any persisted definitions into memory.
@@ -230,7 +249,13 @@ impl WorkflowEngine {
             }
 
             // Execute step
-            match execute_step(&step.action, &mut execution.context).await {
+            match execute_step(
+                &step.action,
+                &mut execution.context,
+                self.mutation_executor.as_ref(),
+            )
+            .await
+            {
                 Ok(()) => {}
                 Err(e) => {
                     execution
@@ -245,9 +270,13 @@ impl WorkflowEngine {
                         FailurePolicy::Retry { max_attempts } => {
                             let mut success = false;
                             for _ in 0..*max_attempts {
-                                if execute_step(&step.action, &mut execution.context)
-                                    .await
-                                    .is_ok()
+                                if execute_step(
+                                    &step.action,
+                                    &mut execution.context,
+                                    self.mutation_executor.as_ref(),
+                                )
+                                .await
+                                .is_ok()
                                 {
                                     success = true;
                                     break;
@@ -369,7 +398,11 @@ fn evaluate_condition(cond: &Condition, context: &HashMap<String, Value>) -> boo
     }
 }
 
-async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>) -> Result<()> {
+async fn execute_step(
+    action: &StepAction,
+    context: &mut HashMap<String, Value>,
+    mutation_executor: Option<&Arc<dyn MutationExecutor>>,
+) -> Result<()> {
     match action {
         StepAction::Delay { seconds } => {
             tokio::time::sleep(std::time::Duration::from_secs(*seconds)).await;
@@ -397,12 +430,15 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
                 anyhow::bail!("HTTP step to {} failed with status {}", url, status);
             }
         }
-        StepAction::Mutation { query, .. } => {
-            // Executing a GraphQL mutation needs a schema executor the engine doesn't hold
-            // (it lives in the server layer). Until that's wired, FAIL LOUDLY rather than
-            // silently logging success — a no-op "success" made workflows a facade.
-            tracing::warn!(query = %query, "Workflow Mutation step is not yet executable");
-            anyhow::bail!("workflow Mutation step not implemented (needs a GraphQL executor wired into the engine)");
+        StepAction::Mutation { query, variables } => {
+            // Run via the injected executor (server wires it against the GraphQL schema). If no
+            // executor is configured, fail loudly rather than silently passing.
+            match mutation_executor {
+                Some(exec) => exec.execute(query, variables).await?,
+                None => anyhow::bail!(
+                    "workflow Mutation step: no executor configured (server must inject one)"
+                ),
+            }
         }
         StepAction::Plugin {
             plugin_name,
@@ -496,7 +532,7 @@ mod tests {
         );
     }
 
-    // Item 4: the unimplemented Mutation step must FAIL the workflow (not silently "succeed").
+    // Item 4/3: the Mutation step with NO executor configured must FAIL the workflow.
     #[tokio::test]
     async fn mutation_step_fails_loudly() {
         let engine = WorkflowEngine::new();
@@ -520,9 +556,54 @@ mod tests {
             "Mutation step must fail, not silently pass"
         );
         assert!(
-            exec.errors.iter().any(|e| e.contains("not implemented")),
+            exec.errors.iter().any(|e| e.contains("no executor")),
             "errors: {:?}",
             exec.errors
+        );
+    }
+
+    // Item 3: with an executor injected, the Mutation step RUNS it (and passes the query through).
+    #[tokio::test]
+    async fn mutation_step_runs_via_injected_executor() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct RecordingExecutor(std::sync::Arc<AtomicBool>);
+        #[async_trait::async_trait]
+        impl MutationExecutor for RecordingExecutor {
+            async fn execute(&self, query: &str, _vars: &HashMap<String, Value>) -> Result<()> {
+                assert!(
+                    query.contains("create"),
+                    "executor receives the step's query"
+                );
+                self.0.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let hit = std::sync::Arc::new(AtomicBool::new(false));
+        let mut engine = WorkflowEngine::new();
+        engine.set_mutation_executor(std::sync::Arc::new(RecordingExecutor(hit.clone())));
+        engine.register(Workflow {
+            name: "m2".to_string(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![WorkflowStep {
+                name: "mut".to_string(),
+                action: StepAction::Mutation {
+                    query: "mutation { create(model: \"X\") }".into(),
+                    variables: HashMap::new(),
+                },
+                condition: None,
+                on_failure: FailurePolicy::Stop,
+            }],
+        });
+        let exec = engine.execute("m2", HashMap::new()).await.unwrap();
+        assert_eq!(
+            exec.status,
+            ExecutionStatus::Completed,
+            "errors: {:?}",
+            exec.errors
+        );
+        assert!(
+            hit.load(Ordering::SeqCst),
+            "the injected executor must have run"
         );
     }
 
