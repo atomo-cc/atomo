@@ -41,7 +41,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Relationships (belongsTo/hasMany) | yes | ✅ CRM | C1: `include` resolves contact.company + contact.deals (nested), proven in dogfood. Latent: convention-based, ignores the declared `relationships` block (works only when rel name == model name) |
 | Soft delete / restore / hard delete | yes | ✅ | C2: full delete→trash→restore lifecycle via CRM Deals |
 | Pagination + where/orderBy | yes | ✅ fixed | C2: orderBy+limit+offset via CRM; **fixed cache-key collision** (page 2 returned page 1) |
-| Event sourcing + replay | yes | 🟡 | synthetic only |
+| Event sourcing + replay | yes | ✅ | C3: Deal Created→Updated→Updated→Deleted reconstructs via `entity_history` (`crm_deal_event_history_replays`); confirms B2 delete-event id fix |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
 | Subscriptions (WebSocket) | yes | ✅ auth | S2: `/graphql/ws` now auth'd via connection_init JWT + `model_changes` gated by read access (`test_subscription_requires_auth_role`). SDK `SubscriptionBuilder` filter args still dead code (separate, LOW) |
 | RBAC enforcement | yes | ✅ GraphQL | S1: rules now parsed from export-const-schema; `check_access` via shared `decide()` seam. **Data-layer callers still bypass** (no role ctx) — follow-up |
@@ -185,7 +185,12 @@ targets is the bulk of the work.
   `limit`/`offset`, so two queries differing only in pagination collided — **page 2 returned page 1's
   rows**. A silent correctness hazard for every paginated view (Kanban, lists). Fixed: key now
   includes limit+offset. (Soft-delete/restore/orderBy themselves worked.)
-- [ ] C3. Event sourcing + replay over CRM mutations (rebuild a Deal's history)
+- [x] C3. **Event sourcing + replay** (✅ done — works): `crm_deal_event_history_replays` drives a
+  Deal Created → Updated → Updated → Deleted and reconstructs it exactly via
+  `EventStore::entity_history`. No fix needed — but it **validates the B2 delete fix in a second
+  context**: `entity_history` filters by `data->>'id'`, so before B2 (empty delete events) the
+  Deleted event would have been invisible to history. `replay`/`entity_history` themselves worked.
+  (Note: this is event *log/history*, distinct from projection *rebuild*-replay, still deferred B2a.)
 - [ ] C4. Cache conformance (find_many cached/invalidated) + the LOW-risk cache polish
 
 ### Phase D — Supplementary harnesses (what CRM can't reach alone)

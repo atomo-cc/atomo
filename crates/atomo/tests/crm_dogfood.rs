@@ -169,3 +169,49 @@ async fn crm_schema_drives_the_platform() {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();
     }
 }
+
+
+// Phase C3: event sourcing — a Deal's full lifecycle (Created → stage Updated → Deleted) is
+// persisted to event_log and reconstructable via EventStore::entity_history. This relies on
+// every event carrying the id (the B2 delete-event fix is what makes Deleted show up here).
+#[tokio::test]
+#[ignore]
+async fn crm_deal_event_history_replays() {
+    use atomo::query::{WhereClause, WhereOperator};
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let atomo = atomo::Atomo::builder()
+        .schema_file(crm_schema_path())
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .unwrap();
+    let c = atomo.client();
+
+    let contact = c.create("Contact", &rec(&[("firstName", json!("E")), ("lastName", json!("S")), ("email", json!("e@s.com"))]), &[], None).await.unwrap();
+    let cid = contact.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+    let deal = c.create("Deal", &rec(&[("title", json!("Hist")), ("value", json!(10)), ("stage", json!("lead")), ("position", json!(0)), ("contactId", json!(cid))]), &[], None).await.unwrap();
+    let did = deal.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+
+    let by_id = |id: &str| vec![WhereClause { field: "id".into(), operator: WhereOperator::Equals, value: json!(id) }];
+    c.update_many("Deal", &by_id(&did), &rec(&[("stage", json!("qualified"))]), &[], None).await.unwrap();
+    c.update_many("Deal", &by_id(&did), &rec(&[("stage", json!("won"))]), &[], None).await.unwrap();
+    c.delete_many("Deal", &by_id(&did), None).await.unwrap();
+
+    // Reconstruct the Deal's history from the event store.
+    let store = atomo::event_store::EventStore::new(atomo.db_pool().clone());
+    let history = store.entity_history("Deal", &did).await.expect("entity_history");
+    use atomo::events::EventType;
+    let types: Vec<EventType> = history.iter().map(|e| e.event_type).collect();
+    assert_eq!(
+        types,
+        vec![EventType::Created, EventType::Updated, EventType::Updated, EventType::Deleted],
+        "Deal history must replay Created → Updated → Updated → Deleted, got {:?}", types
+    );
+    // The Deleted event must carry the id (B2 fix) — that's why it appears in entity_history.
+    assert_eq!(history.last().unwrap().data.get("id").and_then(|v| v.as_str()), Some(did.as_str()));
+
+    for t in ["deal", "contact", "company", "activity"] {
+        sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t)).execute(atomo.db_pool()).await.ok();
+    }
+}
