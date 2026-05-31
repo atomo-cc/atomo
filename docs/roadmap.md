@@ -28,8 +28,10 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Rate limiting: ✅ per-IP token bucket middleware
 - Observability: ✅ structured tracing with request ID propagation
 - Validation: ✅ rules parsed from schema.ts and enforced (required, email, min, max, numeric)
-- Soft deletes: ✅ automatic query filtering, deleted_at column
-- Verification: ✅ CRUD → event store → subscription pipeline tested against PostgreSQL (4 integration tests)
+- Soft deletes: ✅ full lifecycle — delete / restore / hardDelete / trash (deletedRecords) with query filtering
+- Audit: ✅ mutations auto-logged with the acting user; admin/manager-gated audit REST
+- Workflow designer: ✅ admin-UI editor (list-based, typed action forms, graph preview) on the tested serde layer
+- Verification: ✅ CRUD → event store → subscription → audit → projection tested against PostgreSQL (9 data-layer + 8 HTTP E2E + workflow serde unit tests)
 
 ## Implemented Highlights
 
@@ -125,8 +127,8 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Collaboration
   - CRDT‑backed models for conflict-free real-time editing
 - Plugins & Workflows
-  - Richer WASM host API (DB/HTTP capabilities) beyond the current hook ABI
-  - Visual workflow designer UI; scheduled (cron) trigger execution
+  - Fulfill WASM host requests: execute the recorded DB/HTTP capability requests (currently captured, not yet acted on)
+  - Optional reactflow drag-and-drop workflow canvas (list-based designer already shipped)
 - Ecosystem
   - Plugin marketplace / registry (discovery, install, publish)
   - Atomo Cloud managed hosting

@@ -2,6 +2,8 @@
 
 Inspect audit logs and activity. Auth required.
 
+> Audit entries are written automatically: every model mutation (create/update/delete via GraphQL) is recorded with its operation, entity, JSON details, and the acting user (`user_id`, from the JWT). A background listener on the model-event stream performs the writes.
+
 > Access control: `GET /audit/logs`, `GET /audit/entity/...`, and `GET /audit/statistics` require the `Admin` or `Manager` role. `GET /audit/user/{id}/activity` is viewable by the user themselves, or by Admin/Manager for any user.
 
 ## Endpoints

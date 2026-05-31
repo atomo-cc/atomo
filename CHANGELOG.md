@@ -63,6 +63,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Projectors**: REST routes `GET /projections` and `POST /projections/rebuild`; per-projection failures are non-fatal
 - **Projectors**: auto-register a `TableProjection` per real entity model at boot (creates `{table}_projection` read tables)
 
+### Added (Data Lifecycle & Audit)
+- **Data**: soft-delete lifecycle — `delete` soft-deletes, `restore` undoes, `hardDelete` purges; `deletedRecords` lists the trash (with pagination metadata)
+- **API**: `paginatedRecords` accepts `where`/`orderBy` (filtering/sorting/search with accurate `totalCount`)
+- **Audit**: model mutations are auto-recorded with the acting user (`ModelEvent.actor` → audit `user_id`) via a boot-time listener
+- **Admin UI**: Trash view (list/restore/purge soft-deleted records per model)
+
+### Added (Workflow Designer)
+- **SDK/UI**: `workflow-serde` layer (lossless `Workflow` JSON ↔ editor graph) with vitest round-trip tests
+- **Admin UI**: `WorkflowDesigner` — list-based editor (name, trigger, ordered steps, add/remove/reorder); typed `ActionEditor` for all 5 action variants; read-only `WorkflowGraphView` preview
+- **Tooling**: vitest added to `atomo-admin-ui` (`pnpm test` = type-check + unit tests)
+- **API**: `GET /workflows/{name}` returns a full definition; admin UI gains workflow edit + delete
+
 ### Added (Testing)
 - HTTP-layer E2E tests (`atomo_server/tests/http_e2e.rs`): in-process router via `tower::oneshot` — health, auth-gating, login→create→list
 - Middleware tests (`atomo_server/tests/middleware.rs`): per-IP rate limiting + CORS headers (no DB)
@@ -91,6 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New user IDs use ULID (`EntityId::new()`) instead of UUID, fixing a login 500 (`EntityId` parses ULIDs, not UUIDs)
 - Projection table DDL quotes column identifiers (reserved word `order` in block types broke table creation)
 - Projection auto-registration skips block sub-types (no `id`) and avoids the doubled `_projection` table suffix
+- **CRITICAL**: `update`/`delete` GraphQL mutations now honor their `where` filter (it was discarded — `delete` removed ALL rows of a model, `update` modified all rows)
+- `paginatedRecords` now accepts `where`/`orderBy` (admin list-view filtering/search/sort was rejected as unknown arguments)
+- id columns are consistently `TEXT` (EntityId is a ULID, not a UUID); equality on string values casts the column to text so it works for both TEXT and UUID columns (fixed `operator does not exist: text = uuid` on restore)
+- `audit_log.operation_details` bound as `jsonb` (was failing as text → audit writes silently dropped)
 
 ### Security
 - 无

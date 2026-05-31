@@ -287,8 +287,8 @@ pub fn process_content(content: &str) -> String {
 ### Phase 3: 生态系统 (进行中)
 - [x] OAuth2/OIDC SSO (Google, GitHub, Microsoft, Okta)
 - [x] 项目模板 (CRM, 博客, 电商)
+- [x] 工作流设计器 (Admin UI 编辑器：触发器/步骤/动作表单 + 流程预览)
 - [ ] 插件市场
-- [ ] 可视化工作流设计器
 - [ ] Atomo Cloud 托管平台
 
 ## 🤝 贡献指南

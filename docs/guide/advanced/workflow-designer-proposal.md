@@ -1,7 +1,10 @@
 # Design Proposal: Visual Workflow Designer
 
-Status: proposal (not yet implemented). This document scopes the visual workflow
-designer so implementation can start from an agreed design rather than a stub.
+Status: IMPLEMENTED (list-based editor). The milestones below are delivered:
+serialization layer (`workflow-serde`, vitest-tested), list editor (`WorkflowDesigner`),
+typed `ActionEditor`, and read-only `WorkflowGraphView`. The reactflow drag-and-drop
+canvas remains intentionally deferred (engine is sequential-only). This document is
+retained as the design rationale.
 
 ## Goal
 
