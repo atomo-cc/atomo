@@ -43,6 +43,8 @@ pub struct AuthUser {
     pub email: String,
     pub role: UserRole,
     pub session_id: String,
+    /// The user's tenant (from users.tenant_id), if any — used to validate the x-tenant-id header.
+    pub tenant_id: Option<String>,
 }
 
 /// HTTP Authentication service implementation
@@ -130,11 +132,20 @@ impl HttpAuthService {
 
         // Verify session using core interface
         if let Some(user) = self.validate_session(token).await? {
+            // Look up the user's tenant binding (used to validate the x-tenant-id header).
+            let tenant_id = sqlx::query_scalar::<_, Option<String>>(
+                "SELECT tenant_id FROM users WHERE id = $1",
+            )
+            .bind(user.id.to_string())
+            .fetch_optional(&self.db_pool)
+            .await?
+            .flatten();
             Ok(AuthUser {
                 id: user.id.to_string(),
                 email: user.email,
                 role: user.role,
                 session_id: claims.jti,
+                tenant_id,
             })
         } else {
             Err(anyhow::anyhow!("Session expired or invalid"))

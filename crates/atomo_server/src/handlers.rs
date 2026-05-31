@@ -155,6 +155,13 @@ impl atomo::workflow::MutationExecutor for GraphQlMutationExecutor {
     }
 }
 
+/// Decide whether an authenticated request may use a given `x-tenant-id` header value.
+/// A user bound to a tenant (`user_tenant = Some`) may ONLY use its own tenant; a user with no
+/// binding may pass any (legacy/single-tenant-admin). Security-critical — unit-tested below.
+fn tenant_header_allowed(user_tenant: Option<&str>, header_tenant: &str) -> bool {
+    user_tenant.is_none_or(|ut| ut == header_tenant)
+}
+
 pub async fn graphql_handler(
     Extension(schema): Extension<AtomoGraphQLSchema>,
     req: axum::extract::Request,
@@ -197,17 +204,21 @@ pub async fn graphql_handler(
     };
 
     // Inject user role into GraphQL context
+    let mut user_tenant: Option<String> = None;
     let authenticated = auth_user.is_some();
     if let Some(user) = auth_user {
         inner = inner.data(UserRoleCtx(format!("{:?}", user.role)));
         inner = inner.data(atomo::graphql::UserIdCtx(user.id.clone()));
+        user_tenant = user.tenant_id.clone();
     }
-    // Only honor a tenant header for AUTHENTICATED requests — otherwise an anonymous caller
-    // could claim any tenant. NOTE: there is not yet a per-user tenant binding to validate the
-    // claimed tenant against (users carry no tenant_id); enforcing that the header matches the
-    // user's own tenant is a follow-up once that data model exists.
+    // Tenant scoping (S3b): only honor x-tenant-id for AUTHENTICATED requests, AND — when the
+    // user has a tenant binding — only if the header matches it. A user bound to tenant A cannot
+    // act as tenant B. Users without a binding (user_tenant=None) may still pass a header (legacy
+    // / single-tenant-admin behavior). A mismatch drops the header (scoping falls back to none →
+    // the request sees only unscoped/own rows, never another tenant's).
     if let Some(tid) = tenant_id {
-        if authenticated {
+        let allowed = authenticated && tenant_header_allowed(user_tenant.as_deref(), &tid);
+        if allowed {
             inner = inner.data(atomo::graphql::TenantCtx(tid));
         }
     }
@@ -657,5 +668,23 @@ async fn run_workflow(
             "errors": exec.errors,
         }))),
         Err(_) => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tenant_header_allowed;
+
+    // S3b: a user bound to a tenant may only use its own; an unbound user may use any.
+    #[test]
+    fn tenant_header_validation() {
+        // Bound user: own tenant allowed, other tenant denied.
+        assert!(tenant_header_allowed(Some("tenant-a"), "tenant-a"));
+        assert!(
+            !tenant_header_allowed(Some("tenant-a"), "tenant-b"),
+            "bound user must not act as another tenant"
+        );
+        // Unbound user (no users.tenant_id): may pass any (legacy/single-tenant-admin).
+        assert!(tenant_header_allowed(None, "tenant-a"));
     }
 }

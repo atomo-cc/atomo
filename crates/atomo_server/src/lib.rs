@@ -68,6 +68,7 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             last_name TEXT NOT NULL DEFAULT '',
             role TEXT NOT NULL DEFAULT 'viewer',
             is_active BOOLEAN NOT NULL DEFAULT true,
+            tenant_id TEXT,
             last_login_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -100,6 +101,10 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     for sql in stmts {
         sqlx::query(sql).execute(pool).await?;
     }
+    // For pre-existing databases: add users.tenant_id if missing (idempotent).
+    sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT")
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
