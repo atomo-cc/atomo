@@ -192,7 +192,7 @@ export const workflow = defineWorkflow('OrderFlow')
 
 - 认证：JWT 签发/校验，会话存储于 Postgres；REST：`/auth/login`、`/auth/logout`、`/auth/me`。
 - 角色：`Admin | Manager | Sales | Support | Viewer` 等 RBAC 模式。
-- 密码哈希：开发阶段为占位；生产务必启用 bcrypt/argon2 与策略门禁（见“路线图 → Docs vs Code”）。
+- 密码哈希：代码中已使用 argon2id（仍兼容验证旧的 bcrypt 哈希）；生产环境务必启用策略门禁（见“路线图 → Docs vs Code”）。
 - 访问控制：Schema 声明规则；在 GraphQL 解析器与生成层强制执行。
 
 多租户与合规（Multi‑tenancy & compliance）

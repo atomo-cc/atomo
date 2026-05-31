@@ -167,19 +167,12 @@ try {
 
 ## Rate Limiting
 
-API requests are rate-limited to ensure fair usage:
+The server applies a per-IP token-bucket rate limiter (in-memory). It is configurable via environment variables:
 
-- **Development**: No limits on localhost
-- **Production**: 1000 requests per minute per API key
-- **Burst**: Up to 100 requests in a 10-second window
+- `RATE_LIMIT_RPS` — max requests per window (default `100`)
+- `RATE_LIMIT_WINDOW_SECS` — window length in seconds (default `60`)
 
-Rate limit headers are included in all responses:
-
-```
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 999
-X-RateLimit-Reset: 1640995200
-```
+The client IP is taken from the `X-Forwarded-For` header (first hop) when present. Requests over the limit receive `429 Too Many Requests`.
 
 ## Versioning
 

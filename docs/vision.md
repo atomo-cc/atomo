@@ -211,7 +211,7 @@ Capability model and manifest (example)
 
 - Auth: JWT issuance/verification and session storage in Postgres; REST endpoints `/auth/login`, `/auth/logout`, `/auth/me`.
 - Roles: `Admin | Manager | Sales | Support | Viewer` with basic RBAC patterns.
-- Password hashing: development stubs in code; enable bcrypt/argon2 and policy gates before production (see Roadmap “Docs vs Code”).
+- Password hashing: argon2id is used in code (bcrypt hashes still verified for migration); enforce policy gates before production.
 - Access control: schema‑declared rules; enforced at GraphQL resolvers and (where applicable) at generated layers.
 
 Multi‑tenancy and compliance

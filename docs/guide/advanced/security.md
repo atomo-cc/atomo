@@ -9,7 +9,7 @@ Auth and sessions
 
 Passwords
 - Development: hashing/verification is stubbed for convenience.
-- Production: enable bcrypt or argon2, enforce policies (length, rotation, lockout).
+- Production: argon2id hashing is enabled by default (bcrypt verified for migration); enforce policies (length, rotation, lockout).
 - Secrets: use `.env` locally; secret manager in production; never commit secrets.
 
 Multi‑tenancy

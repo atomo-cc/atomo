@@ -31,6 +31,9 @@ atomo codegen [-o, --output generated]
 
 # Seed database (run inside a service directory)
 atomo seed [--file ./seed.sql]
+
+# Run service tests (runs `cargo test` in the service directory)
+atomo test [--service-path <path>] [-f, --filter <name>]
 ```
 
 ### Workspace Dev

@@ -10,7 +10,7 @@
 - Observability: `/metrics` exports Prometheus metrics; enable logs via `RUST_LOG` (e.g., `info`).
  - Log format: `LOG_FORMAT=json` for JSON logs; otherwise pretty logs.
  - Security headers: override CSP with `CSP` if needed; disable all security headers via `DISABLE_SECURITY_HEADERS=true` (not recommended).
-- Auth hashing: `BCRYPT_COST` (default 12).
+- Auth hashing: argon2id (default); legacy bcrypt hashes are verified for migration.
 
 ## Service Config
 - Each service includes metadata in `package.json` under `atomo`:

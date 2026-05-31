@@ -13,8 +13,8 @@ Security & Auth
   - Set strong `JWT_SECRET` via secret manager (never in repo)
   - Rotate periodically; short token TTL + refresh flow (planned)
 - Password hashing & policy
-  - Bcrypt hashing (configurable cost); enforce minimum length and complexity
-  - Env: `BCRYPT_COST`, `PASSWORD_MIN_LENGTH`, `PASSWORD_REQUIRE_COMPLEXITY`
+  - Argon2id hashing (bcrypt hashes still verified for migration); enforce minimum length and complexity
+  - Env: `PASSWORD_MIN_LENGTH`, `PASSWORD_REQUIRE_COMPLEXITY`
   - Consider 2FA for Admin; add refresh-token flow
 - RBAC enforcement
   - Centralize permission checks; review CRUD and audit routes
@@ -80,8 +80,8 @@ Testing & QA
 
 Code tasks (prioritized)
 - Auth hashing
-  - Replace stubs in `crates/atomo_server/src/auth.rs` with bcrypt/argon2
-  - Add migration for storing algorithm/params if changing format
+  - Argon2id is used by default in `crates/atomo_server/src/auth.rs`; bcrypt hashes are verified for backward compatibility
+  - Hash format is self-describing (`$argon2…` vs bcrypt), so migration is automatic on next login
 - CORS & headers
   - Introduce prod CORS allowlist and security headers (CSP, HSTS)
 - Rate limiting

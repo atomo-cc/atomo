@@ -122,17 +122,15 @@ This page is the single source of truth for delivery status and upcoming milesto
 
 ## Next Milestones
 
-- Security
-  - Switch password hashing to bcrypt/argon2; add migration and config gates
-  - Tighten auth middleware and permission patterns
-- Runtime & DX
-  - Land wasmtime sandbox with permission checks
-  - Stabilize hot‑reload for wider crate changes; improve debounce
 - Collaboration
-  - Enable GraphQL subscriptions/WebSocket channels for UI updates
-  - CRDT‑backed models where applicable
-- Observability
-  - Structured logging, tracing spans, request IDs
-  - Optional rate limiting and metrics endpoints
+  - CRDT‑backed models for conflict-free real-time editing
+- Plugins & Workflows
+  - Richer WASM host API (DB/HTTP capabilities) beyond the current hook ABI
+  - Visual workflow designer UI; scheduled (cron) trigger execution
+- Ecosystem
+  - Plugin marketplace / registry (discovery, install, publish)
+  - Atomo Cloud managed hosting
+- Hardening
+  - Centralize permission checks; expand integration test coverage across the server boot path
 
 If you’re evaluating Atomo, the Guide covers the implemented developer workflows. For platform philosophy and architecture, see Vision & Architecture.

@@ -42,8 +42,24 @@ GET /auth/me
 Authorization: Bearer <jwt>
 ```
 
+OAuth2/OIDC SSO
+- Providers are configured via env vars and auto-discovered at startup: `google`, `github`, `microsoft`, `okta`.
+- Per provider, set `OAUTH_<PROVIDER>_CLIENT_ID`, `_CLIENT_SECRET`, `_AUTH_URL`, `_TOKEN_URL`, `_USERINFO_URL`, and optionally `_REDIRECT_URI`.
+
+```http
+GET /auth/oauth/providers          # list configured providers
+GET /auth/oauth/authorize?provider=google   # redirect to provider
+GET /auth/oauth/callback/{provider}?code=...&state=...   # find-or-create user, returns JWT
+```
+
+Callback response
+```json
+{ "access_token": "<jwt>", "user": { "id": "...", "email": "...", "role": "viewer" } }
+```
+
 Notes
-- Password hashing uses bcrypt. Configure cost with `BCRYPT_COST` (default 12).
+- Password hashing uses argon2id; existing bcrypt hashes are still verified for seamless migration.
 - In production, set `JWT_SECRET` (server refuses to start without it when `ATOMO_ENV=production`).
 - Include `Authorization: Bearer <jwt>` for protected routes.
  - Access tokens expire (~24h). Use `POST /auth/refresh` with a valid refresh token to rotate both.
+- New OAuth users are created with the `viewer` role by default.
