@@ -48,7 +48,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
 | Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
-| Caching (TTL + invalidation) | yes | 🟢 | works (find_many cached, invalidated on writes); minor: `find_unique` uncached, no eviction, Debug-format keys — all LOW |
+| Caching (TTL + invalidation) | yes | ✅ | C4: populate + invalidate-on-create confirmed via CRM (dogfood 7b). LOW polish deferred (find_unique uncached, no eviction) |
 | CQRS projections / aggregate | yes | 🟡 fixed | B2: Deleted removes rows (RETURNING id + per-id events); non-string columns stored via `value_to_text`. `projection_correctness` test. **Rebuild still truncate-no-replay** (deferred, operator action) |
 | AI / pgvector | partial | ❌ | semantic search over notes; AI path not wired in a test |
 | Multi-tenant (RLS) | yes | 🟡 core | S3: `tenant_id` column now generated → read+write scoping works (`test_two_tenant_isolation`); header honored only when authed. **Deferred**: subscription tenant-filter (leaks), per-user tenant binding, event-store/PG-RLS |
@@ -191,7 +191,10 @@ targets is the bulk of the work.
   context**: `entity_history` filters by `data->>'id'`, so before B2 (empty delete events) the
   Deleted event would have been invisible to history. `replay`/`entity_history` themselves worked.
   (Note: this is event *log/history*, distinct from projection *rebuild*-replay, still deferred B2a.)
-- [ ] C4. Cache conformance (find_many cached/invalidated) + the LOW-risk cache polish
+- [x] C4. **Cache conformance** (✅ done): `find_many` populates the read cache and a create
+  invalidates it — the next identical query returns fresh rows incl. the new Deal (dogfood step
+  7b). No fix needed (the real cache bug was the C2 pagination-key collision, already fixed).
+  Deferred LOW-risk polish: `find_unique` uncached, no background eviction, Debug-format keys.
 
 ### Phase D — Supplementary harnesses (what CRM can't reach alone)
 - [ ] D1. Multi-tenant isolation harness (pairs with S3)

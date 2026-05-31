@@ -151,6 +151,16 @@ async fn crm_schema_drives_the_platform() {
         .expect("orderBy+offset query");
     assert_eq!(next[0].get("title").and_then(|v| v.as_str()), Some("Acme renewal"), "offset paginates");
 
+    // 7b. Read-cache conformance: find_many populates the cache; a create must invalidate it so
+    //     the very next identical query reflects the new row (no stale cached result).
+    let before = c.find_many("Deal", &[], &[], None, None, &[]).await.unwrap(); // populates cache
+    c.create("Deal", &rec(&[("title", json!("Cache deal")), ("value", json!(5)), ("stage", json!("lead")), ("position", json!(2)), ("contactId", json!(contact_id))]), &[], None)
+        .await
+        .expect("create cache deal");
+    let after = c.find_many("Deal", &[], &[], None, None, &[]).await.unwrap(); // must be fresh
+    assert_eq!(after.len(), before.len() + 1, "create must invalidate the read cache (got stale result)");
+    assert!(after.iter().any(|d| d.get("title").and_then(|v| v.as_str()) == Some("Cache deal")), "new deal must appear after invalidation");
+
     // 8. Soft-delete lifecycle via CRM: delete the first Deal → hidden from find_many, present in
     //    trash, then restore → visible again.
     let deleted = c.delete_many("Deal", &[eq("id", json!(deal_id))], None).await.expect("soft delete");
