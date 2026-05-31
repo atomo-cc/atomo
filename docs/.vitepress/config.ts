@@ -83,7 +83,10 @@ export default defineConfig({
             { text: 'AI & Vector Search', link: '/guide/advanced/ai-vector' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },
-            { text: 'Performance Tuning', link: '/guide/advanced/performance' }
+            { text: 'Performance Tuning', link: '/guide/advanced/performance' },
+            { text: 'Proposal: Scripting Plugins', link: '/guide/advanced/scripting-plugins-proposal' },
+            { text: 'Proposal: Plugin Marketplace', link: '/guide/advanced/plugin-marketplace-proposal' },
+            { text: 'Proposal: Workflow Designer', link: '/guide/advanced/workflow-designer-proposal' }
           ]
         }
       ],

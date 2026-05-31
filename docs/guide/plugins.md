@@ -11,37 +11,43 @@ Project layout
 - Location: `services/<name>/plugins`
 - Runtime: `crates/atomo_wasm_runtime` (executes plugins with wasmtime)
 
-Manifest & capabilities
-```json
-{
-  "name": "content-auto-tag",
-  "version": "0.1.0",
-  "permissions": [
-    { "cap": "net.fetch", "domains": ["https://api.example.com"] },
-    { "cap": "clock.now" },
-    { "cap": "env.read", "vars": ["OPENAI_API_KEY"] }
-  ],
-  "events": ["ContentCreated", "ContentUpdated"]
-}
+Manifest & permissions
+- Each plugin directory has a `plugin.toml` manifest (TOML, not JSON). Plugins are
+  auto-discovered from `plugins/` at server boot.
+```toml
+name = "content-auto-tag"
+version = "0.1.0"
+author = "you"
+entry_point = "plugin.wasm"
+permissions = ["ReadEvents", "WriteEvents", "HttpRequests"]
 ```
+- Permissions are a fixed set (enforced by the runtime): `ReadEvents`, `WriteEvents`,
+  `ReadDatabase`, `WriteDatabase`, `HttpRequests`. A host call without the matching
+  permission traps and aborts the plugin. See `/api/plugins` for the host-function contract.
 
 Security model
-- Capability‑based: only granted caps are available (e.g., `net.fetch`, `env.read`).
-- Resource budgets: per‑plugin CPU/memory caps and execution timeouts.
-- Isolation: no filesystem or network by default; opt‑in per manifest.
-- Review/signing: recommend signed plugin artifacts and provenance checks.
+- Sandbox: fuel metering (default budget 1,000,000) bounds CPU/execution per call.
+- Capability gating: host functions check the plugin's granted permissions before running.
+- Isolation: no filesystem or ambient network — a plugin can only reach the host functions it is granted.
+
+Authoring tiers (see the Scripting Plugins proposal: `/guide/advanced/scripting-plugins-proposal`)
+- **Tier 1 — Scripting (planned, default):** write a `.js`/`.ts` plugin run by a bundled
+  JS engine — no toolchain to install. Status: design proposal; not yet implemented.
+- **Tier 2 — Compiled (available today):** build a `.wasm` from Rust/TinyGo/Zig against the
+  host ABI for performance-critical plugins.
 
 Lifecycle
-- Install: place artifact + manifest under `plugins/` (or via CLI, planned).
-- Grant: review and approve capabilities (policy gates).
-- Run: host attaches context (tenant, session, logger) and invokes handlers.
-- Suspend/Update: hot‑swap with versioned manifests; preserve capability review.
+- Install: place artifact + `plugin.toml` under `plugins/` (or via the planned `atomo plugin install`).
+- Run: the host invokes exported hook functions (`before_create`, `after_create`, ... ) around model operations.
+- Update: replace the artifact and restart; versioned manifests planned via the marketplace.
 
-Development
-- Tooling: build TinyGo/Rust/AssemblyScript to WASM (examples forthcoming).
-- Interfaces: stable ABI for events and common helpers (logging, fetch, time).
-- Testing: run plugins in‑process with the same host runtime used in dev.
+Development (Tier 2, today)
+- Build a Rust plugin to wasm: `cargo build --target wasm32-unknown-unknown --release`,
+  then point `entry_point` at the resulting `.wasm`. (TinyGo/Zig also work against the same ABI.)
+- The ABI (exports `memory` + `alloc`, hook fns; imports `host_*`) is documented in `/api/plugins`
+  and exercised in `crates/atomo_wasm_runtime/tests/host_api.rs`.
 
 See also
-- Vision → Extensibility and Plugins: `/vision`
+- Plugin host ABI and host functions: `/api/plugins`
+- Scripting plugins direction: `/guide/advanced/scripting-plugins-proposal`
 - Security and production gates: `/guide/advanced/production-readiness`
