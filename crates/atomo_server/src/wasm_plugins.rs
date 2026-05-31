@@ -1,16 +1,24 @@
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use atomo_wasm_runtime::{JsRuntime, PluginManifest, PluginRuntime, WasmPlugin, WasmRuntime};
+use atomo_wasm_runtime::{JsRuntime, Permission, PluginManifest, PluginRuntime, WasmPlugin, WasmRuntime};
 use tracing::info;
+
+/// A loaded JS (Javy) plugin: its compiled module + the permissions it was granted.
+struct JsPlugin {
+    module: wasmtime::Module,
+    permissions: HashSet<Permission>,
+}
 
 pub struct WasmPluginManager {
     runtime: WasmRuntime,
     js_runtime: JsRuntime,
     plugins: HashMap<String, WasmPlugin>,
-    /// JS (Javy) plugins: name -> pre-compiled module (re-run per hook call, no recompile).
-    js_plugins: HashMap<String, wasmtime::Module>,
+    /// JS (Javy) plugins: name -> pre-compiled module + granted permissions.
+    js_plugins: HashMap<String, JsPlugin>,
+    /// Permission-gated effects a JS plugin requested (emit/db/http), drained by the caller.
+    js_effects: Vec<String>,
     plugin_dir: PathBuf,
 }
 
@@ -21,6 +29,7 @@ impl WasmPluginManager {
             js_runtime: JsRuntime::new()?,
             plugins: HashMap::new(),
             js_plugins: HashMap::new(),
+            js_effects: Vec::new(),
             plugin_dir: plugin_dir.into(),
         })
     }
@@ -55,7 +64,8 @@ impl WasmPluginManager {
             PluginRuntime::Js => {
                 info!(plugin = %name, "Loading JS plugin");
                 let module = self.js_runtime.compile(&wasm_path)?;
-                self.js_plugins.insert(name.clone(), module);
+                let permissions = manifest.permissions.iter().cloned().collect();
+                self.js_plugins.insert(name.clone(), JsPlugin { module, permissions });
             }
             PluginRuntime::Wasm => {
                 info!(plugin = %name, "Loading WASM plugin");
@@ -91,17 +101,31 @@ impl WasmPluginManager {
         hook: &str,
         input_json: &str,
     ) -> Result<Option<String>> {
-        if let Some(module) = self.js_plugins.get(plugin_name) {
+        if let Some(js) = self.js_plugins.get(plugin_name) {
+            let module = js.module.clone();
+            let perms = js.permissions.clone();
             let envelope = serde_json::json!({
                 "hook": hook,
                 "record": serde_json::from_str::<serde_json::Value>(input_json).unwrap_or(serde_json::Value::Null),
             })
             .to_string();
-            let out = self.js_runtime.run_module(module, &envelope)?;
+            let out = self.js_runtime.run_module(&module, &envelope)?;
             let trimmed = out.trim();
             if trimmed.is_empty() {
                 return Ok(None);
             }
+            // Output may be a bare record, or `{ "record": {...}, "effects": [...] }`.
+            let parsed: serde_json::Value = serde_json::from_str(trimmed)?;
+            if let Some(obj) = parsed.as_object() {
+                if obj.contains_key("record") || obj.contains_key("effects") {
+                    if let Some(effects) = obj.get("effects").and_then(|e| e.as_array()) {
+                        self.apply_js_effects(plugin_name, &perms, effects)?;
+                    }
+                    let record = obj.get("record").cloned().unwrap_or(serde_json::Value::Null);
+                    return Ok(Some(record.to_string()));
+                }
+            }
+            // Bare record (no effects envelope).
             return Ok(Some(trimmed.to_string()));
         }
         let plugin = self
@@ -117,6 +141,44 @@ impl WasmPluginManager {
             .chain(self.js_plugins.keys())
             .map(|s| s.as_str())
             .collect()
+    }
+
+    /// Apply the permission-gated effects a JS plugin requested in its output.
+    /// Each effect is one of `{emit}` (WriteEvents), `{dbQuery}` (ReadDatabase),
+    /// `{http}` (HttpRequests). A request without the matching permission errors.
+    /// Effects are recorded; `dbQuery`/`http` fulfillment is performed by the caller
+    /// via the async DB/HTTP path (see `fulfill_requests`).
+    fn apply_js_effects(
+        &mut self,
+        plugin: &str,
+        perms: &HashSet<Permission>,
+        effects: &[serde_json::Value],
+    ) -> Result<()> {
+        for effect in effects {
+            let obj = match effect.as_object() {
+                Some(o) => o,
+                None => continue,
+            };
+            let (kind, required) = if obj.contains_key("emit") {
+                ("emit", Permission::WriteEvents)
+            } else if obj.contains_key("dbQuery") {
+                ("dbQuery", Permission::ReadDatabase)
+            } else if obj.contains_key("http") {
+                ("http", Permission::HttpRequests)
+            } else {
+                continue;
+            };
+            if !perms.contains(&required) {
+                anyhow::bail!("plugin '{}' requested '{}' without {:?} permission", plugin, kind, required);
+            }
+            self.js_effects.push(effect.to_string());
+        }
+        Ok(())
+    }
+
+    /// Drain the effects JS plugins requested during recent hook calls.
+    pub fn take_js_effects(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.js_effects)
     }
 
     /// Fulfill the DB/HTTP requests a plugin recorded during its last call.

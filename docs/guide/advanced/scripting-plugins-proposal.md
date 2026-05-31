@@ -130,8 +130,14 @@ The QuickJS/Javy spike must meet, or we reconsider:
    into `JsRuntime` and `call_hook` re-runs the Javy module with a `{hook, record}` stdin
    envelope, returning the modified record. (`tests/js_hook.rs` + fixture
    `tests/fixtures/js-hook-plugin`: a JS `before_create` adds a tag through `WasmHookRunner`.)
-7. M3: permission-gated `atomo.emit`/`dbQuery`/`http` onto existing host functions.
-   Test: denied without permission, works with.
+7. ✅ M3: permission-gated effects for JS plugins. Because Javy is one-shot (stdin→run→
+   stdout), JS plugins can't make synchronous host calls; instead a plugin returns
+   `{ record, effects: [{emit|dbQuery|http: ...}] }`. The manager applies an effect only if
+   the manifest grants the matching permission (`WriteEvents`/`ReadDatabase`/`HttpRequests`),
+   else the hook aborts; granted effects are recorded (`take_js_effects`) for the caller to
+   emit/fulfill. (`tests/js_effects.rs` + fixtures `emit-granted`/`emit-denied`.)
+   NOTE: `dbQuery`/`http` effect *fulfillment* reuses the async `fulfill_requests` path and
+   is wired by the caller; M3 covers the permission gating + recording.
 
 **Phase 3 — Validation:**
 8. A real JS example plugin in-repo + integration test (mirrors `tests/host_api.rs`).
