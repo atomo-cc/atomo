@@ -38,7 +38,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Schema→codegen→migrations | yes | 🟡→partial | dogfood fixed enum/array; **`tableName` still ignored** |
 | CRUD | yes | ✅ | `crm_dogfood` + `integration_test` |
 | Validation rules | yes | ✅ | data-layer enforced on create + update (update-aware via `validate_partial`); `exists:` deferred to FKs |
-| Relationships (belongsTo/hasMany) | yes | 🟡 | dogfood queries deals-by-contact; `include`/nested untested |
+| Relationships (belongsTo/hasMany) | yes | ✅ CRM | C1: `include` resolves contact.company + contact.deals (nested), proven in dogfood. Latent: convention-based, ignores the declared `relationships` block (works only when rel name == model name) |
 | Soft delete / restore / hard delete | yes | 🟡 | synthetic only |
 | Pagination + where/orderBy | yes | 🟡 | synthetic (Note) only |
 | Event sourcing + replay | yes | 🟡 | synthetic only |
@@ -169,7 +169,16 @@ targets is the bulk of the work.
   not silently broken** — only needed CRM-driven proof.
 
 ### Phase C — Data-pipeline polish (CRM-native, lower risk)
-- [ ] C1. Relationship resolution: `include` company-on-contact, deals-on-contact (nested reads)
+- [x] C1. **Relationship resolution** (✅ works for CRM): `resolve_includes` resolves both
+  `contact.company` (belongsTo) and `contact.deals` (hasMany) as nested objects/arrays. Proven in
+  `crm_dogfood` (step 5b). **Latent gap (documented, not fixed)**: resolution is *convention-based*
+  — it infers the related model from the relationship name (`{rel}Id` → `capitalize(rel)`), NOT
+  from the schema's declared `relationships` block (`{type, model, foreignKey}`). The CRM works
+  only because its relationship names align with model names; a relationship whose name differs
+  from its target model (e.g. `owner: { model: "User" }`) would resolve to the wrong/nonexistent
+  model. Fixing = make `resolve_includes` read the `relationships` block (needs parsing it from
+  the export-const-schema first — same parser-format family as access/validation). Deferred: no
+  CRM-visible payoff.
 - [ ] C2. Soft-delete / restore / pagination / orderBy re-driven through CRM models
 - [ ] C3. Event sourcing + replay over CRM mutations (rebuild a Deal's history)
 - [ ] C4. Cache conformance (find_many cached/invalidated) + the LOW-risk cache polish

@@ -101,6 +101,26 @@ async fn crm_schema_drives_the_platform() {
         .expect("query deals by contact");
     assert_eq!(deals.len(), 1, "contact should have exactly one deal");
 
+    // 5b. Nested includes via resolve_includes: contact.company (belongsTo) + contact.deals
+    //     (hasMany). This is the real relationship-resolution path, not a flat FK query.
+    let with_rels = c
+        .find_many("Contact", &[eq("id", json!(contact_id))], &[], None, None, &["company".into(), "deals".into()])
+        .await
+        .expect("query contact with includes");
+    let contact_full = &with_rels[0];
+    // belongsTo: company should be nested as an object with the right name.
+    let company_rel = contact_full.get("company");
+    assert!(
+        company_rel.and_then(|v| v.get("name")).and_then(|v| v.as_str()) == Some("Acme Inc"),
+        "contact.company (belongsTo) should resolve to the company object, got: {:?}", company_rel
+    );
+    // hasMany: deals should be a nested array containing the deal.
+    let deals_rel = contact_full.get("deals").and_then(|v| v.as_array());
+    assert!(
+        deals_rel.is_some_and(|a| a.len() == 1),
+        "contact.deals (hasMany) should resolve to a 1-element array, got: {:?}", contact_full.get("deals")
+    );
+
     // 6. Validation is enforced in the DATA layer (not just GraphQL). The CRM declares
     //    title: required and Company name: required — empty values must be rejected here.
     let bad_deal = c
