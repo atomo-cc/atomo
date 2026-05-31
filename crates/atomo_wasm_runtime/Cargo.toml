@@ -18,3 +18,7 @@ wasmtime = "16.0"
 
 # Local dependencies
 atomo_core = { path = "../atomo_core" }
+
+[dev-dependencies]
+wat = "1"
+tokio = { workspace = true }

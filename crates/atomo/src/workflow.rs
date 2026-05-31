@@ -210,16 +210,13 @@ impl WorkflowEngine {
                     })
                     .collect();
                 for (name, cron_expr) in scheduled {
-                    match cron::Schedule::from_str(&cron_expr) {
-                        Ok(schedule) => {
-                            if let Some(next) = schedule.after(&last_tick).next() {
-                                if next <= now {
-                                    if let Err(e) = self.execute(&name, HashMap::new()).await {
-                                        tracing::error!(workflow = %name, error = %e, "Scheduled workflow failed");
-                                    }
-                                }
+                    match cron_should_fire(&cron_expr, last_tick, now) {
+                        Ok(true) => {
+                            if let Err(e) = self.execute(&name, HashMap::new()).await {
+                                tracing::error!(workflow = %name, error = %e, "Scheduled workflow failed");
                             }
                         }
+                        Ok(false) => {}
                         Err(e) => tracing::warn!(workflow = %name, error = %e, "Invalid cron expression"),
                     }
                 }
@@ -227,6 +224,17 @@ impl WorkflowEngine {
             }
         });
     }
+}
+
+/// Pure helper: does `cron_expr` have a scheduled occurrence in the window `(last_tick, now]`?
+/// Returns Err with a message if the cron expression is invalid.
+pub fn cron_should_fire(
+    cron_expr: &str,
+    last_tick: chrono::DateTime<chrono::Utc>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<bool, String> {
+    let schedule = cron::Schedule::from_str(cron_expr).map_err(|e| e.to_string())?;
+    Ok(schedule.after(&last_tick).next().map(|next| next <= now).unwrap_or(false))
 }
 
 fn evaluate_condition(cond: &Condition, context: &HashMap<String, Value>) -> bool {
@@ -260,4 +268,73 @@ async fn execute_step(action: &StepAction, context: &mut HashMap<String, Value>)
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use serde_json::json;
+
+    #[test]
+    fn cron_fires_within_window() {
+        let last_tick = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 1, 30).unwrap();
+        assert!(cron_should_fire("0 * * * * *", last_tick, now).unwrap());
+    }
+
+    #[test]
+    fn cron_does_not_fire_outside_window() {
+        let last_tick = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 1).unwrap();
+        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 30).unwrap();
+        assert!(!cron_should_fire("0 * * * * *", last_tick, now).unwrap());
+    }
+
+    #[test]
+    fn cron_invalid_returns_err() {
+        let t = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        assert!(cron_should_fire("not-a-cron", t, t).is_err());
+    }
+
+    #[test]
+    fn register_and_list() {
+        let engine = WorkflowEngine::new();
+        engine.register(Workflow {
+            name: "w1".into(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![],
+        });
+        assert!(engine.list().contains(&"w1".to_string()));
+        assert!(engine.get("w1").is_some());
+    }
+
+    #[test]
+    fn find_by_trigger_matches_event() {
+        let engine = WorkflowEngine::new();
+        engine.register(Workflow {
+            name: "on_contact".into(),
+            trigger: WorkflowTrigger::OnEvent { model: "Contact".into(), event_type: "Created".into() },
+            steps: vec![],
+        });
+        assert_eq!(engine.find_by_trigger("Contact", "Created").len(), 1);
+        assert!(engine.find_by_trigger("Contact", "Updated").is_empty());
+    }
+
+    #[tokio::test]
+    async fn execute_runs_steps() {
+        let engine = WorkflowEngine::new();
+        engine.register(Workflow {
+            name: "test_wf".into(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![WorkflowStep {
+                name: "set_done".into(),
+                action: StepAction::SetVariable { key: "done".into(), value: json!(true) },
+                condition: None,
+                on_failure: FailurePolicy::Continue,
+            }],
+        });
+        let exec = engine.execute("test_wf", HashMap::new()).await.unwrap();
+        assert_eq!(exec.status, ExecutionStatus::Completed);
+        assert_eq!(exec.context.get("done"), Some(&json!(true)));
+    }
 }

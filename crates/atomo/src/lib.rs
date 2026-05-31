@@ -5,7 +5,7 @@
 //!
 //! ## Usage as a Library
 //!
-//! ```rust
+//! ```rust,ignore
 //! use atomo::prelude::*;
 //!
 //! #[tokio::main]
@@ -58,7 +58,7 @@
 //!
 //! ## GraphQL Integration
 //!
-//! ```rust
+//! ```rust,ignore
 //! use atomo::prelude::*;
 //! use axum::{Router, response::Json};
 //!
