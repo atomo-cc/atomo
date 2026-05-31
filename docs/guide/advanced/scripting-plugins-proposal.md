@@ -122,8 +122,9 @@ The QuickJS/Javy spike must meet, or we reconsider:
    - Build note: the spike's full-wasmtime test binary is large; expect significant disk use.
 
 **Phase 2 — Implement (milestone-gated, each tested):**
-5. M1: load a `.js` plugin, run it via the embedded Javy engine (WASI stdin/stdout),
-   capture stdout. Test: JS plugin transforms a JSON record end-to-end.
+5. ✅ M1: load a `.js` plugin, run it via the embedded Javy engine (WASI stdin/stdout),
+   capture stdout. (`js_runtime.rs` `JsRuntime::run_js_plugin`; `tests/js_plugin.rs` with a
+   committed `tests/fixtures/tag_plugin.wasm` — transform, empty-record, and fuel-metering tests.)
 6. M2: bridge the CRUD hook ABI — JS `beforeCreate(record)` flows through `HookRunner`.
    Test: JS hook mutates a record end-to-end.
 7. M3: permission-gated `atomo.emit`/`dbQuery`/`http` onto existing host functions.
