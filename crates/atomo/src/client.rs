@@ -12,6 +12,19 @@ use crate::query::sql_builder::SqlBuilder;
 use crate::events::{EventType, ModelEvent};
 use crate::event_store::EventStore;
 
+/// Scope where clauses by tenant_id
+pub fn scope_by_tenant(where_clauses: &[WhereClause], tenant_id: Option<&str>) -> Vec<WhereClause> {
+    let mut clauses = where_clauses.to_vec();
+    if let Some(tid) = tenant_id {
+        clauses.push(WhereClause {
+            field: "tenant_id".to_string(),
+            operator: crate::query::WhereOperator::Equals,
+            value: Value::String(tid.to_string()),
+        });
+    }
+    clauses
+}
+
 /// Core Atomo client that handles all database operations
 #[derive(Clone)]
 pub struct AtomoClient {
@@ -40,6 +53,13 @@ impl AtomoClient {
         println!("Connecting to database: {}", database_url);
         let pool = PgPool::connect(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
+        
+        // Auto-create tables
+        let migrations = crate::schema::generate_migrations(schema)?;
+        for sql in &migrations {
+            sqlx::query(sql).execute(&pool).await.ok();
+        }
+        
         let event_store = EventStore::new(pool.clone());
         event_store.init().await?;
         
@@ -322,8 +342,10 @@ impl AtomoClientBuilder {
         
         // Run migrations if enabled
         if self.enable_migrations {
-            // TODO: Run database migrations based on schema
-            println!("Migrations enabled but not yet implemented");
+            let migrations = crate::schema::generate_migrations(schema)?;
+            for sql in &migrations {
+                sqlx::query(sql).execute(&pool).await.ok();
+            }
         }
 
         let embedding_store = if self.enable_ai {

@@ -1,7 +1,7 @@
 //! HTTP handlers for the Atomo server
 
 use async_graphql::{Schema as GraphQLSchema, MergedObject};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
+use async_graphql_axum::{GraphQLResponse, GraphQLSubscription};
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
@@ -10,6 +10,7 @@ use axum::{
     Router,
 };
 use atomo::prelude::*;
+use atomo::graphql::UserRoleCtx;
 use std::time::Instant;
 use atomo_core::types::EntityId;
 use atomo::graphql::{Query as ServiceQuery, Mutation as ServiceMutation, Subscription};
@@ -65,7 +66,7 @@ pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
 
 pub async fn graphql_handler(
     Extension(schema): Extension<AtomoGraphQLSchema>,
-    req: GraphQLRequest,
+    req: axum::extract::Request,
 ) -> GraphQLResponse {
     static GQL_COUNTER: once_cell::sync::Lazy<prometheus::IntCounterVec> = once_cell::sync::Lazy::new(|| {
         prometheus::register_int_counter_vec!(
@@ -83,7 +84,21 @@ pub async fn graphql_handler(
         ).expect("register graphql_request_duration_seconds")
     });
 
-    let mut inner = req.into_inner();
+    // Extract auth user from request extensions (set by auth middleware)
+    let auth_user = req.extensions().get::<crate::auth::AuthUser>().cloned();
+
+    // Parse GraphQL request from body
+    let body = axum::body::to_bytes(req.into_body(), 2_000_000).await.unwrap_or_default();
+    let mut inner: async_graphql::Request = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(_) => async_graphql::Request::new(""),
+    };
+
+    // Inject user role into GraphQL context
+    if let Some(user) = auth_user {
+        inner = inner.data(UserRoleCtx(format!("{:?}", user.role)));
+    }
+
     let op = inner.operation_name.clone().unwrap_or_else(|| "anonymous".to_string());
     let start = Instant::now();
     let resp = schema.execute(inner).await;

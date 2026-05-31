@@ -15,11 +15,16 @@ use tokio_stream::wrappers::BroadcastStream;
 use atomo_schema::AccessRule;
 
 use crate::client::AtomoClient;
+use crate::errors::{AtomoError, FieldError};
 use crate::schema::Schema;
 use crate::events::ModelEvent;
+use crate::query::{WhereClause, WhereOperator, OrderDirection};
 
 /// User role context data for RBAC checks
 pub struct UserRoleCtx(pub String);
+
+/// Tenant context for multi-tenant isolation
+pub struct TenantCtx(pub String);
 
 fn check_access(schema: &Schema, model_name: &str, action: &str, ctx: &Context<'_>) -> GraphQLResult<()> {
     let access = schema.models.get(model_name).and_then(|m| m.access.as_ref());
@@ -39,15 +44,15 @@ fn check_access(schema: &Schema, model_name: &str, action: &str, ctx: &Context<'
         AccessRule::Boolean(roles_str) => {
             if roles_str == "authenticated" {
                 if user_role.is_none() {
-                    return Err(async_graphql::Error::new("Authentication required"));
+                    return Err(AtomoError::Unauthorized { message: "Authentication required".to_string() }.into());
                 }
                 return Ok(());
             }
             let allowed: Vec<&str> = roles_str.split('|').collect();
             match user_role {
                 Some(r) if allowed.iter().any(|a| a.eq_ignore_ascii_case(&r.0)) => Ok(()),
-                Some(_) => Err(async_graphql::Error::new(format!("Access denied: requires one of [{}]", roles_str))),
-                None => Err(async_graphql::Error::new("Authentication required")),
+                Some(_) => Err(AtomoError::Forbidden { message: format!("Access denied: requires one of [{}]", roles_str) }.into()),
+                None => Err(AtomoError::Unauthorized { message: "Authentication required".to_string() }.into()),
             }
         }
         _ => Ok(()),
@@ -67,6 +72,64 @@ struct PageInfo {
 struct PaginatedRecords {
     data: Value,
     page_info: PageInfo,
+}
+
+fn parse_where(where_json: &Value) -> Vec<WhereClause> {
+    let mut clauses = Vec::new();
+    if let Value::Object(map) = where_json {
+        for (field, condition) in map {
+            if let Value::Object(ops) = condition {
+                for (op, val) in ops {
+                    let operator = match op.as_str() {
+                        "equals" | "eq" => WhereOperator::Equals,
+                        "not" | "neq" => WhereOperator::NotEquals,
+                        "contains" | "like" => WhereOperator::Contains,
+                        "startsWith" => WhereOperator::StartsWith,
+                        "endsWith" => WhereOperator::EndsWith,
+                        "gt" => WhereOperator::GreaterThan,
+                        "gte" => WhereOperator::GreaterThanOrEqual,
+                        "lt" => WhereOperator::LessThan,
+                        "lte" => WhereOperator::LessThanOrEqual,
+                        "in" => WhereOperator::In,
+                        "notIn" => WhereOperator::NotIn,
+                        "isNull" => WhereOperator::IsNull,
+                        _ => continue,
+                    };
+                    clauses.push(WhereClause { field: field.clone(), operator, value: val.clone() });
+                }
+            } else {
+                clauses.push(WhereClause { field: field.clone(), operator: WhereOperator::Equals, value: condition.clone() });
+            }
+        }
+    }
+    clauses
+}
+
+fn parse_order_by(order_json: &Value) -> Vec<(String, OrderDirection)> {
+    let mut orders = Vec::new();
+    match order_json {
+        Value::Object(map) => {
+            for (field, dir) in map {
+                let direction = match dir.as_str().unwrap_or("asc").to_lowercase().as_str() {
+                    "desc" => OrderDirection::Desc,
+                    _ => OrderDirection::Asc,
+                };
+                orders.push((field.clone(), direction));
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                if let Value::Object(obj) = item {
+                    let field = obj.get("field").and_then(|f| f.as_str()).unwrap_or_default().to_string();
+                    let dir = obj.get("direction").and_then(|d| d.as_str()).unwrap_or("asc");
+                    let direction = if dir.eq_ignore_ascii_case("desc") { OrderDirection::Desc } else { OrderDirection::Asc };
+                    orders.push((field, direction));
+                }
+            }
+        }
+        _ => {}
+    }
+    orders
 }
 
 /// Service-specific GraphQL queries
@@ -95,15 +158,18 @@ impl Query {
         offset: Option<i32>,
     ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
         check_access(&self.schema, &model, "read", ctx)?;
+        let where_clauses = where_.as_ref().map(parse_where).unwrap_or_default();
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let where_clauses = crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let orders = order_by.as_ref().map(parse_order_by).unwrap_or_default();
         let result = self.client.find_many(
             &model,
-            &[], // where_clauses  
-            &[], // order_by
+            &where_clauses,
+            &orders,
             limit.map(|l| l as usize),
             offset.map(|o| o as usize),
-            &[], // include
+            &[],
         ).await?;
-        
         Ok(result)
     }
 
@@ -115,12 +181,10 @@ impl Query {
         id: String,
     ) -> GraphQLResult<Option<HashMap<String, Value>>> {
         check_access(&self.schema, &model, "read", ctx)?;
-        let result = self.client.find_unique(
-            &model,
-            &[], // where_clauses
-            &[], // include  
-        ).await?;
-        
+        let where_clauses = vec![WhereClause { field: "id".to_string(), operator: WhereOperator::Equals, value: Value::String(id) }];
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let where_clauses = crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+        let result = self.client.find_unique(&model, &where_clauses, &[]).await?;
         Ok(result)
     }
 
@@ -135,8 +199,10 @@ impl Query {
         check_access(&self.schema, &model, "read", ctx)?;
         let lim = limit.unwrap_or(20) as usize;
         let off = offset.unwrap_or(0) as usize;
-        let data = self.client.find_many(&model, &[], &[], Some(lim), Some(off), &[]).await?;
-        let total_count = self.client.count(&model, &[]).await.unwrap_or(0);
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
+        let data = self.client.find_many(&model, &where_clauses, &[], Some(lim), Some(off), &[]).await?;
+        let total_count = self.client.count(&model, &where_clauses).await.unwrap_or(0);
         let page_info = PageInfo {
             total_count,
             has_next_page: (off + lim) < total_count as usize,
@@ -170,6 +236,25 @@ impl Mutation {
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "create", ctx)?;
+        let mut data = data;
+        if let Some(t) = ctx.data_opt::<TenantCtx>() {
+            data.insert("tenant_id".to_string(), Value::String(t.0.clone()));
+        }
+        if let Some(model_def) = self.schema.models.get(&model) {
+            let rules: HashMap<String, String> = model_def.fields.iter()
+                .filter(|(_, f)| !f.optional && f.name != "id" && f.name != "createdAt" && f.name != "updatedAt")
+                .map(|(name, _)| (name.clone(), "required".to_string()))
+                .collect();
+            let errors = crate::validation::validate(&data, &rules);
+            if !errors.is_empty() {
+                let field_errors: Vec<FieldError> = errors.into_iter().map(|e| FieldError {
+                    field: e.field,
+                    message: e.message,
+                    code: e.code,
+                }).collect();
+                return Err(AtomoError::ValidationFailed { errors: field_errors }.into());
+            }
+        }
         let result = self.client.create(
             &model,
             &data,
@@ -188,9 +273,11 @@ impl Mutation {
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "update", ctx)?;
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
         let results = self.client.update_many(
             &model,
-            &[], // where_clauses
+            &where_clauses,
             &data,
             &[], // include
         ).await?;
@@ -207,9 +294,11 @@ impl Mutation {
         where_: Value,
     ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let where_clauses = crate::client::scope_by_tenant(&[], tenant.map(|t| t.0.as_str()));
         let count = self.client.delete_many(
             &model,
-            &[], // where_clauses
+            &where_clauses,
         ).await?;
         
         Ok(count as i32)
