@@ -1,9 +1,18 @@
 name: Release
 
+# NOTE: auto-trigger on tag push disabled to control Actions cost — run manually from the
+# Actions tab (workflow_dispatch) with the tag as input. To re-enable, restore the block below:
+#
+# on:
+#   push:
+#     tags:
+#       - 'v*'
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: true
 
 jobs:
   create-release:
@@ -18,8 +27,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ github.event.inputs.tag }}
+          release_name: Release ${{ github.event.inputs.tag }}
           draft: false
           prerelease: false
 
@@ -34,17 +43,17 @@ jobs:
           - build: linux
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: atomo
+            artifact_name: atomo-cli
             asset_name: atomo-linux-x86_64
           - build: macos
             os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: atomo
+            artifact_name: atomo-cli
             asset_name: atomo-macos-x86_64
           - build: windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: atomo.exe
+            artifact_name: atomo-cli.exe
             asset_name: atomo-windows-x86_64.exe
 
     steps:
