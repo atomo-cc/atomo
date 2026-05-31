@@ -87,11 +87,61 @@ pub enum ExecutionStatus {
 /// Workflow engine that manages definitions and executions
 pub struct WorkflowEngine {
     workflows: std::sync::RwLock<HashMap<String, Workflow>>,
+    pool: Option<sqlx::PgPool>,
 }
 
 impl WorkflowEngine {
     pub fn new() -> Self {
-        Self { workflows: std::sync::RwLock::new(HashMap::new()) }
+        Self { workflows: std::sync::RwLock::new(HashMap::new()), pool: None }
+    }
+
+    /// Create an engine backed by a Postgres table for durable persistence.
+    pub fn with_pool(pool: sqlx::PgPool) -> Self {
+        Self { workflows: std::sync::RwLock::new(HashMap::new()), pool: Some(pool) }
+    }
+
+    /// Ensure the workflows table exists and load any persisted definitions into memory.
+    pub async fn init(&self) -> Result<()> {
+        let pool = match &self.pool { Some(p) => p, None => return Ok(()) };
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS workflows (
+                name TEXT PRIMARY KEY,
+                definition JSONB NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        ).execute(pool).await?;
+        let rows = sqlx::query_as::<_, (Value,)>("SELECT definition FROM workflows")
+            .fetch_all(pool).await?;
+        let mut map = self.workflows.write().unwrap();
+        for (def,) in rows {
+            if let Ok(wf) = serde_json::from_value::<Workflow>(def) {
+                map.insert(wf.name.clone(), wf);
+            }
+        }
+        Ok(())
+    }
+
+    /// Persist a workflow definition (upsert). No-op without a pool.
+    pub async fn persist(&self, workflow: &Workflow) -> Result<()> {
+        if let Some(pool) = &self.pool {
+            sqlx::query(
+                "INSERT INTO workflows (name, definition) VALUES ($1, $2)
+                 ON CONFLICT (name) DO UPDATE SET definition = $2, updated_at = NOW()",
+            )
+            .bind(&workflow.name)
+            .bind(serde_json::to_value(workflow)?)
+            .execute(pool).await?;
+        }
+        Ok(())
+    }
+
+    /// Delete a persisted workflow. No-op without a pool.
+    pub async fn unpersist(&self, name: &str) -> Result<()> {
+        if let Some(pool) = &self.pool {
+            sqlx::query("DELETE FROM workflows WHERE name = $1").bind(name).execute(pool).await?;
+        }
+        Ok(())
     }
 
     pub fn register(&self, workflow: Workflow) {

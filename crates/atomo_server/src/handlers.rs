@@ -440,6 +440,7 @@ async fn delete_workflow(
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
     if engine.remove(&name) {
+        engine.unpersist(&name).await.ok();
         Ok(Json(json!({ "removed": name })))
     } else {
         Err(StatusCode::NOT_FOUND)
@@ -452,7 +453,8 @@ async fn register_workflow(
     Json(workflow): Json<Workflow>,
 ) -> Result<Json<Value>, StatusCode> {
     let name = workflow.name.clone();
-    engine.register(workflow);
+    engine.register(workflow.clone());
+    engine.persist(&workflow).await.ok();
     Ok(Json(json!({ "registered": name })))
 }
 

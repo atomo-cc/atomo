@@ -1,6 +1,6 @@
 # Workflows (REST)
 
-The workflow engine runs multi-step workflows with triggers, conditions, and retry policies. Definitions are loaded from `./workflows/*.json` at server boot and can also be registered at runtime via REST. Event-triggered workflows fire automatically on model events.
+The workflow engine runs multi-step workflows with triggers, conditions, and retry policies. Workflows registered via REST are persisted to a `workflows` table and reloaded on the next server boot. Definitions in `./workflows/*.json` are also loaded at boot. Event-triggered workflows fire automatically on model events.
 
 ## Endpoints
 

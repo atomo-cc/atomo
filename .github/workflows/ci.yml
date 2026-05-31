@@ -13,6 +13,22 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: atomo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/atomo_test
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -35,6 +51,9 @@ jobs:
           
       - name: Run cargo test
         run: cargo test --workspace
+
+      - name: Run DB-gated integration tests
+        run: cargo test --workspace -- --ignored --test-threads=1
         
   lint:
     name: Linting

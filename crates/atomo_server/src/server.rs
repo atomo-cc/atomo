@@ -138,9 +138,12 @@ impl AtomoServer {
             manager
         };
 
-        // Workflow engine: load definitions from ./workflows/*.json, start the event listener and cron scheduler.
-        let workflow_engine = std::sync::Arc::new(atomo::workflow::WorkflowEngine::new());
+        // Workflow engine: durable (Postgres-backed), plus ./workflows/*.json files, then listeners.
+        let workflow_engine = std::sync::Arc::new(
+            atomo::workflow::WorkflowEngine::with_pool(self.atomo.db_pool().clone()),
+        );
         {
+            workflow_engine.init().await?; // create table + load persisted definitions
             let loaded = crate::load_workflows(&workflow_engine, "workflows").await;
             if loaded > 0 { info!("   ✓ Loaded {} workflow(s) from ./workflows", loaded); }
             workflow_engine.clone().start_event_listener(self.atomo.event_receiver());

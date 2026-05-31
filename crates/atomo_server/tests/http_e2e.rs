@@ -137,3 +137,66 @@ async fn test_login_then_create_and_list() {
     let list_str = serde_json::to_string(&list_json).unwrap();
     assert!(list_str.contains("hello"), "created note not found in list: {:?}", list_json);
 }
+
+
+#[tokio::test]
+#[ignore]
+async fn test_workflow_register_list_run_delete() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    // Pool-backed engine to also exercise persistence (init + upsert + delete).
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    let engine = std::sync::Arc::new(atomo::workflow::WorkflowEngine::with_pool(pool));
+    engine.init().await.unwrap();
+    let app = atomo_server::handlers::workflow_router(engine.clone());
+
+    // 1. Register a Manual workflow
+    let wf = serde_json::json!({
+        "name": "http-test-wf",
+        "trigger": "Manual",
+        "steps": [
+            { "name": "flag", "action": { "SetVariable": { "key": "done", "value": true } },
+              "condition": null, "on_failure": "Continue" }
+        ]
+    });
+    let req = Request::builder()
+        .uri("/workflows").method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&wf).unwrap())).unwrap();
+    let (status, json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "register failed: {:?}", json);
+    assert_eq!(json["registered"], "http-test-wf");
+
+    // 2. List includes it
+    let req = Request::builder().uri("/workflows").method("GET").body(Body::empty()).unwrap();
+    let (status, json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(serde_json::to_string(&json).unwrap().contains("http-test-wf"));
+
+    // 3. Run it
+    let req = Request::builder()
+        .uri("/workflows/http-test-wf/run").method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from("{}")).unwrap();
+    let (status, json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "run failed: {:?}", json);
+    assert_eq!(json["status"], "Completed");
+
+    // 4. Persistence: a fresh engine on the same DB loads it
+    let pool2 = sqlx::PgPool::connect(&url).await.unwrap();
+    let engine2 = atomo::workflow::WorkflowEngine::with_pool(pool2);
+    engine2.init().await.unwrap();
+    assert!(engine2.list().contains(&"http-test-wf".to_string()), "workflow did not persist across engines");
+
+    // 5. Delete it
+    let req = Request::builder()
+        .uri("/workflows/http-test-wf").method("DELETE").body(Body::empty()).unwrap();
+    let (status, json) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "delete failed: {:?}", json);
+    assert_eq!(json["removed"], "http-test-wf");
+
+    // 6. Deleting again is 404
+    let req = Request::builder()
+        .uri("/workflows/http-test-wf").method("DELETE").body(Body::empty()).unwrap();
+    let (status, _) = send(&app, req).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
