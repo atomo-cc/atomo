@@ -41,3 +41,19 @@ POST /workflows/{name}/run     # execute a workflow with a JSON context body
 `status` is one of `Running | Completed | Failed | Paused`.
 
 > Event-triggered workflows (`OnEvent`) execute automatically when a matching model event is emitted — no manual `run` call is required.
+
+## Scheduled (cron) Triggers
+
+Workflows with a `Schedule { cron }` trigger run automatically. A background scheduler started at server boot checks every 30 seconds and fires any workflow whose cron schedule has an occurrence in the elapsed window.
+
+```json
+{
+  "name": "nightly-digest",
+  "trigger": { "Schedule": { "cron": "0 0 2 * * *" } },
+  "steps": [ /* ... */ ]
+}
+```
+
+- Cron expressions use the 6-field form: `sec min hour day month weekday` (e.g. `0 0 2 * * *` = 02:00 daily).
+- Invalid cron expressions are logged and skipped (they do not crash the scheduler).
+- The scheduler tick is 30s, so the effective minimum granularity is ~30 seconds.

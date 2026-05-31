@@ -61,6 +61,7 @@ export default defineConfig({
             { text: 'Modeling & Access', link: '/guide/modeling' },
             { text: 'Configuration', link: '/guide/configuration' },
             { text: 'WASM Plugins', link: '/guide/plugins' },
+            { text: 'Testing', link: '/guide/testing' },
             { text: 'Local-First Architecture', link: '/guide/local-first' }
           ]
         },
