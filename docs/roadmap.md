@@ -138,6 +138,10 @@ This page is the single source of truth for delivery status and upcoming milesto
   - Plugin marketplace / registry: read API shipped (M1); discovery → install → publish remain
   - Atomo Cloud managed hosting
 - Hardening
+  - **CRM Conformance Suite** (active approach): use the flagship CRM as an executable spec
+    that exercises the full backend; see `/guide/advanced/crm-conformance-plan`. Already
+    surfaced + fixed real codegen/validation gaps (enum→JSONB, array NOT NULL, validation
+    regex + data-layer enforcement) that synthetic schemas never reached.
   - Centralize permission checks (compiled host-fn gating + JS effect gating share one seam);
     expand integration test coverage across the server boot path
 
