@@ -11,15 +11,24 @@ This page is the single source of truth for delivery status and upcoming milesto
 
 ## Status Overview
 
-- CLI and dev runtime: implemented (init, migrate, codegen, dev, dev --workspace)
-- Schema → Rust/GraphQL/codegen: implemented with hot reload
-- GraphQL API: implemented and merged with platform queries
-- Admin UI: dynamic rendering core implemented; proxied in workspace mode
-- Auth (JWT + RBAC): implemented; hashing is dev-stub (see notes)
-- Audit logs: implemented with REST endpoints and platform GraphQL
-- TypeScript SDK: implemented (types and React hooks)
-- WASM plugin runtime: manifest and permission types implemented; runtime execution pending
-- Real-time collaboration: groundwork present; WebSocket/CRDT integration pending
+- CLI and dev runtime: ✅ implemented (init, migrate, codegen, dev, dev --workspace, test, deploy)
+- Schema → Rust/GraphQL/codegen: ✅ implemented with hot reload
+- GraphQL API: ✅ full CRUD with where/orderBy parsing, pagination, relationships
+- Admin UI: ✅ dynamic rendering with aligned API client
+- Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforcement in resolvers, OAuth2/OIDC SSO
+- Audit logs: ✅ REST endpoints + platform GraphQL
+- TypeScript SDK: ✅ types, React hooks, offline queue with sync-on-reconnect
+- WASM plugin runtime: ✅ fuel metering, permission-checked host functions, plugin lifecycle, CRUD hooks
+- Real-time: ✅ GraphQL subscriptions over WebSocket with model filtering
+- Event sourcing: ✅ event_log persistence, replay, entity history, CQRS projections
+- AI: ✅ pgvector EmbeddingStore with similarity search
+- Multi-tenant: ✅ TenantCtx with row-level isolation
+- Workflow engine: ✅ triggers, conditions, retry policies, event-driven execution
+- Caching: ✅ read cache with TTL and event-driven invalidation
+- Rate limiting: ✅ per-IP token bucket middleware
+- Observability: ✅ structured tracing with request ID propagation
+- Validation: ✅ required, email, min, max, numeric enforcement
+- Soft deletes: ✅ automatic query filtering, deleted_at column
 
 ## Implemented Highlights
 

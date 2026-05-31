@@ -16,6 +16,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GraphQL 标量类型集成
 - GitHub Actions CI/CD 流程
 
+### Added (Phase 1-3 Implementation)
+- **Auth**: Argon2id password hashing with bcrypt fallback for existing users
+- **Auth**: OAuth2/OIDC SSO support (Google, GitHub, Microsoft, Okta)
+- **Auth**: RBAC enforcement in all GraphQL resolvers from schema access rules
+- **API**: GraphQL WebSocket subscriptions with model-name filtering (`/graphql/ws`)
+- **API**: Where/orderBy JSON parsing (Hasura-style filter syntax)
+- **API**: Pagination metadata (totalCount, hasNextPage, hasPreviousPage)
+- **API**: Relationship resolution (belongsTo/hasMany joins via include)
+- **API**: Structured error responses with error codes (NOT_FOUND, UNAUTHORIZED, FORBIDDEN, VALIDATION_ERROR)
+- **Data**: Dynamic SQL builder generating parameterized SELECT/INSERT/UPDATE/DELETE
+- **Data**: Full CRUD operations with schema-driven query execution
+- **Data**: Soft deletes (deleted_at column, automatic query filtering)
+- **Data**: Event store with event_log table, replay, and entity history
+- **Data**: CQRS read projections (TableProjection with event-driven updates)
+- **Data**: Read cache with TTL and event-driven invalidation per model
+- **Data**: Auto-run migrations on dev startup (CREATE TABLE IF NOT EXISTS)
+- **Data**: Migration diff generation (ALTER TABLE for type/nullable/drop changes)
+- **Data**: Multi-tenant row isolation via TenantCtx (x-tenant-id header)
+- **Plugins**: WASM sandboxing with fuel metering and permission-checked host functions
+- **Plugins**: Plugin lifecycle (discovery from plugin.toml, loading, execution)
+- **Plugins**: WASM hooks in CRUD lifecycle (before/after create/update/delete)
+- **AI**: pgvector EmbeddingStore with cosine similarity search
+- **Workflow**: Workflow engine with event/manual/schedule triggers and retry policies
+- **SDK**: Local-first OfflineQueue with localStorage persistence and sync-on-reconnect
+- **CLI**: `atomo test` command for running service tests
+- **CLI**: `atomo deploy` with build validation and manifest generation
+- **CLI**: Blog and ecommerce project templates (`--template blog|ecommerce`)
+- **Server**: Rate limiting middleware (per-IP token bucket, env-configurable)
+- **Server**: Structured tracing middleware with x-request-id in spans
+- **Server**: Input validation enforcement (required, email, min, max, numeric)
+- **Projectors**: ProjectorManager with event stream listener
+
 ### Changed
 - 无
 

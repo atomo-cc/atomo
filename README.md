@@ -225,25 +225,34 @@ pub fn process_content(content: &str) -> String {
 
 ## 🗺️ 开发路线图
 
-### Phase 1: 基础架构 (当前)
+### Phase 1: 基础架构 (✅ 完成)
 - [x] 单体仓库设置
 - [x] 核心域模型
-- [x] CLI 工具
-- [x] 事件溯源基础
-- [ ] Schema 解析器
-- [ ] 基础 CRUD 操作
+- [x] CLI 工具 (init, dev, migrate, codegen, test, deploy)
+- [x] 事件溯源基础 (event_log, replay, entity history)
+- [x] Schema 解析器 (TypeScript → Rust/GraphQL)
+- [x] 基础 CRUD 操作 (动态 SQL, 参数化查询)
+- [x] GraphQL 订阅 (WebSocket, 模型过滤)
+- [x] 认证授权 (Argon2id, JWT, RBAC, OAuth2/OIDC)
+- [x] 软删除, 分页, 关系解析
+- [x] 输入验证, 结构化错误
+- [x] 速率限制, 请求追踪
 
-### Phase 2: 智能化升级
-- [ ] AI 工作流集成
-- [ ] 智能内容生成
-- [ ] 自动化测试
-- [ ] 性能优化
+### Phase 2: 智能化升级 (✅ 完成)
+- [x] AI 工作流集成 (pgvector, 相似度搜索)
+- [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子)
+- [x] CQRS 读投影 (事件驱动物化视图)
+- [x] 工作流引擎 (触发器, 条件, 重试策略)
+- [x] 多租户隔离 (行级安全)
+- [x] 读缓存 (TTL + 事件失效)
+- [x] 本地优先 SDK (离线队列, 重连同步)
 
-### Phase 3: 生态系统
+### Phase 3: 生态系统 (进行中)
+- [x] OAuth2/OIDC SSO (Google, GitHub, Microsoft, Okta)
+- [x] 项目模板 (CRM, 博客, 电商)
 - [ ] 插件市场
-- [ ] 多租户支持
-- [ ] 高级分析
-- [ ] 企业级功能
+- [ ] 可视化工作流设计器
+- [ ] Atomo Cloud 托管平台
 
 ## 🤝 贡献指南
 
