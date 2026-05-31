@@ -73,6 +73,11 @@ export interface Company {
 # Generate and run your service
 atomo dev
 # ✨ Complete GraphQL API, Admin UI, and TypeScript SDK generated automatically
+
+# From the monorepo
+pnpm dev:admin
+pnpm --filter @atomo/client-sdk dev
+pnpm --filter atomo-crm-service generate
 ```
 
 ## Why Atomo?
@@ -108,6 +113,15 @@ atomo dev
 ```
 
 Your complete application stack is ready in under 30 seconds! 🚀
+
+
+git clone https://github.com/atomo-org/atomo.git
+cd atomo
+pnpm install
+pnpm dev:admin
+```
+
+Use `pnpm --filter "./packages/*" test` as the current frontend/SDK baseline while the CRM generation loop matures.
 
 ---
 

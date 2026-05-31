@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to Atomo! This guide will help you create your first application in under 5 minutes.
+Welcome to Atomo. This guide shows the current monorepo MVP loop: Admin UI, TypeScript SDK, and the CRM demo service.
 
 ## What is Atomo?
 
@@ -14,8 +14,8 @@ Atomo is a **Content Core** - not just a CMS, but the "Arc Reactor" that powers 
 ## Prerequisites
 
 - **Node.js** 18+ and **pnpm** 8+
-- **Rust** 1.70+ (for CLI compilation)
-- **PostgreSQL** 14+ (for persistence)
+- **Rust** 1.70+ only if you are working on the CLI/server crates
+- **PostgreSQL** 14+ when running persistence-backed service flows
 
 ## Installation
 
@@ -56,12 +56,38 @@ cd my-crm
 # └── plugins/           # Custom plugins
 ```
 
-### 2. Explore the Schema
 
-Open `schema.ts` to see your data model:
+
+### Manual Installation - Frontend
+```bash
+git clone https://github.com/atomo-org/atomo.git
+cd atomo
+pnpm install
+```
+
+## Current MVP Loop
+
+Use the checked-in CRM demo rather than `atomo init` templates.
+
+```bash
+# Terminal 1: Admin UI
+pnpm dev:admin
+
+# Terminal 2: SDK watch/build loop
+pnpm --filter @atomo/client-sdk dev
+
+# Regenerate CRM demo artifacts after schema changes
+pnpm --filter atomo-crm-service generate
+```
+
+Keep the frontend baseline green with `pnpm --filter "./packages/*" test`, which type-checks the Admin UI and SDK packages.
+
+## Explore the CRM Schema
+
+Open `services/crm-service/schema.ts` to see the current demo model:
 
 ```typescript
-// schema.ts - This drives everything!
+// services/crm-service/schema.ts - This drives everything!
 export interface Contact {
   id: string
   firstName: string
@@ -83,6 +109,7 @@ export interface Company {
   contacts: Contact[]    // Automatic relationships
   deals: Deal[]
 }
+
 
 // Atomo automatically generates:
 // ✅ Database tables and migrations
@@ -135,7 +162,12 @@ Open your browser to see what Atomo generated:
   - Automatic CRUD operations
   - Custom business logic hooks
 
-### 5. Make Your First Change
+
+// The MVP loop uses this schema to drive generated CRM artifacts,
+// SDK types, and Admin UI integration work.
+```
+
+## Make a Schema Change
 
 Edit `schema.ts` to add a new field:
 
@@ -177,6 +209,15 @@ Atomo's "instant compilation" workflow:
 4. **Hot Reload**: Automatically restarts services and updates UI
 
 This gives you the **performance of Rust** with the **productivity of TypeScript**.
+
+Then run:
+
+```bash
+pnpm --filter atomo-crm-service generate
+pnpm --filter @atomo/client-sdk build
+```
+
+Use the Admin UI dev server to inspect the UI impact while the CRM schema and SDK types converge.
 
 ## Next Steps
 
