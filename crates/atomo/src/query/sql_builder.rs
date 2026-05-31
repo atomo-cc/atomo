@@ -116,6 +116,9 @@ impl SqlBuilder {
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
+        // Return the affected ids so the Deleted event can carry them (projections/audit need
+        // the id to remove the right row — previously the event had empty data).
+        sql.push_str(" RETURNING id");
         (sql, params)
     }
 

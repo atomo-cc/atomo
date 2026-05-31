@@ -325,14 +325,21 @@ impl AtomoClient {
 
         let (sql, params) = SqlBuilder::soft_delete(model, where_clauses);
         let args = build_args(&params)?;
-        let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
-        let count = result.rows_affected() as usize;
+        // `RETURNING id` gives us the affected rows so each Deleted event can carry its id
+        // (projections/audit need it to remove the right row).
+        let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
+        let count = rows.len();
 
-        if count > 0 {
+        for row in &rows {
+            let record = row_to_map(row);
+            let mut data = HashMap::new();
+            if let Some(id) = record.get("id") {
+                data.insert("id".to_string(), id.clone());
+            }
             let event = ModelEvent {
                 event_type: EventType::Deleted,
                 model_name: model_name.to_string(),
-                data: HashMap::new(),
+                data,
                 previous_data: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),

@@ -49,7 +49,7 @@ targeted supplementary harnesses for what it structurally can't reach.**
 | Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | 🟢 | works (find_many cached, invalidated on writes); minor: `find_unique` uncached, no eviction, Debug-format keys — all LOW |
-| CQRS projections / aggregate | yes | 🔴 GAP | Deleted events never remove rows (empty event data, `id` lookup None); numeric fields stored as `""` (`as_str()` on number → None); rebuild truncates with no replay |
+| CQRS projections / aggregate | yes | 🟡 fixed | B2: Deleted removes rows (RETURNING id + per-id events); non-string columns stored via `value_to_text`. `projection_correctness` test. **Rebuild still truncate-no-replay** (deferred, operator action) |
 | AI / pgvector | partial | ❌ | semantic search over notes; AI path not wired in a test |
 | Multi-tenant (RLS) | yes | 🟡 core | S3: `tenant_id` column now generated → read+write scoping works (`test_two_tenant_isolation`); header honored only when authed. **Deferred**: subscription tenant-filter (leaks), per-user tenant binding, event-store/PG-RLS |
 | OAuth/OIDC | no (needs mock IdP) | ❌ | supplementary harness |
@@ -148,7 +148,14 @@ targets is the bulk of the work.
   natural foundation for that, but it's a large separate feature, not a B1 fix.
   - [ ] B1a. `Mutation`/`Plugin` step actions are still no-op logs (need client/plugin-manager wired into the engine).
   - [ ] B1b. A JS-step execution model so the CRM's literal `sales-pipeline.yml` runs.
-- [ ] B2. **Projections**: fix Deleted-row removal (carry `id` in delete events), correct non-string column types, make rebuild replay from the event store. Test: create/delete Deal → projection matches; numeric `value` preserved.
+- [~] B2. **Projections — corruption fixed, rebuild deferred**: (1) ✅ Deleted now removes the
+  projection row — `soft_delete` gained `RETURNING id` and `delete_many` emits a Deleted event
+  per affected id (was empty data → row never removed). (2) ✅ non-string columns stored correctly
+  — projection binds via `value_to_text` (was `as_str().unwrap_or_default()` → numerics became `""`).
+  Test: `projection_correctness` (numeric `value` stored as "50000"; delete removes the row).
+  - [ ] B2a. **Rebuild still truncate-only (no replay)** — `TableProjection::rebuild` only
+    `TRUNCATE`s; true replay needs the event store fed into the projection (signature only has
+    `pool`). Operator action, not silent corruption — deferred.
 - [ ] B3. Update-aware validation + the `exists:` referential rule.
 - [ ] B4. Audit-on-CRM-mutation with the real actor.
 

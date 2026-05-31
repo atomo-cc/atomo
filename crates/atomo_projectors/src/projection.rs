@@ -4,6 +4,17 @@ use serde_json::Value;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
+/// Render a JSON value as the TEXT to store in a projection column. Strings pass through;
+/// numbers/bools/etc. are stringified (previously `as_str()` returned None for non-strings,
+/// silently binding "" — so numeric fields like Deal.value were lost).
+fn value_to_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
 /// A projection that materializes a read model from events
 #[async_trait]
 pub trait Projection: Send + Sync {
@@ -74,7 +85,7 @@ impl Projection for TableProjection {
                 let mut query = sqlx::query(&sql);
                 for col in &cols {
                     let val = data.get(*col).unwrap_or(&Value::Null);
-                    query = query.bind(val.as_str().unwrap_or_default());
+                    query = query.bind(value_to_text(val));
                 }
                 query.execute(pool).await?;
             }
@@ -103,7 +114,7 @@ impl Projection for TableProjection {
                         .filter(|c| *c != "id" && data.contains_key(*c))
                     {
                         let val = data.get(col).unwrap_or(&Value::Null);
-                        query = query.bind(val.as_str().unwrap_or_default());
+                        query = query.bind(value_to_text(val));
                     }
                     query = query.bind(id);
                     query.execute(pool).await?;
