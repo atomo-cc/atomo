@@ -78,8 +78,9 @@ export default defineConfig({
           text: '🔧 Advanced',
           items: [
             { text: 'Custom Event Stores', link: '/guide/advanced/event-stores' },
-            { text: 'Multi-tenant Setup', link: '/guide/advanced/multi-tenant' },
-            { text: 'Access & Hooks', link: '/guide/advanced/access-hooks' },
+            { text: 'Access Control (RBAC)', link: '/guide/advanced/access-hooks' },
+            { text: 'Validation Rules', link: '/guide/advanced/validation' },
+            { text: 'Multi-tenant', link: '/guide/advanced/multi-tenant' },
             { text: 'AI & Vector Search', link: '/guide/advanced/ai-vector' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },

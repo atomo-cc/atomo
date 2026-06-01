@@ -13,8 +13,9 @@ Passwords
 - Secrets: use `.env` locally; secret manager in production; never commit secrets.
 
 Multi‑tenancy
-- Recommended: Postgres Row‑Level Security (RLS) with `tenant_id` column.
-- Alternative: schema‑per‑tenant for small/high‑isolation sets (higher ops cost).
+- **Shipped:** application-layer scoping via a generated `tenant_id` column + `X-Tenant-ID`
+  header + per-user tenant binding (see [Multi-tenant](/guide/advanced/multi-tenant)).
+- **Planned:** Postgres Row‑Level Security (RLS) as a defense-in-depth layer.
 - Verify tenancy on every resolver/mutation path; avoid leaking cross‑tenant data in logs/metrics.
 
 PII & compliance
@@ -23,7 +24,7 @@ PII & compliance
 - Audit trail: ensure user/actor metadata on sensitive mutations.
 
 Defensive defaults
-- Rate limiting (planned): per IP/route limits at the gateway/server layer.
+- Rate limiting: per-IP token-bucket limiter (configurable via `RATE_LIMIT_RPS` / `RATE_LIMIT_WINDOW_SECS`); over-limit requests get `429`.
 - Input validation: schema‑driven constraints; avoid panics; return typed errors.
 - Transport security: TLS everywhere; HSTS; secure cookies for session flows.
 
