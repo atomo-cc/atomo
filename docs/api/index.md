@@ -25,10 +25,9 @@ Auto-generated GraphQL APIs from your TypeScript schemas:
 
 ### 📦 TypeScript SDK
 Type-safe client library for frontend applications:
-- **React hooks** - Optimized for React applications
-- **Caching** - Intelligent query caching and invalidation
-- **Offline support** - Local-first data management
-- **Real-time** - WebSocket-based live updates
+- **React hooks** - scaffolding for React applications
+- **Caching** - query caching and invalidation
+- **Offline queue** - *experimental, not yet integration-tested*
 
 [→ TypeScript SDK](/api/typescript-sdk)
 
@@ -52,97 +51,55 @@ WebAssembly plugin development interfaces:
 
 ## Quick Reference
 
-### Common Operations
+The service API is **model-generic**: operations take a `model` argument plus JSON
+`data`/`where`/`orderBy` payloads (there is no per-model typed client today). Send these as
+GraphQL operations to `/graphql`.
 
-```typescript
-// Create a new contact
-const contact = await atomo.contacts.create({
-  firstName: "John",
-  lastName: "Doe", 
-  email: "john@example.com"
-})
+```graphql
+# Create a contact
+mutation { create(model: "Contact", data: { firstName: "John", lastName: "Doe", email: "john@example.com" }) }
 
-// Query with relationships
-const contacts = await atomo.contacts.findMany({
-  include: {
-    company: true,
-    deals: true
-  },
-  where: {
-    email: {
-      contains: "@example.com"
-    }
-  }
-})
+# Query with a filter (records/paginatedRecords exclude soft-deleted rows)
+query {
+  records(model: "Contact", where: { email: { contains: "@example.com" } }, orderBy: { createdAt: "DESC" })
+}
 
-// Real-time subscription
-const subscription = atomo.contacts.subscribe({
-  where: { companyId: "company-123" },
-  onUpdate: (contact) => {
-    console.log("Contact updated:", contact)
-  }
-})
+# Subscribe to model changes (WebSocket at /graphql/ws)
+subscription { modelChanges(model: "Contact") { eventType modelName eventId } }
 ```
+
+See [GraphQL API](/api/graphql) for the full operation set, `where` operators, and the
+soft-delete lifecycle.
 
 ### CLI Quick Commands
 
 ```bash
-# Start development server
-atomo dev
-
-# Generate client code
-atomo codegen --output ./src/generated
-
-# Run database migrations
-atomo migrate
-
-# Build for production
-atomo build
-
-# Deploy to Atomo Cloud
-atomo deploy --env production
+atomo dev                              # dev runtime (codegen + server + hot reload)
+atomo migrate                          # apply migrations
+atomo migrate --generate --name <name> # generate a migration from schema changes
+atomo build                            # build
 ```
 
 ## Authentication
 
-All API access requires authentication. Atomo supports multiple authentication methods:
+The GraphQL API is protected: obtain a JWT via `POST /auth/login`, then send it as
+`Authorization: Bearer <token>` on each request. RBAC is enforced per model from the schema's
+`access` rules.
 
-### Development Mode
-In development, authentication is optional for localhost requests:
+```bash
+# Log in to get a token
+curl -s -X POST http://localhost:3000/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"..."}'   # -> { "token": "<jwt>" }
 
-```typescript
-const client = new AtomoClient({
-  endpoint: 'http://localhost:3000/graphql'
-  // No auth token needed in development
-})
+# Use it on GraphQL requests
+curl -s -X POST http://localhost:3000/graphql \
+  -H "authorization: Bearer <jwt>" -H 'content-type: application/json' \
+  -d '{"query":"{ records(model: \"Contact\") }"}'
 ```
 
-### Production Mode
-Production deployments require API tokens:
-
-```typescript
-const client = new AtomoClient({
-  endpoint: 'https://your-app.atomo.cc/graphql',
-  authToken: process.env.ATOMO_API_TOKEN
-})
-```
-
-### User Authentication
-For user-facing applications, use session-based auth:
-
-```typescript
-// Login user
-const session = await atomo.auth.login({
-  email: 'user@example.com',
-  password: 'secure-password'
-})
-
-// Use session token
-const client = new AtomoClient({
-  endpoint: 'https://your-app.atomo.cc/graphql',
-  authToken: session.token
-})
-```
+An admin user is seeded on first boot from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (see
+[Configuration](/guide/configuration)). For multi-tenant scoping, also send `X-Tenant-ID: <id>`.
 
 ## Error Handling
 
@@ -176,17 +133,11 @@ The client IP is taken from the `X-Forwarded-For` header (first hop) when presen
 
 ## Versioning
 
-Atomo APIs are versioned to ensure backward compatibility:
-
-- **Current version**: `v1`
-- **Endpoint format**: `https://api.atomo.cc/v1/graphql`
-- **Deprecation policy**: 6 months notice for breaking changes
+Atomo is pre-1.0; APIs may change between releases. There is no hosted API service yet — you run
+`atomo-server` yourself (see [Getting Started](/guide/getting-started)).
 
 ## Support
 
-Need help with the APIs?
-
 - 📖 **[Guides](/guide/)** - Step-by-step tutorials
-- 💬 **[Discord](https://discord.gg/atomo)** - Community support
 - 🐛 **[GitHub Issues](https://github.com/Chris533/atomo/issues)** - Bug reports
-- 📧 **[Email](mailto:api-support@atomo.cc)** - Direct API support
+- 💬 **[GitHub Discussions](https://github.com/Chris533/atomo/discussions)** - Questions and discussion

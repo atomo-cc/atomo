@@ -22,7 +22,7 @@ export interface Contact {
 export const schema = {
   models: {
     Contact: {
-      tableName: 'contacts',
+      tableName: 'contact',
       primaryKey: 'id',
       searchable: ['firstName','lastName','email'],
       access: { create: 'sales|manager|admin', read: 'authenticated' },
