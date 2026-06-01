@@ -218,4 +218,48 @@ mod tests {
             "create must still require title"
         );
     }
+
+    // Per-rule coverage: each rule passes on valid input and fails on invalid.
+    fn check1(rule: &str, value: Value) -> bool {
+        let data: HashMap<String, Value> = [("f".to_string(), value)].into_iter().collect();
+        let rules: HashMap<String, String> =
+            [("f".to_string(), rule.to_string())].into_iter().collect();
+        validate(&data, &rules).is_empty() // true = passed
+    }
+
+    #[test]
+    fn email_rule() {
+        assert!(check1("email", json!("a@b.com")));
+        assert!(!check1("email", json!("not-an-email")));
+    }
+
+    #[test]
+    fn url_rule() {
+        assert!(check1("url", json!("https://x.com")));
+        assert!(check1("url", json!("http://x.com")));
+        assert!(!check1("url", json!("ftp://x.com")));
+    }
+
+    #[test]
+    fn in_rule() {
+        assert!(check1("in:lead,won,lost", json!("won")));
+        assert!(!check1("in:lead,won,lost", json!("bogus")));
+    }
+
+    #[test]
+    fn numeric_and_min_max_rules() {
+        assert!(check1("numeric", json!(42)));
+        assert!(!check1("numeric", json!("abc")));
+        assert!(check1("min:0", json!(5)));
+        assert!(!check1("min:10", json!(5))); // number below min
+        assert!(!check1("max:3", json!("abcd"))); // string longer than max
+        assert!(check1("max:5", json!("abcd")));
+    }
+
+    #[test]
+    fn required_rule() {
+        assert!(check1("required", json!("x")));
+        assert!(!check1("required", json!("")));
+        assert!(!check1("required", Value::Null));
+    }
 }

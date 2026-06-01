@@ -82,3 +82,39 @@ pub async fn rate_limit_middleware(
         Err(StatusCode::TOO_MANY_REQUESTS)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    fn ip() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))
+    }
+
+    #[tokio::test]
+    async fn allows_up_to_limit_then_blocks() {
+        let rl = RateLimiter::new(2, 60); // 2 requests / 60s
+        assert!(rl.check(ip()).await, "1st allowed");
+        assert!(rl.check(ip()).await, "2nd allowed");
+        assert!(!rl.check(ip()).await, "3rd over the limit -> blocked");
+    }
+
+    #[tokio::test]
+    async fn refills_after_window() {
+        let rl = RateLimiter::new(1, 0); // window 0s → refills every call
+        assert!(rl.check(ip()).await, "1st allowed");
+        // elapsed >= window(0) → bucket refilled before the check.
+        assert!(rl.check(ip()).await, "allowed again after window elapsed");
+    }
+
+    #[tokio::test]
+    async fn buckets_are_per_ip() {
+        let rl = RateLimiter::new(1, 60);
+        let a = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let b = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
+        assert!(rl.check(a).await);
+        assert!(!rl.check(a).await, "A exhausted");
+        assert!(rl.check(b).await, "B has its own bucket");
+    }
+}

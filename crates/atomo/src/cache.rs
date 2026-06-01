@@ -75,3 +75,60 @@ impl ReadCache {
         format!("{}:{}", model, query_hash)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn key_format() {
+        assert_eq!(ReadCache::key("Contact", "abc"), "Contact:abc");
+    }
+
+    #[tokio::test]
+    async fn set_then_get_roundtrips() {
+        let c = ReadCache::new(60);
+        c.set("Contact:q1", json!([{"id": "1"}])).await;
+        assert_eq!(c.get("Contact:q1").await, Some(json!([{"id": "1"}])));
+        assert_eq!(c.get("Contact:missing").await, None);
+    }
+
+    #[tokio::test]
+    async fn entries_expire_after_ttl() {
+        let c = ReadCache::new(0); // 0s TTL → expires immediately
+        c.set("Contact:q1", json!(1)).await;
+        // expires_at = now + 0, so a later read is past expiry.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        assert_eq!(
+            c.get("Contact:q1").await,
+            None,
+            "expired entry must not be returned"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidate_model_is_prefix_exact() {
+        let c = ReadCache::new(60);
+        c.set("Contact:a", json!(1)).await;
+        c.set("Contact:b", json!(2)).await;
+        c.set("Company:a", json!(3)).await;
+        c.invalidate_model("Contact").await;
+        // Only Contact:* dropped; Company:* (and any other model) untouched.
+        assert_eq!(c.get("Contact:a").await, None);
+        assert_eq!(c.get("Contact:b").await, None);
+        assert_eq!(c.get("Company:a").await, Some(json!(3)));
+    }
+
+    #[tokio::test]
+    async fn evict_expired_drops_only_stale() {
+        let c = ReadCache::new(0);
+        c.set("Contact:a", json!(1)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        c.evict_expired().await;
+        assert!(
+            c.entries.read().await.is_empty(),
+            "expired entries should be evicted"
+        );
+    }
+}
