@@ -66,23 +66,21 @@ the source.
 automatically on every `create`/`update`/`delete` — that needs a role threaded into the data
 layer; callers can enforce on demand today).
 
-**Recently closed** (this pass): SDK `SubscriptionBuilder` filtering (was dead code → now filters
-by model+event-type); S3a subscription tenant-filter (cross-tenant real-time leak closed);
-B2a projection rebuild-replay (was truncate-only data-loss → now replays from `event_log`).
+**Recently closed** (this pass): SDK `SubscriptionBuilder` filtering; S3a subscription
+tenant-filter; B2a projection rebuild-replay; **item3** workflow `Mutation` step executes via an
+injected GraphQL executor; **item6** OAuth token round-trip tested against a mock IdP; **item5/S3b**
+per-user tenant binding + header validation; **item4** RBAC unchecked variants documented as the
+trusted/system API (request path goes through `*_checked`).
 
 **Remaining backlog, with the honest blocker for each** (these are *not* minimal-code items):
-- **RBAC** — ✅ data-layer enforcement landed (`*_checked` mutations; GraphQL routes through them).
-  Direct callers of the *unchecked* variants still bypass by choice (tests/internal); fully removing
-  that path means deleting the unchecked variants + threading role through ~40 sites — deferred.
-- **B1a Mutation/Plugin workflow steps** — now **fail loudly** (no longer silent no-ops); actually
-  executing them needs a GraphQL executor / plugin-manager wired into the engine — real follow-up.
-- **B1b JS workflow steps** — the CRM's `sales-pipeline.yml` uses inline JS; needs a JS step
-  runtime (the Javy plugin system is the foundation). Large feature.
-- **Relationship `relationships`-block reading** — ✅ DONE: `resolve_includes` now reads the
-  declared `relationships` block (via the unified parser); a rel whose name ≠ model resolves
-  correctly. Convention fallback retained for undeclared relationships.
-- **S3b per-user tenant binding** — no `users.tenant_id`; needs a user→tenant data model + JWT claim.
-- **S3c event-store tenant scoping + PG row-level-security**.
+- **RBAC** — ✅ data-layer enforcement landed (`*_checked`); unchecked variants are the documented
+  trusted/system API (seeding/migrations). No further lockdown without breaking legit system use.
+- **Workflow Plugin/JS steps** — `Mutation` now runs (item3); `Plugin` needs the plugin-manager
+  wired into the engine; JS steps (`sales-pipeline.yml`) need a JS step runtime (Javy is the base).
+- **S3c event-store tenant scoping + PG row-level-security** — **design fork**: RLS needs a
+  per-connection `SET app.tenant_id` read by `CREATE POLICY`, but the shared pool means a
+  half-implementation could leak across pooled connections; safe impl = per-tx set/reset +
+  generated policies. It's defense-in-depth atop the working app-layer scoping (S3/S3a/S3b).
 - **AI/pgvector (D2)** — needs the pgvector extension + an embedding provider; not available
   locally but **runs in CI** (the CI Postgres is `pgvector/pgvector`, and the Test Suite there is
   green). A dedicated CRM-driven AI assertion (embed Contact notes → semantic search) is still
@@ -113,15 +111,15 @@ B2a projection rebuild-replay (was truncate-only data-loss → now replays from 
 | Event sourcing + replay | yes | ✅ | C3: Deal Created→Updated→Updated→Deleted reconstructs via `entity_history` (`crm_deal_event_history_replays`); confirms B2 delete-event id fix |
 | GraphQL resolvers | yes | 🟡 | `http_e2e`, synthetic |
 | Subscriptions (WebSocket) | yes | ✅ | S2 auth (connection_init JWT + read-gating) + S3a tenant-filter; SDK `SubscriptionBuilder` now filters by model+event-type (`stream_filters_by_model_and_event_type`) |
-| RBAC enforcement | yes | ✅ | S1 parse + decide seam; data-layer enforced via `create_checked`/`update_many_checked`/`delete_many_checked` (GraphQL routes through them). Unchecked variants remain for tests/internal (bypass by choice) |
+| RBAC enforcement | yes | ✅ | S1 parse + decide seam; data-layer enforced via `*_checked` (GraphQL routes through them). Unchecked variants = documented trusted/system API (item4) |
 | Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
-| Workflows | yes | 🟡 partial | B1: YAML loads now; `Http` step really executes; trigger wiring tested. **CRM's `sales-pipeline.yml` still can't run** — its steps are inline JS (no execution model); `Mutation`/`Plugin` steps still no-op |
+| Workflows | yes | 🟡 mostly | B1 YAML + HTTP step; item3: `Mutation` step now runs via injected GraphQL executor (`mutation_step_runs_via_injected_executor`). Plugin/JS steps still placeholders |
 | WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
 | Caching (TTL + invalidation) | yes | ✅ | C4: populate + invalidate-on-create confirmed via CRM (dogfood 7b). LOW polish deferred (find_unique uncached, no eviction) |
 | CQRS projections / aggregate | yes | ✅ | B2: Deleted removes rows; non-string columns via `value_to_text`; B2a rebuild now replays from `event_log` (`projection_correctness` 2 tests) |
 | AI / pgvector | partial | ✅ CI | D2/item5: `crm_ai.rs` embeds Contact notes → cosine search ranks nearest (needs pgvector; runs in CI, `#[ignore]` locally) |
-| Multi-tenant (RLS) | yes | 🟡 core+ | S3+D1: tenant_id generated; read/write scoping + S3a subscription tenant-filter done. Deferred: per-user binding (S3b), PG-RLS (S3c) |
-| OAuth/OIDC | no (needs mock IdP) | 🟡 partial | D3: authorize-URL params unit-tested; token round-trip needs a mock IdP (deferred) |
+| Multi-tenant (RLS) | yes | 🟡 core+ | S3+D1+S3a+S3b: tenant_id col; read/write/subscription scoping; per-user binding (users.tenant_id) + header validation (`tenant_header_validation`). S3c PG-RLS = documented design fork |
+| OAuth/OIDC | no (needs mock IdP) | ✅ | D3 + item6: authorize-URL unit-tested; token round-trip (exchange_code → get_user_info) tested against a mock IdP (`token_round_trip_against_mock_idp`) |
 | Rate limiting | infra | ✅ | `middleware.rs` |
 | CLI (init/dev/migrate/codegen) | no (process-level) | 🟡 init | D4: `init` scaffold smoke-tested via the built binary; migrate/codegen/dev deferred (heavier) |
 | SDK offline queue/sync | no (client harness) | ❌ | types only |
