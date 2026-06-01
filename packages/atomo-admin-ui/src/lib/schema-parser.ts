@@ -558,6 +558,15 @@ function generateFieldLabel(fieldName: string): string {
  * 获取schema.ts文件内容并解析
  */
 export async function loadSchemaMetadata(): Promise<SchemaMetadata> {
+  // Preferred: the standalone server's /meta/schema (real models from the loaded schema).
+  try {
+    const meta = await loadFromMetaSchema()
+    if (Object.keys(meta.models).length > 0) {
+      return meta
+    }
+  } catch (error) {
+    console.warn('/meta/schema 不可用，回退到 schema.ts 解析', error)
+  }
   try {
     // 🎯 新架构：智能检测运行环境，使用重试机制从正确端口获取schema.ts
     const content = await loadSchemaWithRetry()
@@ -566,6 +575,49 @@ export async function loadSchemaMetadata(): Promise<SchemaMetadata> {
     console.error('加载schema.ts失败:', error)
     console.warn('使用内置 CRM demo schema 元数据')
     return demoSchemaMetadata
+  }
+}
+
+/**
+ * Load model metadata from the server's `/meta/schema` endpoint and map it to the UI's
+ * SchemaMetadata. This is the standalone-server discovery path (the bare server doesn't serve
+ * /schema.ts and truncates GraphQL introspection). The server returns models with
+ * tableName/primaryKey/fields/relationships/validation; we fill ui + searchable locally.
+ */
+async function loadFromMetaSchema(): Promise<SchemaMetadata> {
+  const url = window.location.port === '5173' ? 'http://localhost:3000/meta/schema' : '/meta/schema'
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`/meta/schema HTTP ${response.status}`)
+  }
+  const raw = await response.json()
+  const knownAttrs: FieldAttribute[] = ['primary', 'unique', 'index', 'required', 'readonly']
+  const models: Record<string, ModelMetadata> = {}
+
+  for (const [name, m] of Object.entries<any>(raw.models || {})) {
+    const fields: Record<string, FieldMetadata> = {}
+    for (const [fname, f] of Object.entries<any>(m.fields || {})) {
+      fields[fname] = {
+        name: f.name ?? fname,
+        type: (f.type as FieldType) ?? 'string',
+        optional: Boolean(f.optional),
+        attributes: (f.attributes || []).filter((a: string) => knownAttrs.includes(a as FieldAttribute)),
+      }
+    }
+    models[name] = {
+      tableName: m.tableName ?? name.toLowerCase(),
+      primaryKey: m.primaryKey ?? 'id',
+      fields,
+      relationships: m.relationships || undefined,
+      validation: m.validation || undefined,
+      searchable: getSearchableFields(fields),
+      ui: generateUIConfig(name, fields),
+    }
+  }
+
+  return {
+    models,
+    config: { auditLog: true, softDeletes: true, defaultPageSize: 20, subscriptions: true },
   }
 }
 

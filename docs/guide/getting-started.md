@@ -158,12 +158,11 @@ curl -s -X POST http://localhost:3000/graphql \
 A create persists the record and propagates to the event log, audit log, and read-model
 projection — the full event-sourced path runs end-to-end.
 
-::: warning Admin UI: use dev/workspace mode
-The admin UI discovers models via the CLI **dev/workspace** server (which serves `/schema.ts`
-and proxies the UI), not the bare `atomo-server`. Pointed directly at the standalone server it
-falls back to built-in **demo data** (it looks populated but isn't live). To drive the real
-backend from the UI today, run it under `pnpm dev:admin` / the workspace dev flow. Wiring the UI
-to the standalone server's `/meta/schema` is a known follow-up.
+::: tip Admin UI
+The admin UI discovers models from the server's `/meta/schema` endpoint, so it renders your real
+models against the standalone `atomo-server` (point it at the server's host/port; in local dev on
+:5173 it targets `http://localhost:3000`). If the server is unreachable it falls back to built-in
+demo data. The CLI dev/workspace flow (`pnpm dev:admin`) also works and adds schema hot-reload.
 :::
 
 
