@@ -369,6 +369,43 @@ class AtomoApiClient {
     }
   }
 
+  /** Absolute URL to serve a media object by id (e.g. for <img src>). */
+  getMediaUrl(id: string): string {
+    return `${this.baseUrl}/media/${id}`
+  }
+
+  /** Upload a file to POST /media (auth token attached). Returns the new media id + absolute url. */
+  async uploadMedia(
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<{ id: string; url: string }> {
+    const token = localStorage.getItem('atomo_auth_token')
+    const form = new FormData()
+    form.append('file', file)
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${this.baseUrl}/media`)
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+      })
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const res = JSON.parse(xhr.responseText)
+            resolve({ id: res.id, url: this.getMediaUrl(res.id) })
+          } catch {
+            reject(new Error('invalid upload response'))
+          }
+        } else {
+          reject(new Error(`upload failed: ${xhr.status}`))
+        }
+      })
+      xhr.addEventListener('error', () => reject(new Error('network error')))
+      xhr.send(form)
+    })
+  }
+
   // Extend method to allow extending the client with custom methods
   extend<T>(methods: T): AtomoApiClient & T {
     return Object.assign(this, methods)

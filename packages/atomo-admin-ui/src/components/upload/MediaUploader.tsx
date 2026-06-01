@@ -20,6 +20,7 @@ import { Button } from '../ui/Button'
 import { Card, CardContent } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { cn, formatFileSize } from '../../lib/utils'
+import { apiClient } from '../../lib/api'
 
 export interface UploadedFile {
   id: string
@@ -57,6 +58,8 @@ export function MediaUploader({
 }: MediaUploaderProps) {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Keep the raw File per item id so retry can actually re-upload (was faked before).
+  const filesRef = useRef<Record<string, File>>({})
 
   // 文件类型检测
   const getFileType = (file: File) => {
@@ -95,7 +98,8 @@ export function MediaUploader({
   // 上传文件
   const uploadFile = async (file: File): Promise<UploadedFile> => {
     const fileId = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
+    filesRef.current[fileId] = file
+
     const uploadedFile: UploadedFile = {
       id: fileId,
       name: file.name,
@@ -106,57 +110,16 @@ export function MediaUploader({
     }
 
     try {
-      // 模拟上传过程
-      const formData = new FormData()
-      formData.append('file', file)
-
-      // 使用 XMLHttpRequest 以支持进度跟踪
-      const xhr = new XMLHttpRequest()
-      
-      return new Promise((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            const progress = Math.round((e.loaded / e.total) * 100)
-            uploadedFile.progress = progress
-            
-            // 更新文件状态
-            onChange(value.map(f => f.id === fileId ? { ...f, progress } : f))
-          }
-        })
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200) {
-            try {
-              const response = JSON.parse(xhr.responseText)
-              uploadedFile.status = 'success'
-              uploadedFile.url = response.url
-              uploadedFile.progress = 100
-              resolve(uploadedFile)
-            } catch (error) {
-              uploadedFile.status = 'error'
-              uploadedFile.error = '上传响应解析失败'
-              reject(uploadedFile)
-            }
-          } else {
-            uploadedFile.status = 'error'
-            uploadedFile.error = `上传失败: ${xhr.statusText}`
-            reject(uploadedFile)
-          }
-        })
-
-        xhr.addEventListener('error', () => {
-          uploadedFile.status = 'error'
-          uploadedFile.error = '网络错误'
-          reject(uploadedFile)
-        })
-
-        xhr.open('POST', uploadEndpoint)
-        xhr.send(formData)
+      const { url } = await apiClient.uploadMedia(file, (progress) => {
+        onChange(value.map(f => f.id === fileId ? { ...f, progress } : f))
       })
+      return { ...uploadedFile, status: 'success', url, progress: 100 }
     } catch (error) {
-      uploadedFile.status = 'error'
-      uploadedFile.error = error instanceof Error ? error.message : '上传失败'
-      throw uploadedFile
+      throw {
+        ...uploadedFile,
+        status: 'error',
+        error: error instanceof Error ? error.message : '上传失败'
+      } as UploadedFile
     }
   }
 
@@ -242,22 +205,16 @@ export function MediaUploader({
     const updatedFile = { ...file, status: 'uploading' as const, progress: 0, error: undefined }
     onChange(value.map(f => f.id === file.id ? updatedFile : f))
 
+    const original = filesRef.current[file.id]
+    if (!original) {
+      onChange(value.map(f => f.id === file.id ? { ...f, status: 'error' as const, error: '无法重试（文件已丢失）' } : f))
+      return
+    }
     try {
-      // 这里需要重新创建File对象或使用其他方式重试
-      // 简化实现：直接标记为成功
-      setTimeout(() => {
-        onChange(value.map(f => 
-          f.id === file.id 
-            ? { ...f, status: 'success' as const, progress: 100, url: '/placeholder-url' }
-            : f
-        ))
-      }, 2000)
+      const { url } = await apiClient.uploadMedia(original)
+      onChange(value.map(f => f.id === file.id ? { ...f, status: 'success' as const, progress: 100, url } : f))
     } catch (error) {
-      onChange(value.map(f => 
-        f.id === file.id 
-          ? { ...f, status: 'error' as const, error: '重试失败' }
-          : f
-      ))
+      onChange(value.map(f => f.id === file.id ? { ...f, status: 'error' as const, error: error instanceof Error ? error.message : '重试失败' } : f))
     }
   }
 

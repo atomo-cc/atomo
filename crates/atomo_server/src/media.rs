@@ -1,0 +1,287 @@
+//! User media uploads: metadata store + REST routes, event-sourced via the model event log.
+//!
+//! `POST /media` (auth) stores bytes through the configured `StorageBackend`, records metadata,
+//! and emits a `Media` Created event (auto-audited). `GET /media/{id}` serves bytes by
+//! unguessable uuid key (public). `DELETE /media/{id}` (auth) soft-deletes + emits Deleted.
+
+use crate::auth::{optional_auth_middleware, AuthUser, HttpAuthService};
+use crate::storage::StorageBackend;
+use anyhow::Result;
+use atomo::events::{EventType, ModelEvent};
+use axum::{
+    body::Body,
+    extract::{DefaultBodyLimit, Multipart, Path, State},
+    http::{header, StatusCode},
+    middleware,
+    response::{IntoResponse, Json, Response},
+    routing::{get, post},
+    Extension, Router,
+};
+use serde_json::json;
+use sqlx::{PgPool, Row};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::broadcast;
+
+const DEFAULT_MAX_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
+
+pub struct MediaState {
+    pool: PgPool,
+    storage: Arc<dyn StorageBackend>,
+    sender: broadcast::Sender<ModelEvent>,
+    max_size: usize,
+}
+
+impl MediaState {
+    pub fn new(
+        pool: PgPool,
+        storage: Arc<dyn StorageBackend>,
+        sender: broadcast::Sender<ModelEvent>,
+    ) -> Self {
+        let max_size = std::env::var("STORAGE_MAX_FILE_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_SIZE);
+        Self {
+            pool,
+            storage,
+            sender,
+            max_size,
+        }
+    }
+
+    /// Idempotent metadata table.
+    pub async fn init(&self) -> Result<()> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS media (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT,
+                filename TEXT NOT NULL DEFAULT '',
+                content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+                size BIGINT NOT NULL DEFAULT 0,
+                storage_key TEXT NOT NULL,
+                uploaded_by TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deleted_at TIMESTAMPTZ
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Store bytes + metadata + emit a `Media` Created event. Returns the new media id.
+    /// Validation (size, content-type) is the caller's responsibility (done in the handler).
+    pub async fn store_upload(
+        &self,
+        filename: &str,
+        content_type: &str,
+        bytes: &[u8],
+        user_id: &str,
+        tenant_id: Option<&str>,
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let tenant = tenant_id.unwrap_or("public");
+        let ext = std::path::Path::new(filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e))
+            .unwrap_or_default();
+        let now = chrono::Utc::now();
+        // Generated key — never the client filename (path-traversal defense).
+        let key = format!("{}/{}/{}/{}{}", tenant, now.format("%Y"), now.format("%m"), id, ext);
+        self.storage.put(&key, bytes).await?;
+        let insert = sqlx::query(
+            "INSERT INTO media (id, tenant_id, filename, content_type, size, storage_key, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(&id)
+        .bind(tenant_id)
+        .bind(filename)
+        .bind(content_type)
+        .bind(bytes.len() as i64)
+        .bind(&key)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await;
+        if let Err(e) = insert {
+            self.storage.delete(&key).await.ok();
+            return Err(e.into());
+        }
+        let mut extra = HashMap::new();
+        extra.insert("contentType".to_string(), json!(content_type));
+        extra.insert("size".to_string(), json!(bytes.len()));
+        self.emit(EventType::Created, &id, user_id, extra);
+        Ok(id)
+    }
+
+    /// Read a non-deleted media's bytes + content type, or None.
+    pub async fn read(&self, id: &str) -> Result<Option<(Vec<u8>, String)>> {
+        let row = sqlx::query(
+            "SELECT storage_key, content_type FROM media WHERE id = $1 AND deleted_at IS NULL",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let (key, ct) = match row {
+            Some(r) => (r.get::<String, _>("storage_key"), r.get::<String, _>("content_type")),
+            None => return Ok(None),
+        };
+        match self.storage.get(&key).await? {
+            Some(bytes) => Ok(Some((bytes, ct))),
+            None => Ok(None),
+        }
+    }
+
+    /// Soft-delete + emit a `Media` Deleted event. Returns false if unknown/already deleted.
+    pub async fn soft_delete(&self, id: &str, actor: &str) -> Result<bool> {
+        let row = sqlx::query(
+            "UPDATE media SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING storage_key",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        match row {
+            Some(r) => {
+                let key: String = r.get("storage_key");
+                self.storage.delete(&key).await.ok();
+                self.emit(EventType::Deleted, id, actor, HashMap::new());
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    fn emit(&self, event_type: EventType, id: &str, actor: &str, extra: HashMap<String, serde_json::Value>) {
+        let mut data = extra;
+        data.insert("id".to_string(), json!(id));
+        let _ = self.sender.send(ModelEvent {
+            event_type,
+            model_name: "Media".to_string(),
+            data,
+            previous_data: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            actor: Some(actor.to_string()),
+        });
+    }
+}
+
+/// Content types we will store + serve. Excludes inline-XSS-risky types (svg, html).
+fn content_type_allowed(ct: &str) -> bool {
+    if ct == "image/svg+xml" || ct.starts_with("text/html") {
+        return false;
+    }
+    const ALLOWED: &[&str] = &[
+        "image/",
+        "video/",
+        "audio/",
+        "application/pdf",
+        "text/plain",
+        "application/json",
+        "application/zip",
+        "application/octet-stream",
+    ];
+    ALLOWED.iter().any(|a| ct.starts_with(a))
+}
+
+/// POST /media (auth) and GET/DELETE /media/{id}. Upload/delete require a token (enforced in
+/// the handler after optional_auth injects the user); GET is public via unguessable key.
+pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
+    let max = state.max_size;
+    Router::new()
+        .route("/media", post(upload))
+        .route("/media/{id}", get(serve_media).delete(delete_media))
+        .layer(DefaultBodyLimit::max(max))
+        .route_layer(middleware::from_fn_with_state(auth, optional_auth_middleware))
+        .with_state(state)
+}
+
+async fn upload(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    mut multipart: Multipart,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    let field = match multipart.next_field().await {
+        Ok(Some(f)) => f,
+        _ => return (StatusCode::BAD_REQUEST, "missing file field").into_response(),
+    };
+    let filename = field.file_name().unwrap_or("upload").to_string();
+    let content_type = field
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let bytes = match field.bytes().await {
+        Ok(b) => b,
+        Err(_) => return (StatusCode::BAD_REQUEST, "could not read file").into_response(),
+    };
+    if bytes.len() > state.max_size {
+        return (StatusCode::PAYLOAD_TOO_LARGE, "file too large").into_response();
+    }
+    if !content_type_allowed(&content_type) {
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "content-type not allowed").into_response();
+    }
+
+    match state
+        .store_upload(&filename, &content_type, bytes.as_ref(), &user.id, user.tenant_id.as_deref())
+        .await
+    {
+        Ok(id) => (
+            StatusCode::OK,
+            Json(json!({
+                "id": id,
+                "url": format!("/media/{}", id),
+                "contentType": content_type,
+                "size": bytes.len(),
+            })),
+        )
+            .into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "upload failed").into_response(),
+    }
+}
+
+async fn serve_media(State(state): State<Arc<MediaState>>, Path(id): Path<String>) -> Response {
+    match state.read(&id).await {
+        Ok(Some((bytes, ct))) => Response::builder()
+            .header(header::CONTENT_TYPE, ct)
+            .header("X-Content-Type-Options", "nosniff")
+            .body(Body::from(bytes))
+            .unwrap(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn delete_media(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    Path(id): Path<String>,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    match state.soft_delete(&id, &user.id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::content_type_allowed;
+
+    #[test]
+    fn allowlist_blocks_xss_risky_and_allows_common() {
+        assert!(content_type_allowed("image/png"));
+        assert!(content_type_allowed("application/pdf"));
+        assert!(!content_type_allowed("image/svg+xml"));
+        assert!(!content_type_allowed("text/html"));
+        assert!(!content_type_allowed("application/x-msdownload"));
+    }
+}

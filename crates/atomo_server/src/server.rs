@@ -127,6 +127,18 @@ impl AtomoServer {
         registry_store.init().await?;
         info!("   ✓ Plugin registry ready");
 
+        // Media upload/storage (POST/GET/DELETE /media). Built before create_router consumes
+        // self.atomo: grab the event sender + pool now.
+        let media_state = std::sync::Arc::new(crate::media::MediaState::new(
+            self.atomo.db_pool().clone(),
+            crate::storage::storage_from_env(),
+            self.atomo.event_sender(),
+        ));
+        media_state.init().await?;
+        let media_router =
+            crate::media::media_router(media_state, auth_service.clone());
+        info!("   ✓ Media storage ready");
+
         // Audit listener: record an audit entry for every model mutation event.
         {
             let audit = audit_service.clone();
@@ -302,6 +314,7 @@ impl AtomoServer {
             .merge(crate::registry_routes::registry_router(
                 registry_store.clone(),
             ))
+            .merge(media_router)
             .layer(svc_builder)
             .layer(middleware::from_fn(
                 crate::tracing_middleware::request_tracing,

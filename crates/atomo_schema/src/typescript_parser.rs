@@ -448,6 +448,10 @@ fn parse_field_definition(line: &str) -> Option<Field> {
         "number" => FieldType::Number,
         "boolean" => FieldType::Boolean,
         "Date" => FieldType::DateTime,
+        // File/media fields store the uploaded media id (or URL) as TEXT; the bytes live in the
+        // storage backend behind /media. String-backed so no codegen/match sites change.
+        "File" => FieldType::String,
+        "File[]" => FieldType::Array(Box::new(FieldType::String)),
         "any" => FieldType::Json,       // TypeScript any type maps to JSON
         "Block[]" => FieldType::Blocks, // Special handling for composable content
         t if t.ends_with("[]") => FieldType::Array(Box::new(parse_array_type(t)?)),
@@ -607,6 +611,22 @@ mod validation_tests {
         assert_eq!(rel.kind, "belongsTo");
         assert_eq!(rel.model, "Company");
         assert_eq!(rel.foreign_key.as_deref(), Some("companyId"));
+    }
+
+    #[test]
+    fn parses_file_field_as_string_backed() {
+        // A `File` field stores the media id/url as TEXT (string-backed); `File[]` -> Array(String).
+        let content = "export interface Contact { id: string; avatar: File; photos: File[]; }";
+        let models = TypeScriptParser::new().parse_interfaces(content).unwrap();
+        let c = models
+            .iter()
+            .find(|m| m.name == "Contact")
+            .expect("Contact parsed");
+        assert_eq!(c.fields.get("avatar").unwrap().field_type, FieldType::String);
+        assert_eq!(
+            c.fields.get("photos").unwrap().field_type,
+            FieldType::Array(Box::new(FieldType::String))
+        );
     }
 
     #[test]
