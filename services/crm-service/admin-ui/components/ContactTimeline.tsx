@@ -6,6 +6,7 @@ import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { apiClient } from '../lib/api'
 import type { Contact } from '../../packages/atomo-client-sdk/types'
+import { DemoBanner } from '../../../../packages/atomo-admin-ui/src/components/ui/DemoBanner'
 
 interface ContactTimelineProps {
   contactId: string
@@ -125,6 +126,7 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
 
   return (
     <div className="p-6 space-y-6">
+      {apiClient.usedDemoData && <DemoBanner detail={t('demoBanner')} />}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{t('timeline.title')}</h1>
         <div className="text-gray-600">ID: {contactId}</div>

@@ -6,6 +6,7 @@ import { apiClient } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
+import { DemoBanner } from '../../../../packages/atomo-admin-ui/src/components/ui/DemoBanner'
 
 import type { Deal, DealStage } from '../../packages/atomo-client-sdk/types'
 
@@ -134,6 +135,7 @@ export function DealsKanban() {
 
   return (
     <div className="p-4">
+      {apiClient.usedDemoData && <DemoBanner detail={t('demoBanner')} className="mb-4" />}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold">{t('deals.title')}</h1>
         <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['deals', { limit: 200 }] })}>

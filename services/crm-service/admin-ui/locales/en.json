@@ -3,6 +3,7 @@
   "common": { "loading": "Loading...", "error": "Failed to load", "refresh": "Refresh" },
   "contactMissing": "Contact ID missing",
   "contactList": "Contact List (coming soon)",
+  "demoBanner": "Showing sample data — no live CRM backend is connected.",
   "deals": {
     "title": "Deal Board",
     "loading": "Loading deals...",

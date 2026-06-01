@@ -13,6 +13,8 @@ class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
   private demoStore: Record<string, EntityData[]> = {}
+  /** True once any request has fallen back to in-memory demo data (no live backend). */
+  public usedDemoData = false
 
   constructor(baseUrl: string = '') {
     // Simplified URL detection - more reliable than complex logic
@@ -142,6 +144,7 @@ class AtomoApiClient {
       })
     } catch (error) {
       if (this.canUseDemoData()) {
+        this.usedDemoData = true
         return this.listDemoEntities(modelName, options)
       }
       throw error
@@ -169,6 +172,7 @@ class AtomoApiClient {
       `, { model: modelName, id })
     } catch (error) {
       if (this.canUseDemoData()) {
+        this.usedDemoData = true
         const entity = this.getDemoEntities(modelName).find((item) => item.id === id)
         if (entity) return entity
       }
@@ -190,6 +194,7 @@ class AtomoApiClient {
       `, { model: modelName, data })
     } catch (error) {
       if (this.canUseDemoData()) {
+        this.usedDemoData = true
         const entity = {
           id: `${modelName.toLowerCase()}_${Date.now()}`,
           ...data,
@@ -217,6 +222,7 @@ class AtomoApiClient {
       `, { model: modelName, where: { id: { equals: id } }, data })
     } catch (error) {
       if (this.canUseDemoData()) {
+        this.usedDemoData = true
         const entities = this.getDemoEntities(modelName)
         const index = entities.findIndex((item) => item.id === id)
         if (index >= 0) {
@@ -245,6 +251,7 @@ class AtomoApiClient {
       `, { model: modelName, where: { id: { equals: id } } })
     } catch (error) {
       if (this.canUseDemoData()) {
+        this.usedDemoData = true
         const entities = this.getDemoEntities(modelName)
         const index = entities.findIndex((item) => item.id === id)
         if (index >= 0) {
