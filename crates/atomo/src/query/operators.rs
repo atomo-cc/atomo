@@ -170,3 +170,67 @@ impl From<bool> for Equals {
         Equals(Value::Bool(b))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operators_map_to_correct_clause() {
+        let c: WhereClause = Equals(Value::String("x".into())).into();
+        assert!(matches!(c.operator, WhereOperator::Equals));
+        assert_eq!(c.value, Value::String("x".into()));
+        assert_eq!(c.field, ""); // field is set later by the builder
+
+        assert!(matches!(
+            WhereClause::from(NotEquals(Value::Null)).operator,
+            WhereOperator::NotEquals
+        ));
+        assert!(matches!(
+            WhereClause::from(Contains("a".into())).operator,
+            WhereOperator::Contains
+        ));
+        assert!(matches!(
+            WhereClause::from(StartsWith("a".into())).operator,
+            WhereOperator::StartsWith
+        ));
+        assert!(matches!(
+            WhereClause::from(EndsWith("a".into())).operator,
+            WhereOperator::EndsWith
+        ));
+        assert!(matches!(
+            WhereClause::from(GreaterThan(1.into())).operator,
+            WhereOperator::GreaterThan
+        ));
+        assert!(matches!(
+            WhereClause::from(LessThan(1.into())).operator,
+            WhereOperator::LessThan
+        ));
+        assert!(matches!(
+            WhereClause::from(IsNull).operator,
+            WhereOperator::IsNull
+        ));
+        assert!(matches!(
+            WhereClause::from(IsNotNull).operator,
+            WhereOperator::IsNotNull
+        ));
+    }
+
+    #[test]
+    fn in_and_notin_wrap_arrays() {
+        let c: WhereClause = In(vec![Value::from(1), Value::from(2)]).into();
+        assert!(matches!(c.operator, WhereOperator::In));
+        assert_eq!(c.value, Value::Array(vec![Value::from(1), Value::from(2)]));
+        assert!(matches!(
+            WhereClause::from(NotIn(vec![])).operator,
+            WhereOperator::NotIn
+        ));
+    }
+
+    #[test]
+    fn equals_convenience_conversions() {
+        assert_eq!(Equals::from("s").0, Value::String("s".into()));
+        assert_eq!(Equals::from(7i64).0, Value::from(7));
+        assert_eq!(Equals::from(true).0, Value::Bool(true));
+    }
+}

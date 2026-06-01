@@ -56,3 +56,66 @@ impl From<AtomoError> for GqlError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Map each AtomoError variant to a GqlError and assert the message + code extension.
+    fn code_of(err: AtomoError) -> (String, String) {
+        let g: GqlError = err.into();
+        // Extensions are serialized into the error; render to a string and check the code.
+        let msg = g.message.clone();
+        let ext = format!("{:?}", g.extensions);
+        (msg, ext)
+    }
+
+    #[test]
+    fn not_found_maps_message_and_code() {
+        let (msg, ext) = code_of(AtomoError::NotFound {
+            model: "Contact".into(),
+            id: "7".into(),
+        });
+        assert!(msg.contains("Contact") && msg.contains("'7'") && msg.contains("not found"));
+        assert!(ext.contains("NOT_FOUND"));
+    }
+
+    #[test]
+    fn auth_errors_carry_codes() {
+        assert!(code_of(AtomoError::Unauthorized {
+            message: "x".into()
+        })
+        .1
+        .contains("UNAUTHORIZED"));
+        assert!(code_of(AtomoError::Forbidden {
+            message: "x".into()
+        })
+        .1
+        .contains("FORBIDDEN"));
+        assert!(code_of(AtomoError::Internal {
+            message: "x".into()
+        })
+        .1
+        .contains("INTERNAL_ERROR"));
+    }
+
+    #[test]
+    fn validation_failed_joins_messages_and_sets_code() {
+        let (msg, ext) = code_of(AtomoError::ValidationFailed {
+            errors: vec![
+                FieldError {
+                    field: "email".into(),
+                    message: "bad email".into(),
+                    code: "email".into(),
+                },
+                FieldError {
+                    field: "name".into(),
+                    message: "required".into(),
+                    code: "required".into(),
+                },
+            ],
+        });
+        assert!(msg.contains("bad email") && msg.contains("required"));
+        assert!(ext.contains("VALIDATION_ERROR"));
+    }
+}
