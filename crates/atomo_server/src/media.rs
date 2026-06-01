@@ -192,7 +192,9 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
     Router::new()
         .route("/media", post(upload))
         .route("/media/{id}", get(serve_media).delete(delete_media))
-        .layer(DefaultBodyLimit::max(max))
+        // Hard backstop with headroom for multipart framing; the precise per-file limit is the
+        // in-handler `bytes.len() > max_size` check, which returns a clean 413.
+        .layer(DefaultBodyLimit::max(max.saturating_add(1024 * 1024)))
         .route_layer(middleware::from_fn_with_state(auth, optional_auth_middleware))
         .with_state(state)
 }
