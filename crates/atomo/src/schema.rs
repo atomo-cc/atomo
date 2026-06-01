@@ -74,6 +74,50 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         migrations.push(sql);
     }
 
+    // Foreign-key pass (after all tables exist, so ordering doesn't matter): for each model's
+    // `belongsTo` relationship with a foreignKey, add a FK to the target table's id. This is what
+    // actually enforces referential integrity (the `exists:` validation rule is a no-op). Emitted
+    // as guarded ALTERs (idempotent: skip if the constraint already exists). FKs are NOT VALID-free
+    // here — they validate existing rows; tables are fresh at create time so that's fine.
+    let table_of: HashMap<&str, String> = schema
+        .models
+        .values()
+        .map(|m| {
+            (
+                m.name.as_str(),
+                crate::query::sql_builder::table_name_for(m),
+            )
+        })
+        .collect();
+    for model in schema.models.values() {
+        let table = crate::query::sql_builder::table_name_for(model);
+        for (rel_name, rel) in &model.relationships {
+            if rel.kind != "belongsTo" {
+                continue;
+            }
+            let fk_raw = rel
+                .foreign_key
+                .clone()
+                .unwrap_or_else(|| format!("{}Id", rel_name));
+            let fk_col = to_snake_case(&fk_raw);
+            let target = match table_of.get(rel.model.as_str()) {
+                Some(t) => t,
+                None => continue, // target model not in schema — skip
+            };
+            // Skip if the model doesn't actually have the FK column (defensive).
+            if !model.fields.keys().any(|f| to_snake_case(f) == fk_col) {
+                continue;
+            }
+            let cname = format!("fk_{}_{}", table, fk_col);
+            migrations.push(format!(
+                "DO $$ BEGIN \
+                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
+                 ALTER TABLE {table} ADD CONSTRAINT {cname} FOREIGN KEY ({fk_col}) REFERENCES {target}(id); \
+                 END IF; END $$;"
+            ));
+        }
+    }
+
     Ok(migrations)
 }
 

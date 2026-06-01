@@ -307,11 +307,6 @@ impl TypeScriptParser {
 
         // Also convert collected enums to models
         for (enum_name, enum_values) in &self.enums {
-            println!(
-                "DEBUG: Converting enum {} to model with {} values",
-                enum_name,
-                enum_values.len()
-            );
             let mut fields = HashMap::new();
 
             // Create a special marker field to identify this as an enum
@@ -537,12 +532,6 @@ fn parse_enum(lines: &[&str], start_index: usize) -> Result<(String, Vec<String>
     }
 
     let lines_consumed = i - start_index + 1;
-
-    // Debug output
-    println!(
-        "DEBUG: Parsed enum {} with values: {:?}",
-        enum_name, enum_values
-    );
 
     Ok((enum_name, enum_values, lines_consumed))
 }
