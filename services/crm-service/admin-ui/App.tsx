@@ -1,14 +1,17 @@
 import { Routes, Route, Navigate, NavLink, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { DealsKanban } from './components/DealsKanban';
 import { ContactTimeline } from './components/ContactTimeline';
 
 function ContactTimelineWrapper() {
+  const { t } = useTranslation();
   const { contactId } = useParams<{ contactId: string }>();
-  if (!contactId) return <div>联系人ID缺失</div>;
+  if (!contactId) return <div>{t('contactMissing')}</div>;
   return <ContactTimeline contactId={contactId} />;
 }
 
 export function CrmAdminApp() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
@@ -16,8 +19,8 @@ export function CrmAdminApp() {
           <div className="flex justify-between items-center py-4">
             <h1 className="text-2xl font-bold text-gray-900">CRM Admin</h1>
             <nav className="space-x-4">
-              <NavLink to="/deals" className="text-blue-600 hover:text-blue-800">交易看板</NavLink>
-              <NavLink to="/contacts" className="text-blue-600 hover:text-blue-800">联系人</NavLink>
+              <NavLink to="/deals" className="text-blue-600 hover:text-blue-800">{t('nav.deals')}</NavLink>
+              <NavLink to="/contacts" className="text-blue-600 hover:text-blue-800">{t('nav.contacts')}</NavLink>
             </nav>
           </div>
         </div>
@@ -28,7 +31,7 @@ export function CrmAdminApp() {
           <Route path="/" element={<Navigate to="/deals" replace />} />
           <Route path="/deals" element={<DealsKanban />} />
           <Route path="/contacts/:contactId/timeline" element={<ContactTimelineWrapper />} />
-          <Route path="/contacts" element={<div>联系人列表 (待实现)</div>} />
+          <Route path="/contacts" element={<div>{t('contactList')}</div>} />
         </Routes>
       </main>
     </div>

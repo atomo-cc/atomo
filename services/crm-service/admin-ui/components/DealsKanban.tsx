@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 import { apiClient } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../ui/Card'
@@ -7,16 +9,17 @@ import { Button } from '../ui/Button'
 
 import type { Deal, DealStage } from '../../packages/atomo-client-sdk/types'
 
-const STAGES: { key: DealStage; title: string; color: string }[] = [
-  { key: 'lead', title: '线索', color: '#e3f2fd' },
-  { key: 'qualified', title: '已资格', color: '#e8f5e9' },
-  { key: 'proposal', title: '提案', color: '#fff3e0' },
-  { key: 'negotiation', title: '谈判', color: '#fce4ec' },
-  { key: 'won', title: '已成交', color: '#e8f5e8' },
-  { key: 'lost', title: '已失败', color: '#ffebee' },
+const STAGES: { key: DealStage; titleKey: string; color: string }[] = [
+  { key: 'lead', titleKey: 'deals.stages.lead', color: '#e3f2fd' },
+  { key: 'qualified', titleKey: 'deals.stages.qualified', color: '#e8f5e9' },
+  { key: 'proposal', titleKey: 'deals.stages.proposal', color: '#fff3e0' },
+  { key: 'negotiation', titleKey: 'deals.stages.negotiation', color: '#fce4ec' },
+  { key: 'won', titleKey: 'deals.stages.won', color: '#e8f5e8' },
+  { key: 'lost', titleKey: 'deals.stages.lost', color: '#ffebee' },
 ]
 
 export function DealsKanban() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -117,14 +120,14 @@ export function DealsKanban() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <Card><CardContent className="py-8 text-center">加载商机中...</CardContent></Card>
+        <Card><CardContent className="py-8 text-center">{t('deals.loading')}</CardContent></Card>
       </div>
     )
   }
   if (error) {
     return (
       <div className="p-6">
-        <Card><CardContent className="py-8 text-center text-red-600">加载失败</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-red-600">{t('common.error')}</CardContent></Card>
       </div>
     )
   }
@@ -132,9 +135,9 @@ export function DealsKanban() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-semibold">商机看板</h1>
+        <h1 className="text-2xl font-semibold">{t('deals.title')}</h1>
         <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['deals', { limit: 200 }] })}>
-          刷新
+          {t('common.refresh')}
         </Button>
       </div>
 
@@ -150,7 +153,7 @@ export function DealsKanban() {
                  onDrop={() => onDropOnStage(col.key)}>
               <div className="px-3 py-2 border-b" style={{ backgroundColor: col.color }}>
                 <div className="flex items-center justify-between">
-                  <div className="font-medium">{col.title}</div>
+                  <div className="font-medium">{t(col.titleKey)}</div>
                   <div className="text-sm text-gray-600">{items.length} | ¥{totalValue.toLocaleString()}</div>
                 </div>
               </div>
@@ -168,12 +171,12 @@ export function DealsKanban() {
                       <div className="text-sm text-gray-600">¥{(deal.value || 0).toLocaleString()}</div>
                     </div>
                     {deal.expectedCloseDate && (
-                      <div className="text-xs text-gray-500 mt-1">预期成交: {new Date(deal.expectedCloseDate).toLocaleDateString()}</div>
+                      <div className="text-xs text-gray-500 mt-1">{t('deals.expectedClose', { date: new Date(deal.expectedCloseDate).toLocaleDateString() })}</div>
                     )}
                   </div>
                 ))}
                 {items.length === 0 && (
-                  <div className="text-sm text-gray-400 text-center py-4">无商机</div>
+                  <div className="text-sm text-gray-400 text-center py-4">{t('deals.noDeals')}</div>
                 )}
               </div>
             </div>

@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test'
+import t from '../../../../services/crm-service/admin-ui/locales/en.json' with { type: 'json' }
 
 test('Kanban loads and supports DnD', async ({ page }) => {
   await page.goto('/deals/board')
-  await expect(page.getByRole('heading', { name: '商机看板' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: t.deals.title })).toBeVisible()
 
   // Expect columns
   await expect(page.getByTestId('deals-kanban-column')).toHaveCount(6)

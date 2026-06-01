@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import '../i18n'
 import { Card, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { apiClient } from '../lib/api'
@@ -31,6 +33,7 @@ interface NoteBlock {
 }
 
 export function ContactTimeline({ contactId }: ContactTimelineProps) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['contact', contactId],
@@ -68,12 +71,12 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
       const metadata: Record<string, unknown> = {}
       if (activityType === 'call') {
         // Example fields for call
-        metadata.durationMinutes = Number(prompt('通话时长(分钟)?', '10') || 10)
-        metadata.outcome = prompt('通话结果?', 'left voicemail')
+        metadata.durationMinutes = Number(prompt(t('timeline.callDuration'), '10') || 10)
+        metadata.outcome = prompt(t('timeline.callOutcome'), 'left voicemail')
       } else if (activityType === 'meeting') {
-        const when = prompt('会议时间(YYYY-MM-DD HH:mm)?', '')
+        const when = prompt(t('timeline.meetingTime'), '')
         if (when) metadata.meetingTime = when
-        const attendees = prompt('参与者(逗号分隔)?', '')
+        const attendees = prompt(t('timeline.attendees'), '')
         if (attendees) metadata.attendees = attendees.split(',').map(s => s.trim())
       }
       await apiClient.createEntity('Activity', {
@@ -93,12 +96,12 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
 
   if (isLoading) {
     return (
-      <div className="p-6"><Card><CardContent className="py-8 text-center">加载联系人...</CardContent></Card></div>
+      <div className="p-6"><Card><CardContent className="py-8 text-center">{t('timeline.loading')}</CardContent></Card></div>
     )
   }
   if (error) {
     return (
-      <div className="p-6"><Card><CardContent className="py-8 text-center text-red-600">加载失败</CardContent></Card></div>
+      <div className="p-6"><Card><CardContent className="py-8 text-center text-red-600">{t('common.error')}</CardContent></Card></div>
     )
   }
 
@@ -123,7 +126,7 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">联系人时间线</h1>
+        <h1 className="text-2xl font-semibold">{t('timeline.title')}</h1>
         <div className="text-gray-600">ID: {contactId}</div>
       </div>
 
@@ -133,13 +136,13 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
             <textarea
               className="w-full border rounded p-2"
               rows={3}
-              placeholder="添加备注..."
+              placeholder={t('timeline.notePlaceholder')}
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
             />
             <div className="flex justify-end">
               <Button disabled={!noteText || addNote.isLoading} onClick={() => addNote.mutate(noteText)}>
-                添加备注
+                {t('timeline.addNote')}
               </Button>
             </div>
           </CardContent>
@@ -149,18 +152,18 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <select className="border rounded p-2" value={activityType} onChange={(e) => setActivityType(e.target.value as ActivityType)}>
-                <option value="note">备注</option>
-                <option value="call">通话</option>
-                <option value="meeting">会议</option>
-                <option value="email">邮件</option>
-                <option value="task">任务</option>
+                <option value="note">{t('timeline.types.note')}</option>
+                <option value="call">{t('timeline.types.call')}</option>
+                <option value="meeting">{t('timeline.types.meeting')}</option>
+                <option value="email">{t('timeline.types.email')}</option>
+                <option value="task">{t('timeline.types.task')}</option>
               </select>
-              <input className="border rounded p-2" placeholder="标题（可选）" value={activityTitle} onChange={(e) => setActivityTitle(e.target.value)} />
+              <input className="border rounded p-2" placeholder={t('timeline.titlePlaceholder')} value={activityTitle} onChange={(e) => setActivityTitle(e.target.value)} />
             </div>
-            <textarea className="w-full border rounded p-2" rows={3} placeholder="内容..." value={activityContent} onChange={(e) => setActivityContent(e.target.value)} />
+            <textarea className="w-full border rounded p-2" rows={3} placeholder={t('timeline.contentPlaceholder')} value={activityContent} onChange={(e) => setActivityContent(e.target.value)} />
             <div className="flex justify-end">
               <Button disabled={addActivity.isLoading || !activityType} onClick={() => addActivity.mutate()}>
-                添加活动
+                {t('timeline.addActivity')}
               </Button>
             </div>
           </CardContent>
@@ -171,7 +174,7 @@ export function ContactTimeline({ contactId }: ContactTimelineProps) {
         <CardContent>
           <div className="space-y-4">
             {timelineItems.length === 0 && (
-              <div className="text-gray-500 text-center py-8">暂无活动</div>
+              <div className="text-gray-500 text-center py-8">{t('timeline.noActivities')}</div>
             )}
             {timelineItems.map(item => (
               <div key={item.id} className="border-b pb-3">

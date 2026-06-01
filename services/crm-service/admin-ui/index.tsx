@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
+import './i18n';
 import { CrmAdminApp } from './App';
 
 const queryClient = new QueryClient();
