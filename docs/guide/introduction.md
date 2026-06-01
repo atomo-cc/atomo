@@ -27,21 +27,26 @@ Atomo introduces a **schema-driven development** paradigm where you:
 
 ### Core Philosophy: Three Pillars
 
-#### 🏠 **Local-First**
+> **Status note:** *Declarative Development* is shipped and is what the platform does today.
+> *Local-First* and *Real-time Collaboration* are the product vision and are on the
+> [roadmap](/roadmap) — not yet implemented. They're described below as direction, not current
+> features.
+
+#### 🏠 **Local-First** *(planned)*
 Your application's "source of truth" lives on the user's device. This provides:
 - **Instant responsiveness** - no network delays
 - **Offline capability** - works anywhere, anytime  
 - **Data sovereignty** - users control their data
 - **Resilience** - immune to server outages
 
-#### 🤝 **Real-time Collaboration**
+#### 🤝 **Real-time Collaboration** *(planned)*
 Multi-user experiences are a first-class citizen, not an afterthought:
 - **Conflict-free merging** with CRDTs
 - **Figma-like collaboration** out of the box
 - **Live cursors and selections** 
 - **Granular permissions** and access control
 
-#### 📝 **Declarative Development**
+#### 📝 **Declarative Development** *(shipped)*
 Focus on business logic, not infrastructure:
 - **TypeScript schemas** generate everything
 - **Zero boilerplate** CRUD operations
@@ -111,8 +116,9 @@ This gives you **Rust performance** with **TypeScript productivity**.
 | Manage API endpoints | GraphQL schema from types |
 | Build admin UI | Dynamic UI from schema |
 | Handle real-time manually | Built-in subscriptions |
-| Implement offline sync | Local-first by default |
-| Add collaboration later | Collaborative from day one |
+| Wire up auth/RBAC by hand | Enforced from schema access rules |
+| Add collaboration later | *Planned (CRDT) — see roadmap* |
+| Implement offline sync | *Planned (local-first) — see roadmap* |
 | Deploy complex infrastructure | Single binary deployment |
 
 ## Use Cases
@@ -149,7 +155,7 @@ Ready to experience the future of application development?
 
 <div class="tip custom-block">
 
-**Quick Start**: Have a running CRM application in under 5 minutes with our [Getting Started Guide](/guide/getting-started).
+**Quick Start**: Boot a CRM-backed GraphQL service locally with the [Getting Started Guide](/guide/getting-started).
 
 </div>
 
@@ -157,17 +163,13 @@ Or explore these key concepts:
 
 - **[Event Sourcing](/guide/event-sourcing)** - Understanding the "River of Events"
 - **[Schema-Driven Development](/guide/schema-driven)** - From TypeScript to Production
-- **[Real-time Collaboration](/guide/collaboration)** - Building Figma-like experiences
-- **[Local-First Architecture](/guide/local-first)** - Offline-capable applications
+- **[Real-time Collaboration](/guide/collaboration)** - *Planned* — building Figma-like experiences
+- **[Local-First Architecture](/guide/local-first)** - *Planned* — offline-capable applications
 
 ## Community & Support
 
-Join thousands of developers building the future:
-
-- 💬 **[Discord](https://discord.gg/atomo)** - Real-time community chat
 - 📖 **[GitHub](https://github.com/Chris533/atomo)** - Source code and issues
-- 🐦 **[Twitter](https://twitter.com/atomo_cc)** - Latest updates and announcements
-- 📧 **[Newsletter](https://atomo.cc/newsletter)** - Monthly development updates
+- 💬 **[GitHub Discussions](https://github.com/Chris533/atomo/discussions)** - Questions and discussion
 
 ---
 

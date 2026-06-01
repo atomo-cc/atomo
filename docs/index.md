@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "Atomo"
   text: "Next-Generation Content Core"
-  tagline: "Build powerful, collaborative applications with event sourcing, real-time sync, and schema-driven development"
+  tagline: "Build schema-driven backends with event sourcing, GraphQL, RBAC, and plugins - generated from TypeScript"
   image:
     src: /logo.svg
     alt: Atomo
@@ -15,34 +15,31 @@ hero:
     - theme: alt
       text: View on GitHub
       link: https://github.com/Chris533/atomo
-    - theme: alt
-      text: Try Playground
-      link: https://playground.atomo.cc
 
 features:
   - icon: ⚡
     title: Schema-Driven Development
-    details: Define your data model in TypeScript, get a complete Rust backend with GraphQL APIs automatically generated.
+    details: Define your data model in TypeScript, get a Rust backend with GraphQL APIs, migrations, and an admin UI generated from it.
   
   - icon: 🌊
     title: Event Sourcing
-    details: Built on "事件的河流" - every change is an immutable event, giving you time travel, audit trails, and bulletproof reliability.
+    details: Built on "事件的河流" - every change is an immutable event, with event-log persistence, replay, and audit trails.
   
-  - icon: 🤝
-    title: Real-time Collaboration
-    details: Figma-like collaborative editing with CRDTs, conflict-free merging, and seamless multi-user experiences.
-  
-  - icon: 📱
-    title: Local-First Architecture
-    details: Apps work offline, sync when online. Data sovereignty for users, performance for developers.
+  - icon: 🔐
+    title: Auth, RBAC & Multi-tenant
+    details: JWT auth, role-based access enforced from your schema's access rules, and tenant-scoped reads/writes.
   
   - icon: 🧩
-    title: WASM Plugin System
-    details: Extend functionality with WebAssembly plugins. Safe, fast, and language-agnostic extensibility.
-  
-  - icon: 🚀
-    title: Instant Development
-    details: Hot reload, instant compilation, zero-config setup. From schema to running service in seconds.
+    title: WASM + JS Plugins
+    details: Extend with WebAssembly or drop-in JavaScript plugins (Javy) - permission-gated, sandboxed, with CRUD lifecycle hooks.
+
+  - icon: 📊
+    title: CQRS Projections & Caching
+    details: Event-driven read models and a TTL read cache with automatic invalidation.
+
+  - icon: 🤝
+    title: Planned - Collaboration & Local-First
+    details: Real-time CRDT collaboration and offline-first sync are on the roadmap, not yet shipped.
 ---
 
 ## Quick Example
@@ -92,27 +89,24 @@ pnpm --filter atomo-crm-service generate
 
 Atomo transforms how you build applications by providing:
 
-- **🏗️ Unified Architecture**: One platform for web, mobile, and desktop
-- **⏱️ Time Travel**: Complete audit trails and point-in-time recovery
-- **🔄 Real-time Everything**: Live collaboration, instant updates, reactive UIs
-- **🛡️ Type Safety**: End-to-end type safety from database to UI
-- **🌐 Offline-First**: Apps that work anywhere, anytime
+- **🏗️ Schema-driven backend**: TypeScript schema → Rust + GraphQL + migrations + admin UI
+- **⏱️ Event history**: event-log persistence, replay, and complete audit trails
+- **🛡️ Type Safety**: end-to-end types from schema to generated SDK
+- **🔐 Security from the schema**: auth, RBAC, and multi-tenant scoping enforced from access rules
+- **🤝 Planned**: real-time collaboration and offline-first sync — see the [roadmap](/roadmap)
 
-## Get Started Today
+## Get Started
+
+Atomo is pre-1.0 and runs from source today (no hosted installer yet):
 
 ```bash
-# Install Atomo CLI
-curl -fsSL https://install.atomo.cc | sh
-
-# Create your first project
-atomo init my-app --template crm
-cd my-app
-
-# Start developing
-atomo dev
+git clone https://github.com/Chris533/atomo.git
+cd atomo
+cargo build --release        # build the workspace (atomo-cli, atomo-server, ...)
 ```
 
-Your complete application stack is ready in under 30 seconds! 🚀
+Then boot a service against Postgres — see the [Getting Started guide](/guide/getting-started)
+for the verified end-to-end run (env vars, login, GraphQL).
 
 
 git clone https://github.com/Chris533/atomo.git
