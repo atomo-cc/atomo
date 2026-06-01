@@ -6,10 +6,10 @@ Welcome to Atomo. This guide shows the current monorepo MVP loop: Admin UI, Type
 
 Atomo is a **Content Core** - not just a CMS, but the "Arc Reactor" that powers your entire application. Think of it as:
 
-- 🏗️ **Event-sourced backend** that generates from TypeScript schemas
-- 🤝 **Real-time collaboration** with conflict-free merging
-- 📱 **Local-first architecture** for offline-capable apps
-- 🧩 **WASM plugin system** for unlimited extensibility
+- 🏗️ **Event-sourced backend** generated from TypeScript schemas (CRUD, GraphQL, audit, projections)
+- 🔐 **Auth + RBAC + multi-tenant scoping** enforced from your schema's access rules
+- 🧩 **WASM + JavaScript plugin system** with permission-gated capabilities
+- 🤝 *Planned:* real-time collaboration (CRDT) and local-first offline sync — see the [roadmap](/roadmap)
 
 ## Prerequisites
 
@@ -19,23 +19,15 @@ Atomo is a **Content Core** - not just a CMS, but the "Arc Reactor" that powers 
 
 ## Installation
 
-### Quick Install (Recommended)
+> Atomo is pre-1.0 and installed from source today (there is no hosted installer or published
+> binary yet).
 
 ```bash
-# Install Atomo CLI
-curl -fsSL https://install.atomo.cc | sh
-
-# Verify installation
-atomo --version
-```
-
-### Manual Installation
-
-```bash
-# Clone and build from source
+# Clone and build the CLI + server from source
 git clone https://github.com/Chris533/atomo.git
 cd atomo
-cargo install --path crates/atomo_cli
+cargo build --release            # builds the workspace (atomo-cli, atomo-server, ...)
+cargo install --path crates/atomo_cli   # optional: put `atomo` on your PATH
 ```
 
 ## Your First Project
@@ -119,48 +111,60 @@ export interface Company {
 // ✅ Real-time subscriptions
 ```
 
-### 3. Start Development
+### 3. Run the server (verified path)
+
+The most reliable way to run a service today is the **standalone server** booted against the
+service's `schema.ts` and a Postgres database. Set the environment and run the `atomo-server`
+binary:
 
 ```bash
-# Start the development server
-atomo dev
+# from the repo root (after `cargo build --release`)
+export DATABASE_URL="postgresql://user:pass@localhost/atomo_dev"
+export ATOMO_SCHEMA_PATH="services/crm-service/schema.ts"
+export JWT_SECRET="change-me"
+export ADMIN_EMAIL="admin@example.com"   # seeds an admin on first boot (idempotent)
+export ADMIN_PASSWORD="change-me-too"
+export PORT=3000
 
-# 🚀 This automatically:
-# - Generates Rust backend code from your schema
-# - Compiles and starts the GraphQL server
-# - Launches the admin UI
-# - Enables hot reload for schema changes
+./target/release/atomo-server
 ```
 
-You'll see:
+On boot it parses the schema, runs migrations (tables + FK constraints), ensures platform
+tables, seeds the admin, and starts the audit / CQRS projector / workflow listeners. See
+[Configuration](/guide/configuration) for the full env-var list.
+
+### 4. Verify it works
+
+```bash
+# Health
+curl http://localhost:3000/health            # -> OK
+
+# Log in (returns a JWT)
+TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"change-me-too"}' | jq -r .token)
+
+# Create a Contact via GraphQL
+curl -s -X POST http://localhost:3000/graphql \
+  -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
+  -d '{"query":"mutation { create(model: \"Contact\", data: { firstName: \"Ada\", lastName: \"Lovelace\", email: \"ada@example.com\" }) }"}'
+
+# List Contacts
+curl -s -X POST http://localhost:3000/graphql \
+  -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
+  -d '{"query":"{ records(model: \"Contact\") }"}'
 ```
-🚀 Atomo CLI
-   The Next-Generation Content Core
 
-✨ Generating backend from schema.ts...
-🔨 Compiling Rust service...
-🌐 GraphQL server running at http://localhost:3000/graphql
-🎨 Admin UI available at http://localhost:3000/admin
-📡 WebSocket subscriptions at ws://localhost:3000/ws
+A create persists the record and propagates to the event log, audit log, and read-model
+projection — the full event-sourced path runs end-to-end.
 
-🔥 Hot reload enabled - edit schema.ts to see changes instantly!
-```
-
-### 4. Explore Your Application
-
-Open your browser to see what Atomo generated:
-
-- **Admin UI**: `http://localhost:3000/admin`
-  - Complete CRUD interface for all your models
-  - Real-time collaboration indicators
-  - Rich content editing with blocks
-  - Automatic form generation and validation
-
-- **GraphQL Playground**: `http://localhost:3000/graphql`
-  - Fully typed GraphQL API
-  - Real-time subscriptions
-  - Automatic CRUD operations
-  - Custom business logic hooks
+::: warning Admin UI: use dev/workspace mode
+The admin UI discovers models via the CLI **dev/workspace** server (which serves `/schema.ts`
+and proxies the UI), not the bare `atomo-server`. Pointed directly at the standalone server it
+falls back to built-in **demo data** (it looks populated but isn't live). To drive the real
+backend from the UI today, run it under `pnpm dev:admin` / the workspace dev flow. Wiring the UI
+to the standalone server's `/meta/schema` is a known follow-up.
+:::
 
 
 // The MVP loop uses this schema to drive generated CRM artifacts,
@@ -190,14 +194,15 @@ export interface Contact {
 }
 ```
 
-Save the file and watch Atomo automatically:
+Under the CLI dev runtime (`atomo dev` / workspace dev — see [Dev Runtime](/guide/dev-runtime)),
+saving `schema.ts` triggers:
 1. 🔄 Detect the schema change
-2. 🗄️ Generate database migration
+2. 🗄️ Generate a database migration
 3. 🔨 Recompile the Rust backend
 4. 🎨 Update the admin UI forms
-5. 📡 Refresh your browser
 
-**That's it!** Your application now supports LinkedIn URLs with zero additional code.
+With the **standalone `atomo-server`**, restart the process to pick up schema changes (it
+re-parses `schema.ts` and applies new migrations on boot).
 
 ## What Just Happened?
 
@@ -231,8 +236,8 @@ Now that you have a running application, explore these features:
 ## Need Help?
 
 - 📖 **[Core Concepts](/guide/event-sourcing)** - Understand Atomo's architecture
-- 💬 **[Discord Community](https://discord.gg/atomo)** - Get help from other developers
+- ⚙️ **[Configuration](/guide/configuration)** - Full environment-variable reference
 - 🐛 **[GitHub Issues](https://github.com/Chris533/atomo/issues)** - Report bugs or request features
-- 📧 **[Email Support](mailto:support@atomo.cc)** - Direct support from the team
+- 💬 **[GitHub Discussions](https://github.com/Chris533/atomo/discussions)** - Questions and discussion
 
 Welcome to the future of application development! 🚀
