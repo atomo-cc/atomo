@@ -177,7 +177,9 @@ impl AtomoClient {
         Ok(record)
     }
 
-    /// Create a new record
+    /// Create a new record. **System/trusted API — does NOT enforce RBAC** (no caller role).
+    /// Use this only from trusted server code (seeding, migrations, internal jobs). For
+    /// request-handling, call [`create_checked`](Self::create_checked) so access rules apply.
     pub async fn create(
         &self,
         model_name: &str,
@@ -242,7 +244,8 @@ impl AtomoClient {
         Ok(record)
     }
 
-    /// Update many records
+    /// Update many records. **System/trusted API — does NOT enforce RBAC.** For request-handling
+    /// use [`update_many_checked`](Self::update_many_checked).
     pub async fn update_many(
         &self,
         model_name: &str,
@@ -310,7 +313,8 @@ impl AtomoClient {
         Ok(records)
     }
 
-    /// Delete many records (soft delete - sets deleted_at = NOW())
+    /// Delete many records (soft delete - sets deleted_at = NOW()). **System/trusted API — does
+    /// NOT enforce RBAC.** For request-handling use [`delete_many_checked`](Self::delete_many_checked).
     pub async fn delete_many(
         &self,
         model_name: &str,
