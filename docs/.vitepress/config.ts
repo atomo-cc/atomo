@@ -28,7 +28,6 @@ export default defineConfig({
         { text: '愿景', link: '/zh/vision' },
         { text: '路线图', link: '/zh/roadmap' }
       ]},
-      { text: 'Playground', link: 'https://playground.atomo.cc' },
       {
         text: 'v0.1.0',
         items: [
@@ -55,14 +54,17 @@ export default defineConfig({
           items: [
             { text: 'Event Sourcing', link: '/guide/event-sourcing' },
             { text: 'Schema-Driven Development', link: '/guide/schema-driven' },
-            { text: 'Real-time Collaboration', link: '/guide/collaboration' },
+            { text: 'Modeling & Access', link: '/guide/modeling' },
+            { text: 'Subscriptions', link: '/guide/subscriptions' },
+            { text: 'Soft Delete & Trash', link: '/guide/soft-delete' },
+            { text: 'Caching', link: '/guide/caching' },
             { text: 'Dev Runtime & Workspace', link: '/guide/dev-runtime' },
             { text: 'Server Routes in Dev', link: '/guide/server-routes-dev' },
-            { text: 'Modeling & Access', link: '/guide/modeling' },
             { text: 'Configuration', link: '/guide/configuration' },
-            { text: 'WASM Plugins', link: '/guide/plugins' },
+            { text: 'WASM & JS Plugins', link: '/guide/plugins' },
             { text: 'Testing', link: '/guide/testing' },
-            { text: 'Local-First Architecture', link: '/guide/local-first' }
+            { text: 'Real-time Collaboration (planned)', link: '/guide/collaboration' },
+            { text: 'Local-First (planned)', link: '/guide/local-first' }
           ]
         },
         {
@@ -125,19 +127,14 @@ export default defineConfig({
           text: '🎯 Examples',
           items: [
             { text: 'Overview', link: '/examples/' },
-            { text: 'CRM System', link: '/examples/crm' },
-            { text: 'Content Management', link: '/examples/cms' },
-            { text: 'Collaboration Tools', link: '/examples/collaboration' },
-            { text: 'E-commerce', link: '/examples/ecommerce' },
-            { text: 'Analytics Dashboard', link: '/examples/analytics' }
+            { text: 'CRM (flagship service)', link: '/services/' }
           ]
         }
       ]
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/Chris533/atomo' },
-      { icon: 'discord', link: 'https://discord.gg/atomo' }
+      { icon: 'github', link: 'https://github.com/Chris533/atomo' }
     ],
 
     footer: {
