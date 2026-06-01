@@ -152,3 +152,99 @@ fn to_snake_case(s: &str) -> String {
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atomo_schema::{Field, FieldType, Model, Relationship, Schema};
+    use std::collections::HashMap;
+
+    fn field(name: &str, ty: FieldType, optional: bool) -> (String, Field) {
+        (
+            name.to_string(),
+            Field {
+                name: name.to_string(),
+                field_type: ty,
+                optional,
+                attributes: vec![],
+            },
+        )
+    }
+
+    #[test]
+    fn field_type_to_sql_mapping() {
+        assert_eq!(field_type_to_sql(&FieldType::String), "TEXT");
+        assert_eq!(field_type_to_sql(&FieldType::Number), "BIGINT");
+        assert_eq!(field_type_to_sql(&FieldType::Boolean), "BOOLEAN");
+        assert_eq!(field_type_to_sql(&FieldType::DateTime), "TIMESTAMPTZ");
+        assert_eq!(field_type_to_sql(&FieldType::Json), "JSONB");
+        assert_eq!(
+            field_type_to_sql(&FieldType::Array(Box::new(FieldType::String))),
+            "JSONB"
+        );
+    }
+
+    fn model(
+        name: &str,
+        table: &str,
+        fields: Vec<(String, Field)>,
+        rels: Vec<(&str, Relationship)>,
+    ) -> Model {
+        Model {
+            name: name.to_string(),
+            fields: fields.into_iter().collect(),
+            access: None,
+            hooks: None,
+            validation: HashMap::new(),
+            table_name: Some(table.to_string()),
+            relationships: rels.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
+        }
+    }
+
+    #[test]
+    fn generate_migrations_emits_softdelete_tenant_and_fk() {
+        let contact = model(
+            "Contact",
+            "contact",
+            vec![field("id", FieldType::EntityId, false)],
+            vec![],
+        );
+        let deal = model(
+            "Deal",
+            "deal",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("contactId", FieldType::String, false),
+            ],
+            vec![(
+                "contact",
+                Relationship {
+                    kind: "belongsTo".into(),
+                    model: "Contact".into(),
+                    foreign_key: Some("contactId".into()),
+                },
+            )],
+        );
+        let mut models = HashMap::new();
+        models.insert("Contact".into(), contact);
+        models.insert("Deal".into(), deal);
+        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+
+        // Every table gets soft-delete + tenant columns.
+        assert!(
+            sql.contains("deleted_at TIMESTAMPTZ"),
+            "deleted_at missing:\n{}",
+            sql
+        );
+        assert!(
+            sql.contains("tenant_id TEXT"),
+            "tenant_id missing:\n{}",
+            sql
+        );
+        // belongsTo → FK constraint to the target table's id (referential integrity).
+        assert!(
+            sql.contains("ALTER TABLE deal ADD CONSTRAINT fk_deal_contact_id FOREIGN KEY (contact_id) REFERENCES contact(id)"),
+            "FK not emitted:\n{}", sql
+        );
+    }
+}

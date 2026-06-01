@@ -279,3 +279,96 @@ fn build_where(where_clauses: &[WhereClause], param_offset: usize) -> (String, V
 
     (parts.join(" AND "), params)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::Model;
+    use serde_json::json;
+
+    fn model(name: &str, table: Option<&str>) -> Model {
+        Model {
+            name: name.to_string(),
+            fields: std::collections::HashMap::new(),
+            access: None,
+            hooks: None,
+            validation: std::collections::HashMap::new(),
+            table_name: table.map(|s| s.to_string()),
+            relationships: std::collections::HashMap::new(),
+        }
+    }
+
+    fn eq(field: &str, v: Value) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equals,
+            value: v,
+        }
+    }
+
+    #[test]
+    fn table_name_honors_explicit_else_pluralizes() {
+        assert_eq!(table_name(&model("Contact", Some("contact"))), "contact");
+        assert_eq!(table_name(&model("Contact", None)), "contacts");
+    }
+
+    #[test]
+    fn equals_casts_strings_to_text_but_not_numbers() {
+        // String value → ::text cast (so it works against TEXT and UUID id columns).
+        let (sql, params) = build_where(&[eq("id", json!("abc"))], 0);
+        assert_eq!(sql, "id::text = $1");
+        assert_eq!(params, vec![json!("abc")]);
+        // Numeric value → no cast.
+        let (sql, _) = build_where(&[eq("value", json!(50000))], 0);
+        assert_eq!(sql, "value = $1");
+    }
+
+    #[test]
+    fn build_where_honors_param_offset_and_field_snake_case() {
+        // Offset 2 (e.g. after an UPDATE's SET params) → placeholders start at $3.
+        let (sql, _) = build_where(&[eq("companyId", json!("c1"))], 2);
+        assert_eq!(sql, "company_id::text = $3");
+    }
+
+    #[test]
+    fn select_builds_where_order_limit_offset() {
+        let (sql, _) = SqlBuilder::select(
+            &model("Deal", Some("deal")),
+            &[eq("stage", json!("won"))],
+            &[("createdAt".into(), OrderDirection::Desc)],
+            Some(20),
+            Some(40),
+        );
+        assert_eq!(
+            sql,
+            "SELECT * FROM deal WHERE stage::text = $1 ORDER BY created_at DESC LIMIT 20 OFFSET 40"
+        );
+    }
+
+    #[test]
+    fn update_params_set_then_where() {
+        let mut data = std::collections::HashMap::new();
+        data.insert("stage".to_string(), json!("won"));
+        let (sql, params) = SqlBuilder::update(
+            &model("Deal", Some("deal")),
+            &[eq("id", json!("d1"))],
+            &data,
+        );
+        // SET uses $1, WHERE uses $2 (offset by set count); RETURNING * appended.
+        assert_eq!(
+            sql,
+            "UPDATE deal SET stage = $1 WHERE id::text = $2 RETURNING *"
+        );
+        assert_eq!(params, vec![json!("won"), json!("d1")]);
+    }
+
+    #[test]
+    fn soft_delete_returns_id() {
+        let (sql, _) =
+            SqlBuilder::soft_delete(&model("Deal", Some("deal")), &[eq("id", json!("d1"))]);
+        assert_eq!(
+            sql,
+            "UPDATE deal SET deleted_at = NOW() WHERE id::text = $1 RETURNING id"
+        );
+    }
+}
