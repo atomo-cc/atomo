@@ -86,6 +86,8 @@ fn field_type_str(t: &FieldType) -> &'static str {
         FieldType::Date => "date",
         FieldType::DateTime => "datetime",
         FieldType::Json | FieldType::Custom(_) => "json",
+        // A File[] field renders the multi-file uploader, not the generic array widget.
+        FieldType::Array(inner) if matches!(**inner, FieldType::File) => "file",
         FieldType::Array(_) | FieldType::Blocks => "array",
     }
 }
@@ -100,5 +102,14 @@ mod tests {
         // Drives the Admin UI auto-rendering the uploader for File-declared fields.
         assert_eq!(field_type_str(&FieldType::File), "file");
         assert_eq!(field_type_str(&FieldType::String), "string");
+        // File[] also renders the (multi-file) uploader, not the generic array widget.
+        assert_eq!(
+            field_type_str(&FieldType::Array(Box::new(FieldType::File))),
+            "file"
+        );
+        assert_eq!(
+            field_type_str(&FieldType::Array(Box::new(FieldType::String))),
+            "array"
+        );
     }
 }

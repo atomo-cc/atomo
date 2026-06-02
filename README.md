@@ -279,6 +279,7 @@ pub fn process_content(content: &str) -> String {
 - [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子) + JS 脚本插件 (Javy)
 - [x] CQRS 读投影 (事件驱动物化视图；删除/数值修正见 B2)
 - [x] 读缓存 (TTL + 事件失效)
+- [x] 文件上传/存储 (`File` 字段, multipart, 内容类型校验+魔术字节嗅探, 事件溯源; 本地后端✅, S3 后端在 `storage-s3` feature 后; 详见 docs/guide/advanced/upload-storage-plan)
 - [~] 工作流引擎 (触发器, 条件, 重试, YAML 加载, HTTP 步骤；Mutation/Plugin 步骤待实现)
 - [~] 多租户隔离 (`tenant_id` 列 + 读写隔离；订阅过滤/用户绑定/PG RLS 待实现)
 - [~] AI 工作流集成 (pgvector EmbeddingStore；尚未端到端验证，需 pgvector 环境)
