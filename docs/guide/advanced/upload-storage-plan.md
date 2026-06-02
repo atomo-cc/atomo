@@ -120,13 +120,16 @@ Constructed once at boot (like `OAuthManager::from_env()`), injected into `AppSt
 
 ## 8. Risks / open questions
 
-- **Multi-file fields** (`File[]`) — store as JSON array of media ids; reuse the array-column
-  codegen.
-- **GraphQL vs REST split** — uploads stay REST (multipart); GraphQL stores/returns only the
-  media id + a resolved URL.
-- **Orphan cleanup** — media referenced by deleted entities; defer a GC job.
-- **Roadmap honesty** — keep the capability `[~]` in README/roadmap until Phase D+SEC land with
-  green tests.
+- **Multi-file fields** (`File[]`) — ✅ parses to `Array(File)` (JSONB), renders the multi-file
+  uploader.
+- **GraphQL vs REST split** — uploads/serves stay **REST** (`/media`, multipart + bytes/redirect);
+  GraphQL only stores/returns the media id (a TEXT `File` field), resolved to a URL by
+  `apiClient.getMediaUrl`. Multipart over GraphQL is intentionally avoided.
+- **Orphan cleanup** — `MediaState::purge_deleted(older_than)` GCs old **soft-deleted** rows
+  (housekeeping; bytes are freed on soft-delete). Reference-based orphans (media whose referencing
+  entity was deleted) are **intentionally not auto-GC'd** — needs per-schema reference tracking and
+  would risk deleting in-use media. Wire `purge_deleted` to a scheduler under a retention policy.
+- **Roadmap honesty** — capability marked delivered in README with scope; S3 verified via MinIO.
 
 Smallest shippable slice with real value: **Phases A + C + D** (local storage, schema `File`
 type, Admin UI wired) — uploads work end-to-end through the dogfood; S3 + full hardening as

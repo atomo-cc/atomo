@@ -170,6 +170,29 @@ impl MediaState {
         }
     }
 
+    /// GC: hard-delete soft-deleted media older than `older_than` (best-effort byte delete too).
+    /// Housekeeping only — does NOT detect media orphaned by a deleted referencing entity (that
+    /// needs per-schema reference tracking and is intentionally out of scope to avoid data loss).
+    pub async fn purge_deleted(&self, older_than: std::time::Duration) -> Result<u64> {
+        let cutoff = chrono::Utc::now()
+            - chrono::Duration::from_std(older_than).unwrap_or_else(|_| chrono::Duration::zero());
+        let rows = sqlx::query(
+            "SELECT storage_key FROM media WHERE deleted_at IS NOT NULL AND deleted_at < $1",
+        )
+        .bind(cutoff)
+        .fetch_all(&self.pool)
+        .await?;
+        for r in &rows {
+            self.storage.delete(&r.get::<String, _>("storage_key")).await.ok();
+        }
+        let res =
+            sqlx::query("DELETE FROM media WHERE deleted_at IS NOT NULL AND deleted_at < $1")
+                .bind(cutoff)
+                .execute(&self.pool)
+                .await?;
+        Ok(res.rows_affected())
+    }
+
     fn emit(&self, event_type: EventType, id: &str, actor: &str, extra: HashMap<String, serde_json::Value>) {
         let mut data = extra;
         data.insert("id".to_string(), json!(id));

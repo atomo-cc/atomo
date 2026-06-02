@@ -38,5 +38,9 @@ async fn upload_read_delete_roundtrip_and_events() {
     assert!(state.read(&id).await.unwrap().is_none());
     assert!(!state.soft_delete(&id, "user-1").await.unwrap()); // idempotent
 
+    // GC purges the soft-deleted row; second pass is a no-op
+    assert!(state.purge_deleted(std::time::Duration::ZERO).await.unwrap() >= 1);
+    assert_eq!(state.purge_deleted(std::time::Duration::ZERO).await.unwrap(), 0);
+
     tokio::fs::remove_dir_all(&dir).await.ok();
 }
