@@ -17,3 +17,20 @@ async fn s3_put_get_delete_roundtrip() {
     store.delete(&key).await.unwrap();
     assert!(store.get(&key).await.unwrap().is_none());
 }
+
+#[tokio::test]
+#[ignore]
+async fn s3_presigned_url_is_fetchable() {
+    use std::time::Duration;
+    let store = S3Storage::from_env().await;
+    let key = format!("test/{}.bin", uuid::Uuid::new_v4());
+    store.put(&key, b"PRESIGNED").await.unwrap();
+    let url = store
+        .presigned_get_url(&key, Duration::from_secs(60))
+        .await
+        .expect("S3 backend returns a presigned URL");
+    // The URL is directly fetchable without credentials (the signature authorizes it).
+    let body = reqwest::get(&url).await.unwrap().bytes().await.unwrap();
+    assert_eq!(body.as_ref(), b"PRESIGNED");
+    store.delete(&key).await.unwrap();
+}

@@ -141,7 +141,33 @@ fast-follows.
   posts to real `/media` with auth + real retry. A `FieldType::File` variant (TEXT-backed in all
   codegen/DB paths) makes the server emit a distinct `file` metadata type, and `FormField`
   auto-renders `MediaUploader` for it. Test: `field_type_str(File) == "file"`.
-- **Phase E (S3)** — ✅ implemented behind `storage-s3` feature; lib compiles with the feature;
-  runtime test is `#[ignore]` (MinIO/S3, CI-only like pgvector).
+- **Phase E (S3)** — ✅ implemented behind `storage-s3` feature **and verified against MinIO**:
+  `put/get/delete` roundtrip + presigned-URL read both pass. `GET /media/{id}` 302-redirects to a
+  short-lived presigned URL when the backend provides one (S3); local proxies bytes.
 - **Phase SEC** — ✅ magic-byte content sniffing + opt-in tenant read scoping
   (`STORAGE_PRIVATE_READS`); rate limiting is inherited from the app-level middleware.
+
+## Verifying the S3 backend locally (MinIO)
+
+MinIO is a single static binary — no Docker. To run the `storage-s3` tests:
+
+```bash
+# 1. Get + launch MinIO (localhost, ephemeral creds)
+curl -sSL -o /tmp/minio https://dl.min.io/server/minio/release/linux-amd64/minio && chmod +x /tmp/minio
+curl -sSL -o /tmp/mc    https://dl.min.io/client/mc/release/linux-amd64/mc    && chmod +x /tmp/mc
+MINIO_ROOT_USER=atomotest MINIO_ROOT_PASSWORD=atomotest123 \
+  setsid bash -c '/tmp/minio server /tmp/minio-data --address 127.0.0.1:9000' &
+
+# 2. Create the bucket
+/tmp/mc alias set local http://127.0.0.1:9000 atomotest atomotest123
+/tmp/mc mb --ignore-existing local/atomo-media
+
+# 3. Run the feature-gated, #[ignore]d S3 tests
+STORAGE_S3_BUCKET=atomo-media STORAGE_S3_ENDPOINT=http://127.0.0.1:9000 \
+  AWS_REGION=us-east-1 AWS_ACCESS_KEY_ID=atomotest AWS_SECRET_ACCESS_KEY=atomotest123 \
+  cargo test -p atomo_server --features storage-s3 --test media_s3 -- --ignored
+```
+
+CI runs the same way (MinIO service + these env vars), mirroring how the pgvector/AI tests are
+gated. Tip: stop MinIO with `pkill -x minio` (not `pkill -f 'minio …'` — `-f` matches your own
+command line).

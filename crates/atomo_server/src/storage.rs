@@ -12,6 +12,10 @@ pub trait StorageBackend: Send + Sync {
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<()>;
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;
     async fn delete(&self, key: &str) -> Result<()>;
+    /// A presigned/redirectable GET URL when the backend supports it (S3); None = proxy bytes.
+    async fn presigned_get_url(&self, _key: &str, _ttl: std::time::Duration) -> Option<String> {
+        None
+    }
 }
 
 /// Files under a local root directory. Keys are relative paths; `..`/absolute keys are rejected
@@ -128,6 +132,19 @@ impl StorageBackend for S3Storage {
             .send()
             .await?;
         Ok(())
+    }
+
+    async fn presigned_get_url(&self, key: &str, ttl: std::time::Duration) -> Option<String> {
+        let cfg = aws_sdk_s3::presigning::PresigningConfig::expires_in(ttl).ok()?;
+        let req = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(cfg)
+            .await
+            .ok()?;
+        Some(req.uri().to_string())
     }
 }
 

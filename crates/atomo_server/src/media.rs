@@ -122,20 +122,27 @@ impl MediaState {
         Ok(id)
     }
 
-    /// Read a non-deleted media's bytes + content type + owning tenant, or None.
-    pub async fn read(&self, id: &str) -> Result<Option<(Vec<u8>, String, Option<String>)>> {
+    /// Look up a non-deleted media's storage key + content type + tenant (no bytes).
+    pub async fn lookup(&self, id: &str) -> Result<Option<(String, String, Option<String>)>> {
         let row = sqlx::query(
             "SELECT storage_key, content_type, tenant_id FROM media WHERE id = $1 AND deleted_at IS NULL",
         )
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
-        let (key, ct, tenant) = match row {
-            Some(r) => (
+        Ok(row.map(|r| {
+            (
                 r.get::<String, _>("storage_key"),
                 r.get::<String, _>("content_type"),
                 r.get::<Option<String>, _>("tenant_id"),
-            ),
+            )
+        }))
+    }
+
+    /// Read a non-deleted media's bytes + content type + owning tenant, or None.
+    pub async fn read(&self, id: &str) -> Result<Option<(Vec<u8>, String, Option<String>)>> {
+        let (key, ct, tenant) = match self.lookup(id).await? {
+            Some(m) => m,
             None => return Ok(None),
         };
         match self.storage.get(&key).await? {
@@ -282,26 +289,35 @@ async fn serve_media(
     user: Option<Extension<AuthUser>>,
     Path(id): Path<String>,
 ) -> Response {
-    match state.read(&id).await {
-        Ok(Some((bytes, ct, tenant))) => {
-            if state.private_reads {
-                // Opt-in scoping: require auth and a matching tenant.
-                match &user {
-                    None => return StatusCode::UNAUTHORIZED.into_response(),
-                    Some(Extension(u)) if u.tenant_id != tenant => {
-                        return StatusCode::FORBIDDEN.into_response()
-                    }
-                    Some(_) => {}
-                }
+    let (key, ct, tenant) = match state.lookup(&id).await {
+        Ok(Some(m)) => m,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if state.private_reads {
+        match &user {
+            None => return StatusCode::UNAUTHORIZED.into_response(),
+            Some(Extension(u)) if u.tenant_id != tenant => {
+                return StatusCode::FORBIDDEN.into_response()
             }
-            Response::builder()
-                .header(header::CONTENT_TYPE, ct)
-                .header("X-Content-Type-Options", "nosniff")
-                .body(Body::from(bytes))
-                .unwrap()
+            Some(_) => {}
         }
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+    // Backends that support it (S3) redirect to a short-lived presigned URL; others proxy bytes.
+    if let Some(url) = state
+        .storage
+        .presigned_get_url(&key, std::time::Duration::from_secs(300))
+        .await
+    {
+        return axum::response::Redirect::temporary(&url).into_response();
+    }
+    match state.storage.get(&key).await {
+        Ok(Some(bytes)) => Response::builder()
+            .header(header::CONTENT_TYPE, ct)
+            .header("X-Content-Type-Options", "nosniff")
+            .body(Body::from(bytes))
+            .unwrap(),
+        _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
