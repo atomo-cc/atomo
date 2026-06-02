@@ -125,6 +125,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
 fn field_type_to_sql(field_type: &FieldType) -> &'static str {
     match field_type {
         FieldType::String => "TEXT",
+        FieldType::File => "TEXT",
         FieldType::Number => "BIGINT",
         FieldType::Boolean => "BOOLEAN",
         FieldType::Date => "DATE",

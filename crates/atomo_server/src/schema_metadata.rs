@@ -80,11 +80,25 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
 fn field_type_str(t: &FieldType) -> &'static str {
     match t {
         FieldType::String | FieldType::EntityId | FieldType::Reference(_) => "string",
+        FieldType::File => "file",
         FieldType::Number => "number",
         FieldType::Boolean => "boolean",
         FieldType::Date => "date",
         FieldType::DateTime => "datetime",
         FieldType::Json | FieldType::Custom(_) => "json",
         FieldType::Array(_) | FieldType::Blocks => "array",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::field_type_str;
+    use atomo::schema::FieldType;
+
+    #[test]
+    fn file_field_maps_to_file_metadata_type() {
+        // Drives the Admin UI auto-rendering the uploader for File-declared fields.
+        assert_eq!(field_type_str(&FieldType::File), "file");
+        assert_eq!(field_type_str(&FieldType::String), "string");
     }
 }

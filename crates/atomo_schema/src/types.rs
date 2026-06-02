@@ -52,6 +52,9 @@ pub enum FieldType {
     Reference(String),
     Array(Box<FieldType>),
     Blocks,
+    /// An uploaded file/media reference (stored as TEXT — the media id/url). Behaves like
+    /// String for storage/codegen but surfaces as `file` in metadata so the UI renders an uploader.
+    File,
     Custom(String),
 }
 

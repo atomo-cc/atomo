@@ -448,10 +448,10 @@ fn parse_field_definition(line: &str) -> Option<Field> {
         "number" => FieldType::Number,
         "boolean" => FieldType::Boolean,
         "Date" => FieldType::DateTime,
-        // File/media fields store the uploaded media id (or URL) as TEXT; the bytes live in the
-        // storage backend behind /media. String-backed so no codegen/match sites change.
-        "File" => FieldType::String,
-        "File[]" => FieldType::Array(Box::new(FieldType::String)),
+        // File/media fields: stored as TEXT (media id/url), surfaced as `file` in metadata so
+        // the Admin UI auto-renders the uploader.
+        "File" => FieldType::File,
+        "File[]" => FieldType::Array(Box::new(FieldType::File)),
         "any" => FieldType::Json,       // TypeScript any type maps to JSON
         "Block[]" => FieldType::Blocks, // Special handling for composable content
         t if t.ends_with("[]") => FieldType::Array(Box::new(parse_array_type(t)?)),
@@ -622,10 +622,10 @@ mod validation_tests {
             .iter()
             .find(|m| m.name == "Contact")
             .expect("Contact parsed");
-        assert_eq!(c.fields.get("avatar").unwrap().field_type, FieldType::String);
+        assert_eq!(c.fields.get("avatar").unwrap().field_type, FieldType::File);
         assert_eq!(
             c.fields.get("photos").unwrap().field_type,
-            FieldType::Array(Box::new(FieldType::String))
+            FieldType::Array(Box::new(FieldType::File))
         );
     }
 

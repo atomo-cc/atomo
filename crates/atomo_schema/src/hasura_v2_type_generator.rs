@@ -1190,6 +1190,7 @@ pub struct GenericComparisonExp {
     fn convert_field_type(&self, field_type: &FieldType, optional: bool) -> String {
         let base_type = match field_type {
             FieldType::String => "String".to_string(),
+            FieldType::File => "String".to_string(),
             FieldType::Number => "f64".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Date | FieldType::DateTime => "DateTime<Utc>".to_string(),
@@ -1233,6 +1234,7 @@ pub struct GenericComparisonExp {
     fn convert_field_type_for_input(&self, field_type: &FieldType, optional: bool) -> String {
         let base_type = match field_type {
             FieldType::String => "String".to_string(),
+            FieldType::File => "String".to_string(),
             FieldType::Number => "f64".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Date | FieldType::DateTime => "DateTime<Utc>".to_string(),
@@ -1273,6 +1275,7 @@ pub struct GenericComparisonExp {
     fn convert_field_type_for_db(&self, field_type: &FieldType, optional: bool) -> String {
         let base_type = match field_type {
             FieldType::String => "String".to_string(),
+            FieldType::File => "String".to_string(),
             FieldType::Number => "sqlx::types::BigDecimal".to_string(),
             FieldType::Boolean => "bool".to_string(),
             FieldType::Date | FieldType::DateTime => "DateTime<Utc>".to_string(),
@@ -1674,6 +1677,7 @@ pub struct {model_name}AggregateFields {{
     fn map_field_to_graphql_type(&self, field_type: &FieldType) -> String {
         match field_type {
             FieldType::String => "String".to_string(),
+            FieldType::File => "String".to_string(),
             FieldType::Number => "Float".to_string(),
             FieldType::Boolean => "Boolean".to_string(),
             FieldType::Date | FieldType::DateTime => "DateTime".to_string(),

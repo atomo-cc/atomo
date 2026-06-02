@@ -137,13 +137,10 @@ fast-follows.
 - **Phase A (local backend)** — ✅ done + tested (storage unit tests, HTTP lifecycle).
 - **Phase B (event-sourcing/audit)** — ✅ done (Media Created/Deleted events; DB-gated test).
 - **Phase C (schema File type)** — ✅ done (parser maps `File`/`File[]` to string-backed TEXT).
-- **Phase D (Admin UI + SDK)** — 🟡 mostly: `apiClient.uploadMedia`/`getMediaUrl` + `MediaUploader`
-  posts to real `/media` with auth + real retry (done). `FormField` renders `MediaUploader` for
-  `file`-typed metadata (client done). **Remaining:** the server emits `string` (not `file`) for
-  `File` fields because the parser collapses `File`→`String`; emitting a distinct `file` metadata
-  type needs a `FieldType::File` variant across the codegen match-sites — deferred (fragile layer +
-  rebuild). Until then a `File` field renders as a text input; the uploader is available via the
-  existing `ui.component = 'media-uploader'` config and `apiClient.uploadMedia`.
+- **Phase D (Admin UI + SDK)** — ✅ done: `apiClient.uploadMedia`/`getMediaUrl` + `MediaUploader`
+  posts to real `/media` with auth + real retry. A `FieldType::File` variant (TEXT-backed in all
+  codegen/DB paths) makes the server emit a distinct `file` metadata type, and `FormField`
+  auto-renders `MediaUploader` for it. Test: `field_type_str(File) == "file"`.
 - **Phase E (S3)** — ✅ implemented behind `storage-s3` feature; lib compiles with the feature;
   runtime test is `#[ignore]` (MinIO/S3, CI-only like pgvector).
 - **Phase SEC** — ✅ magic-byte content sniffing + opt-in tenant read scoping

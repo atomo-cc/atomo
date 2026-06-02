@@ -435,6 +435,7 @@ fn generate_create_table_sql(model: &Model) -> Result<String> {
 fn pg_type_matches(field_type: &atomo_schema::FieldType, db_type: &str) -> bool {
     let expected = match field_type {
         atomo_schema::FieldType::String => "text",
+        atomo_schema::FieldType::File => "text",
         atomo_schema::FieldType::Number => "numeric",
         atomo_schema::FieldType::Boolean => "boolean",
         atomo_schema::FieldType::Date => "date",
@@ -452,6 +453,7 @@ fn pg_type_matches(field_type: &atomo_schema::FieldType, db_type: &str) -> bool 
 fn field_type_to_pg(field_type: &atomo_schema::FieldType) -> &'static str {
     match field_type {
         atomo_schema::FieldType::String => "TEXT",
+        atomo_schema::FieldType::File => "TEXT",
         atomo_schema::FieldType::Number => "NUMERIC",
         atomo_schema::FieldType::Boolean => "BOOLEAN",
         atomo_schema::FieldType::Date => "DATE",
@@ -526,6 +528,7 @@ fn generate_table_alterations(model: &Model, existing_table: &DatabaseTable) -> 
 fn generate_column_definition(field_name: &str, field: &Field) -> Result<String> {
     let pg_type = match &field.field_type {
         atomo_schema::FieldType::String => "TEXT",
+        atomo_schema::FieldType::File => "TEXT",
         atomo_schema::FieldType::Number => "NUMERIC",
         atomo_schema::FieldType::Boolean => "BOOLEAN",
         atomo_schema::FieldType::Date => "DATE",
