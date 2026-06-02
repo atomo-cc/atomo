@@ -36,6 +36,7 @@ export const demoSchemaMetadata: SchemaMetadata = {
         lastName: { name: 'lastName', type: 'string', optional: false, attributes: ['required'], ui: { label: 'Last name' } },
         email: { name: 'email', type: 'email', optional: false, attributes: ['unique', 'required'], ui: { label: 'Email' } },
         phone: { name: 'phone', type: 'string', optional: true, attributes: [], ui: { label: 'Phone' } },
+        avatar: { name: 'avatar', type: 'file', optional: true, attributes: [], ui: { label: 'Avatar' } },
         companyId: { name: 'companyId', type: 'string', optional: true, attributes: [], ui: { label: 'Company' } },
         tags: { name: 'tags', type: 'array', optional: false, attributes: [], ui: { label: 'Tags' } },
         notes: { name: 'notes', type: 'blocks', optional: false, attributes: [], ui: { label: 'Notes' } },
@@ -45,7 +46,7 @@ export const demoSchemaMetadata: SchemaMetadata = {
       ui: {
         displayField: ['firstName', 'lastName'],
         listView: ['firstName', 'lastName', 'email', 'phone', 'companyId'],
-        editForm: ['firstName', 'lastName', 'email', 'phone', 'companyId', 'tags', 'notes'],
+        editForm: ['firstName', 'lastName', 'email', 'phone', 'avatar', 'companyId', 'tags', 'notes'],
         searchFields: ['firstName', 'lastName', 'email'],
       },
     },

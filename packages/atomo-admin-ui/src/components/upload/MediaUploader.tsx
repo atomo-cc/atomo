@@ -225,6 +225,7 @@ export function MediaUploader({
       {/* 上传区域 */}
       {canUploadMore && !disabled && (
         <div
+          data-testid="media-uploader-dropzone"
           className={cn(
             'border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer',
             dragOver 
