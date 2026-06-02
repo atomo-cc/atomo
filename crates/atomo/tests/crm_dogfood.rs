@@ -63,12 +63,19 @@ async fn crm_schema_drives_the_platform() {
                 ("lastName", json!("Lovelace")),
                 ("email", json!("ada@acme.com")),
                 ("companyId", json!(company_id)),
+                ("avatar", json!("media_ada_123")),
             ]),
             &[],
             None,
         )
         .await
         .expect("create Contact");
+    // File field round-trips as a TEXT column (the media id/url).
+    assert_eq!(
+        contact.get("avatar").and_then(|v| v.as_str()),
+        Some("media_ada_123"),
+        "File field stored + returned as the media id"
+    );
     let contact_id = contact
         .get("id")
         .and_then(|v| v.as_str())

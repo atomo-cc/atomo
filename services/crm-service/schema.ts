@@ -68,6 +68,7 @@ export interface Contact {
   email: string;
   phone?: string;
   companyId?: string;
+  avatar?: File; // uploaded media id/url (stored as TEXT, served via /media)
   tags: string[];
   notes: ContentBlock[]; // Using platform-level ContentBlock from atomo_core
   createdAt: Date;
@@ -194,6 +195,7 @@ export const schema = {
           "email",
           "phone",
           "companyId",
+          "avatar",
           "tags",
           "notes",
         ],
