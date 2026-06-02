@@ -154,10 +154,31 @@ async fn media_http_full_lifecycle_and_security() {
 
     // 7. unknown id -> 404
     let r = app
+        .clone()
         .oneshot(Request::builder().uri("/media/does-not-exist").body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::NOT_FOUND);
+
+    // 8. GC endpoint: requires auth + admin; returns a purge count
+    let r = app
+        .clone()
+        .oneshot(Request::builder().method("POST").uri("/media/gc").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "gc requires auth");
+    let r = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/media/gc?older_than_secs=0")
+                .header("Authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK, "admin gc ok");
 
     tokio::fs::remove_dir_all(&dir).await.ok();
 }

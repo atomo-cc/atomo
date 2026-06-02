@@ -10,7 +10,7 @@ use anyhow::Result;
 use atomo::events::{EventType, ModelEvent};
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, StatusCode},
     middleware,
     response::{IntoResponse, Json, Response},
@@ -249,6 +249,7 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
     let max = state.max_size;
     Router::new()
         .route("/media", post(upload))
+        .route("/media/gc", post(gc))
         .route("/media/{id}", get(serve_media).delete(delete_media))
         // Hard backstop with headroom for multipart framing; the precise per-file limit is the
         // in-handler `bytes.len() > max_size` check, which returns a clean 413.
@@ -304,6 +305,28 @@ async fn upload(
         )
             .into_response(),
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "upload failed").into_response(),
+    }
+}
+
+async fn gc(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    if !matches!(user.role, crate::platform_models::UserRole::Admin) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let secs = params
+        .get("older_than_secs")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(7 * 24 * 3600); // default: 7-day retention
+    match state.purge_deleted(std::time::Duration::from_secs(secs)).await {
+        Ok(n) => (StatusCode::OK, Json(json!({ "purged": n }))).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
