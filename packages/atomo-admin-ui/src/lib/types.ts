@@ -92,6 +92,7 @@ export type FieldType =
   | 'blocks'  // Atomo 富文本块
   | 'reference'
   | 'array'
+  | 'file'
   | 'custom'
 
 export type FieldAttribute = 

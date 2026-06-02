@@ -267,6 +267,20 @@ export function FormField({
           />
         )
 
+      case 'file':
+        // Auto-rendered for File-typed schema fields.
+        return (
+          <MediaUploader
+            value={value || []}
+            onChange={onChange}
+            disabled={disabled}
+            accept="image/*,video/*,audio/*,.pdf,.zip"
+            maxFiles={fieldConfig.options?.[0]?.maxFiles ?? 10}
+            multiple={true}
+            showPreview={true}
+          />
+        )
+
       case 'custom':
         // 自定义字段类型，可以通过 fieldConfig.component 指定组件
         if (fieldConfig.component === 'media-uploader') {
