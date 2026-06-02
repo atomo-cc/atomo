@@ -11,6 +11,9 @@ use axum::http::{Request, StatusCode};
 use std::sync::Arc;
 use tower::ServiceExt;
 
+/// Minimal valid PNG signature (passes magic-byte sniffing).
+const PNG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
 async fn connect() -> sqlx::PgPool {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
@@ -18,15 +21,16 @@ async fn connect() -> sqlx::PgPool {
     pool
 }
 
-async fn seed_user_token(pool: &sqlx::PgPool, auth: &HttpAuthService) -> String {
+async fn seed_user_token(pool: &sqlx::PgPool, auth: &HttpAuthService, tenant: Option<&str>) -> String {
     let id = atomo_core::types::EntityId::new().to_string();
     let email = format!("u-{}@test.dev", id);
     sqlx::query(
-        "INSERT INTO users (id,email,password_hash,first_name,last_name,role,is_active)
-         VALUES ($1,$2,'x','U','R','admin',true)",
+        "INSERT INTO users (id,email,password_hash,first_name,last_name,role,is_active,tenant_id)
+         VALUES ($1,$2,'x','U','R','admin',true,$3)",
     )
     .bind(&id)
     .bind(&email)
+    .bind(tenant)
     .execute(pool)
     .await
     .unwrap();
@@ -64,7 +68,7 @@ fn upload_req(token: Option<&str>, content_type: &str, data: &[u8]) -> Request<B
 async fn media_http_full_lifecycle_and_security() {
     let pool = connect().await;
     let auth = HttpAuthService::new("test-secret", pool.clone());
-    let token = seed_user_token(&pool, &auth).await;
+    let token = seed_user_token(&pool, &auth, None).await;
     let dir = std::env::temp_dir().join(format!("atomo-media-http-{}", uuid::Uuid::new_v4()));
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = Arc::new(MediaState::new(pool.clone(), Arc::new(LocalStorage::new(&dir)), tx));
@@ -87,10 +91,18 @@ async fn media_http_full_lifecycle_and_security() {
         .unwrap();
     assert_eq!(r.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE, "html blocked");
 
+    // 2b. declared image/png but bytes aren't a PNG -> 415 (magic-byte sniff)
+    let r = app
+        .clone()
+        .oneshot(upload_req(Some(&token), "image/png", b"not-a-real-png"))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE, "content/type mismatch blocked");
+
     // 3. valid upload -> 200 {id,url}
     let r = app
         .clone()
-        .oneshot(upload_req(Some(&token), "image/png", b"PNGDATA"))
+        .oneshot(upload_req(Some(&token), "image/png", PNG))
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
@@ -109,7 +121,7 @@ async fn media_http_full_lifecycle_and_security() {
     assert_eq!(r.headers().get("content-type").unwrap(), "image/png");
     assert_eq!(r.headers().get("x-content-type-options").unwrap(), "nosniff");
     let served = axum::body::to_bytes(r.into_body(), 1_000_000).await.unwrap();
-    assert_eq!(served.as_ref(), b"PNGDATA");
+    assert_eq!(served.as_ref(), PNG);
 
     // 5. delete without auth -> 401
     let r = app
@@ -155,7 +167,7 @@ async fn media_http_full_lifecycle_and_security() {
 async fn media_http_rejects_oversized_body() {
     let pool = connect().await;
     let auth = HttpAuthService::new("test-secret", pool.clone());
-    let token = seed_user_token(&pool, &auth).await;
+    let token = seed_user_token(&pool, &auth, None).await;
     let dir = std::env::temp_dir().join(format!("atomo-media-sz-{}", uuid::Uuid::new_v4()));
     std::env::set_var("STORAGE_MAX_FILE_SIZE", "8"); // tiny cap -> any multipart body exceeds
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
@@ -169,5 +181,49 @@ async fn media_http_rejects_oversized_body() {
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    tokio::fs::remove_dir_all(&dir).await.ok();
+}
+
+#[tokio::test]
+#[ignore]
+async fn media_http_private_reads_are_tenant_scoped() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let t1 = seed_user_token(&pool, &auth, Some("t1")).await;
+    let t2 = seed_user_token(&pool, &auth, Some("t2")).await;
+    let dir = std::env::temp_dir().join(format!("atomo-media-priv-{}", uuid::Uuid::new_v4()));
+    std::env::set_var("STORAGE_PRIVATE_READS", "true");
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = Arc::new(MediaState::new(pool.clone(), Arc::new(LocalStorage::new(&dir)), tx));
+    state.init().await.unwrap();
+    let app = media_router(state, auth);
+    std::env::remove_var("STORAGE_PRIVATE_READS");
+
+    // upload as tenant t1
+    let r = app
+        .clone()
+        .oneshot(upload_req(Some(&t1), "image/png", PNG))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(r.into_body(), 1_000_000).await.unwrap();
+    let id = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let get = |token: Option<&str>| {
+        let mut b = Request::builder().uri(format!("/media/{id}"));
+        if let Some(t) = token {
+            b = b.header("Authorization", format!("Bearer {t}"));
+        }
+        b.body(Body::empty()).unwrap()
+    };
+
+    // no token -> 401; wrong tenant -> 403; owning tenant -> 200
+    assert_eq!(app.clone().oneshot(get(None)).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(app.clone().oneshot(get(Some(&t2))).await.unwrap().status(), StatusCode::FORBIDDEN);
+    assert_eq!(app.oneshot(get(Some(&t1))).await.unwrap().status(), StatusCode::OK);
+
     tokio::fs::remove_dir_all(&dir).await.ok();
 }

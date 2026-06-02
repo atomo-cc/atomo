@@ -30,6 +30,9 @@ pub struct MediaState {
     storage: Arc<dyn StorageBackend>,
     sender: broadcast::Sender<ModelEvent>,
     max_size: usize,
+    /// When true, GET /media/{id} requires auth and the caller's tenant must match the media's
+    /// (opt-in via STORAGE_PRIVATE_READS). Default false = public-by-unguessable-key.
+    private_reads: bool,
 }
 
 impl MediaState {
@@ -42,11 +45,15 @@ impl MediaState {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_MAX_SIZE);
+        let private_reads = std::env::var("STORAGE_PRIVATE_READS")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
         Self {
             pool,
             storage,
             sender,
             max_size,
+            private_reads,
         }
     }
 
@@ -115,20 +122,24 @@ impl MediaState {
         Ok(id)
     }
 
-    /// Read a non-deleted media's bytes + content type, or None.
-    pub async fn read(&self, id: &str) -> Result<Option<(Vec<u8>, String)>> {
+    /// Read a non-deleted media's bytes + content type + owning tenant, or None.
+    pub async fn read(&self, id: &str) -> Result<Option<(Vec<u8>, String, Option<String>)>> {
         let row = sqlx::query(
-            "SELECT storage_key, content_type FROM media WHERE id = $1 AND deleted_at IS NULL",
+            "SELECT storage_key, content_type, tenant_id FROM media WHERE id = $1 AND deleted_at IS NULL",
         )
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;
-        let (key, ct) = match row {
-            Some(r) => (r.get::<String, _>("storage_key"), r.get::<String, _>("content_type")),
+        let (key, ct, tenant) = match row {
+            Some(r) => (
+                r.get::<String, _>("storage_key"),
+                r.get::<String, _>("content_type"),
+                r.get::<Option<String>, _>("tenant_id"),
+            ),
             None => return Ok(None),
         };
         match self.storage.get(&key).await? {
-            Some(bytes) => Ok(Some((bytes, ct))),
+            Some(bytes) => Ok(Some((bytes, ct, tenant))),
             None => Ok(None),
         }
     }
@@ -185,6 +196,23 @@ fn content_type_allowed(ct: &str) -> bool {
     ALLOWED.iter().any(|a| ct.starts_with(a))
 }
 
+/// Defense-in-depth: for types with a well-known file signature, the declared content-type must
+/// match the actual leading bytes (blocks e.g. an executable/HTML declared as image/png). Types
+/// without a reliable signature (text/*, json, octet-stream, most audio) are not sniffed.
+fn content_matches(ct: &str, bytes: &[u8]) -> bool {
+    let starts = |sig: &[u8]| bytes.len() >= sig.len() && &bytes[..sig.len()] == sig;
+    match ct {
+        "image/png" => starts(&[0x89, 0x50, 0x4E, 0x47]),
+        "image/jpeg" => starts(&[0xFF, 0xD8, 0xFF]),
+        "image/gif" => starts(b"GIF8"),
+        "image/webp" => bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        "application/pdf" => starts(b"%PDF"),
+        "application/zip" => starts(&[0x50, 0x4B, 0x03, 0x04]),
+        "video/mp4" => bytes.len() >= 8 && &bytes[4..8] == b"ftyp",
+        _ => true, // no known signature for this type — accept
+    }
+}
+
 /// POST /media (auth) and GET/DELETE /media/{id}. Upload/delete require a token (enforced in
 /// the handler after optional_auth injects the user); GET is public via unguessable key.
 pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
@@ -227,6 +255,9 @@ async fn upload(
     if !content_type_allowed(&content_type) {
         return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "content-type not allowed").into_response();
     }
+    if !content_matches(&content_type, bytes.as_ref()) {
+        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "content does not match declared type").into_response();
+    }
 
     match state
         .store_upload(&filename, &content_type, bytes.as_ref(), &user.id, user.tenant_id.as_deref())
@@ -246,13 +277,29 @@ async fn upload(
     }
 }
 
-async fn serve_media(State(state): State<Arc<MediaState>>, Path(id): Path<String>) -> Response {
+async fn serve_media(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    Path(id): Path<String>,
+) -> Response {
     match state.read(&id).await {
-        Ok(Some((bytes, ct))) => Response::builder()
-            .header(header::CONTENT_TYPE, ct)
-            .header("X-Content-Type-Options", "nosniff")
-            .body(Body::from(bytes))
-            .unwrap(),
+        Ok(Some((bytes, ct, tenant))) => {
+            if state.private_reads {
+                // Opt-in scoping: require auth and a matching tenant.
+                match &user {
+                    None => return StatusCode::UNAUTHORIZED.into_response(),
+                    Some(Extension(u)) if u.tenant_id != tenant => {
+                        return StatusCode::FORBIDDEN.into_response()
+                    }
+                    Some(_) => {}
+                }
+            }
+            Response::builder()
+                .header(header::CONTENT_TYPE, ct)
+                .header("X-Content-Type-Options", "nosniff")
+                .body(Body::from(bytes))
+                .unwrap()
+        }
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -285,5 +332,18 @@ mod tests {
         assert!(!content_type_allowed("image/svg+xml"));
         assert!(!content_type_allowed("text/html"));
         assert!(!content_type_allowed("application/x-msdownload"));
+    }
+
+    #[test]
+    fn magic_bytes_must_match_declared_type() {
+        use super::content_matches;
+        let png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        assert!(content_matches("image/png", &png));
+        assert!(!content_matches("image/png", b"<html>")); // spoofed
+        assert!(content_matches("application/pdf", b"%PDF-1.7"));
+        assert!(!content_matches("application/pdf", b"nope"));
+        // types without a known signature are accepted
+        assert!(content_matches("text/plain", b"anything"));
+        assert!(content_matches("application/octet-stream", b"\x00\x01"));
     }
 }

@@ -28,9 +28,10 @@ async fn upload_read_delete_roundtrip_and_events() {
     assert_eq!(ev.actor.as_deref(), Some("user-1"));
 
     // read back
-    let (bytes, ct) = state.read(&id).await.unwrap().unwrap();
+    let (bytes, ct, tenant) = state.read(&id).await.unwrap().unwrap();
     assert_eq!(bytes, b"PNGDATA");
     assert_eq!(ct, "image/png");
+    assert_eq!(tenant.as_deref(), Some("t1"));
 
     // soft-delete removes it from reads
     assert!(state.soft_delete(&id, "user-1").await.unwrap());
