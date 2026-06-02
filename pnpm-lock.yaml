@@ -166,6 +166,9 @@ importers:
       typescript:
         specifier: ^5.0.0
         version: 5.9.2
+      vitest:
+        specifier: ^0.34.6
+        version: 0.34.6
 
   services/crm-service:
     dependencies:
@@ -3236,7 +3239,7 @@ packages:
     resolution: {integrity: sha512-HEHNfbars9v4pgpW6SO1KSPkfoS0xVOM/9UzkJltjlsHZmJasxg8aXkuZa7SMf8vKGIBhpUsPluQSqhJFCqebw==}
     engines: {node: '>=0.4.0'}
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.16.0
     dev: true
 
   /acorn@8.15.0:
@@ -6507,7 +6510,7 @@ packages:
   /strip-literal@1.3.0:
     resolution: {integrity: sha512-PugKzOsyXpArk0yWmUwqOZecSO0GH0bPoctLcqNDH9J04pVW3lflYE0ujElBGTloevcxF5MofAOZ7C5l2b+wLg==}
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.16.0
     dev: true
 
   /style-loader@3.3.4(webpack@5.101.3):
@@ -7092,7 +7095,7 @@ packages:
       '@vitest/snapshot': 0.34.6
       '@vitest/spy': 0.34.6
       '@vitest/utils': 0.34.6
-      acorn: 8.15.0
+      acorn: 8.16.0
       acorn-walk: 8.3.5
       cac: 6.7.14
       chai: 4.5.0
