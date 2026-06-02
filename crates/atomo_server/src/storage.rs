@@ -59,10 +59,76 @@ impl StorageBackend for LocalStorage {
     }
 }
 
-/// Build the configured storage backend from env. Local-only for now (S3 = Phase E).
-pub fn storage_from_env() -> Arc<dyn StorageBackend> {
+/// Build the configured storage backend from env. Local-disk by default; S3 when
+/// STORAGE_BACKEND=s3 and the `storage-s3` feature is enabled.
+pub async fn storage_from_env() -> Arc<dyn StorageBackend> {
+    #[cfg(feature = "storage-s3")]
+    {
+        if std::env::var("STORAGE_BACKEND").as_deref() == Ok("s3") {
+            return Arc::new(S3Storage::from_env().await);
+        }
+    }
     let dir = std::env::var("STORAGE_LOCAL_DIR").unwrap_or_else(|_| ".atomo/media".to_string());
     Arc::new(LocalStorage::new(dir))
+}
+
+/// S3-compatible backend (AWS S3, MinIO, etc.). Bytes are proxied through the server's
+/// GET /media/{id}; presigned-redirect reads are a future optimization.
+#[cfg(feature = "storage-s3")]
+pub struct S3Storage {
+    client: aws_sdk_s3::Client,
+    bucket: String,
+}
+
+#[cfg(feature = "storage-s3")]
+impl S3Storage {
+    /// Reads credentials/region from the standard AWS env chain; bucket from STORAGE_S3_BUCKET.
+    /// STORAGE_S3_ENDPOINT (optional) targets MinIO/other S3-compatible endpoints.
+    pub async fn from_env() -> Self {
+        let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        if let Ok(endpoint) = std::env::var("STORAGE_S3_ENDPOINT") {
+            loader = loader.endpoint_url(endpoint);
+        }
+        let config = loader.load().await;
+        let client = aws_sdk_s3::Client::new(&config);
+        let bucket = std::env::var("STORAGE_S3_BUCKET").expect("STORAGE_S3_BUCKET required for s3");
+        Self { client, bucket }
+    }
+}
+
+#[cfg(feature = "storage-s3")]
+#[async_trait::async_trait]
+impl StorageBackend for S3Storage {
+    async fn put(&self, key: &str, bytes: &[u8]) -> Result<()> {
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .body(aws_sdk_s3::primitives::ByteStream::from(bytes.to_vec()))
+            .send()
+            .await?;
+        Ok(())
+    }
+
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        match self.client.get_object().bucket(&self.bucket).key(key).send().await {
+            Ok(out) => {
+                let data = out.body.collect().await?.into_bytes().to_vec();
+                Ok(Some(data))
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn delete(&self, key: &str) -> Result<()> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

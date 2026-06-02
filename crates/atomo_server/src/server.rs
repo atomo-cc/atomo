@@ -131,7 +131,7 @@ impl AtomoServer {
         // self.atomo: grab the event sender + pool now.
         let media_state = std::sync::Arc::new(crate::media::MediaState::new(
             self.atomo.db_pool().clone(),
-            crate::storage::storage_from_env(),
+            crate::storage::storage_from_env().await,
             self.atomo.event_sender(),
         ));
         media_state.init().await?;
