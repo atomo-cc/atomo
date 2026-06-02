@@ -21,6 +21,24 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::{config::ServerConfig, handlers::create_router};
 
+/// Adapter: runs workflow `Plugin` steps through the WasmPluginManager (WASM + JS/Javy).
+struct WasmPluginExecutorAdapter(
+    std::sync::Arc<tokio::sync::Mutex<crate::wasm_plugins::WasmPluginManager>>,
+);
+
+#[async_trait::async_trait]
+impl atomo::workflow::PluginExecutor for WasmPluginExecutorAdapter {
+    async fn execute(
+        &self,
+        plugin_name: &str,
+        function: &str,
+        context_json: &str,
+    ) -> Result<Option<String>> {
+        let mut mgr = self.0.lock().await;
+        mgr.call_hook(plugin_name, function, context_json)
+    }
+}
+
 pub struct AtomoServer {
     config: ServerConfig,
     atomo: Atomo,
@@ -237,6 +255,12 @@ impl AtomoServer {
         engine.set_mutation_executor(std::sync::Arc::new(
             crate::handlers::GraphQlMutationExecutor::new(graphql_schema.clone()),
         ));
+        // Inject the plugin executor so workflow `Plugin` steps run via the WasmPluginManager.
+        if let Some(mgr) = &self.plugin_manager {
+            engine.set_plugin_executor(std::sync::Arc::new(
+                WasmPluginExecutorAdapter(mgr.clone()),
+            ));
+        }
         let workflow_engine = std::sync::Arc::new(engine);
         {
             workflow_engine.init().await?; // create table + load persisted definitions
