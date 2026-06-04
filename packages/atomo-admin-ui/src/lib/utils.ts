@@ -15,9 +15,13 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * 格式化日期
  */
-export function formatDate(date: Date | string, format: 'short' | 'long' | 'time' = 'short') {
+export function formatDate(date: Date | string | null | undefined, format: 'short' | 'long' | 'time' = 'short') {
+  // Guard missing/invalid dates — many records have null timestamps, and an
+  // unguarded `undefined.toLocaleString()` crashes the whole view.
+  if (date == null) return '—'
   const d = typeof date === 'string' ? new Date(date) : date
-  
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—'
+
   switch (format) {
     case 'short':
       return d.toLocaleDateString()
