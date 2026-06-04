@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "TypeScript SDK for Atomo platform with full type safety",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -29,6 +32,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "rimraf dist && tsc",
     "dev": "tsc --watch",
     "clean": "rimraf dist",
     "type-check": "tsc --noEmit",

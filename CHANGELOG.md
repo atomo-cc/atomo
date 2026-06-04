@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI**: `docker.yml` workflow (manual dispatch) builds and pushes the `atomo-server` image to GHCR.
 
 ### Changed
+- **Publishing**: prepared `@atomo-cc/client-sdk` for npm — `publishConfig.access=public` (scoped packages default to restricted) and `prepublishOnly: tsc` so `dist/` is always fresh in the tarball. Marked the apps `@atomo-cc/admin-ui` and `@atomo-cc/docs` `private: true` so they can't be published by accident. Documented the release flow (publish under the `next` dist-tag pre-1.0) in the SDK README.
 - **npm scope**: renamed all packages from `@atomo/*` to `@atomo-cc/*` to match the owned npm org (`atomo-cc`). Affects package names, internal workspace imports/deps, the `atomo init` template, and docs. No published consumers were affected (packages were unpublished).
 
 ### Added

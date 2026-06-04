@@ -462,3 +462,21 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 - 💬 [讨论区](https://github.com/Chris533/atomo/discussions)
 - 🐛 [问题反馈](https://github.com/Chris533/atomo/issues)
 - 📧 [邮件支持](mailto:support@atomo.dev)
+
+## Publishing (maintainers)
+
+This package publishes to the `@atomo-cc` npm org. It is configured to publish
+publicly (`publishConfig.access = public`) and builds `dist/` automatically before
+publishing (`prepublishOnly: tsc`, with `files` shipping only `dist` + `README`).
+
+Pre-1.0 the API is still moving, so publish under the `next` dist-tag — don't claim
+`latest` until the surface stabilizes:
+
+```bash
+# from the repo root, after bumping the version + updating the CHANGELOG
+corepack pnpm --filter @atomo-cc/client-sdk publish --tag next --access public
+```
+
+Requires `npm login` to an account with publish rights in the `atomo-cc` org.
+Apps (`@atomo-cc/admin-ui`, `@atomo-cc/docs`) and the monorepo root are
+`private: true` and never publish.

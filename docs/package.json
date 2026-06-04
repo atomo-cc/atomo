@@ -1,6 +1,7 @@
 {
   "name": "@atomo-cc/docs",
   "version": "0.1.0",
+  "private": true,
   "description": "Atomo Developer Documentation",
   "type": "module",
   "scripts": {
