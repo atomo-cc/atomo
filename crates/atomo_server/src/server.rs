@@ -340,6 +340,28 @@ impl AtomoServer {
             None
         };
 
+        // Custom HTTP routes declared by plugins, mounted under /ext/<plugin><path>.
+        // This is the extend-without-forking seam: a plugin ships endpoints the
+        // server dispatches to its JS handler (request envelope in, response out).
+        let plugin_routes_router = if let Some(mgr) = &self.plugin_manager {
+            let routes = mgr.lock().await.plugin_routes();
+            if routes.is_empty() {
+                None
+            } else {
+                info!(
+                    "   ✓ Mounted {} custom plugin route(s) under /ext/<plugin>",
+                    routes.len()
+                );
+                Some(crate::plugin_routes::plugin_routes_router(
+                    mgr.clone(),
+                    auth_service.clone(),
+                    routes,
+                ))
+            }
+        } else {
+            None
+        };
+
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
             .merge(crate::projector_routes::projector_router(
@@ -351,6 +373,9 @@ impl AtomoServer {
             .merge(media_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
+        }
+        if let Some(plugin_routes_router) = plugin_routes_router {
+            app = app.merge(plugin_routes_router);
         }
 
         // Optionally serve a bundled Admin UI SPA at /admin. Present in the Docker

@@ -5,10 +5,11 @@ description: Declare unique / check / index / default constraints in schema.ts s
 
 # Proposal: Constraint Expressions in the Schema DSL
 
-> Status: **Proposed (RFC)** · Layer: **Atomo core** (`atomo_schema` +
-> migrations) · Pull trigger: a real consumer that today `ALTER`s Atomo's
-> generated tables to add integrity it can't express (e.g. a consumer's credit
-> ledger).
+> Status: **Phase 2 + most of phase 3 implemented** (`unique`/`index`/`check`
+> shipped; `default` and reconciliation still RFC) · Layer: **Atomo core**
+> (`atomo_schema` + migrations) · Pull trigger: a real consumer that today
+> `ALTER`s Atomo's generated tables to add integrity it can't express (e.g.
+> a credit/billing ledger).
 >
 > Extend the schema DSL so `schema.ts` can declare **unique**, **check**,
 > **index**, and **default** constraints. Atomo's migration generator emits them,
@@ -98,13 +99,37 @@ never reaching the `CREATE TABLE` DDL. `check`/`default` expressions and
 composites aren't modelled at all. Building this = emit DDL from the
 already-parsed attributes (phase 2), then add the rest.
 
+## Using it
+
+Annotate fields and models with comments in `schema.ts` (reuses the same comment
+machinery as access blocks):
+
+```ts
+interface Ledger {
+  id: string;
+  userId: string;        // @index
+  receiptId: string;     // @unique
+  balance: number;
+  // @@check(balance >= 0)
+  // @@unique([userId, receiptId])
+  // @@index([userId, createdAt])
+}
+```
+
+On boot, `generate_migrations` emits the matching DDL (idempotent — safe to re-run):
+`UNIQUE` on the column, `CREATE [UNIQUE] INDEX IF NOT EXISTS idx_…/uq_…`, and a
+guarded `ALTER TABLE … ADD CONSTRAINT chk_… CHECK (…)` (wrapped in a
+`pg_constraint` existence check so re-applying is a no-op).
+
 ## Phasing
 
-1. RFC + this doc.
-2. **`unique` + `index`** (single & composite) → generated DDL. Highest value,
-   lowest risk.
-3. **`check` + `default`**, with safe-apply (validate existing data before adding
-   a `CHECK`; clear error on violation).
+1. ✅ RFC + this doc.
+2. ✅ **`unique` + `index`** (single & composite) → generated DDL. *Shipped:*
+   `// @unique` / `// @index` (field), `// @@unique([…])` / `// @@index([…])`
+   (model).
+3. ⏳ **`check` + `default`** — `// @@check(expr)` **shipped** (guarded so existing
+   data isn't silently invalidated mid-migration; a violation surfaces as the
+   Postgres error). `default` not yet implemented.
 4. **Reconciliation** — drop/alter constraints when the schema changes — plus a
    documented, *tracked* raw-SQL escape hatch (a `migrations/` file Atomo applies
    and records) for the rare thing the DSL still can't express, so nobody

@@ -11,6 +11,23 @@ pub struct PluginManifest {
     /// Plugin runtime: compiled wasm (default) or a Javy-built JS module.
     #[serde(default)]
     pub runtime: PluginRuntime,
+    /// HTTP routes this plugin serves. atomo-server mounts each under
+    /// `/ext/<plugin-name><path>` and dispatches matching requests to the plugin.
+    #[serde(default)]
+    pub routes: Vec<RouteDef>,
+}
+
+/// A plugin-declared HTTP route.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteDef {
+    /// HTTP method, e.g. "GET" / "POST" (case-insensitive).
+    pub method: String,
+    /// Path under the plugin's mount, e.g. `/debit` -> `/ext/<plugin>/debit`.
+    pub path: String,
+    /// When true, the request must carry a valid JWT; the verified principal is
+    /// passed to the handler. Default false (public).
+    #[serde(default)]
+    pub auth: bool,
 }
 
 /// Which runtime executes the plugin.

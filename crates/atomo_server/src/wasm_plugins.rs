@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use atomo_wasm_runtime::{
-    JsRuntime, Permission, PluginManifest, PluginRuntime, WasmPlugin, WasmRuntime,
+    JsRuntime, Permission, PluginManifest, PluginRuntime, RouteDef, WasmPlugin, WasmRuntime,
 };
 use tracing::info;
 
@@ -23,6 +23,8 @@ pub struct WasmPluginManager {
     js_effects: Vec<String>,
     /// Sender to publish plugin-emitted events onto the model-event stream (set at boot).
     event_sender: Option<tokio::sync::broadcast::Sender<atomo::events::ModelEvent>>,
+    /// Plugin-declared HTTP routes: plugin name -> its routes (mounted by atomo-server).
+    routes: HashMap<String, Vec<RouteDef>>,
     plugin_dir: PathBuf,
 }
 
@@ -35,6 +37,7 @@ impl WasmPluginManager {
             js_plugins: HashMap::new(),
             js_effects: Vec::new(),
             event_sender: None,
+            routes: HashMap::new(),
             plugin_dir: plugin_dir.into(),
         })
     }
@@ -65,6 +68,9 @@ impl WasmPluginManager {
         let manifest: PluginManifest = toml::from_str(&manifest_content)?;
         let wasm_path = dir.join(&manifest.entry_point);
         let name = manifest.name.clone();
+        if !manifest.routes.is_empty() {
+            self.routes.insert(name.clone(), manifest.routes.clone());
+        }
         match manifest.runtime {
             PluginRuntime::Js => {
                 info!(plugin = %name, "Loading JS plugin");
@@ -155,6 +161,45 @@ impl WasmPluginManager {
             .chain(self.js_plugins.keys())
             .map(|s| s.as_str())
             .collect()
+    }
+
+    /// Every plugin-declared HTTP route, as `(plugin_name, route)`.
+    pub fn plugin_routes(&self) -> Vec<(String, RouteDef)> {
+        self.routes
+            .iter()
+            .flat_map(|(name, defs)| {
+                let name = name.clone();
+                defs.iter().cloned().map(move |d| (name.clone(), d))
+            })
+            .collect()
+    }
+
+    /// Dispatch an HTTP request to a JS plugin's route handler.
+    ///
+    /// `request_json` is the request envelope — `{ method, path, query, headers, body,
+    /// principal }`. The plugin runs with `{ "route": <request> }` on stdin and returns
+    /// `{ "response": { status, headers, body }, "effects": [...] }`. Effects it records
+    /// (db writes / http / emit) are applied; the `response` object is returned.
+    pub fn call_route(&mut self, plugin_name: &str, request_json: &str) -> Result<String> {
+        if let Some(js) = self.js_plugins.get(plugin_name) {
+            let module = js.module.clone();
+            let perms = js.permissions.clone();
+            let request =
+                serde_json::from_str::<serde_json::Value>(request_json).unwrap_or(serde_json::Value::Null);
+            let envelope = serde_json::json!({ "route": request }).to_string();
+            let out = self.js_runtime.run_module(&module, &envelope)?;
+            let trimmed = out.trim();
+            if trimmed.is_empty() {
+                return Ok("{}".to_string());
+            }
+            let parsed: serde_json::Value = serde_json::from_str(trimmed)?;
+            if let Some(effects) = parsed.get("effects").and_then(|e| e.as_array()) {
+                self.apply_js_effects(plugin_name, &perms, effects)?;
+            }
+            let response = parsed.get("response").cloned().unwrap_or(parsed);
+            return Ok(response.to_string());
+        }
+        anyhow::bail!("plugin '{}' has no JS route handler", plugin_name)
     }
 
     /// Apply the permission-gated effects a JS plugin requested in its output.

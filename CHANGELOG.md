@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Extensibility — Custom HTTP routes**: plugins can now declare `[[routes]]`
+  (`method`/`path`/`auth`) in `plugin.toml`; `atomo-server` mounts each at
+  `/ext/<plugin><path>` and dispatches the request to the plugin's JS (Javy)
+  handler — a synchronous request envelope (`{method, path, query, headers, body,
+  principal}`) in, a `{status, headers, body}` response out (effects applied after,
+  same model as CRUD hooks). `auth = true` requires a valid JWT and injects the
+  verified principal via the existing auth path. This is the *extend-without-forking*
+  seam: app/business endpoints (webhooks, receipt validators, exports) live in a
+  plugin instead of a fork. (`atomo_wasm_runtime::RouteDef`,
+  `WasmPluginManager::{plugin_routes,call_route}`, `atomo_server::plugin_routes`.)
+  Phase 2 of the [Custom Routes RFC](docs/guide/advanced/custom-routes-proposal.md);
+  synchronous transactional DB access in handlers remains phase 3. 7 new tests.
+- **Extensibility — Schema constraints**: `schema.ts` now supports declarable
+  database constraints via annotations — field-level `// @unique` / `// @index`,
+  and model-level `// @@unique([a,b])` / `// @@index([a,b])` / `// @@check(expr)`.
+  `generate_migrations` emits the matching `UNIQUE` columns, `CREATE [UNIQUE] INDEX
+  IF NOT EXISTS`, and guarded `ADD CONSTRAINT ... CHECK` DDL on boot, so data
+  integrity (uniqueness, lookups, value rules) is enforced in Postgres without
+  forking. (`atomo_schema::ModelConstraint`, `atomo::schema::generate_migrations`.)
+  Phase 2 of the [Schema Constraints RFC](docs/guide/advanced/schema-constraints-proposal.md).
+  New parser + migration tests.
 - **DX**: schema hot-reload for the no-Rust path — with `ATOMO_SCHEMA_WATCH=true` the server polls the mounted `schema.ts` (mtime, robust across Docker bind mounts) and exits on change; the compose `restart: unless-stopped` policy relaunches it, re-parsing + migrating on boot. Editing the schema is now edit-and-live (~2s) with no rebuild, restart command, or Rust. Wired into the root compose and the `atomo init` / `create-app` scaffolds.
 - **Realtime**: hardening — per-client **join rate limiting** (token bucket in `atomo_realtime`, opt-in via `HubConfig.join_rate`; over-limit subscribe/session-join gets an `error` frame), and on the standalone relay: per-IP **connection caps** (`ATOMO_REALTIME_MAX_CONN_PER_IP`) and a Prometheus **`/metrics`** endpoint (hub gauges + counters). Join throttle on by default for the relay. 8 new tests (rate limiter, conn cap, metrics format, end-to-end throttle).
 - **Realtime**: standalone `atomo-realtime-server` bin (`crates/atomo_realtime_server`) — runs the hub as a lightweight, **DB-free** relay (default :9100) with **stateless JWT verification** (signature + expiry against the shared `JWT_SECRET`), so it deploys as an edge/region fleet separate from the durable server. A token naming a session (`sid`) auto-binds the connection to it. Paired with `POST /realtime/token` on `atomo_server` (authenticated) that mints these short-lived tokens — the platform→relay handoff (user mgmt + matchmaking stay on the platform tier). Relay JWT verification covered by 4 tests.

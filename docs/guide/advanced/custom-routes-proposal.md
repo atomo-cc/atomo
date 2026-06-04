@@ -5,9 +5,10 @@ description: Let plugins register HTTP endpoints served by atomo-server, so app/
 
 # Proposal: Custom HTTP Routes
 
-> Status: **Proposed (RFC)** · Layer: **Atomo core** (`atomo_server` + the plugin
-> runtime) · Pull trigger: a real consumer that today works around the gap with a
-> separate process (e.g. a billing/metering sidecar).
+> Status: **Phase 2 implemented** (registration + dispatch shipped; phase 3
+> transactional DB access still RFC) · Layer: **Atomo core** (`atomo_server` + the
+> plugin runtime) · Pull trigger: a real consumer that today works around the gap
+> with a separate process (e.g. a billing/metering sidecar).
 >
 > A first-class way for a **plugin to register HTTP endpoints** that
 > `atomo-server` serves and dispatches to a sandboxed handler. This turns Atomo
@@ -97,26 +98,80 @@ The narrower "transactional command hook / conditional-append on `create()`" ide
 route you write the transaction in your own handler. One general primitive
 replaces a family of special-purpose ones.
 
-## Existing scaffolding
+## Implementation
 
-Not a clean slate — but not implemented either. `atomo_server`'s native `Plugin`
-trait already has `register_routes(&self, router) -> Router`, and the
-`PluginManager` calls it — **but the default is a no-op** (`{ router }`), and it's
-on the *in-process Rust* plugin path, **not wired to the WASM/JS plugin runtime**
-users actually write against. So no user plugin can register a route today.
-Building this = expose registration + dispatch to the WASM/JS runtime, then add
-the synchronous transactional DB access (phase 3).
+Phase 2 lives in:
+
+- `atomo_wasm_runtime::plugin` — `RouteDef { method, path, auth }` + a `routes`
+  field on `PluginManifest` (parsed from `[[routes]]` in `plugin.toml`).
+- `atomo_server::wasm_plugins` — `WasmPluginManager` stores per-plugin routes,
+  exposes `plugin_routes()`, and `call_route(plugin, request_json)` runs the JS
+  module with a `{ "route": <request> }` envelope and applies returned effects.
+- `atomo_server::plugin_routes` — `plugin_routes_router(manager, auth, routes)`
+  mounts each route at `/ext/<plugin><path>`, builds the request envelope
+  (method/path/query/headers/body/principal), enforces `auth` via the existing JWT
+  path, and maps the handler's `{status, headers, body}` to the HTTP response.
+- `atomo_server::server` merges that router alongside realtime/workflows.
+
+The older native `Plugin::register_routes(&self, router) -> Router` hook (default
+no-op, in-process Rust only) is **superseded** by this WASM/JS-facing path — that
+was the seam users actually write against.
 
 ## Phasing
 
-1. RFC + this doc.
-2. **Route registration + dispatch** (JS/Javy handlers first): manifest-declared
-   `{method, path}` → handler returning `{status, headers, body}`, mounted under
-   `/ext/<plugin>`; verified principal injected.
+1. ✅ RFC + this doc.
+2. ✅ **Route registration + dispatch** (JS/Javy handlers first): manifest-declared
+   `{method, path, auth}` → handler returning `{status, headers, body}`, mounted
+   under `/ext/<plugin>`; verified principal injected. *Shipped — see "Using it"
+   below.*
 3. **Transactional DB access** in the handler (begin/commit, or a transactional
-   `dbQuery` batch) — the piece that enables money/idempotency logic.
+   `dbQuery` batch) — the piece that enables money/idempotency logic. Still open:
+   the JS (Javy) runtime is stdin→stdout, so its effects (`dbQuery`/`http`) are
+   **deferred** and a handler can't read-modify-write synchronously yet. This needs
+   a synchronous DB host function (WASM handler, or a blocking host call from JS).
 4. Harden: per-route auth + rate limits, request-size caps, timeouts, structured
    logs without PII; WASM handler support.
+
+## Using it (phase 2)
+
+Declare routes in `plugin.toml` and handle them in the plugin's JS entry point.
+
+```toml
+# plugin.toml
+name = "billing"
+runtime = "js"
+entry_point = "plugin.js"
+
+[[routes]]
+method = "POST"
+path = "/debit"
+auth = true        # require a valid JWT; verified principal is injected
+```
+
+The server mounts this at `POST /ext/billing/debit`. On a request it calls the
+plugin's JS module with a `{ "route": <request> }` envelope and expects a
+`{ response, effects }` object back:
+
+```js
+// plugin.js — the module reads the envelope from stdin and writes JSON to stdout
+function handle(env) {
+  const req = env.route;                 // { method, path, query, headers, body, principal }
+  if (req && req.route !== undefined) { /* ... */ }
+  const userId = req.principal && req.principal.id;
+  return {
+    response: { status: 200, headers: { "content-type": "application/json" },
+                body: { ok: true, user: userId, echo: req.body } },
+    // effects: [ { dbQuery: ... }, { emit: ... } ]   // deferred (see phase 3)
+  };
+}
+```
+
+- `request.body` arrives as parsed JSON when the body is JSON, else as a raw
+  string. `headers` is a `{ name: value }` map; `query` is the raw query string.
+- The handler's `response.status` / `response.headers` / `response.body` become the
+  HTTP response (`body` is serialized to JSON unless it's already a string).
+- Effects are applied (permission-gated) after the handler returns — same model as
+  the CRUD hooks. **Synchronous reads mid-handler are not available yet** (phase 3).
 
 ## Open questions
 
