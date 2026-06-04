@@ -16,7 +16,7 @@
     "generate": "pnpm --dir ../.. atomo codegen --output services/crm-service/generated"
   },
   "dependencies": {
-    "@atomo/client-sdk": "workspace:*",
+    "@atomo-cc/client-sdk": "workspace:*",
     "@tanstack/react-query": "^4.29.0",
     "i18next": "26.3.0",
     "react": "^18.2.0",

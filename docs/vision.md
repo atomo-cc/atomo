@@ -278,7 +278,7 @@ flowchart LR
 - Current MVP loop
   1) Model data in `services/crm-service/schema.ts`
   2) Regenerate CRM demo artifacts with `pnpm --filter atomo-crm-service generate`
-  3) Build or watch SDK types with `pnpm --filter @atomo/client-sdk build` or `pnpm --filter @atomo/client-sdk dev`
+  3) Build or watch SDK types with `pnpm --filter @atomo-cc/client-sdk build` or `pnpm --filter @atomo-cc/client-sdk dev`
   4) Inspect Admin UI behavior with `pnpm dev:admin`
   5) Keep Admin UI and SDK type-checks green with `pnpm --filter "./packages/*" test`
 

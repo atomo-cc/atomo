@@ -1,6 +1,6 @@
 // normalize-contact — a REAL, working Atomo JS plugin (Tier 1, via Javy/QuickJS).
 //
-// ABI (what the runtime actually does — not the aspirational @atomo/plugin-sdk):
+// ABI (what the runtime actually does — not the aspirational @atomo-cc/plugin-sdk):
 //   stdin  : { "hook": "<name>", "record": { ...the row... } }
 //   stdout : { "record": { ...possibly modified... }, "effects": [ ... ] }
 //

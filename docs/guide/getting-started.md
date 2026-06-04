@@ -66,7 +66,7 @@ Use the checked-in CRM demo rather than `atomo init` templates.
 pnpm dev:admin
 
 # Terminal 2: SDK watch/build loop
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 
 # Regenerate CRM demo artifacts after schema changes
 pnpm --filter atomo-crm-service generate
@@ -218,7 +218,7 @@ Then run:
 
 ```bash
 pnpm --filter atomo-crm-service generate
-pnpm --filter @atomo/client-sdk build
+pnpm --filter @atomo-cc/client-sdk build
 ```
 
 Use the Admin UI dev server to inspect the UI impact while the CRM schema and SDK types converge.

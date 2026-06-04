@@ -26,7 +26,7 @@ importers:
 
   packages/atomo-admin-ui:
     dependencies:
-      '@atomo/client-sdk':
+      '@atomo-cc/client-sdk':
         specifier: workspace:*
         version: link:../atomo-client-sdk
       '@hookform/resolvers':
@@ -172,7 +172,7 @@ importers:
 
   services/crm-service:
     dependencies:
-      '@atomo/client-sdk':
+      '@atomo-cc/client-sdk':
         specifier: workspace:*
         version: link:../../packages/atomo-client-sdk
       '@tanstack/react-query':

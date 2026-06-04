@@ -1,7 +1,7 @@
 /**
  * Company Data Enrichment Plugin — ⚠️ ASPIRATIONAL / ILLUSTRATIVE ONLY
  *
- * This sketch uses a high-level `@atomo/plugin-sdk` (`onEvent`/`fetch`/`logger`) that does
+ * This sketch uses a high-level `@atomo-cc/plugin-sdk` (`onEvent`/`fetch`/`logger`) that does
  * NOT yet exist. It illustrates the intended ergonomics, not the current ABI.
  *
  * For a REAL, working plugin against the actual runtime ABI (stdin `{hook, record}` ->
@@ -11,7 +11,7 @@
  * when a company is created or its website is updated.
  */
 
-import { onEvent, fetch, logger } from '@atomo/plugin-sdk';
+import { onEvent, fetch, logger } from '@atomo-cc/plugin-sdk';
 
 // Listen for company creation and updates
 onEvent('Company.Created', enrichCompanyData);

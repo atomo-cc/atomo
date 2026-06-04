@@ -1,5 +1,5 @@
 {
-  "name": "@atomo/admin-ui",
+  "name": "@atomo-cc/admin-ui",
   "version": "0.1.0",
   "description": "Universal admin interface for Atomo applications",
   "type": "module",
@@ -59,6 +59,6 @@
     "vitest": "^0.34.6"
   },
   "peerDependencies": {
-    "@atomo/client-sdk": "workspace:*"
+    "@atomo-cc/client-sdk": "workspace:*"
   }
 }

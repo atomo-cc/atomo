@@ -14,14 +14,14 @@
 ## 安装
 
 ```bash
-npm install @atomo/client-sdk
+npm install @atomo-cc/client-sdk
 # 或
-pnpm add @atomo/client-sdk
+pnpm add @atomo-cc/client-sdk
 ```
 
 如果使用React hooks：
 ```bash
-npm install @atomo/client-sdk react
+npm install @atomo-cc/client-sdk react
 ```
 
 ## 快速开始
@@ -29,7 +29,7 @@ npm install @atomo/client-sdk react
 ### 1. 创建客户端实例
 
 ```typescript
-import { AtomoClient } from '@atomo/client-sdk';
+import { AtomoClient } from '@atomo-cc/client-sdk';
 
 const client = new AtomoClient({
   endpoint: 'http://localhost:3000/graphql',
@@ -71,7 +71,7 @@ import {
   AtomoProvider, 
   useContacts, 
   useCreateContact 
-} from '@atomo/client-sdk/hooks';
+} from '@atomo-cc/client-sdk/hooks';
 
 // App组件
 function App() {
@@ -437,7 +437,7 @@ atomo generate
 
 ```bash
 pnpm --filter atomo-crm-service generate
-pnpm --filter @atomo/client-sdk build
+pnpm --filter @atomo-cc/client-sdk build
 ```
 
 `types.ts` 当前是 CRM demo 的生成类型快照。业务模型类型的源头仍在

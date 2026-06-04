@@ -71,7 +71,7 @@ pnpm install
 pnpm dev:admin
 
 # Terminal 2: TypeScript SDK watch/build loop
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 
 # CRM demo source of truth
 cd services/crm-service
@@ -81,7 +81,7 @@ pnpm generate
 推荐 MVP 循环：
 1. 在 `services/crm-service/schema.ts` 调整 CRM 数据模型。
 2. 运行 `pnpm --filter atomo-crm-service generate` 更新 CRM 生成物。
-3. 运行 `pnpm --filter @atomo/client-sdk build` 验证 SDK 类型输出。
+3. 运行 `pnpm --filter @atomo-cc/client-sdk build` 验证 SDK 类型输出。
 4. 用 `pnpm dev:admin` 检查 Admin UI 对生成 schema/metadata 的消费。
 
 `packages/atomo-admin-ui` 和 `packages/atomo-client-sdk` 都应保持 type-check 通过；用 `pnpm --filter "./packages/*" test` 验证前端/SDK 基线。
@@ -207,7 +207,7 @@ pnpm install
 
 # 当前推荐开发入口
 pnpm dev:admin
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 pnpm --filter atomo-crm-service generate
 ```
 

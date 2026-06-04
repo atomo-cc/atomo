@@ -5,7 +5,7 @@ Use the checked-in CRM example service as the current MVP project.
 ```bash
 # From repo root
 pnpm dev:admin
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 pnpm --filter atomo-crm-service generate
 ```
 
@@ -15,7 +15,7 @@ Key files:
 - `plugins/` — WASM extensions
 - `workflows/` — business flows
 
-Edit `services/crm-service/schema.ts`, regenerate CRM artifacts, then verify SDK output with `pnpm --filter @atomo/client-sdk build`.
+Edit `services/crm-service/schema.ts`, regenerate CRM artifacts, then verify SDK output with `pnpm --filter @atomo-cc/client-sdk build`.
 
 Keep the frontend baseline green with `pnpm --filter "./packages/*" test`, which type-checks the Admin UI and SDK packages.
 
@@ -31,7 +31,7 @@ After changing the CRM schema or seed data:
 
 ```bash
 pnpm --filter atomo-crm-service generate
-pnpm --filter @atomo/client-sdk build
+pnpm --filter @atomo-cc/client-sdk build
 pnpm --filter "./packages/*" test
 ```
 

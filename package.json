@@ -1,14 +1,14 @@
 {
-  "name": "@atomo/monorepo",
+  "name": "@atomo-cc/monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Atomo Content Core - The Next-Generation Content Management Platform",
   "scripts": {
-    "dev:admin": "pnpm --filter @atomo/admin-ui dev",
+    "dev:admin": "pnpm --filter @atomo-cc/admin-ui dev",
     "dev:service": "atomo dev",
-    "dev:docs": "pnpm --filter @atomo/docs dev",
+    "dev:docs": "pnpm --filter @atomo-cc/docs dev",
     "build:core": "cargo build --workspace --release",
-    "build:docs": "pnpm --filter @atomo/docs build",
+    "build:docs": "pnpm --filter @atomo-cc/docs build",
     "build:all": "pnpm build:core && pnpm --filter \"./packages/*\" build && pnpm build:docs",
     "atomo": "cargo run -p atomo_cli --",
     "test": "cargo test --workspace && pnpm --filter \"./packages/*\" test",

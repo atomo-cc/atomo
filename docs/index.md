@@ -73,7 +73,7 @@ atomo dev
 
 # From the monorepo
 pnpm dev:admin
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 pnpm --filter atomo-crm-service generate
 ```
 

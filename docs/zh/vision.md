@@ -259,7 +259,7 @@ flowchart LR
 - 当前 MVP 循环
   1) 在 `services/crm-service/schema.ts` 建模
   2) 用 `pnpm --filter atomo-crm-service generate` 重新生成 CRM demo artifacts
-  3) 用 `pnpm --filter @atomo/client-sdk build` 或 `pnpm --filter @atomo/client-sdk dev` 构建/监听 SDK 类型
+  3) 用 `pnpm --filter @atomo-cc/client-sdk build` 或 `pnpm --filter @atomo-cc/client-sdk dev` 构建/监听 SDK 类型
   4) 用 `pnpm dev:admin` 检查 Admin UI 行为
   5) 用 `pnpm --filter "./packages/*" test` 保持 Admin UI 与 SDK type-check 通过
 

@@ -38,7 +38,7 @@ cargo run --bin atomo-cli -- dev  # 会报错：schema.ts not found
 ```bash
 # From repo root
 pnpm dev:admin
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 pnpm --filter atomo-crm-service generate
 ```
 
@@ -46,7 +46,7 @@ CRM demo 的 source of truth 是 `services/crm-service/schema.ts`。修改 schem
 
 ```bash
 pnpm --filter atomo-crm-service generate
-pnpm --filter @atomo/client-sdk build
+pnpm --filter @atomo-cc/client-sdk build
 ```
 
 前端/SDK 基线应保持通过：`pnpm --filter "./packages/*" test` 会验证 Admin UI 与 TypeScript SDK。
@@ -104,7 +104,7 @@ services/crm-service/
 pnpm dev --service crm
 
 pnpm dev:admin
-pnpm --filter @atomo/client-sdk dev
+pnpm --filter @atomo-cc/client-sdk dev
 pnpm --filter atomo-crm-service generate
 ```
 
@@ -136,7 +136,7 @@ pnpm --filter atomo-crm-service generate
 编辑 `schema.ts` 文件，保存后：
 
 - 运行 `pnpm --filter atomo-crm-service generate`
-- 运行 `pnpm --filter @atomo/client-sdk build`
+- 运行 `pnpm --filter @atomo-cc/client-sdk build`
 - 在 Admin UI dev server 中检查 schema/metadata 消费效果
 
 ### 4. 添加业务逻辑
@@ -145,7 +145,7 @@ pnpm --filter atomo-crm-service generate
 
 ```typescript
 // plugins/validate-email/index.ts
-import { onEvent } from "@atomo/plugin-sdk";
+import { onEvent } from "@atomo-cc/plugin-sdk";
 
 onEvent("Contact.Created", async (event) => {
   const { email } = event.payload;

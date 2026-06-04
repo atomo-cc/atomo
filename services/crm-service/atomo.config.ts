@@ -9,7 +9,7 @@
  * - Real-time subscriptions
  */
 
-import { defineConfig } from '@atomo/core';
+import { defineConfig } from '@atomo-cc/core';
 
 export default defineConfig({
   // Service metadata

@@ -91,12 +91,12 @@ export const REACT_HOOKS_USAGE_EXAMPLE = `
 // 例如：在 packages/atomo-crm-app 中创建 CRM 特定的hooks
 
 // 1. 安装核心SDK
-npm install @atomo/client-sdk
+npm install @atomo-cc/client-sdk
 
 // 2. 在CRM应用中创建业务特定的hooks
 // packages/atomo-crm-app/src/hooks/useContacts.ts
-import { useEntity, AtomoClient } from '@atomo/client-sdk';
-import { Contact, ContactQueryOptions } from '@atomo/client-sdk/types';
+import { useEntity, AtomoClient } from '@atomo-cc/client-sdk';
+import { Contact, ContactQueryOptions } from '@atomo-cc/client-sdk/types';
 
 export function useContacts(options?: ContactQueryOptions) {
   const client = useAtomoClient();
@@ -104,7 +104,7 @@ export function useContacts(options?: ContactQueryOptions) {
 }
 
 // 3. Provider设置 (App.tsx)
-import { AtomoClient, AtomoProvider } from '@atomo/client-sdk';
+import { AtomoClient, AtomoProvider } from '@atomo-cc/client-sdk';
 
 const client = new AtomoClient({
   endpoint: 'http://localhost:3000/graphql',
