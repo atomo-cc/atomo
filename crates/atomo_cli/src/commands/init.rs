@@ -123,7 +123,7 @@ services:
       retries: 12
 
   server:
-    image: ghcr.io/chris533/atomo-server:latest
+    image: ghcr.io/atomo-cc/atomo-server:latest
     depends_on:
       db:
         condition: service_healthy

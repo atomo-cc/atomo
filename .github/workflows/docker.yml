@@ -43,7 +43,7 @@ jobs:
         with:
           context: .
           push: true
-          # Owner is lowercased for GHCR; image lives at ghcr.io/chris533/atomo-server.
-          tags: ghcr.io/chris533/atomo-server:${{ github.event.inputs.tag }}
+          # Owner is lowercased for GHCR; image lives at ghcr.io/atomo-cc/atomo-server.
+          tags: ghcr.io/atomo-cc/atomo-server:${{ github.event.inputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

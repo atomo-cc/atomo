@@ -406,7 +406,7 @@ if (error) {
 
 ```bash
 # 克隆项目
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo/packages/atomo-client-sdk
 
 # 安装依赖
@@ -459,8 +459,8 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 ## 支持
 
 - 📖 [文档](https://docs.atomo.dev)
-- 💬 [讨论区](https://github.com/Chris533/atomo/discussions)
-- 🐛 [问题反馈](https://github.com/Chris533/atomo/issues)
+- 💬 [讨论区](https://github.com/atomo-cc/atomo/discussions)
+- 🐛 [问题反馈](https://github.com/atomo-cc/atomo/issues)
 - 📧 [邮件支持](mailto:support@atomo.dev)
 
 ## Publishing (maintainers)

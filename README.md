@@ -2,8 +2,8 @@
 
 > 下一代内容管理平台 - 事件溯源架构 + AI 原生设计
 
-[![CI](https://github.com/Chris533/atomo/workflows/CI/badge.svg)](https://github.com/Chris533/atomo/actions)
-[![Release](https://github.com/Chris533/atomo/workflows/Release/badge.svg)](https://github.com/Chris533/atomo/releases)
+[![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
+[![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Atomo 是一个现代化的内容管理平台，基于事件溯源架构设计，原生支持 AI 集成，为企业级应用提供高性能、可扩展的内容管理解决方案。
@@ -28,7 +28,7 @@ Atomo 是一个现代化的内容管理平台，基于事件溯源架构设计�
 cargo install atomo_cli
 
 # 或下载预编译二进制文件
-curl -L https://github.com/Chris533/atomo/releases/latest/download/atomo-linux-x86_64 -o atomo
+curl -L https://github.com/atomo-cc/atomo/releases/latest/download/atomo-linux-x86_64 -o atomo
 chmod +x atomo
 ```
 
@@ -191,7 +191,7 @@ export interface Product {
 
 ```bash
 # 安装依赖
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 cargo build
 pnpm install
@@ -201,7 +201,7 @@ cargo run -p atomo_cli -- dev
 
 # 前端
 
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 pnpm install
 
@@ -337,4 +337,4 @@ pub fn process_content(content: &str) -> String {
 
 **让内容管理变得简单而强大！** 🚀
 
-[开始使用](https://github.com/Chris533/atomo/releases) | [查看文档](docs/) | [加入社区](https://github.com/Chris533/atomo/discussions)
+[开始使用](https://github.com/atomo-cc/atomo/releases) | [查看文档](docs/) | [加入社区](https://github.com/atomo-cc/atomo/discussions)

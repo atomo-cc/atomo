@@ -19,7 +19,7 @@ Templates: `crm` (default), `blog`, `ecommerce`, `default`.
 To run the bundled CRM demo from the repo instead:
 
 ```bash
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 docker compose up --build        # http://localhost:3000
 curl http://localhost:3000/health   # -> OK
@@ -41,7 +41,7 @@ Only needed if you build from source (contributors / core work):
 ## From Source (Monorepo)
 ```bash
 # Clone and install
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 pnpm install
 

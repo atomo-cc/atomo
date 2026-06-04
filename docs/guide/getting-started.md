@@ -27,7 +27,7 @@ The fastest path, and the only one that needs **no Rust toolchain**. It brings u
 PostgreSQL plus the server wired to the CRM demo schema:
 
 ```bash
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 docker compose up --build        # Postgres + atomo-server on :3000
 ```
@@ -42,7 +42,7 @@ different `schema.ts` to run your own model.
 Needed only if you're hacking on the CLI/server crates:
 
 ```bash
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 cargo build --release            # builds the workspace (atomo-cli, atomo-server, ...)
 cargo install --path crates/atomo_cli   # optional: put `atomo` on your PATH
@@ -70,7 +70,7 @@ cd my-crm
 
 ### Manual Installation - Frontend
 ```bash
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 pnpm install
 ```
@@ -254,7 +254,7 @@ Now that you have a running application, explore these features:
 
 - 📖 **[Core Concepts](/guide/event-sourcing)** - Understand Atomo's architecture
 - ⚙️ **[Configuration](/guide/configuration)** - Full environment-variable reference
-- 🐛 **[GitHub Issues](https://github.com/Chris533/atomo/issues)** - Report bugs or request features
-- 💬 **[GitHub Discussions](https://github.com/Chris533/atomo/discussions)** - Questions and discussion
+- 🐛 **[GitHub Issues](https://github.com/atomo-cc/atomo/issues)** - Report bugs or request features
+- 💬 **[GitHub Discussions](https://github.com/atomo-cc/atomo/discussions)** - Questions and discussion
 
 Welcome to the future of application development! 🚀

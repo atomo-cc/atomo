@@ -145,5 +145,5 @@ Atomo is pre-1.0; APIs may change between releases. There is no hosted API servi
 ## Support
 
 - 📖 **[Guides](/guide/)** - Step-by-step tutorials
-- 🐛 **[GitHub Issues](https://github.com/Chris533/atomo/issues)** - Bug reports
-- 💬 **[GitHub Discussions](https://github.com/Chris533/atomo/discussions)** - Questions and discussion
+- 🐛 **[GitHub Issues](https://github.com/atomo-cc/atomo/issues)** - Bug reports
+- 💬 **[GitHub Discussions](https://github.com/atomo-cc/atomo/discussions)** - Questions and discussion

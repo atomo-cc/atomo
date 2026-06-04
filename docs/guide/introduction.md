@@ -168,8 +168,8 @@ Or explore these key concepts:
 
 ## Community & Support
 
-- 📖 **[GitHub](https://github.com/Chris533/atomo)** - Source code and issues
-- 💬 **[GitHub Discussions](https://github.com/Chris533/atomo/discussions)** - Questions and discussion
+- 📖 **[GitHub](https://github.com/atomo-cc/atomo)** - Source code and issues
+- 💬 **[GitHub Discussions](https://github.com/atomo-cc/atomo/discussions)** - Questions and discussion
 
 ---
 

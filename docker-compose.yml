@@ -28,7 +28,7 @@ services:
   server:
     build: .
     # Once the image is published, skip the local build and pull instead:
-    # image: ghcr.io/chris533/atomo-server:latest
+    # image: ghcr.io/atomo-cc/atomo-server:latest
     depends_on:
       db:
         condition: service_healthy

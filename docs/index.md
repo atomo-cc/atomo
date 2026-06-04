@@ -14,7 +14,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/Chris533/atomo
+      link: https://github.com/atomo-cc/atomo
 
 features:
   - icon: ⚡
@@ -100,7 +100,7 @@ Atomo transforms how you build applications by providing:
 Atomo is pre-1.0 and runs from source today (no hosted installer yet):
 
 ```bash
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 cargo build --release        # build the workspace (atomo-cli, atomo-server, ...)
 ```
@@ -109,7 +109,7 @@ Then boot a service against Postgres — see the [Getting Started guide](/guide/
 for the verified end-to-end run (env vars, login, GraphQL).
 
 
-git clone https://github.com/Chris533/atomo.git
+git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 pnpm install
 pnpm dev:admin
