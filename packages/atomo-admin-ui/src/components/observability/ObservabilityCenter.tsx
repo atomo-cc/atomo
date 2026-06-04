@@ -210,7 +210,7 @@ export function ObservabilityCenter() {
               <CardContent className="p-4 text-center">
                 <Server className="h-6 w-6 text-blue-600 mx-auto mb-2" />
                 <div className="text-2xl font-bold text-blue-600">
-                  {metrics.totalEvents.toLocaleString()}
+                  {(metrics.totalEvents ?? 0).toLocaleString()}
                 </div>
                 <div className="text-xs text-gray-600">总事件数</div>
               </CardContent>

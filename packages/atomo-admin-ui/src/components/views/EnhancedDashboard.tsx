@@ -421,7 +421,7 @@ function MetricCard({ title, value, growth, icon, color, prefix = '', onClick }:
           <div>
             <p className="text-sm font-medium text-gray-600">{title}</p>
             <p className="text-3xl font-bold text-gray-900">
-              {prefix}{value.toLocaleString()}
+              {prefix}{(value ?? 0).toLocaleString()}
             </p>
           </div>
           {icon}
@@ -655,8 +655,8 @@ function GoalTracker({ goals }: { goals: GoalItem[] }) {
                   </div>
                   <Progress value={progress} className="h-3" />
                   <div className="flex justify-between text-xs text-gray-500">
-                    <span>{goal.current.toLocaleString()}</span>
-                    <span>{goal.target.toLocaleString()}</span>
+                    <span>{(goal.current ?? 0).toLocaleString()}</span>
+                    <span>{(goal.target ?? 0).toLocaleString()}</span>
                   </div>
                 </div>
                 
