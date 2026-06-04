@@ -67,8 +67,10 @@ class AtomoApiClient {
       return `http://${currentHost}:3000`
     }
 
-    // In production, use relative URLs (should be proxied)
-    return '/api'
+    // In production the SPA is served same-origin (e.g. by atomo-server at
+    // /admin), so call the API at the root of the current origin: '' yields
+    // root-relative URLs like /graphql and /media, matching the server routes.
+    return ''
   }
 
   /**

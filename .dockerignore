@@ -12,7 +12,7 @@ node_modules/
 .env
 .env.*
 !.env.example
-# JS/docs/app trees are not Cargo workspace members — not needed to build the server.
-packages/
+# docs/templates are not needed by either build stage. packages/ IS needed —
+# the admin-builder stage compiles the Admin UI SPA from packages/atomo-admin-ui.
 docs/
 templates/

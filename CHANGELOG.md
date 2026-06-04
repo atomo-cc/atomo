@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Admin UI**: the `atomo-server` image now **bundles the Admin UI**, served same-origin at `/admin` (e.g. `http://localhost:3000/admin`) via a static-file route (gated on `ATOMO_ADMIN_DIR`). A multi-stage Docker build compiles the SPA (Node, `base=/admin/`) — so users get the API *and* admin UI from one image with no Node/Rust/clone. Production API base fixed to root-relative so same-origin calls (`/graphql`, `/media`) work.
 - **Distribution**: Docker image for `atomo-server` (multi-stage `Dockerfile`) + root `docker-compose.yml` (Postgres + server) so the backend runs with **no Rust toolchain on the host** — `docker compose up --build`. Docs updated (install/getting-started/deployment) with a "Run without Rust" path.
 - **Distribution**: `atomo init` now scaffolds a `docker-compose.yml` (pulls the published `ghcr.io/chris533/atomo-server` image, mounts the project's `atomo/schema.ts`) and a "Run it (no Rust required)" README — so a generated project runs with `docker compose up`, no Rust or CLI build.
 - **CI**: `docker.yml` workflow (manual dispatch) builds and pushes the `atomo-server` image to GHCR.

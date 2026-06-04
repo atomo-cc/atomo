@@ -352,6 +352,22 @@ impl AtomoServer {
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }
+
+        // Optionally serve a bundled Admin UI SPA at /admin. Present in the Docker
+        // image (ATOMO_ADMIN_DIR=/app/admin); absent in plain `cargo run`, where
+        // this is simply skipped. Unknown /admin/* paths fall back to index.html
+        // so client-side routing works.
+        let admin_dir = std::env::var("ATOMO_ADMIN_DIR").unwrap_or_else(|_| "admin".to_string());
+        let admin_index = std::path::Path::new(&admin_dir).join("index.html");
+        if admin_index.is_file() {
+            let serve = tower_http::services::ServeDir::new(&admin_dir)
+                .not_found_service(tower_http::services::ServeFile::new(admin_index));
+            app = app.nest_service("/admin", serve);
+            info!("   ✓ Admin UI served at /admin (dir: {})", admin_dir);
+        } else {
+            info!("   • Admin UI not bundled ({}/index.html absent); /admin disabled", admin_dir);
+        }
+
         let mut app = app
             .layer(svc_builder)
             .layer(middleware::from_fn(

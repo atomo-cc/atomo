@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:server": "tsc && vite build --base=/admin/",
     "preview": "vite preview",
     "test": "pnpm type-check && vitest run",
     "test:unit": "vitest run",

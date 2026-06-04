@@ -1,8 +1,23 @@
 # syntax=docker/dockerfile:1
 #
-# atomo-server image — lets users run the Atomo backend with **no Rust toolchain
-# on the host**. Rust only runs inside the build stage; the runtime image carries
-# just the compiled binary. Build: `docker build -t atomo-server .`
+# atomo-server image — lets users run the Atomo backend (and bundled Admin UI)
+# with **no Rust or Node toolchain on the host**. Both compilers run only inside
+# build stages; the runtime image carries just the server binary + the built SPA.
+# Build: `docker build -t atomo-server .`
+
+# ---- Admin UI stage: build the SPA, served same-origin at /admin ----
+FROM node:20-slim AS admin-builder
+RUN corepack enable
+WORKDIR /repo
+# A minimal workspace (just packages/*) avoids pulling in services/ and docs/.
+COPY package.json pnpm-lock.yaml ./
+RUN printf 'packages:\n  - "packages/*"\n' > pnpm-workspace.yaml
+COPY packages ./packages
+# Install the admin app + its workspace deps, build the SDK it imports, then build
+# the SPA with base=/admin/ so its assets resolve under the served path.
+RUN pnpm install --filter "@atomo-cc/admin-ui..." --no-frozen-lockfile \
+    && pnpm --filter "@atomo-cc/client-sdk" run build \
+    && pnpm --filter "@atomo-cc/admin-ui" run build:server
 
 # ---- Build stage: compile the server from the Cargo workspace ----
 FROM rust:slim-bookworm AS builder
@@ -23,9 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd -r -u 10001 atomo
 WORKDIR /app
 COPY --from=builder /src/target/release/atomo-server /usr/local/bin/atomo-server
+# Bundled Admin UI SPA — the server serves it at /admin when ATOMO_ADMIN_DIR exists.
+COPY --from=admin-builder /repo/packages/atomo-admin-ui/dist /app/admin
 # The schema is supplied at runtime (mounted or baked). Defaults below can be
 # overridden with -e / compose `environment:`.
 ENV ATOMO_SCHEMA_PATH=/app/schema.ts \
+    ATOMO_ADMIN_DIR=/app/admin \
     HOST=0.0.0.0 \
     PORT=3000
 EXPOSE 3000

@@ -72,8 +72,9 @@ docker compose up                    # http://localhost:3000
 curl http://localhost:3000/health    # -> OK
 ```
 
-Your data model lives in `atomo/schema.ts`. Edit it and re-run `docker compose up`
-to apply changes — the server re-parses the schema and runs migrations on boot.
+The image bundles the **Admin UI** at <http://localhost:3000/admin>. Your data
+model lives in `atomo/schema.ts`; edit it and re-run `docker compose up` to apply
+changes — the server re-parses the schema and runs migrations on boot.
 
 ## Develop with the CLI (optional, needs Rust)
 

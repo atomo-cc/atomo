@@ -12,10 +12,12 @@ docker compose up --build        # http://localhost:3000
 curl http://localhost:3000/health   # -> OK
 ```
 
-`docker compose` builds the server inside a container (Rust never touches your
-host) and wires it to the CRM demo schema + a fresh Postgres. To run a different
-model, repoint the `server.volumes` schema mount in `docker-compose.yml`. See
-[Deployment](/guide/tutorials/deployment) for running the image in production.
+The image bundles the **Admin UI** — open <http://localhost:3000/admin> once it's
+up. `docker compose` builds the server (and the SPA) inside containers — neither
+Rust nor Node touches your host — and wires it to the CRM demo schema + a fresh
+Postgres. To run a different model, repoint the `server.volumes` schema mount in
+`docker-compose.yml`. See [Deployment](/guide/tutorials/deployment) for running
+the image in production.
 
 ## Prerequisites (from source)
 Only needed if you build from source (contributors / core work):
