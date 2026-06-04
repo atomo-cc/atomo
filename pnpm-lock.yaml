@@ -170,6 +170,8 @@ importers:
         specifier: ^0.34.6
         version: 0.34.6
 
+  packages/create-app: {}
+
   services/crm-service:
     dependencies:
       '@atomo-cc/client-sdk':

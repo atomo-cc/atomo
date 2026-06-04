@@ -1,9 +1,22 @@
 # Installation
 
-## Run without Rust (Docker)
+## Start a new project (no Rust)
 
-The quickest way to run the backend with **no Rust toolchain** on your machine —
-Postgres + the server, one command:
+To scaffold **your own** project, use the JS creator — it writes a `schema.ts`, a
+`docker-compose.yml` (pulling the prebuilt server image), and a README, then you
+run it with Docker. No Rust, no clone:
+
+```bash
+npm create @atomo-cc/app my-crm          # or: -- --template ecommerce
+cd my-crm
+docker compose up                        # API :3000, Admin UI :3000/admin
+```
+
+Templates: `crm` (default), `blog`, `ecommerce`, `default`.
+
+## Try the demo (no Rust)
+
+To run the bundled CRM demo from the repo instead:
 
 ```bash
 git clone https://github.com/Chris533/atomo.git

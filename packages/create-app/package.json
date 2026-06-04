@@ -1,0 +1,35 @@
+{
+  "name": "@atomo-cc/create-app",
+  "version": "0.1.0",
+  "description": "Scaffold a new Atomo project and run it with no Rust (Docker)",
+  "type": "module",
+  "bin": {
+    "create-atomo-app": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "templates"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "atomo",
+    "scaffold",
+    "create",
+    "starter",
+    "cli"
+  ],
+  "scripts": {
+    "sync:templates": "node -e \"import('node:fs').then(fs=>fs.cpSync('../../crates/atomo_cli/templates','templates',{recursive:true}))\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chris533/atomo.git",
+    "directory": "packages/create-app"
+  }
+}
