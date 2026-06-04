@@ -24,6 +24,10 @@
     "./hooks": {
       "import": "./dist/hooks.js",
       "types": "./dist/hooks.d.ts"
+    },
+    "./realtime": {
+      "import": "./dist/realtime.js",
+      "types": "./dist/realtime.d.ts"
     }
   },
   "files": [

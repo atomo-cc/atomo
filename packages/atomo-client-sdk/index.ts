@@ -554,6 +554,7 @@ export class AtomoClient {
 
 export * from './types';
 export * from './core-types';
+export * from './realtime';
 
 // 默认导出
 export default AtomoClient;
