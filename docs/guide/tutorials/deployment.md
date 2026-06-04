@@ -20,9 +20,10 @@ The image takes its configuration from environment variables — at minimum
 demo schema by default). On boot the server parses the schema, runs migrations,
 seeds the admin, and starts listening on `PORT`.
 
-The image also **bundles the Admin UI**, served same-origin at `/admin` (e.g.
-`http://localhost:3000/admin`) — no separate frontend deploy. It's enabled
-automatically when the SPA is present (`ATOMO_ADMIN_DIR`, default `/app/admin`).
+The image is **generic and service-agnostic** — it bundles no admin UI. The server
+can serve a SPA at `/admin`, but only when `ATOMO_ADMIN_DIR` points at a built admin
+bundle you provide (mount it, or bake it into a derived image). A game/relay backend
+ships none; an admin-needing app supplies its own.
 
 > Publishing: once pushed to a registry (e.g. `ghcr.io/<org>/atomo-server`),
 > replace `build: .` in `docker-compose.yml` with `image: …` to pull instead of

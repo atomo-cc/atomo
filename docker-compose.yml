@@ -6,7 +6,6 @@
 #
 #   docker compose up --build
 #   curl http://localhost:3000/health        # -> OK
-#   open  http://localhost:3000/admin        # bundled Admin UI
 #
 services:
   db:
@@ -29,12 +28,17 @@ services:
     build: .
     # Once the image is published, skip the local build and pull instead:
     # image: ghcr.io/atomo-cc/atomo-server:latest
+    # Restart policy powers schema hot-reload: on a schema edit the server exits
+    # and is relaunched here, re-parsing + migrating on boot (edit-and-live).
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://atomo:atomo@db:5432/atomo_dev
       ATOMO_SCHEMA_PATH: /app/schema.ts
+      # Watch the mounted schema and auto-reload (~2s) on edit. No host toolchain.
+      ATOMO_SCHEMA_WATCH: "true"
       # Dev-only secret/credentials — override for anything real.
       JWT_SECRET: dev-insecure-secret-change-me
       ADMIN_EMAIL: admin@example.com

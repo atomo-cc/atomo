@@ -1,26 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# atomo-server image — lets users run the Atomo backend (and bundled Admin UI)
-# with **no Rust or Node toolchain on the host**. Both compilers run only inside
-# build stages; the runtime image carries just the server binary + the built SPA.
-# Build: `docker build -t atomo-server .`
-
-# ---- Admin UI stage: build the SPA, served same-origin at /admin ----
-FROM node:20-slim AS admin-builder
-RUN corepack enable
-WORKDIR /repo
-# Workspace for the SPA build. The admin UI imports CRM-service components via
-# relative paths (services/crm-service/admin-ui/...), so services/ must be present
-# and its deps installed — hence packages/* + services/* and a full install.
-COPY package.json pnpm-lock.yaml ./
-RUN printf 'packages:\n  - "packages/*"\n  - "services/*"\n' > pnpm-workspace.yaml
-COPY packages ./packages
-COPY services ./services
-# Build the SDK the admin UI imports, then the SPA with base=/admin/ so its assets
-# resolve under the served path.
-RUN pnpm install --no-frozen-lockfile \
-    && pnpm --filter "@atomo-cc/client-sdk" run build \
-    && pnpm --filter "@atomo-cc/admin-ui" run build:server
+# atomo-server image — runs the Atomo backend with **no Rust toolchain on the
+# host**. Rust runs only in the build stage; the runtime image carries just the
+# compiled binary. Generic and service-agnostic — it bundles no admin UI (see
+# below). Build: `docker build -t atomo-server .`
 
 # ---- Build stage: compile the server from the Cargo workspace ----
 FROM rust:slim-bookworm AS builder
@@ -41,12 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd -r -u 10001 atomo
 WORKDIR /app
 COPY --from=builder /src/target/release/atomo-server /usr/local/bin/atomo-server
-# Bundled Admin UI SPA — the server serves it at /admin when ATOMO_ADMIN_DIR exists.
-COPY --from=admin-builder /repo/packages/atomo-admin-ui/dist /app/admin
 # The schema is supplied at runtime (mounted or baked). Defaults below can be
 # overridden with -e / compose `environment:`.
+#
+# Admin UI: the server serves a SPA at /admin only when ATOMO_ADMIN_DIR points at
+# a built admin bundle (absent here). The image stays generic — an app that wants
+# an admin UI mounts its own build there; a game/relay backend ships none.
 ENV ATOMO_SCHEMA_PATH=/app/schema.ts \
-    ATOMO_ADMIN_DIR=/app/admin \
     HOST=0.0.0.0 \
     PORT=3000
 EXPOSE 3000

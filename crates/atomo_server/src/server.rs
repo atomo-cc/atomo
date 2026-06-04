@@ -392,8 +392,58 @@ impl AtomoServer {
         info!("🌐 Server running at http://{}", addr);
         info!("   GraphQL Playground: http://{}/graphql", addr);
 
+        // Optional schema hot-reload (no Rust on the host): the schema is a
+        // mounted file in the container, so a background poll detects edits and
+        // exits cleanly. The orchestrator's restart policy relaunches the server,
+        // which re-parses the schema + migrates on boot — edit-and-live in ~2s.
+        if env_flag("ATOMO_SCHEMA_WATCH") {
+            spawn_schema_watcher(self.config.schema_path.clone());
+        }
+
         serve(listener, app).await?;
 
         Ok(())
     }
+}
+
+/// True for an env var set to `true`/`1`.
+fn env_flag(key: &str) -> bool {
+    matches!(std::env::var(key).as_deref(), Ok("true") | Ok("1"))
+}
+
+fn schema_mtime(path: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+/// Poll the schema file's mtime; on change, exit so the orchestrator restarts the
+/// server with the new schema. Polling (not inotify) is used because file events
+/// don't reliably cross Docker bind mounts.
+fn spawn_schema_watcher(path: String) {
+    let interval_secs: u64 = std::env::var("ATOMO_SCHEMA_WATCH_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(2);
+    tokio::spawn(async move {
+        let mut last = schema_mtime(&path);
+        info!(
+            "👀 Watching {} for changes every {}s (exit-on-change reload)",
+            path, interval_secs
+        );
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        loop {
+            ticker.tick().await;
+            let current = schema_mtime(&path);
+            match (last, current) {
+                (Some(prev), Some(now)) if now != prev => {
+                    info!("🔄 {} changed — exiting to reload (restart policy relaunches)", path);
+                    std::process::exit(0);
+                }
+                _ => {}
+            }
+            if current.is_some() {
+                last = current;
+            }
+        }
+    });
 }

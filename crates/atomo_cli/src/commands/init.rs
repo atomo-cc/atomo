@@ -72,9 +72,9 @@ docker compose up                    # http://localhost:3000
 curl http://localhost:3000/health    # -> OK
 ```
 
-The image bundles the **Admin UI** at <http://localhost:3000/admin>. Your data
-model lives in `atomo/schema.ts`; edit it and re-run `docker compose up` to apply
-changes — the server re-parses the schema and runs migrations on boot.
+Your data model lives in `atomo/schema.ts`. **Just edit it** — the running server
+watches the file and auto-reloads (~2s), re-parsing the schema and migrating. No
+rebuild, no restart command, no Rust.
 
 ## Develop with the CLI (optional, needs Rust)
 
@@ -124,12 +124,17 @@ services:
 
   server:
     image: ghcr.io/atomo-cc/atomo-server:latest
+    # Restart policy powers schema hot-reload: editing atomo/schema.ts makes the
+    # server exit and relaunch here, re-parsing + migrating on boot.
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://atomo:atomo@db:5432/atomo_dev
       ATOMO_SCHEMA_PATH: /app/atomo/schema.ts
+      # Watch the mounted schema and auto-reload (~2s) on edit.
+      ATOMO_SCHEMA_WATCH: "true"
       # Dev-only secret/credentials — override for anything real.
       JWT_SECRET: dev-insecure-secret-change-me
       ADMIN_EMAIL: admin@example.com

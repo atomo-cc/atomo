@@ -12,7 +12,9 @@ node_modules/
 .env
 .env.*
 !.env.example
-# docs/templates are not needed by either build stage. packages/ IS needed —
-# the admin-builder stage compiles the Admin UI SPA from packages/atomo-admin-ui.
+# Not needed to compile atomo-server (Cargo workspace only — the JS/docs trees
+# are irrelevant now that the image bundles no admin UI).
+packages/
+services/
 docs/
 templates/

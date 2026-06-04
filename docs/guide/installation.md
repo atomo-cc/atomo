@@ -9,7 +9,7 @@ run it with Docker. No Rust, no clone:
 ```bash
 npm create @atomo-cc/app my-crm          # or: -- --template ecommerce
 cd my-crm
-docker compose up                        # API :3000, Admin UI :3000/admin
+docker compose up                        # API on :3000
 ```
 
 Templates: `crm` (default), `blog`, `ecommerce`, `default`.
@@ -25,12 +25,12 @@ docker compose up --build        # http://localhost:3000
 curl http://localhost:3000/health   # -> OK
 ```
 
-The image bundles the **Admin UI** — open <http://localhost:3000/admin> once it's
-up. `docker compose` builds the server (and the SPA) inside containers — neither
-Rust nor Node touches your host — and wires it to the CRM demo schema + a fresh
-Postgres. To run a different model, repoint the `server.volumes` schema mount in
-`docker-compose.yml`. See [Deployment](/guide/tutorials/deployment) for running
-the image in production.
+`docker compose` builds the server inside a container — Rust never touches your
+host — and wires it to the CRM demo schema + a fresh Postgres. To run a different
+model, repoint the `server.volumes` schema mount in `docker-compose.yml`. The
+image is **generic and ships no admin UI** (the server serves one at `/admin` only
+if you provide `ATOMO_ADMIN_DIR`). See [Deployment](/guide/tutorials/deployment)
+for running the image in production.
 
 ## Prerequisites (from source)
 Only needed if you build from source (contributors / core work):
