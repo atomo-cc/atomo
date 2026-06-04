@@ -330,6 +330,16 @@ impl AtomoServer {
         // Rate limiting
         let rate_limiter = crate::rate_limit::RateLimiter::from_env();
 
+        // Ephemeral realtime tier (in-memory hub; durable outcomes still go via
+        // the normal command path). Started once here and shared by the route.
+        let realtime_router = if self.config.enable_realtime {
+            let hub = atomo_realtime::Hub::new();
+            info!("   ✓ Realtime hub started (ephemeral channels + presence)");
+            Some(crate::realtime::realtime_router(hub, auth_service.clone()))
+        } else {
+            None
+        };
+
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
             .merge(crate::projector_routes::projector_router(
@@ -338,7 +348,11 @@ impl AtomoServer {
             .merge(crate::registry_routes::registry_router(
                 registry_store.clone(),
             ))
-            .merge(media_router)
+            .merge(media_router);
+        if let Some(realtime_router) = realtime_router {
+            app = app.merge(realtime_router);
+        }
+        let mut app = app
             .layer(svc_builder)
             .layer(middleware::from_fn(
                 crate::tracing_middleware::request_tracing,

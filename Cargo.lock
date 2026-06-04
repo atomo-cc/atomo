@@ -427,6 +427,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomo_realtime"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "atomo_schema"
 version = "0.1.0"
 dependencies = [
@@ -458,6 +468,7 @@ dependencies = [
  "atomo",
  "atomo_core",
  "atomo_projectors",
+ "atomo_realtime",
  "atomo_wasm_runtime",
  "aws-config",
  "aws-sdk-s3",

@@ -13,6 +13,8 @@ pub struct ServerConfig {
     pub cors_origins: Vec<String>,
     pub enable_ai: bool,
     pub enable_subscriptions: bool,
+    /// Mount the ephemeral realtime tier (`/realtime/ws`, `/realtime/health`).
+    pub enable_realtime: bool,
 }
 
 impl Default for ServerConfig {
@@ -26,6 +28,7 @@ impl Default for ServerConfig {
             cors_origins: vec!["http://localhost:3000".to_string()],
             enable_ai: false,
             enable_subscriptions: true,
+            enable_realtime: true,
         }
     }
 }
@@ -53,6 +56,10 @@ impl ServerConfig {
                 .parse()
                 .unwrap_or(false),
             enable_subscriptions: std::env::var("ATOMO_ENABLE_SUBSCRIPTIONS")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
+            enable_realtime: std::env::var("ATOMO_ENABLE_REALTIME")
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
                 .unwrap_or(true),
