@@ -1,9 +1,23 @@
 # syntax=docker/dockerfile:1
 #
 # atomo-server image — runs the Atomo backend with **no Rust toolchain on the
-# host**. Generic and service-agnostic: it bundles no admin UI. cargo-chef caches
-# the dependency compile as its own layer, so app-only changes rebuild in ~1-3 min
-# instead of recompiling the whole tree (~12 min). Build: `docker build -t atomo-server .`
+# host**, and bundles a **generic Admin UI** served at /admin. The admin is
+# service-agnostic (it introspects /meta/schema); service-specific views load as
+# runtime plugins, so this build has no dependency on any service's source.
+# cargo-chef caches the Rust dependency compile. Build: `docker build -t atomo-server .`
+
+# ---- Admin UI: build the generic SPA (packages/* only — no services/). ----
+FROM node:20-slim AS admin-builder
+RUN corepack enable
+WORKDIR /repo
+COPY package.json pnpm-lock.yaml ./
+RUN printf 'packages:\n  - "packages/*"\n' > pnpm-workspace.yaml
+COPY packages ./packages
+# Install the admin app + its deps, build the SDK it imports, then the SPA with
+# base=/admin/ so its assets resolve under the served path.
+RUN pnpm install --filter "@atomo-cc/admin-ui..." --no-frozen-lockfile \
+    && pnpm --filter "@atomo-cc/client-sdk" run build \
+    && pnpm --filter "@atomo-cc/admin-ui" run build:server
 
 # ---- Chef: toolchain + cargo-chef. Cached unless the base image changes. ----
 FROM rust:slim-bookworm AS chef
@@ -30,7 +44,7 @@ RUN cargo chef cook --release -p atomo_server --recipe-path recipe.json
 COPY . .
 RUN cargo build --release -p atomo_server
 
-# ---- Runtime: just the binary + CA certs. ----
+# ---- Runtime: the binary + the bundled admin SPA + CA certs. ----
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -38,13 +52,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && useradd -r -u 10001 atomo
 WORKDIR /app
 COPY --from=builder /src/target/release/atomo-server /usr/local/bin/atomo-server
+# Generic Admin UI — served at /admin (ATOMO_ADMIN_DIR). Unset the env to disable.
+COPY --from=admin-builder /repo/packages/atomo-admin-ui/dist /app/admin
 # The schema is supplied at runtime (mounted or baked). Defaults below can be
 # overridden with -e / compose `environment:`.
-#
-# Admin UI: the server serves a SPA at /admin only when ATOMO_ADMIN_DIR points at
-# a built admin bundle (absent here). The image stays generic — an app that wants
-# an admin UI mounts its own build there; a game/relay backend ships none.
 ENV ATOMO_SCHEMA_PATH=/app/schema.ts \
+    ATOMO_ADMIN_DIR=/app/admin \
     HOST=0.0.0.0 \
     PORT=3000
 EXPOSE 3000

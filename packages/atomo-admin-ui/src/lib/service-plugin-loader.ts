@@ -26,61 +26,15 @@ const DEFAULT_SERVICE_PLUGINS: ServicePluginConfig[] = [
 ]
 
 /**
- * Load a plugin from a service in development mode
- */
-async function loadServicePluginForDev(config: ServicePluginConfig): Promise<ComponentPlugin | null> {
-  try {
-    console.log(`Loading plugin for service: ${config.serviceName} from ${config.pluginUrl}`)
-
-    if (config.serviceName === 'crm') {
-      // Load actual CRM components from the service
-      const DealsKanban = React.lazy(() =>
-        import('../../../../services/crm-service/admin-ui/components/DealsKanban').then(module => ({ default: module.DealsKanban }))
-      )
-      const ContactTimeline = React.lazy(() =>
-        import('../../../../services/crm-service/admin-ui/components/ContactTimeline').then(module => ({ default: module.ContactTimeline }))
-      )
-
-      return {
-        name: 'crm',
-        components: {
-          DealsKanban,
-          ContactTimeline
-        },
-        routes: [
-          {
-            pattern: /^\/deals\/board$/,
-            component: DealsKanban,
-            props: () => ({})
-          },
-          {
-            pattern: /^\/contacts\/([^\/]+)\/timeline$/,
-            component: ContactTimeline,
-            props: (match: RegExpMatchArray) => ({
-              contactId: match[1]
-            })
-          }
-        ],
-        init: () => {
-          console.log('CRM plugin initialized')
-        }
-      }
-    }
-
-    return null
-  } catch (error) {
-    console.warn(`Failed to load plugin for service ${config.serviceName}:`, error)
-    // Fallback to demo plugin
-    return loadServicePluginDemo(config)
-  }
-}
-
-/**
- * Load a plugin from a service
+ * Load a plugin for a service.
+ *
+ * The core admin is **service-agnostic**: it has no build-time import of any
+ * service's source, so it builds and bundles on its own. Service-specific Admin
+ * UI (e.g. a Deal Kanban) ships as a **runtime plugin** served at `pluginUrl`;
+ * the in-package demo components stand in until a real plugin is registered.
  */
 async function loadServicePlugin(config: ServicePluginConfig): Promise<ComponentPlugin | null> {
-  // For now, always use dev loader (in production this would be configurable)
-  return loadServicePluginForDev(config)
+  return loadServicePluginDemo(config)
 }
 
 /**

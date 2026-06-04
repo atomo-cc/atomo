@@ -12,9 +12,9 @@ node_modules/
 .env
 .env.*
 !.env.example
-# Not needed to compile atomo-server (Cargo workspace only — the JS/docs trees
-# are irrelevant now that the image bundles no admin UI).
-packages/
+# packages/ IS needed — the admin-builder stage builds the generic Admin UI from
+# packages/atomo-admin-ui. services/ stays out: the admin is service-agnostic, so
+# the build must not depend on any service's source. docs/templates aren't used.
 services/
 docs/
 templates/
