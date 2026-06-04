@@ -1,5 +1,7 @@
 import { DynamicRenderer, useRouteParser } from './components/DynamicRenderer'
 import { Navigation } from './components/Navigation'
+import { Login } from './components/Login'
+import { apiClient } from './lib/api'
 import { initializeServicePlugins } from './lib/service-plugin-loader'
 import './index.css'
 
@@ -16,6 +18,11 @@ initializeServicePlugins()
  */
 function App() {
   const route = useRouteParser()
+
+  // Gate the whole admin behind sign-in: no token → show the login form.
+  if (!apiClient.isAuthenticated()) {
+    return <Login />
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

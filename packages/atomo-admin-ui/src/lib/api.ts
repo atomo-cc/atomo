@@ -51,6 +51,24 @@ class AtomoApiClient {
     )
   }
 
+  /** True when an auth token is stored (the request interceptor attaches it). */
+  isAuthenticated(): boolean {
+    return !!localStorage.getItem('atomo_auth_token')
+  }
+
+  /** Authenticate against POST /auth/login and persist the returned JWT. */
+  async login(email: string, password: string): Promise<void> {
+    const res = await this.client.post('/auth/login', { email, password })
+    const token = res.data?.token
+    if (!token) throw new Error('Login response did not include a token')
+    localStorage.setItem('atomo_auth_token', token)
+  }
+
+  /** Clear the stored token (sign out). */
+  logout(): void {
+    localStorage.removeItem('atomo_auth_token')
+  }
+
   /**
    * Simplified and more reliable API base URL detection
    */
