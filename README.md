@@ -96,6 +96,7 @@ atomo/
 │   ├── atomo_server/         # 🌐 Web 服务器
 │   ├── atomo_schema/         # 📝 Schema 解析器
 │   ├── atomo_projectors/     # 📊 事件投影器
+│   ├── atomo_realtime/       # 📡 临时实时通道与在线状态
 │   └── atomo_wasm_runtime/   # 🔌 WASM 插件运行时
 ├── packages/                  # 前端包
 │   ├── atomo-client-sdk/     # 📚 客户端 SDK

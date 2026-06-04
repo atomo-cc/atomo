@@ -71,6 +71,12 @@ subscription { modelChanges(model: "Contact") { eventType modelName eventId } }
 See [GraphQL API](/api/graphql) for the full operation set, `where` operators, and the
 soft-delete lifecycle.
 
+For the **ephemeral** real-time tier — presence, live fan-out, "who's-typing" —
+connect a WebSocket to `/realtime/ws?token=<jwt>` and exchange JSON frames
+(`{"op":"subscribe","channel":"deal:42"}`, `{"op":"publish",…}`). This traffic is
+never event-sourced; see [Realtime Channels & Presence](/guide/advanced/realtime-channels-proposal)
+for the protocol and boundary. Durable data changes stay on GraphQL Subscriptions above.
+
 ### CLI Quick Commands
 
 ```bash

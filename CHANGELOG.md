@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auth**: OAuth2/OIDC SSO support (Google, GitHub, Microsoft, Okta)
 - **Auth**: RBAC enforcement in all GraphQL resolvers from schema access rules
 - **API**: GraphQL WebSocket subscriptions with model-name filtering (`/graphql/ws`)
+- **API**: Ephemeral realtime channels, presence & server fan-out — authenticated WebSocket at `/realtime/ws` (+ `/realtime/health`), backed by the domain-agnostic in-memory `atomo_realtime` hub; gated by `ATOMO_ENABLE_REALTIME`, anonymous access opt-in via `ATOMO_REALTIME_ALLOW_ANON`
 - **API**: Where/orderBy JSON parsing (Hasura-style filter syntax)
 - **API**: Pagination metadata (totalCount, hasNextPage, hasPreviousPage)
 - **API**: Relationship resolution (belongsTo/hasMany joins via include)
