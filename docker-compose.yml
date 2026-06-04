@@ -1,0 +1,50 @@
+# Run Atomo with **zero Rust on the host**: `docker compose up`.
+#
+# Brings up PostgreSQL plus the atomo-server (built from source inside the build
+# container) wired to the CRM demo schema. The server parses the schema, runs
+# migrations, seeds an admin, and starts on http://localhost:3000.
+#
+#   docker compose up --build
+#   curl http://localhost:3000/health        # -> OK
+#
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atomo
+      POSTGRES_PASSWORD: atomo
+      POSTGRES_DB: atomo_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - atomo-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atomo -d atomo_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  server:
+    build: .
+    # Once the image is published, skip the local build and pull instead:
+    # image: ghcr.io/chris533/atomo-server:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://atomo:atomo@db:5432/atomo_dev
+      ATOMO_SCHEMA_PATH: /app/schema.ts
+      # Dev-only secret/credentials — override for anything real.
+      JWT_SECRET: dev-insecure-secret-change-me
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: change-me-too
+      ATOMO_ENABLE_REALTIME: "true"
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      # Swap this path to run a different service's schema.
+      - ./services/crm-service/schema.ts:/app/schema.ts:ro
+
+volumes:
+  atomo-db:

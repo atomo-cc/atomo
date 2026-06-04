@@ -19,11 +19,28 @@ Atomo is a **Content Core** - not just a CMS, but the "Arc Reactor" that powers 
 
 ## Installation
 
-> Atomo is pre-1.0 and installed from source today (there is no hosted installer or published
-> binary yet).
+Atomo is pre-1.0. There are two ways to run it:
+
+### Run without Rust (Docker) — recommended
+
+The fastest path, and the only one that needs **no Rust toolchain**. It brings up
+PostgreSQL plus the server wired to the CRM demo schema:
 
 ```bash
-# Clone and build the CLI + server from source
+git clone https://github.com/Chris533/atomo.git
+cd atomo
+docker compose up --build        # Postgres + atomo-server on :3000
+```
+
+Then continue to the **Verify it works** step below. Rust compiles only inside the
+build container — your host stays clean. Point the `server.volumes` schema mount
+at a different `schema.ts` to run your own model.
+
+### From source (contributors / core work)
+
+Needed only if you're hacking on the CLI/server crates:
+
+```bash
 git clone https://github.com/Chris533/atomo.git
 cd atomo
 cargo build --release            # builds the workspace (atomo-cli, atomo-server, ...)

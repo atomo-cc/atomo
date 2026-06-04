@@ -1,0 +1,18 @@
+# Keep the build context small and the image clean. The server build needs only
+# the Cargo workspace (crates/ + Cargo.{toml,lock}); everything below is either
+# huge, host-specific, or irrelevant to compiling atomo-server.
+target/
+**/target/
+node_modules/
+**/node_modules/
+**/dist/
+.git/
+.github/
+*.log
+.env
+.env.*
+!.env.example
+# JS/docs/app trees are not Cargo workspace members — not needed to build the server.
+packages/
+docs/
+templates/
