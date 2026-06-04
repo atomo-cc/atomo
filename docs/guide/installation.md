@@ -28,9 +28,9 @@ curl http://localhost:3000/health   # -> OK
 `docker compose` builds the server inside a container — Rust never touches your
 host — and wires it to the CRM demo schema + a fresh Postgres. To run a different
 model, repoint the `server.volumes` schema mount in `docker-compose.yml`. The
-image is **generic and ships no admin UI** (the server serves one at `/admin` only
-if you provide `ATOMO_ADMIN_DIR`). See [Deployment](/guide/tutorials/deployment)
-for running the image in production.
+image bundles a **generic Admin UI** at <http://localhost:3000/admin> (it
+introspects your schema; service-specific views load as runtime plugins). See
+[Deployment](/guide/tutorials/deployment) for running the image in production.
 
 ## Prerequisites (from source)
 Only needed if you build from source (contributors / core work):

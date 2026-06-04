@@ -72,7 +72,8 @@ docker compose up                    # http://localhost:3000
 curl http://localhost:3000/health    # -> OK
 ```
 
-Your data model lives in `atomo/schema.ts`. **Just edit it** — the running server
+The image bundles a generic **Admin UI** at <http://localhost:3000/admin>. Your
+data model lives in `atomo/schema.ts` — **just edit it** and the running server
 watches the file and auto-reloads (~2s), re-parsing the schema and migrating. No
 rebuild, no restart command, no Rust.
 
@@ -160,7 +161,7 @@ volumes:
     println!();
     println!("Next steps:");
     println!("  cd {}", name.bright_cyan());
-    println!("  {}            # run with no Rust (Docker)", "docker compose up".bright_cyan());
+    println!("  {}            # API :3000 + Admin UI :3000/admin — no Rust", "docker compose up".bright_cyan());
     println!();
     println!("  …or develop with the CLI (needs Rust):");
     println!("  npm install && npm run atomo:generate && npm run dev");

@@ -6,6 +6,7 @@
 #
 #   docker compose up --build
 #   curl http://localhost:3000/health        # -> OK
+#   open  http://localhost:3000/admin        # bundled generic Admin UI
 #
 services:
   db:

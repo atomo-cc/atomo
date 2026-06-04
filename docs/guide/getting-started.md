@@ -32,10 +32,10 @@ cd atomo
 docker compose up --build        # Postgres + atomo-server on :3000
 ```
 
-Then continue to the **Verify it works** step below. Rust compiles only inside the
-build container — your host stays clean. Point the `server.volumes` schema mount at
-a different `schema.ts` to run your own model. (The image is generic and ships no
-admin UI; the server serves one at `/admin` only if you provide `ATOMO_ADMIN_DIR`.)
+Then continue to the **Verify it works** step below, and open the bundled
+**Admin UI** at <http://localhost:3000/admin>. Rust compiles only inside the build
+container — your host stays clean. Point the `server.volumes` schema mount at a
+different `schema.ts` to run your own model.
 
 ### From source (contributors / core work)
 
