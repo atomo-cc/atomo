@@ -33,11 +33,16 @@ CRM dogfood is driving.
 
 ### B1. Realtime Channels & Presence — *core feature, CRM-driven*
 
-This is being promoted into the **Atomo core** as a domain-agnostic capability;
+This has been promoted into the **Atomo core** as a domain-agnostic capability;
 the canonical spec lives at
 **[Proposal: Realtime Channels & Presence](/guide/advanced/realtime-channels-proposal)**.
 The CRM is its **first dogfood / requirements driver** — it is *not* a CRM
 feature, but a common platform capability the CRM happens to surface first.
+
+> **Status:** the core (Phase 2) is built — `crates/atomo_realtime` (the
+> transport-agnostic hub) plus the `/realtime/ws` transport in `atomo_server`,
+> with channels, presence, and fan-out. The CRM dogfood below is **Phase 3**: the
+> next step is wiring these CRM surfaces onto the hub.
 
 **What the CRM needs from it** (the dogfood requirements):
 

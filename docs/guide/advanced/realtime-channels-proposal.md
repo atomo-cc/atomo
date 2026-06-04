@@ -5,13 +5,18 @@ description: A domain-agnostic Atomo core capability for ephemeral, high-frequen
 
 # Proposal: Realtime Channels & Presence
 
-> Status: **Proposed (RFC)** · Layer: **Atomo core** (`crates/atomo_realtime`) ·
-> First dogfood: the [CRM service](/services/crm/roadmap)
+> Status: **Phase 2 implemented** (channels + presence + fan-out) · Layer: **Atomo core**
+> (`crates/atomo_realtime`, mounted into `atomo_server`) · First dogfood: the
+> [CRM service](/services/crm/roadmap)
 >
 > A **core, domain-agnostic** real-time capability for *ephemeral, high-frequency*
 > traffic — presence, live fan-out, and optional coordinator sessions — that any
 > service or client can use. It complements (does not replace) the durable
 > real-time path.
+>
+> The transport-agnostic hub and its WS transport are built and tested; what
+> remains is the CRM dogfood (Phase 3), coordinator sessions (Phase 4), and
+> hardening (Phase 5). See [Status & usage](#status-usage-phase-2) below.
 
 ## Where it fits
 
@@ -79,6 +84,51 @@ A domain-agnostic subsystem (`crates/atomo_realtime`) providing:
 - **Observability** — channel/presence counts, msgs/s, fan-out latency, dropped
   frames; structured logs without payload PII.
 
+## Status & usage (Phase 2)
+
+What exists today, in `crates/atomo_realtime` (transport-agnostic library) plus
+the WS transport in `atomo_server`:
+
+**Crate shape** — the hub is pure, in-memory, and knows nothing about HTTP or the
+event store. A single owning task holds all state and is driven by mpsc commands
+(no hot-path locks); each client gets a bounded outbound queue that *sheds frames*
+under backpressure rather than stalling the hub. Payloads are opaque
+(`Arc<RawValue>`) and never parsed by the hub.
+
+| Module | Responsibility |
+| --- | --- |
+| `hub` | owning task: `channel → subscribers`, fan-out, stats |
+| `presence` | per-channel membership, snapshots, join/leave deltas |
+| `protocol` | `ClientMsg` / `ServerMsg` wire vocabulary |
+| `client` | bounded per-client delivery with frame shedding |
+
+**Endpoints** (mounted by `atomo_server`, gated by `enable_realtime`):
+
+- `GET /realtime/ws` — WebSocket. Authenticate the upgrade with `?token=<jwt>`
+  (reuses the server's JWT path); anonymous connections are rejected unless
+  `ATOMO_REALTIME_ALLOW_ANON=true`.
+- `GET /realtime/health` — liveness plus hub counters (connections, channels,
+  messages, dropped frames).
+
+**Wire protocol** — JSON text frames. Client → server (tagged by `op`):
+
+```json
+{"op":"subscribe","channel":"deal:42"}
+{"op":"publish","channel":"deal:42","payload":{"typing":true}}
+{"op":"presence","channel":"deal:42"}
+{"op":"unsubscribe","channel":"deal:42"}
+```
+
+Server → client (tagged by `type`): `message`, `joined`, `left`, `presence`,
+`error`. A publish fans out to every *other* subscriber (no self-echo).
+
+**Flags** — `ATOMO_ENABLE_REALTIME` (default on), `ATOMO_REALTIME_ALLOW_ANON`
+(default off).
+
+**Isolated dev** — the hub runs with no network: `cargo test -p atomo_realtime`
+drives it directly (unit tests for presence/protocol/client + integration tests
+in `tests/hub.rs`).
+
 ## First dogfood: CRM
 
 The [CRM roadmap](/services/crm/roadmap) drives the initial requirements —
@@ -88,16 +138,28 @@ high-frequency client benefits from the same primitives.
 
 ## Phasing
 
-1. RFC + this doc — agree on the boundary and crate placement.
-2. `crates/atomo_realtime`: `/health`, `/ws`, channels + presence + fan-out.
-3. CRM dogfood: presence + live Kanban; durable outcome → `atomo_core`.
-4. Optional coordinator-session mode.
-5. Harden: auth, rate limits, metrics; (later) binary framing.
+1. ✅ RFC + this doc — boundary and crate placement agreed.
+2. ✅ `crates/atomo_realtime` (library) + `atomo_server` WS transport:
+   `/realtime/health`, `/realtime/ws`, channels + presence + fan-out.
+3. ⏳ CRM dogfood: presence + live Kanban; durable outcome → `atomo_core`.
+4. ⏳ Optional coordinator-session mode.
+5. ⏳ Harden: per-IP connection caps + join rate limits, Prometheus metrics
+   wiring; (later) binary framing.
 
 ## Open questions
 
-- New crate `crates/atomo_realtime` vs. extending the existing subscriptions/WS
-  stack? (Leaning: dedicated crate, to isolate the high-frequency tier.)
-- Presence storage: per-node in-memory vs. shared (Redis) for multi-node fan-out.
+Resolved:
+
+- **Dedicated crate vs. extending the subscriptions stack** → a dedicated
+  *library* crate (`crates/atomo_realtime`), mounted into `atomo_server` so it
+  reuses auth/rate-limit/deploy while staying a logically isolated module.
+- **Anonymous identity by default** → off by default; a service opts in with
+  `ATOMO_REALTIME_ALLOW_ANON`. Authenticated connections pass `?token=<jwt>`.
+
+Still open:
+
+- Presence storage: per-node in-memory (today) vs. shared (Redis) for multi-node
+  fan-out.
 - Coordinator-session failover: re-elect within the session, or end the session?
-- Anonymous identity by default, or require Atomo auth per channel policy?
+- Backpressure policy: today a full per-client queue sheds the newest frame;
+  revisit if a use case needs drop-oldest or guaranteed delivery.
