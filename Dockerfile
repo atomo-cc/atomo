@@ -13,6 +13,8 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml ./
 RUN printf 'packages:\n  - "packages/*"\n' > pnpm-workspace.yaml
 COPY packages ./packages
+# The admin's tailwind.config.ts imports the repo-root design tokens (../../design-tokens).
+COPY design-tokens.ts ./
 # Install the admin app + its deps, build the SDK it imports, then the SPA with
 # base=/admin/ so its assets resolve under the served path.
 RUN pnpm install --filter "@atomo-cc/admin-ui..." --no-frozen-lockfile \
