@@ -22,6 +22,22 @@ pub struct Model {
     /// the target model from the name.
     #[serde(default)]
     pub relationships: HashMap<String, Relationship>,
+    /// Model-level constraints from `@@unique([..])` / `@@index([..])` / `@@check(..)`
+    /// annotations — composite uniqueness/indexes and CHECK rules the per-field
+    /// annotations can't express.
+    #[serde(default)]
+    pub constraints: Vec<ModelConstraint>,
+}
+
+/// A model-level constraint declared via an `@@` annotation in `schema.ts`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ModelConstraint {
+    /// `@@unique([a, b])` — composite uniqueness (field names; snake-cased at DDL time).
+    Unique(Vec<String>),
+    /// `@@index([a, b])` — composite secondary index.
+    Index(Vec<String>),
+    /// `@@check(expr)` — a raw SQL CHECK expression, e.g. `amount <> 0`.
+    Check(String),
 }
 
 /// A declared relationship: `{ type: 'belongsTo'|'hasMany', model: 'Company', foreignKey: 'companyId' }`.

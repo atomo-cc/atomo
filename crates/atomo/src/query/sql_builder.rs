@@ -295,6 +295,7 @@ mod tests {
             validation: std::collections::HashMap::new(),
             table_name: table.map(|s| s.to_string()),
             relationships: std::collections::HashMap::new(),
+            constraints: Vec::new(),
         }
     }
 

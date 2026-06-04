@@ -48,6 +48,7 @@ impl DslParser {
                 validation: HashMap::new(),
                 table_name: None,
                 relationships: std::collections::HashMap::new(),
+                constraints: Vec::new(),
             });
         }
 

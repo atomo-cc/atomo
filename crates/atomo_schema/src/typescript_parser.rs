@@ -341,6 +341,7 @@ impl TypeScriptParser {
                 validation: HashMap::new(),
                 table_name: None,
                 relationships: std::collections::HashMap::new(),
+                constraints: Vec::new(),
             });
         }
 
@@ -402,12 +403,15 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
     // Parse line-by-line so a field's trailing comment (its annotations) stays with it,
     // whether or not a `;` precedes the comment. A line may still pack multiple
     // `;`-separated fields; the line's annotations apply to each.
+    let mut constraints: Vec<crate::types::ModelConstraint> = Vec::new();
     for line in body.lines() {
         let mut split = line.splitn(2, "//");
         let code = split.next().unwrap_or("");
         // Inline annotations live in the trailing comment, e.g.
         // `idempotencyKey: string // @unique @index`.
         let annotations = split.next().unwrap_or("");
+        // Model-level `@@` annotations may sit on their own comment line.
+        parse_model_constraints(annotations, &mut constraints);
         for raw in code.split(';') {
             let seg = raw.trim();
             if seg.is_empty()
@@ -432,10 +436,43 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         validation: HashMap::new(),
         table_name: None,
         relationships: std::collections::HashMap::new(),
+        constraints,
     };
     let lines_consumed = i - start_index;
 
     Ok((model, lines_consumed))
+}
+
+/// Parse model-level `@@unique([a, b])` / `@@index([a, b])` / `@@check(expr)` from a
+/// comment's annotation text, appending any found to `out`.
+fn parse_model_constraints(annotations: &str, out: &mut Vec<crate::types::ModelConstraint>) {
+    use crate::types::ModelConstraint;
+    if !annotations.contains("@@") {
+        return;
+    }
+    let list_re = Regex::new(r"@@(unique|index)\s*\(\s*\[([^\]]*)\]\s*\)").unwrap();
+    for cap in list_re.captures_iter(annotations) {
+        let cols: Vec<String> = cap[2]
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if cols.is_empty() {
+            continue;
+        }
+        match &cap[1] {
+            "unique" => out.push(ModelConstraint::Unique(cols)),
+            "index" => out.push(ModelConstraint::Index(cols)),
+            _ => {}
+        }
+    }
+    let check_re = Regex::new(r"@@check\s*\((.+)\)").unwrap();
+    if let Some(cap) = check_re.captures(annotations) {
+        let expr = cap[1].trim().to_string();
+        if !expr.is_empty() {
+            out.push(ModelConstraint::Check(expr));
+        }
+    }
 }
 
 fn parse_field_definition(line: &str, annotations: &str) -> Option<Field> {
@@ -710,6 +747,37 @@ mod validation_tests {
         assert!(has("idempotencyKey", FieldAttribute::Unique), "@unique (no semicolon)");
         assert!(has("accountId", FieldAttribute::Index), "@index (after semicolon)");
         assert!(!has("amount", FieldAttribute::Unique) && !has("amount", FieldAttribute::Index));
+    }
+
+    #[test]
+    fn parses_model_level_constraints() {
+        use crate::types::ModelConstraint;
+        let content = r#"
+        export interface CreditLedger {
+          id: string
+          accountId: string
+          idempotencyKey: string
+          amount: number
+          // @@unique([accountId, idempotencyKey])
+          // @@index([accountId])
+          // @@check(amount <> 0)
+        }
+        "#;
+        let models = TypeScriptParser::new().parse_interfaces(content).unwrap();
+        let m = models
+            .iter()
+            .find(|m| m.name == "CreditLedger")
+            .expect("CreditLedger parsed");
+        assert!(
+            m.constraints.contains(&ModelConstraint::Unique(vec![
+                "accountId".into(),
+                "idempotencyKey".into()
+            ])),
+            "composite unique missing: {:?}",
+            m.constraints
+        );
+        assert!(m.constraints.contains(&ModelConstraint::Index(vec!["accountId".into()])));
+        assert!(m.constraints.contains(&ModelConstraint::Check("amount <> 0".into())));
     }
 
     #[test]

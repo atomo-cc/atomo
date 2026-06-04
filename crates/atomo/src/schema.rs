@@ -7,7 +7,9 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 // Re-export from atomo_schema for compatibility
-pub use atomo_schema::{Field, FieldAttribute, FieldType, Model, Schema, TypeScriptParser};
+pub use atomo_schema::{
+    Field, FieldAttribute, FieldType, Model, ModelConstraint, Schema, TypeScriptParser,
+};
 
 /// Parse a TypeScript schema string into a Schema object
 pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
@@ -100,6 +102,39 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             migrations.push(format!(
                 "CREATE INDEX IF NOT EXISTS idx_{table}_{col} ON {table} ({col});"
             ));
+        }
+
+        // Model-level constraints from @@unique([..]) / @@index([..]) / @@check(..).
+        for (n, c) in model.constraints.iter().enumerate() {
+            match c {
+                // Composite uniqueness via a UNIQUE INDEX (idempotent with IF NOT EXISTS).
+                ModelConstraint::Unique(cols) => {
+                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                    migrations.push(format!(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list});",
+                        joined = snake.join("_"),
+                        list = snake.join(", ")
+                    ));
+                }
+                ModelConstraint::Index(cols) => {
+                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                    migrations.push(format!(
+                        "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list});",
+                        joined = snake.join("_"),
+                        list = snake.join(", ")
+                    ));
+                }
+                // CHECK as a guarded ALTER (same idempotency pattern as the FK pass).
+                ModelConstraint::Check(expr) => {
+                    let cname = format!("chk_{table}_{n}");
+                    migrations.push(format!(
+                        "DO $$ BEGIN \
+                         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
+                         ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({expr}); \
+                         END IF; END $$;"
+                    ));
+                }
+            }
         }
     }
 
@@ -228,6 +263,7 @@ mod tests {
             validation: HashMap::new(),
             table_name: Some(table.to_string()),
             relationships: rels.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
+            constraints: Vec::new(),
         }
     }
 
@@ -317,6 +353,39 @@ mod tests {
                 "CREATE INDEX IF NOT EXISTS idx_credit_ledger_account_id ON credit_ledger (account_id)"
             ),
             "index missing:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn generate_migrations_emits_model_level_constraints() {
+        let mut ledger = model(
+            "CreditLedger",
+            "credit_ledger",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("accountId", FieldType::String, false),
+                field("idempotencyKey", FieldType::String, false),
+                field("amount", FieldType::Number, false),
+            ],
+            vec![],
+        );
+        ledger.constraints = vec![
+            ModelConstraint::Unique(vec!["accountId".into(), "idempotencyKey".into()]),
+            ModelConstraint::Check("amount <> 0".into()),
+        ];
+        let mut models = HashMap::new();
+        models.insert("CreditLedger".into(), ledger);
+        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+
+        // Composite unique -> UNIQUE INDEX (the idempotency key).
+        assert!(
+            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_account_id_idempotency_key ON credit_ledger (account_id, idempotency_key)"),
+            "composite unique index missing:\n{sql}"
+        );
+        // CHECK -> guarded ADD CONSTRAINT.
+        assert!(
+            sql.contains("ADD CONSTRAINT chk_credit_ledger_1 CHECK (amount <> 0)"),
+            "check constraint missing:\n{sql}"
         );
     }
 }
