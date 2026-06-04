@@ -4,8 +4,8 @@
 
 use std::time::Duration;
 
-use atomo_realtime::hub::payload_from_str;
-use atomo_realtime::{ClientMsg, Connection, Hub, Principal, ServerMsg};
+use atomo_realtime::hub::{payload_from_str, HubConfig};
+use atomo_realtime::{ClientMsg, Connection, Hub, Principal, RateLimit, ServerMsg};
 
 /// Receive the next frame for a connection, failing if none arrives promptly.
 async fn next(conn: &mut Connection) -> ServerMsg {
@@ -114,4 +114,23 @@ async fn payload_helper_round_trips_opaque_json() {
     }
     // The helper builds the same opaque shape used on the wire.
     assert_eq!(payload.get(), "[1,2,3]");
+}
+
+#[tokio::test]
+async fn join_rate_limit_denies_bursts_with_an_error() {
+    // Burst of 1, negligible refill: the first join is allowed, the next denied.
+    let hub = Hub::with_config(HubConfig {
+        join_rate: Some(RateLimit::new(1, 0.001)),
+        ..Default::default()
+    });
+    let mut a = hub.connect(Principal::anonymous("anon")).await;
+
+    a.handle.dispatch(ClientMsg::Subscribe { channel: "c1".into() }).await;
+    assert!(matches!(next(&mut a).await, ServerMsg::Presence { .. }), "first join allowed");
+
+    a.handle.dispatch(ClientMsg::Subscribe { channel: "c2".into() }).await;
+    match next(&mut a).await {
+        ServerMsg::Error { message } => assert!(message.contains("rate limit"), "got: {message}"),
+        other => panic!("expected rate-limit Error, got {other:?}"),
+    }
 }

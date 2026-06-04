@@ -150,6 +150,7 @@ async fn coordinator_disconnect_reelects_under_default_policy() {
 async fn coordinator_disconnect_closes_session_under_close_policy() {
     let hub = Hub::with_config(HubConfig {
         coordinator_leave_policy: CoordinatorLeavePolicy::Close,
+        ..Default::default()
     });
     let mut alice = hub.connect(Principal::new("alice", None)).await; // coordinator
     let mut bob = hub.connect(Principal::new("bob", None)).await;

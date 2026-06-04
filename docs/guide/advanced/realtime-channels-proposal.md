@@ -163,6 +163,13 @@ platform tier owns users/auth/matchmaking and hands off via a short-lived token:
 So the relay is *authenticated* without *managing users*: auth at the edge =
 signature check; user management + matchmaking stay on the platform tier.
 
+**Hardening** — the standalone relay caps concurrent connections per IP
+(`ATOMO_REALTIME_MAX_CONN_PER_IP`, default 64; 0 = off), throttles per-client
+joins with a token bucket (`ATOMO_REALTIME_JOIN_BURST` / `ATOMO_REALTIME_JOIN_PER_SEC`,
+default 20 / 10·s⁻¹ — over-limit joins get an `error` frame), and exposes
+Prometheus counters at `GET /metrics`. Join throttling is also available in-library
+via `HubConfig.join_rate` (off by default).
+
 **Flags** — `ATOMO_ENABLE_REALTIME` (default on), `ATOMO_REALTIME_ALLOW_ANON`
 (default off). Standalone bin also reads `JWT_SECRET`, `PORT`,
 `ATOMO_REALTIME_COORDINATOR_POLICY` (`reelect`/`close`).
@@ -189,11 +196,10 @@ high-frequency client benefits from the same primitives.
 4. ✅ **Coordinator sessions** — host-authoritative relay: join → stable slot,
    one elected coordinator, directional relay (`to_coordinator` / `to_members`),
    member join/leave, and configurable coordinator-leave policy.
-5. 🔧 Harden *(in progress)*: ✅ standalone **`atomo-realtime-server`** bin —
-   deploy the hub as one lightweight process with **stateless JWT auth, no DB**,
-   off the durable server — plus a `POST /realtime/token` mint endpoint on
-   `atomo_server`. ⏳ remaining: per-IP connection caps + join rate limits,
-   Prometheus metrics; (later) binary framing.
+5. ✅ Harden: standalone **`atomo-realtime-server`** bin (**stateless JWT auth,
+   no DB**) + `POST /realtime/token` mint endpoint; per-client **join rate limits**
+   (token bucket via `HubConfig`), per-IP **connection caps**, and Prometheus
+   **`/metrics`** on the relay. *(Later: binary framing.)*
 
 ## Open questions
 

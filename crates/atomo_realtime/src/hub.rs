@@ -14,6 +14,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -23,6 +24,7 @@ use tracing::trace;
 use crate::client::{self, Delivery, DEFAULT_OUTBOUND_CAPACITY};
 use crate::presence::Presence;
 use crate::protocol::{ChannelName, ClientMsg, MemberInfo, Payload, Principal, ServerMsg};
+use crate::rate_limit::{RateLimit, RateLimiter};
 use crate::sessions::{CoordinatorChange, CoordinatorLeavePolicy, Sessions};
 
 /// Identifies one connection for the lifetime of the hub. Monotonic, never reused.
@@ -83,6 +85,9 @@ enum Command {
 pub struct HubConfig {
     /// What happens to a coordinator session when its coordinator leaves.
     pub coordinator_leave_policy: CoordinatorLeavePolicy,
+    /// Per-client throttle on join operations (subscribe / session-join).
+    /// `None` (default) disables throttling — set it on exposed deployments.
+    pub join_rate: Option<RateLimit>,
 }
 
 /// Handle to the realtime hub. Cheap to clone; clones share the one hub task.
@@ -220,6 +225,7 @@ struct ClientState {
     principal: Principal,
     subscriptions: HashSet<ChannelName>,
     sessions: HashSet<String>,
+    join_limiter: Option<RateLimiter>,
 }
 
 struct Worker {
@@ -227,6 +233,7 @@ struct Worker {
     presence: Presence,
     sessions: Sessions,
     session_policy: CoordinatorLeavePolicy,
+    join_rate: Option<RateLimit>,
     stats: Arc<Stats>,
 }
 
@@ -237,6 +244,7 @@ impl Worker {
             presence: Presence::new(),
             sessions: Sessions::new(),
             session_policy: config.coordinator_leave_policy,
+            join_rate: config.join_rate,
             stats,
         }
     }
@@ -263,6 +271,9 @@ impl Worker {
     }
 
     fn on_connect(&mut self, id: ClientId, principal: Principal, out: mpsc::Sender<ServerMsg>) {
+        let join_limiter = self
+            .join_rate
+            .map(|limit| RateLimiter::new(limit, Instant::now()));
         self.clients.insert(
             id,
             ClientState {
@@ -270,6 +281,7 @@ impl Worker {
                 principal,
                 subscriptions: HashSet::new(),
                 sessions: HashSet::new(),
+                join_limiter,
             },
         );
         self.stats.connections_opened.fetch_add(1, Ordering::Relaxed);
@@ -278,7 +290,31 @@ impl Worker {
             .store(self.clients.len() as u64, Ordering::Relaxed);
     }
 
+    /// Charge one join token; returns `false` (and notifies the client) when the
+    /// per-client join rate is exceeded. Always `true` when throttling is off.
+    fn allow_join(&mut self, id: ClientId) -> bool {
+        let denied = match self.clients.get_mut(&id) {
+            Some(cs) => match cs.join_limiter.as_mut() {
+                Some(limiter) => !limiter.try_acquire(Instant::now()),
+                None => false,
+            },
+            None => return false, // unknown client — don't proceed
+        };
+        if denied {
+            self.deliver(
+                id,
+                ServerMsg::Error {
+                    message: "join rate limit exceeded".to_string(),
+                },
+            );
+        }
+        !denied
+    }
+
     fn on_subscribe(&mut self, id: ClientId, channel: ChannelName) {
+        if !self.allow_join(id) {
+            return;
+        }
         let Some(principal_id) = self.clients.get(&id).map(|c| c.principal.id.clone()) else {
             return;
         };
@@ -433,6 +469,9 @@ impl Worker {
     // --- Coordinator sessions ---
 
     fn on_session_join(&mut self, id: ClientId, session: String) {
+        if !self.allow_join(id) {
+            return;
+        }
         let Some(principal_id) = self.clients.get(&id).map(|c| c.principal.id.clone()) else {
             return;
         };

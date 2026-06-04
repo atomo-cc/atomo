@@ -34,9 +34,11 @@ pub mod client;
 pub mod hub;
 pub mod presence;
 pub mod protocol;
+pub mod rate_limit;
 pub mod sessions;
 
 pub use hub::{ClientHandle, ClientId, Connection, Hub, HubConfig, StatsSnapshot};
 pub use presence::Member;
 pub use protocol::{ChannelName, ClientMsg, MemberInfo, Payload, Principal, ServerMsg};
+pub use rate_limit::RateLimit;
 pub use sessions::{CoordinatorLeavePolicy, SessionMember};

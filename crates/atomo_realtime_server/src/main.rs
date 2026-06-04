@@ -22,16 +22,18 @@
 //! - `ATOMO_REALTIME_COORDINATOR_POLICY` — `reelect` (default) or `close`
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use atomo_realtime::hub::HubConfig;
-use atomo_realtime::{ClientMsg, CoordinatorLeavePolicy, Hub, Principal, ServerMsg};
+use atomo_realtime::{
+    ClientMsg, CoordinatorLeavePolicy, Hub, Principal, RateLimit, ServerMsg, StatsSnapshot,
+};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Query, State,
+        ConnectInfo, Query, State,
     },
     response::{IntoResponse, Response},
     routing::get,
@@ -57,9 +59,75 @@ struct AppState {
     hub: Hub,
     jwt_secret: Arc<String>,
     allow_anon: bool,
+    conns: ConnLimiter,
 }
 
 static ANON_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Caps concurrent connections per client IP — basic DoS protection for the
+/// internet-facing relay. `max == 0` disables the cap.
+#[derive(Clone)]
+struct ConnLimiter {
+    inner: Arc<Mutex<HashMap<IpAddr, u32>>>,
+    max: u32,
+}
+
+impl ConnLimiter {
+    fn new(max: u32) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+            max,
+        }
+    }
+
+    /// Reserve a connection slot for `ip`; `false` if the IP is at its cap.
+    fn try_acquire(&self, ip: IpAddr) -> bool {
+        if self.max == 0 {
+            return true;
+        }
+        let mut map = self.inner.lock().unwrap();
+        let count = map.entry(ip).or_insert(0);
+        if *count >= self.max {
+            false
+        } else {
+            *count += 1;
+            true
+        }
+    }
+
+    /// Release a slot when the connection closes.
+    fn release(&self, ip: IpAddr) {
+        if self.max == 0 {
+            return;
+        }
+        let mut map = self.inner.lock().unwrap();
+        if let Some(count) = map.get_mut(&ip) {
+            *count -= 1;
+            if *count == 0 {
+                map.remove(&ip);
+            }
+        }
+    }
+}
+
+/// Render hub counters in Prometheus text exposition format.
+fn prometheus_text(s: &StatsSnapshot) -> String {
+    let mut out = String::new();
+    let mut metric = |name: &str, kind: &str, help: &str, value: u64| {
+        out.push_str(&format!("# HELP atomo_realtime_{name} {help}\n"));
+        out.push_str(&format!("# TYPE atomo_realtime_{name} {kind}\n"));
+        out.push_str(&format!("atomo_realtime_{name} {value}\n"));
+    };
+    metric("active_clients", "gauge", "Currently connected clients", s.active_clients);
+    metric("active_channels", "gauge", "Channels with members", s.active_channels);
+    metric("active_sessions", "gauge", "Live coordinator sessions", s.active_sessions);
+    metric("messages_published_total", "counter", "Frames accepted for fan-out", s.messages_published);
+    metric("messages_delivered_total", "counter", "Frames delivered to clients", s.messages_delivered);
+    metric("dropped_frames_total", "counter", "Frames shed to slow clients", s.dropped_frames);
+    metric("connections_opened_total", "counter", "Connections opened", s.connections_opened);
+    metric("connections_closed_total", "counter", "Connections closed", s.connections_closed);
+    out
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -93,26 +161,56 @@ async fn main() -> anyhow::Result<()> {
         Ok("close") => CoordinatorLeavePolicy::Close,
         _ => CoordinatorLeavePolicy::Reelect,
     };
+    let env_u32 = |key: &str, default: u32| -> u32 {
+        std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    };
+    // Per-client join throttle (on by default for the exposed relay).
+    let join_burst = env_u32("ATOMO_REALTIME_JOIN_BURST", 20);
+    let join_per_sec: f64 = std::env::var("ATOMO_REALTIME_JOIN_PER_SEC")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10.0);
+    let max_conn_per_ip = env_u32("ATOMO_REALTIME_MAX_CONN_PER_IP", 64);
 
     let hub = Hub::with_config(HubConfig {
         coordinator_leave_policy: policy,
+        join_rate: Some(RateLimit::new(join_burst, join_per_sec)),
     });
     let state = AppState {
         hub,
         jwt_secret: Arc::new(jwt_secret),
         allow_anon,
+        conns: ConnLimiter::new(max_conn_per_ip),
     };
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/metrics", get(metrics))
         .route("/ws", get(ws_handler))
         .with_state(state);
 
     let addr = SocketAddr::new(host.parse()?, port);
     let listener = TcpListener::bind(&addr).await?;
-    info!("⚡ atomo-realtime-server on ws://{}/ws (anon={})", addr, allow_anon);
-    axum::serve(listener, app).await?;
+    info!(
+        "⚡ atomo-realtime-server on ws://{}/ws (anon={}, max_conn_per_ip={})",
+        addr, allow_anon, max_conn_per_ip
+    );
+    // ConnectInfo gives the per-connection peer address for the per-IP cap.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
+}
+
+/// Prometheus metrics (hub counters).
+async fn metrics(State(state): State<AppState>) -> Response {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        prometheus_text(&state.hub.stats()),
+    )
+        .into_response()
 }
 
 async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
@@ -138,40 +236,50 @@ fn verify(token: &str, secret: &str) -> Option<RealtimeClaims> {
 
 async fn ws_handler(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Query(params): Query<HashMap<String, String>>,
     ws: WebSocketUpgrade,
 ) -> Response {
+    let ip = peer.ip();
+    if !state.conns.try_acquire(ip) {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "too many connections from this address",
+        )
+            .into_response();
+    }
+    let unauth = |conns: &ConnLimiter, msg: &'static str| -> Response {
+        conns.release(ip); // don't leak the slot we reserved above
+        (axum::http::StatusCode::UNAUTHORIZED, msg).into_response()
+    };
     let (principal, session) = match params.get("token") {
         Some(token) => match verify(token, &state.jwt_secret) {
             Some(claims) => (Principal::new(claims.sub, None), claims.sid),
-            None => {
-                return (
-                    axum::http::StatusCode::UNAUTHORIZED,
-                    "realtime auth failed: invalid or expired token",
-                )
-                    .into_response();
-            }
+            None => return unauth(&state.conns, "realtime auth failed: invalid or expired token"),
         },
         None if state.allow_anon => {
             let n = ANON_COUNTER.fetch_add(1, Ordering::Relaxed);
             (Principal::anonymous(format!("anon:{n}")), None)
         }
-        None => {
-            return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                "realtime auth required: pass ?token=<jwt>",
-            )
-                .into_response();
-        }
+        None => return unauth(&state.conns, "realtime auth required: pass ?token=<jwt>"),
     };
 
     let hub = state.hub;
-    ws.on_upgrade(move |socket| pump(socket, hub, principal, session))
+    let conns = state.conns;
+    ws.on_upgrade(move |socket| pump(socket, hub, principal, session, conns, ip))
 }
 
 /// Bridge one socket to the hub. If the token named a session, the matchmaker's
-/// assignment is enforced by auto-joining it on connect.
-async fn pump(mut socket: WebSocket, hub: Hub, principal: Principal, session: Option<String>) {
+/// assignment is enforced by auto-joining it on connect. Releases the per-IP
+/// connection slot when the socket closes.
+async fn pump(
+    mut socket: WebSocket,
+    hub: Hub,
+    principal: Principal,
+    session: Option<String>,
+    conns: ConnLimiter,
+    ip: IpAddr,
+) {
     let mut conn = hub.connect(principal).await;
     let id = conn.id;
     if let Some(session) = session {
@@ -207,6 +315,7 @@ async fn pump(mut socket: WebSocket, hub: Hub, principal: Principal, session: Op
     }
 
     conn.handle.disconnect().await;
+    conns.release(ip);
     debug!(client_id = id, "relay connection down");
 }
 
@@ -264,5 +373,47 @@ mod tests {
         let token = mint("s", "u", None, 9_999_999_999);
         let claims = verify(&token, "s").unwrap();
         assert!(claims.sid.is_none());
+    }
+
+    #[test]
+    fn conn_limiter_caps_per_ip_and_releases() {
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        let other: IpAddr = "10.0.0.2".parse().unwrap();
+        let lim = ConnLimiter::new(2);
+        assert!(lim.try_acquire(ip));
+        assert!(lim.try_acquire(ip));
+        assert!(!lim.try_acquire(ip), "third from same IP is rejected");
+        assert!(lim.try_acquire(other), "a different IP is unaffected");
+
+        lim.release(ip);
+        assert!(lim.try_acquire(ip), "a freed slot can be reused");
+    }
+
+    #[test]
+    fn conn_limiter_zero_means_unlimited() {
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        let lim = ConnLimiter::new(0);
+        for _ in 0..1000 {
+            assert!(lim.try_acquire(ip));
+        }
+    }
+
+    #[test]
+    fn prometheus_text_emits_named_metrics() {
+        let stats = StatsSnapshot {
+            messages_published: 5,
+            messages_delivered: 4,
+            dropped_frames: 1,
+            connections_opened: 3,
+            connections_closed: 1,
+            active_clients: 2,
+            active_channels: 1,
+            active_sessions: 1,
+        };
+        let text = prometheus_text(&stats);
+        assert!(text.contains("# TYPE atomo_realtime_active_clients gauge"));
+        assert!(text.contains("atomo_realtime_active_clients 2"));
+        assert!(text.contains("# TYPE atomo_realtime_messages_published_total counter"));
+        assert!(text.contains("atomo_realtime_dropped_frames_total 1"));
     }
 }
