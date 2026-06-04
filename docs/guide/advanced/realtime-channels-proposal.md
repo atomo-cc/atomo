@@ -139,8 +139,33 @@ Server → client: `session_start` (your slot, `coordinator` flag, roster),
 stable per session. The coordinator-leave policy (`Reelect` / `Close`) is set via
 `HubConfig`. Payloads stay opaque — the hub never inspects game/app state.
 
+**Deployment & auth (two tiers).** The hub can run two ways:
+
+1. *Mounted in `atomo_server`* (`/realtime/ws`) — shares the server's auth, for
+   in-app realtime alongside the durable API.
+2. *Standalone* (`crates/atomo_realtime_server`, the `atomo-realtime-server` bin,
+   default port 9100) — a lightweight, DB-free relay you run as a fleet of
+   edge/region-local processes (a game's relay servers).
+
+The standalone relay does **stateless JWT verification only** (signature + expiry
+against the shared `JWT_SECRET`) — it never touches the user database. The
+platform tier owns users/auth/matchmaking and hands off via a short-lived token:
+
+```
+  atomo_server (DB)  ──POST /realtime/token {session}──►  signed token { sub, sid, exp }
+        │  (matchmaking decides the session)                       │
+        ▼                                                          ▼
+   client gets the token ──────────ws://relay/ws?token=───►  atomo-realtime-server
+                                                              verifies signature only,
+                                                              binds the conn to `sid`
+```
+
+So the relay is *authenticated* without *managing users*: auth at the edge =
+signature check; user management + matchmaking stay on the platform tier.
+
 **Flags** — `ATOMO_ENABLE_REALTIME` (default on), `ATOMO_REALTIME_ALLOW_ANON`
-(default off).
+(default off). Standalone bin also reads `JWT_SECRET`, `PORT`,
+`ATOMO_REALTIME_COORDINATOR_POLICY` (`reelect`/`close`).
 
 **Isolated dev** — the hub runs with no network: `cargo test -p atomo_realtime`
 drives it directly (unit tests for presence/protocol/client/sessions + integration
@@ -164,9 +189,11 @@ high-frequency client benefits from the same primitives.
 4. ✅ **Coordinator sessions** — host-authoritative relay: join → stable slot,
    one elected coordinator, directional relay (`to_coordinator` / `to_members`),
    member join/leave, and configurable coordinator-leave policy.
-5. ⏳ Harden: a thin **standalone realtime server bin** (deploy the hub as one
-   lightweight process, off the durable server), per-IP connection caps + join
-   rate limits, Prometheus metrics; (later) binary framing.
+5. 🔧 Harden *(in progress)*: ✅ standalone **`atomo-realtime-server`** bin —
+   deploy the hub as one lightweight process with **stateless JWT auth, no DB**,
+   off the durable server — plus a `POST /realtime/token` mint endpoint on
+   `atomo_server`. ⏳ remaining: per-IP connection caps + join rate limits,
+   Prometheus metrics; (later) binary framing.
 
 ## Open questions
 

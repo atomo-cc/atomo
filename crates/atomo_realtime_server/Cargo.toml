@@ -1,0 +1,25 @@
+[package]
+name = "atomo_realtime_server"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone, lightweight realtime relay — the atomo_realtime hub over WebSocket with stateless JWT auth (no database)"
+license = "AGPL-3.0-or-later"
+
+[[bin]]
+name = "atomo-realtime-server"
+path = "src/main.rs"
+
+[dependencies]
+atomo_realtime = { path = "../atomo_realtime" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
+# Stateless token verification only — shares JWT_SECRET with atomo_server, no DB.
+jsonwebtoken = "9.2"
+
+[dev-dependencies]
+jsonwebtoken = "9.2"

@@ -36,6 +36,18 @@ pub struct Claims {
     pub jti: String,   // JWT ID (session ID)
 }
 
+/// Stateless claims for the realtime relay. Unlike [`Claims`], there is no
+/// `jti`/DB session — so `atomo-realtime-server` can verify these with signature
+/// + expiry alone (no database). `sid` is the matchmaker's session assignment.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RealtimeClaims {
+    pub sub: String, // User ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sid: Option<String>, // Assigned session (optional)
+    pub exp: i64,
+    pub iat: i64,
+}
+
 /// User context extracted from JWT - HTTP layer specific
 #[derive(Debug, Clone)]
 pub struct AuthUser {
@@ -120,6 +132,26 @@ impl HttpAuthService {
 
         let token = encode(&Header::default(), &claims, &self.encoding_key)?;
         Ok((token, session.token))
+    }
+
+    /// Mint a short-lived, **stateless** token for the realtime relay
+    /// (`atomo-realtime-server`). Signed with the same secret, but with no DB
+    /// session, so the relay verifies it without a database. `session` becomes
+    /// the `sid` claim (the matchmaker's assignment).
+    pub fn mint_realtime_token(
+        &self,
+        user_id: &str,
+        session: Option<&str>,
+        ttl_seconds: i64,
+    ) -> Result<String> {
+        let now = Utc::now();
+        let claims = RealtimeClaims {
+            sub: user_id.to_string(),
+            sid: session.map(|s| s.to_string()),
+            exp: (now + Duration::seconds(ttl_seconds)).timestamp(),
+            iat: now.timestamp(),
+        };
+        Ok(encode(&Header::default(), &claims, &self.encoding_key)?)
     }
 
     /// Verify JWT token and extract user information

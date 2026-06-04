@@ -10,6 +10,7 @@ members = [
     "crates/atomo_wasm_runtime",
     "crates/atomo_schema",
     "crates/atomo_realtime",
+    "crates/atomo_realtime_server",
 ]
 
 # Shared dependencies for all workspace members

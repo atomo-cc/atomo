@@ -437,6 +437,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomo_realtime_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atomo_realtime",
+ "axum",
+ "jsonwebtoken",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "atomo_schema"
 version = "0.1.0"
 dependencies = [

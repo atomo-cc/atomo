@@ -17,10 +17,12 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, trace};
 
@@ -41,7 +43,52 @@ pub fn realtime_router(hub: Hub, auth: HttpAuthService) -> Router {
     Router::new()
         .route("/realtime/health", get(realtime_health))
         .route("/realtime/ws", get(realtime_ws))
+        .route("/realtime/token", post(mint_realtime_token))
         .with_state(RealtimeState { hub, auth })
+}
+
+#[derive(Deserialize)]
+struct MintRequest {
+    /// Session to bind the token to (the matchmaker's assignment). Optional.
+    #[serde(default)]
+    session: Option<String>,
+    /// Token lifetime in seconds (default 1h, capped at 24h).
+    #[serde(default)]
+    ttl_seconds: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct MintResponse {
+    token: String,
+}
+
+/// Mint a short-lived, stateless token the caller hands to the standalone relay
+/// (`atomo-realtime-server`). The caller authenticates here (full DB-backed
+/// session check); the relay later verifies the minted token with signature +
+/// expiry alone. This is the platform→relay handoff: matchmaking decides the
+/// `session`, this endpoint signs it.
+async fn mint_realtime_token(
+    State(state): State<RealtimeState>,
+    headers: HeaderMap,
+    Json(req): Json<MintRequest>,
+) -> Result<Json<MintResponse>, (StatusCode, &'static str)> {
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .ok_or((StatusCode::UNAUTHORIZED, "missing bearer token"))?;
+    let user = state
+        .auth
+        .verify_token(token)
+        .await
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid or expired token"))?;
+
+    let ttl = req.ttl_seconds.unwrap_or(3600).clamp(1, 86_400);
+    let minted = state
+        .auth
+        .mint_realtime_token(&user.id, req.session.as_deref(), ttl)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to mint token"))?;
+    Ok(Json(MintResponse { token: minted }))
 }
 
 /// Liveness + hub counters (channel/connection/fan-out/drop gauges).
