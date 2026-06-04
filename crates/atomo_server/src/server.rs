@@ -360,8 +360,11 @@ impl AtomoServer {
         let admin_dir = std::env::var("ATOMO_ADMIN_DIR").unwrap_or_else(|_| "admin".to_string());
         let admin_index = std::path::Path::new(&admin_dir).join("index.html");
         if admin_index.is_file() {
+            // `.fallback` (not `.not_found_service`, which forces a 404 via
+            // SetStatus) serves index.html with 200 for unknown /admin/* paths —
+            // the SPA's client-side router then handles deep links and refreshes.
             let serve = tower_http::services::ServeDir::new(&admin_dir)
-                .not_found_service(tower_http::services::ServeFile::new(admin_index));
+                .fallback(tower_http::services::ServeFile::new(admin_index));
             app = app.nest_service("/admin", serve);
             info!("   ✓ Admin UI served at /admin (dir: {})", admin_dir);
         } else {
