@@ -9,13 +9,16 @@
 FROM node:20-slim AS admin-builder
 RUN corepack enable
 WORKDIR /repo
-# A minimal workspace (just packages/*) avoids pulling in services/ and docs/.
+# Workspace for the SPA build. The admin UI imports CRM-service components via
+# relative paths (services/crm-service/admin-ui/...), so services/ must be present
+# and its deps installed — hence packages/* + services/* and a full install.
 COPY package.json pnpm-lock.yaml ./
-RUN printf 'packages:\n  - "packages/*"\n' > pnpm-workspace.yaml
+RUN printf 'packages:\n  - "packages/*"\n  - "services/*"\n' > pnpm-workspace.yaml
 COPY packages ./packages
-# Install the admin app + its workspace deps, build the SDK it imports, then build
-# the SPA with base=/admin/ so its assets resolve under the served path.
-RUN pnpm install --filter "@atomo-cc/admin-ui..." --no-frozen-lockfile \
+COPY services ./services
+# Build the SDK the admin UI imports, then the SPA with base=/admin/ so its assets
+# resolve under the served path.
+RUN pnpm install --no-frozen-lockfile \
     && pnpm --filter "@atomo-cc/client-sdk" run build \
     && pnpm --filter "@atomo-cc/admin-ui" run build:server
 
