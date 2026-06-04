@@ -5,18 +5,19 @@ description: A domain-agnostic Atomo core capability for ephemeral, high-frequen
 
 # Proposal: Realtime Channels & Presence
 
-> Status: **Phase 2 implemented** (channels + presence + fan-out) · Layer: **Atomo core**
-> (`crates/atomo_realtime`, mounted into `atomo_server`) · First dogfood: the
-> [CRM service](/services/crm/roadmap)
+> Status: **Phases 2 & 4 implemented** (channels + presence + fan-out + coordinator
+> sessions) · Layer: **Atomo core** (`crates/atomo_realtime`, mounted into
+> `atomo_server`)
 >
 > A **core, domain-agnostic** real-time capability for *ephemeral, high-frequency*
-> traffic — presence, live fan-out, and optional coordinator sessions — that any
-> service or client can use. It complements (does not replace) the durable
-> real-time path.
+> traffic — presence, live fan-out, and host-authoritative coordinator sessions —
+> that any service or client can use. It complements (does not replace) the
+> durable real-time path. The natural consumer is host-authoritative relay
+> (e.g. multiplayer game backends), not CRM dashboards.
 >
-> The transport-agnostic hub and its WS transport are built and tested; what
-> remains is the CRM dogfood (Phase 3), coordinator sessions (Phase 4), and
-> hardening (Phase 5). See [Status & usage](#status-usage-phase-2) below.
+> The hub, WS transport, and coordinator sessions are built and tested. What
+> remains is hardening (Phase 5: standalone bin, rate limits, metrics). See
+> [Status & usage](#status-usage-phase-2) below.
 
 ## Where it fits
 
@@ -122,12 +123,28 @@ under backpressure rather than stalling the hub. Payloads are opaque
 Server → client (tagged by `type`): `message`, `joined`, `left`, `presence`,
 `error`. A publish fans out to every *other* subscriber (no self-echo).
 
+**Coordinator sessions** — for host-authoritative relay, a session has one
+elected coordinator (the first joiner). Client → server:
+
+```json
+{"op":"session_join","session":"match-1"}
+{"op":"to_coordinator","session":"match-1","payload":{"input":1}}   // member → host
+{"op":"to_members","session":"match-1","payload":{"snapshot":1}}    // host → members
+{"op":"session_leave","session":"match-1"}
+```
+
+Server → client: `session_start` (your slot, `coordinator` flag, roster),
+`member_joined` / `member_left`, `from_member` (→ coordinator), `from_coordinator`
+(→ members), `coordinator_changed` (re-election), `session_closed`. Slots are
+stable per session. The coordinator-leave policy (`Reelect` / `Close`) is set via
+`HubConfig`. Payloads stay opaque — the hub never inspects game/app state.
+
 **Flags** — `ATOMO_ENABLE_REALTIME` (default on), `ATOMO_REALTIME_ALLOW_ANON`
 (default off).
 
 **Isolated dev** — the hub runs with no network: `cargo test -p atomo_realtime`
-drives it directly (unit tests for presence/protocol/client + integration tests
-in `tests/hub.rs`).
+drives it directly (unit tests for presence/protocol/client/sessions + integration
+tests in `tests/hub.rs` and `tests/sessions.rs`).
 
 ## First dogfood: CRM
 
@@ -141,10 +158,15 @@ high-frequency client benefits from the same primitives.
 1. ✅ RFC + this doc — boundary and crate placement agreed.
 2. ✅ `crates/atomo_realtime` (library) + `atomo_server` WS transport:
    `/realtime/health`, `/realtime/ws`, channels + presence + fan-out.
-3. ⏳ CRM dogfood: presence + live Kanban; durable outcome → `atomo_core`.
-4. ⏳ Optional coordinator-session mode.
-5. ⏳ Harden: per-IP connection caps + join rate limits, Prometheus metrics
-   wiring; (later) binary framing.
+3. ⏭️ CRM dogfood (presence/live-Kanban) — **dropped**: the right consumer of the
+   ephemeral tier is host-authoritative relay (e.g. multiplayer game backends),
+   not CRM dashboards. See Phase 4.
+4. ✅ **Coordinator sessions** — host-authoritative relay: join → stable slot,
+   one elected coordinator, directional relay (`to_coordinator` / `to_members`),
+   member join/leave, and configurable coordinator-leave policy.
+5. ⏳ Harden: a thin **standalone realtime server bin** (deploy the hub as one
+   lightweight process, off the durable server), per-IP connection caps + join
+   rate limits, Prometheus metrics; (later) binary framing.
 
 ## Open questions
 
@@ -155,11 +177,14 @@ Resolved:
   reuses auth/rate-limit/deploy while staying a logically isolated module.
 - **Anonymous identity by default** → off by default; a service opts in with
   `ATOMO_REALTIME_ALLOW_ANON`. Authenticated connections pass `?token=<jwt>`.
+- **Coordinator-session failover** → configurable via `HubConfig`: `Reelect`
+  (promote the oldest remaining member, default) or `Close` (end the session and
+  notify members). Games that run host-authoritative simulation typically pick
+  `Close`.
 
 Still open:
 
 - Presence storage: per-node in-memory (today) vs. shared (Redis) for multi-node
   fan-out.
-- Coordinator-session failover: re-elect within the session, or end the session?
 - Backpressure policy: today a full per-client queue sheds the newest frame;
   revisit if a use case needs drop-oldest or guaranteed delivery.

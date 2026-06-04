@@ -22,7 +22,8 @@ use tracing::trace;
 
 use crate::client::{self, Delivery, DEFAULT_OUTBOUND_CAPACITY};
 use crate::presence::Presence;
-use crate::protocol::{ChannelName, ClientMsg, Payload, Principal, ServerMsg};
+use crate::protocol::{ChannelName, ClientMsg, MemberInfo, Payload, Principal, ServerMsg};
+use crate::sessions::{CoordinatorChange, CoordinatorLeavePolicy, Sessions};
 
 /// Identifies one connection for the lifetime of the hub. Monotonic, never reused.
 pub type ClientId = u64;
@@ -54,9 +55,34 @@ enum Command {
         id: ClientId,
         channel: ChannelName,
     },
+    SessionJoin {
+        id: ClientId,
+        session: String,
+    },
+    SessionLeave {
+        id: ClientId,
+        session: String,
+    },
+    ToCoordinator {
+        id: ClientId,
+        session: String,
+        payload: Payload,
+    },
+    ToMembers {
+        id: ClientId,
+        session: String,
+        payload: Payload,
+    },
     Disconnect {
         id: ClientId,
     },
+}
+
+/// Tuning for a [`Hub`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HubConfig {
+    /// What happens to a coordinator session when its coordinator leaves.
+    pub coordinator_leave_policy: CoordinatorLeavePolicy,
 }
 
 /// Handle to the realtime hub. Cheap to clone; clones share the one hub task.
@@ -68,11 +94,16 @@ pub struct Hub {
 }
 
 impl Hub {
-    /// Spawn the hub task and return a handle to it.
+    /// Spawn the hub task with default config and return a handle to it.
     pub fn new() -> Hub {
+        Hub::with_config(HubConfig::default())
+    }
+
+    /// Spawn the hub task with explicit [`HubConfig`].
+    pub fn with_config(config: HubConfig) -> Hub {
         let (cmd_tx, cmd_rx) = mpsc::channel(COMMAND_CAPACITY);
         let stats = Arc::new(Stats::default());
-        let worker = Worker::new(stats.clone());
+        let worker = Worker::new(stats.clone(), config);
         tokio::spawn(worker.run(cmd_rx));
         Hub {
             cmd_tx,
@@ -158,6 +189,18 @@ impl ClientHandle {
                 payload: Payload::from(payload),
             },
             ClientMsg::Presence { channel } => Command::Presence { id: self.id, channel },
+            ClientMsg::SessionJoin { session } => Command::SessionJoin { id: self.id, session },
+            ClientMsg::SessionLeave { session } => Command::SessionLeave { id: self.id, session },
+            ClientMsg::ToCoordinator { session, payload } => Command::ToCoordinator {
+                id: self.id,
+                session,
+                payload: Payload::from(payload),
+            },
+            ClientMsg::ToMembers { session, payload } => Command::ToMembers {
+                id: self.id,
+                session,
+                payload: Payload::from(payload),
+            },
         };
         let _ = self.cmd_tx.send(cmd).await;
     }
@@ -176,19 +219,24 @@ struct ClientState {
     out: mpsc::Sender<ServerMsg>,
     principal: Principal,
     subscriptions: HashSet<ChannelName>,
+    sessions: HashSet<String>,
 }
 
 struct Worker {
     clients: HashMap<ClientId, ClientState>,
     presence: Presence,
+    sessions: Sessions,
+    session_policy: CoordinatorLeavePolicy,
     stats: Arc<Stats>,
 }
 
 impl Worker {
-    fn new(stats: Arc<Stats>) -> Self {
+    fn new(stats: Arc<Stats>, config: HubConfig) -> Self {
         Self {
             clients: HashMap::new(),
             presence: Presence::new(),
+            sessions: Sessions::new(),
+            session_policy: config.coordinator_leave_policy,
             stats,
         }
     }
@@ -201,6 +249,14 @@ impl Worker {
                 Command::Unsubscribe { id, channel } => self.on_unsubscribe(id, channel),
                 Command::Publish { id, channel, payload } => self.on_publish(id, channel, payload),
                 Command::Presence { id, channel } => self.on_presence(id, channel),
+                Command::SessionJoin { id, session } => self.on_session_join(id, session),
+                Command::SessionLeave { id, session } => self.leave_session(id, &session),
+                Command::ToCoordinator { id, session, payload } => {
+                    self.on_to_coordinator(id, session, payload)
+                }
+                Command::ToMembers { id, session, payload } => {
+                    self.on_to_members(id, session, payload)
+                }
                 Command::Disconnect { id } => self.on_disconnect(id),
             }
         }
@@ -213,6 +269,7 @@ impl Worker {
                 out,
                 principal,
                 subscriptions: HashSet::new(),
+                sessions: HashSet::new(),
             },
         );
         self.stats.connections_opened.fetch_add(1, Ordering::Relaxed);
@@ -305,6 +362,10 @@ impl Worker {
                 );
             }
         }
+        // Drop out of every coordinator session too (re-elect/close as configured).
+        for session in cs.sessions {
+            self.leave_session(id, &session);
+        }
         self.stats.connections_closed.fetch_add(1, Ordering::Relaxed);
         self.stats
             .active_clients
@@ -362,6 +423,158 @@ impl Worker {
             .active_channels
             .store(self.presence.channel_count() as u64, Ordering::Relaxed);
     }
+
+    fn refresh_session_gauge(&self) {
+        self.stats
+            .active_sessions
+            .store(self.sessions.count() as u64, Ordering::Relaxed);
+    }
+
+    // --- Coordinator sessions ---
+
+    fn on_session_join(&mut self, id: ClientId, session: String) {
+        let Some(principal_id) = self.clients.get(&id).map(|c| c.principal.id.clone()) else {
+            return;
+        };
+        let outcome = self.sessions.join(&session, id, &principal_id);
+        if let Some(cs) = self.clients.get_mut(&id) {
+            cs.sessions.insert(session.clone());
+        }
+        // Tell the joiner its slot, role, and the roster…
+        let members: Vec<MemberInfo> = outcome
+            .roster
+            .iter()
+            .map(|m| MemberInfo {
+                slot: m.slot,
+                id: m.principal_id.clone(),
+            })
+            .collect();
+        self.deliver(
+            id,
+            ServerMsg::SessionStart {
+                session: session.clone(),
+                slot: outcome.slot,
+                coordinator: outcome.is_coordinator,
+                members,
+            },
+        );
+        // …and tell everyone already in the session about the newcomer.
+        for m in &outcome.roster {
+            if m.client_id == id {
+                continue;
+            }
+            self.deliver(
+                m.client_id,
+                ServerMsg::MemberJoined {
+                    session: session.clone(),
+                    slot: outcome.slot,
+                    id: principal_id.clone(),
+                },
+            );
+        }
+        self.refresh_session_gauge();
+    }
+
+    /// Remove `id` from `session`, emitting the right frames per the leave outcome.
+    fn leave_session(&mut self, id: ClientId, session: &str) {
+        let Some(outcome) = self.sessions.leave(session, id, self.session_policy) else {
+            return;
+        };
+        if let Some(cs) = self.clients.get_mut(&id) {
+            cs.sessions.remove(session);
+        }
+        let left = ServerMsg::MemberLeft {
+            session: session.to_string(),
+            slot: outcome.member.slot,
+            id: outcome.member.principal_id.clone(),
+        };
+        match outcome.change {
+            CoordinatorChange::Closed => {
+                // The session is gone — evict the rest and tell them why.
+                for m in &outcome.remaining {
+                    if let Some(cs) = self.clients.get_mut(&m.client_id) {
+                        cs.sessions.remove(session);
+                    }
+                    self.deliver(
+                        m.client_id,
+                        ServerMsg::SessionClosed {
+                            session: session.to_string(),
+                            reason: "coordinator_left".to_string(),
+                        },
+                    );
+                }
+            }
+            CoordinatorChange::Reelected(new_coord) => {
+                for m in &outcome.remaining {
+                    self.deliver(m.client_id, left.clone());
+                    self.deliver(
+                        m.client_id,
+                        ServerMsg::CoordinatorChanged {
+                            session: session.to_string(),
+                            slot: new_coord.slot,
+                            id: new_coord.principal_id.clone(),
+                        },
+                    );
+                }
+            }
+            CoordinatorChange::None => {
+                for m in &outcome.remaining {
+                    self.deliver(m.client_id, left.clone());
+                }
+            }
+        }
+        self.refresh_session_gauge();
+    }
+
+    /// Member → coordinator relay.
+    fn on_to_coordinator(&mut self, id: ClientId, session: String, payload: Payload) {
+        let Some(sender) = self.sessions.member(&session, id).cloned() else {
+            return; // not a member of this session
+        };
+        let Some(coordinator) = self.sessions.coordinator(&session) else {
+            return;
+        };
+        self.stats.messages_published.fetch_add(1, Ordering::Relaxed);
+        self.deliver(
+            coordinator,
+            ServerMsg::FromMember {
+                session,
+                from: sender.principal_id,
+                slot: sender.slot,
+                payload,
+            },
+        );
+    }
+
+    /// Coordinator → members broadcast (rejected if the sender isn't the coordinator).
+    fn on_to_members(&mut self, id: ClientId, session: String, payload: Payload) {
+        if !self.sessions.is_coordinator(&session, id) {
+            self.deliver(
+                id,
+                ServerMsg::Error {
+                    message: format!("not the coordinator of session '{session}'"),
+                },
+            );
+            return;
+        }
+        self.stats.messages_published.fetch_add(1, Ordering::Relaxed);
+        let targets: Vec<ClientId> = self
+            .sessions
+            .roster(&session)
+            .into_iter()
+            .filter(|m| m.client_id != id)
+            .map(|m| m.client_id)
+            .collect();
+        for cid in targets {
+            self.deliver(
+                cid,
+                ServerMsg::FromCoordinator {
+                    session: session.clone(),
+                    payload: payload.clone(),
+                },
+            );
+        }
+    }
 }
 
 // ===========================================================================
@@ -377,6 +590,7 @@ struct Stats {
     connections_closed: AtomicU64,
     active_clients: AtomicU64,
     active_channels: AtomicU64,
+    active_sessions: AtomicU64,
 }
 
 impl Stats {
@@ -389,6 +603,7 @@ impl Stats {
             connections_closed: self.connections_closed.load(Ordering::Relaxed),
             active_clients: self.active_clients.load(Ordering::Relaxed),
             active_channels: self.active_channels.load(Ordering::Relaxed),
+            active_sessions: self.active_sessions.load(Ordering::Relaxed),
         }
     }
 }
@@ -403,6 +618,7 @@ pub struct StatsSnapshot {
     pub connections_closed: u64,
     pub active_clients: u64,
     pub active_channels: u64,
+    pub active_sessions: u64,
 }
 
 /// Convenience for transports that build a [`Payload`] from already-owned bytes.
@@ -436,6 +652,7 @@ mod tests {
             connections_closed: 0,
             active_clients: 0,
             active_channels: 0,
+            active_sessions: 0,
         };
         // Round-trips through serde the way /realtime/health exposes it.
         let json = serde_json::to_string(&stats).unwrap();

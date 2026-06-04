@@ -83,6 +83,23 @@ pub enum ClientMsg {
     },
     /// Request a one-shot membership snapshot for a channel.
     Presence { channel: ChannelName },
+
+    // --- Coordinator sessions (host-authoritative relay) ---
+    /// Join (or create) a session. The first joiner becomes the coordinator.
+    SessionJoin { session: String },
+    /// Leave a session.
+    SessionLeave { session: String },
+    /// Send an opaque payload to the session's coordinator (member → host).
+    ToCoordinator {
+        session: String,
+        payload: Box<RawValue>,
+    },
+    /// Broadcast an opaque payload to all other members (host → members).
+    /// Rejected unless the sender is the coordinator.
+    ToMembers {
+        session: String,
+        payload: Box<RawValue>,
+    },
 }
 
 impl<'de> Deserialize<'de> for ClientMsg {
@@ -98,19 +115,34 @@ impl<'de> Deserialize<'de> for ClientMsg {
             #[serde(default)]
             channel: ChannelName,
             #[serde(default)]
+            session: String,
+            #[serde(default)]
             payload: Option<Box<RawValue>>,
         }
 
         let wire = Wire::deserialize(deserializer)?;
+        // `payload` is moved (not cloned) into the one matching arm — Box<RawValue>
+        // is intentionally not Clone, which is also why this is hand-written.
+        let need = |p: Option<Box<RawValue>>, op: &str| {
+            p.ok_or_else(|| D::Error::custom(format!("{op} frame requires a `payload`")))
+        };
         Ok(match wire.op.as_str() {
             "subscribe" => ClientMsg::Subscribe { channel: wire.channel },
             "unsubscribe" => ClientMsg::Unsubscribe { channel: wire.channel },
             "presence" => ClientMsg::Presence { channel: wire.channel },
             "publish" => ClientMsg::Publish {
                 channel: wire.channel,
-                payload: wire
-                    .payload
-                    .ok_or_else(|| D::Error::custom("publish frame requires a `payload`"))?,
+                payload: need(wire.payload, "publish")?,
+            },
+            "session_join" => ClientMsg::SessionJoin { session: wire.session },
+            "session_leave" => ClientMsg::SessionLeave { session: wire.session },
+            "to_coordinator" => ClientMsg::ToCoordinator {
+                session: wire.session,
+                payload: need(wire.payload, "to_coordinator")?,
+            },
+            "to_members" => ClientMsg::ToMembers {
+                session: wire.session,
+                payload: need(wire.payload, "to_members")?,
             },
             other => return Err(D::Error::custom(format!("unknown op: {other}"))),
         })
@@ -140,6 +172,52 @@ pub enum ServerMsg {
     },
     /// A non-fatal error (e.g. an unparseable client frame).
     Error { message: String },
+
+    // --- Coordinator sessions ---
+    /// Sent to a member right after it joins: its slot, whether it is the
+    /// coordinator, and the current roster.
+    SessionStart {
+        session: String,
+        slot: u32,
+        coordinator: bool,
+        members: Vec<MemberInfo>,
+    },
+    /// Another member joined a session this client is in.
+    MemberJoined {
+        session: String,
+        slot: u32,
+        id: String,
+    },
+    /// Another member left a session this client is in.
+    MemberLeft {
+        session: String,
+        slot: u32,
+        id: String,
+    },
+    /// The coordinator left and a new one was elected (re-election policy).
+    CoordinatorChanged {
+        session: String,
+        slot: u32,
+        id: String,
+    },
+    /// The session ended (coordinator left under the close policy).
+    SessionClosed { session: String, reason: String },
+    /// A member's payload relayed to the coordinator (member → host).
+    FromMember {
+        session: String,
+        from: String,
+        slot: u32,
+        payload: Payload,
+    },
+    /// The coordinator's payload relayed to a member (host → members).
+    FromCoordinator { session: String, payload: Payload },
+}
+
+/// A roster entry in [`ServerMsg::SessionStart`].
+#[derive(Debug, Clone, Serialize)]
+pub struct MemberInfo {
+    pub slot: u32,
+    pub id: String,
 }
 
 #[cfg(test)]

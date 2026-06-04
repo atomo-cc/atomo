@@ -34,7 +34,9 @@ pub mod client;
 pub mod hub;
 pub mod presence;
 pub mod protocol;
+pub mod sessions;
 
-pub use hub::{ClientHandle, ClientId, Connection, Hub, StatsSnapshot};
+pub use hub::{ClientHandle, ClientId, Connection, Hub, HubConfig, StatsSnapshot};
 pub use presence::Member;
-pub use protocol::{ChannelName, ClientMsg, Payload, Principal, ServerMsg};
+pub use protocol::{ChannelName, ClientMsg, MemberInfo, Payload, Principal, ServerMsg};
+pub use sessions::{CoordinatorLeavePolicy, SessionMember};
