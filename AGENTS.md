@@ -29,10 +29,43 @@
 - PRs must include: clear description, linked issues, test coverage, and docs updates (README/docs/CLI help). Add screenshots for UI changes.
 - Keep patches focused and minimal; avoid unrelated refactors.
 
+## Feature Change Checklist (create / update / delete)
+When you add, change, or remove a feature, sweep **all** of these surfaces in the
+same change so code and docs never drift. (Skip an item only if it genuinely does
+not apply — don't skip silently.)
+
+1. **Code** — implement in the right crate/package. A new crate must be added to
+   the root `Cargo.toml` `[workspace] members`. Mounted into the server? Wire the
+   route in `crates/atomo_server/src/handlers.rs` (or `server.rs`) and gate it
+   behind a config flag if optional.
+2. **Tests** — co-located unit tests (`#[cfg(test)]`) for internals **and**
+   integration tests in `tests/` for the wired path. Then `cargo test`,
+   `cargo clippy -- -D warnings`, and a build of any dependent crate must pass.
+   Prefer tests that parse/drive the real entry point (a unit test caught a
+   serde bug the integration tests had bypassed).
+3. **Config & env** — a new env var goes in `ServerConfig` (field + `Default` +
+   `from_env`) **and** in `.env.example` (security-relevant flags especially).
+4. **Docs (`docs/`, VitePress)**:
+   - The feature's own guide/proposal page — keep **status accurate**; when a
+     proposal ships, reconcile it with what was actually built (don't leave it
+     reading as "proposed").
+   - `docs/guide/architecture.md` — component/crate list.
+   - `docs/api/index.md` + the relevant `docs/api/*` page — new/changed endpoints.
+   - `docs/roadmap.md` (and `docs/zh/roadmap.md` if kept in sync) — status line.
+   - `docs/.vitepress/config.ts` — nav entry for any **new** page.
+5. **Top-level** — `README.md` (workspace crate tree / feature list) and
+   `CHANGELOG.md` (`[Unreleased]`).
+6. **Commit** — Conventional Commits, one focused commit per concern
+   (`feat`/`test`/`docs`), each verifiable on its own.
+
+**Deleting a feature** is the same sweep in reverse: remove the code/tests/crate
+member **and prune every reference** above — env vars, nav entries, README/crate
+tree, changelog, roadmap, and cross-links — so nothing dangles.
+
 ## Security & Configuration Tips
 - Use `.env` for local secrets; never commit secrets. Copy from `.env.example`.
 - Run DB ops via `pnpm atomo migrate -- --service <name>` and seed with `pnpm atomo seed -- --service <name>`.
 - Generated code lives in `generated/`; do not hand-edit—change the source schema or templates instead.
 
 ## Agent-Specific Instructions
-- Respect this guide for any code edits. Update tests and docs with behavior changes. Avoid breaking public APIs in `crates/atomo*` without prior discussion.
+- Respect this guide for any code edits. For any feature add/change/remove, run the **Feature Change Checklist** above so code, tests, config, and docs land together. Avoid breaking public APIs in `crates/atomo*` without prior discussion.
