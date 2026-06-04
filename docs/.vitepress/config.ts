@@ -91,6 +91,8 @@ export default defineConfig({
             { text: 'Proposal: Plugin Marketplace', link: '/guide/advanced/plugin-marketplace-proposal' },
             { text: 'Proposal: Workflow Designer', link: '/guide/advanced/workflow-designer-proposal' },
             { text: 'Proposal: Realtime Channels & Presence', link: '/guide/advanced/realtime-channels-proposal' },
+            { text: 'Proposal: Custom HTTP Routes', link: '/guide/advanced/custom-routes-proposal' },
+            { text: 'Proposal: Schema Constraints', link: '/guide/advanced/schema-constraints-proposal' },
             { text: 'Plan: CRM Conformance Suite', link: '/guide/advanced/crm-conformance-plan' }
           ]
         }
