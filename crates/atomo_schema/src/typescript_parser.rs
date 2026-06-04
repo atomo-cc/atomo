@@ -399,18 +399,28 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
 
     // Each field is `;`-separated (and may also span newlines). Strip inline/line comments,
     // skip union members and stray exports, then parse the rest as field definitions.
-    for raw in body.split(['\n', ';']) {
-        let seg = raw.split("//").next().unwrap_or("").trim();
-        if seg.is_empty()
-            || seg.starts_with("/*")
-            || seg.starts_with('*')
-            || seg.starts_with("export ")
-            || seg.contains('|')
-        {
-            continue;
-        }
-        if let Some(field) = parse_field_definition(seg) {
-            fields.insert(field.name.clone(), field);
+    // Parse line-by-line so a field's trailing comment (its annotations) stays with it,
+    // whether or not a `;` precedes the comment. A line may still pack multiple
+    // `;`-separated fields; the line's annotations apply to each.
+    for line in body.lines() {
+        let mut split = line.splitn(2, "//");
+        let code = split.next().unwrap_or("");
+        // Inline annotations live in the trailing comment, e.g.
+        // `idempotencyKey: string // @unique @index`.
+        let annotations = split.next().unwrap_or("");
+        for raw in code.split(';') {
+            let seg = raw.trim();
+            if seg.is_empty()
+                || seg.starts_with("/*")
+                || seg.starts_with('*')
+                || seg.starts_with("export ")
+                || seg.contains('|')
+            {
+                continue;
+            }
+            if let Some(field) = parse_field_definition(seg, annotations) {
+                fields.insert(field.name.clone(), field);
+            }
         }
     }
 
@@ -428,7 +438,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
     Ok((model, lines_consumed))
 }
 
-fn parse_field_definition(line: &str) -> Option<Field> {
+fn parse_field_definition(line: &str, annotations: &str) -> Option<Field> {
     // Handle patterns like:
     // id: string;
     // email?: string;
@@ -473,6 +483,19 @@ fn parse_field_definition(line: &str) -> Option<Field> {
     }
     if field_name.contains("created") || field_name.contains("updated") {
         attributes.push(FieldAttribute::Timestamp);
+    }
+
+    // Explicit annotations in the trailing comment override/augment the heuristics:
+    //   idempotencyKey: string // @unique
+    //   accountId: string      // @index
+    let has = |attrs: &[FieldAttribute], want: &FieldAttribute| {
+        attrs.iter().any(|a| std::mem::discriminant(a) == std::mem::discriminant(want))
+    };
+    if annotations.contains("@unique") && !has(&attributes, &FieldAttribute::Unique) {
+        attributes.push(FieldAttribute::Unique);
+    }
+    if annotations.contains("@index") && !has(&attributes, &FieldAttribute::Index) {
+        attributes.push(FieldAttribute::Index);
     }
 
     Some(Field {
@@ -655,6 +678,38 @@ mod validation_tests {
             .find(|m| m.name == "Note")
             .expect("Note parsed");
         assert!(n.fields.contains_key("id") && n.fields.contains_key("title"));
+    }
+
+    #[test]
+    fn parses_unique_and_index_annotations() {
+        use crate::types::FieldAttribute;
+        // Covers both: annotation with no trailing `;`, and `;`-then-comment.
+        let content = r#"
+        export interface CreditLedger {
+          id: string
+          idempotencyKey: string // @unique
+          accountId: string;     // @index
+          amount: number
+        }
+        "#;
+        let models = TypeScriptParser::new().parse_interfaces(content).unwrap();
+        let m = models
+            .iter()
+            .find(|m| m.name == "CreditLedger")
+            .expect("CreditLedger parsed");
+        let has = |f: &str, want: FieldAttribute| {
+            m.fields
+                .get(f)
+                .map(|fd| {
+                    fd.attributes
+                        .iter()
+                        .any(|a| std::mem::discriminant(a) == std::mem::discriminant(&want))
+                })
+                .unwrap_or(false)
+        };
+        assert!(has("idempotencyKey", FieldAttribute::Unique), "@unique (no semicolon)");
+        assert!(has("accountId", FieldAttribute::Index), "@index (after semicolon)");
+        assert!(!has("amount", FieldAttribute::Unique) && !has("amount", FieldAttribute::Index));
     }
 
     #[test]

@@ -34,6 +34,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", table);
 
         let mut columns = Vec::new();
+        let mut index_cols: Vec<String> = Vec::new();
         for field in model.fields.values() {
             let col = to_snake_case(&field.name);
             let column_type = field_type_to_sql(&field.field_type);
@@ -59,7 +60,28 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                 _ => String::new(),
             };
             let nullable = if field.optional { "" } else { " NOT NULL" };
-            columns.push(format!("  {} {}{}{}", col, column_type, default, nullable));
+            // `@unique` annotation -> column UNIQUE constraint.
+            let unique = if field
+                .attributes
+                .iter()
+                .any(|a| matches!(a, FieldAttribute::Unique))
+            {
+                " UNIQUE"
+            } else {
+                ""
+            };
+            columns.push(format!(
+                "  {} {}{}{}{}",
+                col, column_type, default, nullable, unique
+            ));
+            // `@index` annotation -> a CREATE INDEX emitted after the table.
+            if field
+                .attributes
+                .iter()
+                .any(|a| matches!(a, FieldAttribute::Index))
+            {
+                index_cols.push(col.clone());
+            }
         }
 
         // Add soft delete column
@@ -72,6 +94,13 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         sql.push_str("\n);");
 
         migrations.push(sql);
+
+        // Secondary indexes from `@index` annotations (idempotent).
+        for col in &index_cols {
+            migrations.push(format!(
+                "CREATE INDEX IF NOT EXISTS idx_{table}_{col} ON {table} ({col});"
+            ));
+        }
     }
 
     // Foreign-key pass (after all tables exist, so ordering doesn't matter): for each model's
@@ -246,6 +275,48 @@ mod tests {
         assert!(
             sql.contains("ALTER TABLE deal ADD CONSTRAINT fk_deal_contact_id FOREIGN KEY (contact_id) REFERENCES contact(id)"),
             "FK not emitted:\n{}", sql
+        );
+    }
+
+    #[test]
+    fn generate_migrations_emits_unique_and_index_from_attributes() {
+        use atomo_schema::FieldAttribute;
+        let attr_field = |name: &str, attrs: Vec<FieldAttribute>| {
+            (
+                name.to_string(),
+                Field {
+                    name: name.to_string(),
+                    field_type: FieldType::String,
+                    optional: false,
+                    attributes: attrs,
+                },
+            )
+        };
+        let ledger = model(
+            "CreditLedger",
+            "credit_ledger",
+            vec![
+                field("id", FieldType::EntityId, false),
+                attr_field("idempotencyKey", vec![FieldAttribute::Unique]),
+                attr_field("accountId", vec![FieldAttribute::Index]),
+            ],
+            vec![],
+        );
+        let mut models = HashMap::new();
+        models.insert("CreditLedger".into(), ledger);
+        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+
+        // @unique -> column UNIQUE constraint.
+        assert!(
+            sql.contains("idempotency_key TEXT NOT NULL UNIQUE"),
+            "unique column missing:\n{sql}"
+        );
+        // @index -> CREATE INDEX.
+        assert!(
+            sql.contains(
+                "CREATE INDEX IF NOT EXISTS idx_credit_ledger_account_id ON credit_ledger (account_id)"
+            ),
+            "index missing:\n{sql}"
         );
     }
 }
