@@ -90,6 +90,7 @@ export default defineConfig({
             { text: 'Proposal: Scripting Plugins', link: '/guide/advanced/scripting-plugins-proposal' },
             { text: 'Proposal: Plugin Marketplace', link: '/guide/advanced/plugin-marketplace-proposal' },
             { text: 'Proposal: Workflow Designer', link: '/guide/advanced/workflow-designer-proposal' },
+            { text: 'Proposal: Realtime Channels & Presence', link: '/guide/advanced/realtime-channels-proposal' },
             { text: 'Plan: CRM Conformance Suite', link: '/guide/advanced/crm-conformance-plan' }
           ]
         }
@@ -118,6 +119,7 @@ export default defineConfig({
         {
           text: '🧩 CRM Service',
           items: [
+            { text: 'Refinement & Dogfooding Roadmap', link: '/services/crm/roadmap' },
             { text: 'Release Checklist', link: '/services/crm/release-checklist' }
           ]
         }
