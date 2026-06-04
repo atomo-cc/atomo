@@ -97,6 +97,16 @@ The narrower "transactional command hook / conditional-append on `create()`" ide
 route you write the transaction in your own handler. One general primitive
 replaces a family of special-purpose ones.
 
+## Existing scaffolding
+
+Not a clean slate — but not implemented either. `atomo_server`'s native `Plugin`
+trait already has `register_routes(&self, router) -> Router`, and the
+`PluginManager` calls it — **but the default is a no-op** (`{ router }`), and it's
+on the *in-process Rust* plugin path, **not wired to the WASM/JS plugin runtime**
+users actually write against. So no user plugin can register a route today.
+Building this = expose registration + dispatch to the WASM/JS runtime, then add
+the synchronous transactional DB access (phase 3).
+
 ## Phasing
 
 1. RFC + this doc.

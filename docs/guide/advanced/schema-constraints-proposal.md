@@ -88,6 +88,16 @@ The migrator turns these into `UNIQUE (...)`, `CHECK (...)`, `CREATE INDEX`, and
 - **Additive-first.** Ship the low-risk, high-value pieces (`unique`, `index`)
   before the trickier ones (`check`, drop-reconciliation).
 
+## Existing scaffolding
+
+Half-parsed, not applied. The schema parser already recognises
+`FieldAttribute::Unique` and `FieldAttribute::Index` (`atomo_schema`'s
+`typescript_parser.rs`), but the table generator (`atomo/src/schema.rs`) only
+consumes `Primary` — so `unique`/`index` are **parsed and silently dropped**,
+never reaching the `CREATE TABLE` DDL. `check`/`default` expressions and
+composites aren't modelled at all. Building this = emit DDL from the
+already-parsed attributes (phase 2), then add the rest.
+
 ## Phasing
 
 1. RFC + this doc.
