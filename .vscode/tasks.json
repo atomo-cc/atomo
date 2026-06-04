@@ -1,15 +1,11 @@
 {
   // Publish buttons. Run via: Terminal → Run Task… (or Ctrl/Cmd+Shift+P → "Tasks: Run Task").
-  // npm packages publish locally (prompt for a fresh 2FA code each time); the
-  // server image is built+pushed by the GitHub Actions `docker.yml` workflow,
+  // npm auth comes from a token in ~/.npmrc (no 2FA OTP):
+  //   npm config set //registry.npmjs.org/:_authToken=<token>
+  // The server image is built+pushed by the GitHub Actions `docker.yml` workflow,
   // triggered here with the gh CLI — no local Docker needed.
   "version": "2.0.0",
   "inputs": [
-    {
-      "id": "npmOtp",
-      "type": "promptString",
-      "description": "npm 2FA one-time code (from your authenticator app)"
-    },
     {
       "id": "imageTag",
       "type": "promptString",
@@ -21,7 +17,7 @@
     {
       "label": "Publish: SDK → npm (@atomo-cc/client-sdk, next tag)",
       "type": "shell",
-      "command": "corepack pnpm --filter @atomo-cc/client-sdk publish --tag next --access public --no-git-checks --otp=${input:npmOtp}",
+      "command": "corepack pnpm --filter @atomo-cc/client-sdk publish --tag next --access public --no-git-checks",
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
@@ -29,7 +25,7 @@
     {
       "label": "Publish: create-app → npm (@atomo-cc/create-app)",
       "type": "shell",
-      "command": "corepack pnpm --filter @atomo-cc/create-app publish --access public --no-git-checks --otp=${input:npmOtp}",
+      "command": "corepack pnpm --filter @atomo-cc/create-app publish --access public --no-git-checks",
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
