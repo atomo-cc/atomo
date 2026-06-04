@@ -43,7 +43,8 @@ class AtomoApiClient {
         if (error.response?.status === 401) {
           // 认证失败，清除 token 并跳转登录
           localStorage.removeItem('atomo_auth_token')
-          window.location.href = '/login'
+          // Base-aware so it stays under /admin when served from a subpath.
+          window.location.href = `${(import.meta as any).env.BASE_URL}login`
         }
         return Promise.reject(error)
       }

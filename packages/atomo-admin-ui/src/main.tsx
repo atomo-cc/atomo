@@ -14,10 +14,15 @@ const queryClient = new QueryClient({
   },
 })
 
+// When the admin is served under a subpath (e.g. /admin), Vite sets BASE_URL to
+// it; react-router's basename makes all route reads and <Link>/navigate() targets
+// subpath-aware, so links and deep-links resolve under /admin instead of root.
+const basename = String((import.meta as any).env.BASE_URL || '/').replace(/\/$/, '') || '/'
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={basename}>
         <App />
       </BrowserRouter>
     </QueryClientProvider>
