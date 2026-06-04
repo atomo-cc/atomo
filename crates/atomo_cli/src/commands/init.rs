@@ -62,31 +62,33 @@ pub async fn init_command(name: String, template: Option<String>) -> Result<()> 
 
 A new Atomo Content Core project.
 
-## Getting Started
+## Run it (no Rust required)
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+The fastest way: Docker pulls the prebuilt server image and runs it against your
+schema, alongside a Postgres database. No Rust, no toolchain to install.
 
-2. Generate Rust code from schema:
-   ```bash
-   npm run atomo:generate
-   ```
+```bash
+docker compose up                    # http://localhost:3000
+curl http://localhost:3000/health    # -> OK
+```
 
-3. Run database migrations:
-   ```bash
-   npm run atomo:migrate
-   ```
+Your data model lives in `atomo/schema.ts`. Edit it and re-run `docker compose up`
+to apply changes — the server re-parses the schema and runs migrations on boot.
 
-4. Start development server:
-   ```bash
-   npm run dev
-   ```
+## Develop with the CLI (optional, needs Rust)
+
+If you have the Atomo CLI installed, you also get schema hot-reload:
+
+```bash
+npm install
+npm run atomo:generate   # generate typed client SDK from the schema
+npm run dev              # atomo dev — hot reload (requires the Rust toolchain)
+```
 
 ## Project Structure
 
 - `atomo/schema.ts` - Your content model definitions
+- `docker-compose.yml` - Run the server + Postgres with no Rust
 - `generated/` - Auto-generated client code
 - `src/` - Your application code
 
@@ -100,6 +102,50 @@ Visit [atomo.cc/docs](https://atomo.cc/docs) for full documentation.
     fs::write(project_path.join("README.md"), readme_content)?;
     println!("   ✓ Created README.md");
 
+    // Create docker-compose.yml — the zero-Rust run path. Pulls the published
+    // server image and mounts this project's schema; `docker compose up` runs it.
+    let compose_content = r#"# Run this Atomo project with no Rust toolchain: `docker compose up`.
+# Pulls the prebuilt atomo-server image and points it at ./atomo/schema.ts.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atomo
+      POSTGRES_PASSWORD: atomo
+      POSTGRES_DB: atomo_dev
+    volumes:
+      - atomo-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atomo -d atomo_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  server:
+    image: ghcr.io/chris533/atomo-server:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://atomo:atomo@db:5432/atomo_dev
+      ATOMO_SCHEMA_PATH: /app/atomo/schema.ts
+      # Dev-only secret/credentials — override for anything real.
+      JWT_SECRET: dev-insecure-secret-change-me
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: change-me-too
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./atomo/schema.ts:/app/atomo/schema.ts:ro
+
+volumes:
+  atomo-db:
+"#;
+
+    fs::write(project_path.join("docker-compose.yml"), compose_content)?;
+    println!("   ✓ Created docker-compose.yml (run with no Rust: docker compose up)");
+
     println!();
     println!(
         "🎉 {}",
@@ -108,9 +154,10 @@ Visit [atomo.cc/docs](https://atomo.cc/docs) for full documentation.
     println!();
     println!("Next steps:");
     println!("  cd {}", name.bright_cyan());
-    println!("  npm install");
-    println!("  npm run atomo:generate");
-    println!("  npm run dev");
+    println!("  {}            # run with no Rust (Docker)", "docker compose up".bright_cyan());
+    println!();
+    println!("  …or develop with the CLI (needs Rust):");
+    println!("  npm install && npm run atomo:generate && npm run dev");
 
     Ok(())
 }

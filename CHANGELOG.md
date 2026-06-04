@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Distribution**: Docker image for `atomo-server` (multi-stage `Dockerfile`) + root `docker-compose.yml` (Postgres + server) so the backend runs with **no Rust toolchain on the host** — `docker compose up --build`. Docs updated (install/getting-started/deployment) with a "Run without Rust" path.
+- **Distribution**: `atomo init` now scaffolds a `docker-compose.yml` (pulls the published `ghcr.io/chris533/atomo-server` image, mounts the project's `atomo/schema.ts`) and a "Run it (no Rust required)" README — so a generated project runs with `docker compose up`, no Rust or CLI build.
+- **CI**: `docker.yml` workflow (manual dispatch) builds and pushes the `atomo-server` image to GHCR.
 
 ### Changed
 - **npm scope**: renamed all packages from `@atomo/*` to `@atomo-cc/*` to match the owned npm org (`atomo-cc`). Affects package names, internal workspace imports/deps, the `atomo init` template, and docs. No published consumers were affected (packages were unpublished).
