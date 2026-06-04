@@ -43,12 +43,12 @@ async fn publish_fans_out_to_other_subscribers_not_self() {
     }
 
     // Alice publishes; Bob receives, Alice does not echo to herself.
-    let payload: Box<serde_json::value::RawValue> =
-        serde_json::from_str(r#"{"typing":true}"#).unwrap();
-    alice
-        .handle
-        .dispatch(ClientMsg::Publish { channel: "room".into(), payload })
-        .await;
+    // Parse the frame from wire JSON exactly as the server's WS pump does — this
+    // is the path that an internally-tagged enum would have broken.
+    let frame: ClientMsg =
+        serde_json::from_str(r#"{"op":"publish","channel":"room","payload":{"typing":true}}"#)
+            .unwrap();
+    alice.handle.dispatch(frame).await;
 
     match next(&mut bob).await {
         ServerMsg::Message { channel, from, payload } => {

@@ -36,3 +36,40 @@ pub fn try_deliver(out: &mpsc::Sender<ServerMsg>, msg: ServerMsg) -> Delivery {
         Err(mpsc::error::TrySendError::Closed(_)) => Delivery::Closed,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(message: &str) -> ServerMsg {
+        ServerMsg::Error {
+            message: message.into(),
+        }
+    }
+
+    #[test]
+    fn delivers_until_queue_is_full_then_sheds() {
+        let (tx, _rx) = mpsc::channel(2);
+        assert_eq!(try_deliver(&tx, frame("1")), Delivery::Sent);
+        assert_eq!(try_deliver(&tx, frame("2")), Delivery::Sent);
+        // Third frame has nowhere to go and the receiver is too slow to drain:
+        // it is shed rather than blocking the hub.
+        assert_eq!(try_deliver(&tx, frame("3")), Delivery::Dropped);
+    }
+
+    #[test]
+    fn draining_frees_capacity_again() {
+        let (tx, mut rx) = mpsc::channel(1);
+        assert_eq!(try_deliver(&tx, frame("a")), Delivery::Sent);
+        assert_eq!(try_deliver(&tx, frame("b")), Delivery::Dropped);
+        let _ = rx.try_recv().expect("one buffered frame");
+        assert_eq!(try_deliver(&tx, frame("c")), Delivery::Sent);
+    }
+
+    #[test]
+    fn reports_closed_when_receiver_is_gone() {
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        assert_eq!(try_deliver(&tx, frame("x")), Delivery::Closed);
+    }
+}

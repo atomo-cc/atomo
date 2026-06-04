@@ -82,3 +82,62 @@ impl Presence {
         self.channels.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_reports_only_the_first_membership_as_new() {
+        let mut p = Presence::new();
+        assert!(p.join("room", 1, "alice"), "first join is new");
+        assert!(!p.join("room", 1, "alice"), "re-join of same client is not new");
+        assert!(p.join("room", 2, "bob"), "different client is new");
+    }
+
+    #[test]
+    fn subscribers_lists_every_client_unknown_channel_is_empty() {
+        let mut p = Presence::new();
+        p.join("room", 1, "alice");
+        p.join("room", 2, "bob");
+        let mut subs = p.subscribers("room");
+        subs.sort();
+        assert_eq!(subs, vec![1, 2]);
+        assert!(p.subscribers("nope").is_empty());
+    }
+
+    #[test]
+    fn snapshot_dedups_principals_across_connections_and_sorts() {
+        let mut p = Presence::new();
+        // Same principal "alice" on two different connections; "bob" once.
+        p.join("room", 1, "alice");
+        p.join("room", 2, "alice");
+        p.join("room", 3, "bob");
+        assert_eq!(p.snapshot("room"), vec!["alice".to_string(), "bob".to_string()]);
+        assert!(p.snapshot("missing").is_empty());
+    }
+
+    #[test]
+    fn leave_reports_membership_and_prunes_empty_channels() {
+        let mut p = Presence::new();
+        p.join("room", 1, "alice");
+        assert_eq!(p.channel_count(), 1);
+
+        assert!(p.leave("room", 1), "leaving an existing member returns true");
+        assert!(!p.leave("room", 1), "leaving again returns false");
+        assert!(!p.leave("ghost", 9), "leaving an unknown channel returns false");
+        assert_eq!(p.channel_count(), 0, "empty channel is pruned");
+    }
+
+    #[test]
+    fn channel_only_pruned_once_last_member_leaves() {
+        let mut p = Presence::new();
+        p.join("room", 1, "alice");
+        p.join("room", 2, "bob");
+        assert!(p.leave("room", 1));
+        assert_eq!(p.channel_count(), 1, "still has bob");
+        assert_eq!(p.snapshot("room"), vec!["bob".to_string()]);
+        assert!(p.leave("room", 2));
+        assert_eq!(p.channel_count(), 0);
+    }
+}

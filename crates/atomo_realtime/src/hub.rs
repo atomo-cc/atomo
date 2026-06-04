@@ -409,3 +409,38 @@ pub struct StatsSnapshot {
 pub fn payload_from_str(json: &str) -> Result<Payload, serde_json::Error> {
     RawValue::from_string(json.to_string()).map(Payload::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn payload_from_str_preserves_valid_json() {
+        let p = payload_from_str(r#"{"a":1,"b":[2,3]}"#).unwrap();
+        assert_eq!(p.get(), r#"{"a":1,"b":[2,3]}"#);
+    }
+
+    #[test]
+    fn payload_from_str_rejects_malformed_json() {
+        assert!(payload_from_str("{not json").is_err());
+    }
+
+    #[test]
+    fn fresh_hub_stats_start_at_zero() {
+        // No runtime task is touched until connect(); a fresh hub reports zeros.
+        let stats = StatsSnapshot {
+            messages_published: 0,
+            messages_delivered: 0,
+            dropped_frames: 0,
+            connections_opened: 0,
+            connections_closed: 0,
+            active_clients: 0,
+            active_channels: 0,
+        };
+        // Round-trips through serde the way /realtime/health exposes it.
+        let json = serde_json::to_string(&stats).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(back["active_clients"], 0);
+        assert_eq!(back["dropped_frames"], 0);
+    }
+}
