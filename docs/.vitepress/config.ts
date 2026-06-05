@@ -2,6 +2,8 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'Atomo',
+  // Project Pages are served under /atomo/, so assets must resolve against this base.
+  base: '/atomo/',
   description: 'Atomo — open-source, self-hostable app backend (event-sourced GraphQL API, auth, realtime, admin UI). Documentation.',
 
   head: [
@@ -9,7 +11,7 @@ export default defineConfig({
     ['meta', { name: 'theme-color', content: '#3c82f6' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:locale', content: 'en' }],
-    ['meta', { property: 'og:title', content: 'Atomo | Next-Generation Content Core' }],
+    ['meta', { property: 'og:title', content: 'Atomo — self-hostable app backend' }],
     ['meta', { property: 'og:site_name', content: 'Atomo Docs' }],
     ['meta', { property: 'og:url', content: 'https://docs.atomo.cc/' }],
   ],
