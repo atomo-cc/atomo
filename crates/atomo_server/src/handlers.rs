@@ -251,6 +251,27 @@ pub async fn health_check() -> &'static str {
     "OK"
 }
 
+/// Build/version transparency (consumer feedback #4): lets a consumer verify
+/// exactly which build is running — "is this feature actually in the image I
+/// pulled?" — without inferring from timestamps. The values are baked into the
+/// image at build time via `ATOMO_VERSION` / `ATOMO_GIT_SHA` / `ATOMO_BUILD_TIME`
+/// (see the Dockerfile + docker.yml); they fall back to the crate version /
+/// "unknown" for a plain `cargo run`.
+pub async fn version_info() -> Json<Value> {
+    fn env_or(var: &str, default: &str) -> String {
+        std::env::var(var)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| default.to_string())
+    }
+    Json(serde_json::json!({
+        "name": "atomo-server",
+        "version": env_or("ATOMO_VERSION", env!("CARGO_PKG_VERSION")),
+        "commit": env_or("ATOMO_GIT_SHA", "unknown"),
+        "buildTime": env_or("ATOMO_BUILD_TIME", "unknown"),
+    }))
+}
+
 /// Readiness probe: checks DB connectivity
 pub async fn ready_check(Extension(atomo): Extension<Atomo>) -> StatusCode {
     let pool = atomo.db_pool().clone();
@@ -363,6 +384,7 @@ pub fn create_router(
         .route("/", get(|| async { "🚀 Atomo Content Core Server" }))
         .route("/health", get(health_check))
         .route("/ready", get(ready_check))
+        .route("/version", get(version_info))
         .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
         .route(
@@ -376,14 +398,24 @@ pub fn create_router(
                 }
             }),
         )
-        // Authentication routes
+        // Authentication routes. `/login` + `/refresh` are public (they mint/rotate
+        // tokens). `/me` + `/logout` REQUIRE an authenticated user: they read an
+        // `AuthUser` from request extensions, which only `auth_middleware` injects —
+        // so they must carry that layer, or they 401 unconditionally (they did).
         .nest(
             "/auth",
             Router::new()
                 .route("/login", post(handlers::login))
-                .route("/logout", post(handlers::logout))
                 .route("/refresh", post(handlers::refresh))
-                .route("/me", get(handlers::me))
+                .merge(
+                    Router::new()
+                        .route("/me", get(handlers::me))
+                        .route("/logout", post(handlers::logout))
+                        .route_layer(middleware::from_fn_with_state(
+                            auth_service.clone(),
+                            auth_middleware,
+                        )),
+                )
                 .with_state(auth_service.clone()),
         )
         // OAuth routes

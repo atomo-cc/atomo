@@ -38,6 +38,10 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Stamp build time
+        id: stamp
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -45,5 +49,10 @@ jobs:
           push: true
           # Owner is lowercased for GHCR; image lives at ghcr.io/atomo-cc/atomo-server.
           tags: ghcr.io/atomo-cc/atomo-server:${{ github.event.inputs.tag }}
+          # Stamp the image so GET /version reports the exact build (consumer ask).
+          build-args: |
+            ATOMO_VERSION=${{ github.event.inputs.tag }}
+            ATOMO_GIT_SHA=${{ github.sha }}
+            ATOMO_BUILD_TIME=${{ steps.stamp.outputs.time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

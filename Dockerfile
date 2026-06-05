@@ -55,10 +55,19 @@ WORKDIR /app
 COPY --from=builder /src/target/release/atomo-server /usr/local/bin/atomo-server
 # Generic Admin UI — served at /admin (ATOMO_ADMIN_DIR). Unset the env to disable.
 COPY --from=admin-builder /repo/packages/atomo-admin-ui/dist /app/admin
+# Build/version stamps surfaced by GET /version — passed as build args by CI so a
+# consumer can verify which build is in the image they pulled. Default dev/unknown
+# for a plain local `docker build`.
+ARG ATOMO_VERSION=dev
+ARG ATOMO_GIT_SHA=unknown
+ARG ATOMO_BUILD_TIME=unknown
 # The schema is supplied at runtime (mounted or baked). Defaults below can be
 # overridden with -e / compose `environment:`.
 ENV ATOMO_SCHEMA_PATH=/app/schema.ts \
     ATOMO_ADMIN_DIR=/app/admin \
+    ATOMO_VERSION=$ATOMO_VERSION \
+    ATOMO_GIT_SHA=$ATOMO_GIT_SHA \
+    ATOMO_BUILD_TIME=$ATOMO_BUILD_TIME \
     HOST=0.0.0.0 \
     PORT=3000
 EXPOSE 3000

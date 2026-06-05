@@ -110,6 +110,27 @@ impl AtomoServer {
         info!("   Port: {}", self.config.port);
         info!("   Database: {}", self.config.database_url);
 
+        // Fail loud on silent half-registration (consumer feedback #1): a model with
+        // no `id` field gets its TABLE created, but is NOT registered as a model —
+        // invisible to /meta/schema, the admin UI, GraphQL by-id lookups, and the
+        // CQRS projector, previously with zero warning. atomo's primary key is the
+        // `id` field; a declared `primaryKey: "..."` other than id is NOT honored.
+        // Enum/Block pseudo-models legitimately have no `id`, so exclude them.
+        // (Emitted here in run() — after the tracing subscriber is initialized above —
+        // not in new(), where warnings would be dropped.)
+        for (name, model) in &self.atomo.schema().models {
+            let is_pseudo = model.fields.contains_key("_enum_type") || name.ends_with("Block");
+            if !is_pseudo && !model.fields.contains_key("id") {
+                tracing::warn!(
+                    model = %name,
+                    "model has no `id` field → NOT registered (invisible to /meta/schema, the \
+                     admin UI, GraphQL by-id lookups, and the projector); its table is still \
+                     created. atomo's primary key is the `id` field — a declared `primaryKey` is \
+                     ignored. Add an `id: string` field to register this model."
+                );
+            }
+        }
+
         // Generate extended GraphQL schema that includes both service and platform queries
         let graphql_schema = crate::handlers::build_extended_schema(&self.atomo);
         info!("   ✓ Extended GraphQL schema generated (service + platform)");
