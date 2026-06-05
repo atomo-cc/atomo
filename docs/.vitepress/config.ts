@@ -4,6 +4,9 @@ export default defineConfig({
   title: 'Atomo',
   // Project Pages are served under /atomo/, so assets must resolve against this base.
   base: '/atomo/',
+  // Localhost URLs are legitimate examples in the docs (dev server, /admin) — don't
+  // fail the build treating them as dead links.
+  ignoreDeadLinks: [/^https?:\/\/localhost/, /^https?:\/\/127\.0\.0\.1/],
   description: 'Atomo Content Core — open-source, self-hostable, event-sourced backend for content-driven apps (GraphQL API, auth, realtime, admin UI). Documentation.',
 
   head: [
