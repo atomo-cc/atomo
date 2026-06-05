@@ -62,6 +62,18 @@ not apply — don't skip silently.)
 member **and prune every reference** above — env vars, nav entries, README/crate
 tree, changelog, roadmap, and cross-links — so nothing dangles.
 
+## Keep the Platform Generic (no named consumers)
+atomo is the distribution product, not any one app's backend. **Never name a
+specific or private consumer project** (a sibling repo, a customer, an app you're
+also building) anywhere in this repo — code, comments, docs, RFCs, README,
+CHANGELOG, **or commit messages**. Motivating examples in docs/RFCs must be generic
+("a credit/billing ledger", "a metered-API consumer", "a billing sidecar"), never a
+product name. Reasons: it couples the platform to one customer, and it leaks that
+project's existence if the repo or the deployed `docs/` site ever goes public.
+When a real consumer pulls a feature, capture the *generic* gap it surfaced — not
+its name. If you catch a leaked name, genericize it in the working tree; for full
+removal from history a maintainer can scrub it with `git filter-repo`.
+
 ## Security & Configuration Tips
 - Use `.env` for local secrets; never commit secrets. Copy from `.env.example`.
 - Run DB ops via `pnpm atomo migrate -- --service <name>` and seed with `pnpm atomo seed -- --service <name>`.

@@ -76,7 +76,8 @@ The migrator turns these into `UNIQUE (...)`, `CHECK (...)`, `CREATE INDEX`, and
   declarative schema; it's logic. Logic belongs in a
   [custom route](/guide/advanced/custom-routes-proposal) (where you can run a
   transaction) or a tracked migration escape hatch — not in the model DSL. So
-  a consumer's `try_debit` *function* doesn't move here; its `UNIQUE`/`CHECK` do.
+  an app's atomic-debit (`try_debit`-style) *function* doesn't move here; its
+  `UNIQUE`/`CHECK` do.
 - **Migrations stay generated + tracked.** Constraints flow through the same
   diff/apply path as columns, so there's one migration story, not two.
 
