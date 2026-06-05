@@ -72,3 +72,12 @@ debug = false
 codegen-units = 512
 incremental = true
 opt-level = 0
+
+# Release/production profile (used for the published atomo-server image).
+# `strip` drops symbols (the unstripped binary is ~40M, mostly wasmtime); thin LTO
+# trims dead code and is a bit faster at runtime for a modest build-time cost.
+# Keeps opt-level = 3 (default) — this is a throughput-sensitive server, so we do
+# NOT trade speed for size with opt-level = "z".
+[profile.release]
+strip = true
+lto = "thin"

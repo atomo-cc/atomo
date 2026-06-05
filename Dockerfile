@@ -46,12 +46,11 @@ RUN cargo chef cook --release -p atomo_server --recipe-path recipe.json
 COPY . .
 RUN cargo build --release -p atomo_server
 
-# ---- Runtime: the binary + the bundled admin SPA + CA certs. ----
-FROM debian:bookworm-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -u 10001 atomo
+# ---- Runtime: distroless (glibc). ~25M base vs ~75M for debian-slim; ships CA
+# certs + a `nonroot` user, so no apt layer. No shell — debug with the `:debug`
+# tag or a sidecar if you need to poke inside. The binary is glibc-linked (rustls,
+# not OpenSSL), so cc-debian12 has everything it needs.
+FROM gcr.io/distroless/cc-debian12 AS runtime
 WORKDIR /app
 COPY --from=builder /src/target/release/atomo-server /usr/local/bin/atomo-server
 # Generic Admin UI — served at /admin (ATOMO_ADMIN_DIR). Unset the env to disable.
@@ -63,5 +62,5 @@ ENV ATOMO_SCHEMA_PATH=/app/schema.ts \
     HOST=0.0.0.0 \
     PORT=3000
 EXPOSE 3000
-USER atomo
-CMD ["atomo-server"]
+USER nonroot
+CMD ["/usr/local/bin/atomo-server"]
