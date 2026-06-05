@@ -1,69 +1,71 @@
 # Atomo Content Core
 
-> 下一代内容管理平台 - 事件溯源架构 + AI 原生设计
+**English** · [简体中文](README.zh-CN.md) · [Español](README.es.md) · [日本語](README.ja.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
+
+> Next-generation content management platform — event-sourced architecture + AI-native design
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo 是一个现代化的内容管理平台，基于事件溯源架构设计，原生支持 AI 集成，为企业级应用提供高性能、可扩展的内容管理解决方案。
+Atomo is a modern content management platform built on an event-sourcing architecture with native AI integration, delivering a high-performance, scalable content-management solution for enterprise-grade applications.
 
-## ✨ 核心特性
+## ✨ Core Features
 
-- 🔄 **事件溯源架构**: 完整的数据历史追踪和时间旅行
-- 🧠 **AI 原生设计**: 内置 AI 工作流和智能内容处理
-- 🎯 **旗舰应用驱动**: 通过 CRM 应用驱动平台演进
-- 🔧 **双模式定义**: TypeScript Schema + Rust 代码生成
-- 🚀 **高性能**: Rust 后端 + 现代前端技术栈
-- 🔌 **插件化架构**: WASM 插件系统，支持多语言扩展
-- 📊 **实时协作**: WebSocket 驱动的实时数据同步
+- 🔄 **Event-Sourced Architecture**: Complete data-history tracking and time travel
+- 🧠 **AI-Native Design**: Built-in AI workflows and intelligent content processing
+- 🎯 **Flagship-App-Driven**: Platform evolution driven by a real CRM application
+- 🔧 **Dual-Mode Definition**: TypeScript schema + Rust code generation
+- 🚀 **High Performance**: Rust backend + a modern frontend stack
+- 🔌 **Pluggable Architecture**: WASM plugin system with multi-language extension support
+- 📊 **Realtime Collaboration**: WebSocket-driven realtime data sync
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-
-### 安装 CLI 工具
+### Install the CLI
 
 ```bash
-# 通过 Cargo 安装
+# Install via Cargo
 cargo install atomo_cli
 
-# 或下载预编译二进制文件
+# Or download a prebuilt binary
 curl -L https://github.com/atomo-cc/atomo/releases/latest/download/atomo-linux-x86_64 -o atomo
 chmod +x atomo
 ```
 
-### 创建新项目
+### Create a new project
 
 ```bash
-# 创建 CRM 应用
+# Create a CRM app
 atomo init my-crm --template crm
 
-# 创建博客应用  
+# Create a blog app
 atomo init my-blog --template blog
 
-# 创建电商应用
+# Create an e-commerce app
 atomo init my-shop --template ecommerce
 ```
 
-### 开发和部署
+### Develop and deploy
 
 ```bash
 cd my-crm
 
-# 启动开发服务器（服务目录中）
+# Start the dev server (inside a service directory)
 atomo dev
 
-# 工作区模式（在仓库根或指定服务）
+# Workspace mode (at the repo root or a specified service)
 atomo dev --workspace [--service-path services/<name>]
 
-# 构建生产版本
+# Build for production
 atomo build
 
-# 部署到云端
+# Deploy to the cloud
 atomo deploy
 ```
 
-## 前端
+## Frontend
+
 ```bash
 pnpm install
 
@@ -78,70 +80,70 @@ cd services/crm-service
 pnpm generate
 ```
 
-推荐 MVP 循环：
-1. 在 `services/crm-service/schema.ts` 调整 CRM 数据模型。
-2. 运行 `pnpm --filter atomo-crm-service generate` 更新 CRM 生成物。
-3. 运行 `pnpm --filter @atomo-cc/client-sdk build` 验证 SDK 类型输出。
-4. 用 `pnpm dev:admin` 检查 Admin UI 对生成 schema/metadata 的消费。
+Recommended MVP loop:
+1. Adjust the CRM data model in `services/crm-service/schema.ts`.
+2. Run `pnpm --filter atomo-crm-service generate` to refresh the CRM generated output.
+3. Run `pnpm --filter @atomo-cc/client-sdk build` to verify the SDK's type output.
+4. Use `pnpm dev:admin` to check how the Admin UI consumes the generated schema/metadata.
 
-`packages/atomo-admin-ui` 和 `packages/atomo-client-sdk` 都应保持 type-check 通过；用 `pnpm --filter "./packages/*" test` 验证前端/SDK 基线。
+Both `packages/atomo-admin-ui` and `packages/atomo-client-sdk` should keep type-checking green; verify the frontend/SDK baseline with `pnpm --filter "./packages/*" test`.
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
 atomo/
-├── crates/                    # Rust 核心库
-│   ├── atomo_core/           # 🔧 核心域模型和事件
-│   ├── atomo_cli/            # 🖥️  命令行工具
-│   ├── atomo_server/         # 🌐 Web 服务器
-│   ├── atomo_schema/         # 📝 Schema 解析器
-│   ├── atomo_projectors/     # 📊 事件投影器
-│   ├── atomo_realtime/       # 📡 临时实时通道与在线状态
-│   └── atomo_wasm_runtime/   # 🔌 WASM 插件运行时
-├── packages/                  # 前端包
-│   ├── atomo-client-sdk/     # 📚 客户端 SDK
-│   └── atomo-admin-ui/       # 🎛️  管理界面
-│   └── atomo-crm-app/        # 💼 CRM 旗舰应用
-├── templates/                 # 📋 项目模板
-│   ├── crm/                  # CRM 模板
-│   ├── blog/                 # 博客模板
-│   └── ecommerce/            # 电商模板
+├── crates/                    # Rust core libraries
+│   ├── atomo_core/           # 🔧 Core domain models and events
+│   ├── atomo_cli/            # 🖥️  Command-line tool
+│   ├── atomo_server/         # 🌐 Web server
+│   ├── atomo_schema/         # 📝 Schema parser
+│   ├── atomo_projectors/     # 📊 Event projectors
+│   ├── atomo_realtime/       # 📡 Ephemeral realtime channels and presence
+│   └── atomo_wasm_runtime/   # 🔌 WASM plugin runtime
+├── packages/                  # Frontend packages
+│   ├── atomo-client-sdk/     # 📚 Client SDK
+│   └── atomo-admin-ui/       # 🎛️  Admin interface
+│   └── atomo-crm-app/        # 💼 CRM flagship app
+├── templates/                 # 📋 Project templates
+│   ├── crm/                  # CRM template
+│   ├── blog/                 # Blog template
+│   └── ecommerce/            # E-commerce template
 ├── services/
-│   └── crm-service/          # 💼 CRM demo 服务
-└── docs/                      # � 文档
+│   └── crm-service/          # 💼 CRM demo service
+└── docs/                      # 📄 Documentation
 ```
 
-## 🏗️ 架构设计
+## 🏗️ Architecture
 
-### 事件溯源 + CQRS
+### Event Sourcing + CQRS
 
 ```mermaid
 graph TD
-    A[命令] --> B[事件存储]
-    B --> C[事件投影器]
-    C --> D[读模型]
-    D --> E[查询]
-    
-    B --> F[事件总线]
-    F --> G[AI 处理器]
-    F --> H[通知服务]
-    F --> I[WASM 插件]
+    A[Command] --> B[Event Store]
+    B --> C[Event Projector]
+    C --> D[Read Model]
+    D --> E[Query]
+
+    B --> F[Event Bus]
+    F --> G[AI Processor]
+    F --> H[Notification Service]
+    F --> I[WASM Plugins]
 ```
 
-### 技术栈
+### Tech Stack
 
-- **后端**: Rust + Axum + async-graphql + PostgreSQL
-- **前端**: TypeScript + React/SvelteKit + Tailwind CSS
-- **数据**: 事件溯源 + PostgreSQL + Redis
-- **AI**: OpenAI API + 本地模型支持
-- **部署**: Docker + Kubernetes + GitHub Actions
+- **Backend**: Rust + Axum + async-graphql + PostgreSQL
+- **Frontend**: TypeScript + React + Tailwind CSS
+- **Data**: Event sourcing + PostgreSQL + Redis
+- **AI**: OpenAI API + local model support
+- **Deployment**: Docker + Kubernetes + GitHub Actions
 
-## 🎯 使用场景
+## 🎯 Use Cases
 
-### 1. 企业 CRM 系统
+### 1. Enterprise CRM
 
 ```typescript
-// 定义 CRM Schema
+// Define the CRM schema
 export interface Contact {
   id: string;
   name: string;
@@ -158,10 +160,10 @@ export interface Company {
 }
 ```
 
-### 2. 内容管理系统
+### 2. Content Management System
 
 ```typescript
-// 定义内容 Schema
+// Define the content schema
 export interface Article {
   id: string;
   title: string;
@@ -172,10 +174,10 @@ export interface Article {
 }
 ```
 
-### 3. 电商平台
+### 3. E-commerce Platform
 
 ```typescript
-// 定义产品 Schema
+// Define the product schema
 export interface Product {
   id: string;
   name: string;
@@ -185,35 +187,35 @@ export interface Product {
 }
 ```
 
-## 🔧 开发指南
+## 🔧 Development Guide
 
-### 本地开发环境
+### Local development environment
 
 ```bash
-# 安装依赖
+# Install dependencies
 git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 cargo build
 pnpm install
 
-# 启动开发服务器
+# Start the dev server
 cargo run -p atomo_cli -- dev
 
-# 前端
+# Frontend
 
 git clone https://github.com/atomo-cc/atomo.git
 cd atomo
 pnpm install
 
-# 当前推荐开发入口
+# Current recommended dev entry points
 pnpm dev:admin
 pnpm --filter @atomo-cc/client-sdk dev
 pnpm --filter atomo-crm-service generate
 ```
 
-### Schema 驱动开发
+### Schema-driven development
 
-1. **定义 Schema**
+1. **Define the schema**
    ```typescript
    // atomo/schema.ts
    export interface User {
@@ -223,118 +225,118 @@ pnpm --filter atomo-crm-service generate
    }
    ```
 
-2. **生成代码**
+2. **Generate code**
    ```bash
    atomo codegen
    ```
 
-3. **使用生成的代码**
+3. **Use the generated code**
    ```rust
    use atomo_core::entities::User;
-   
+
    async fn create_user(name: String, email: String) -> Result<User, Error> {
-       // 自动生成的 CRUD 操作
+       // Auto-generated CRUD operations
    }
    ```
 
-### 插件开发
+### Plugin development
 
 ```rust
-// WASM 插件示例
+// WASM plugin example
 use atomo_wasm_runtime::*;
 
 #[wasm_bindgen]
 pub fn process_content(content: &str) -> String {
-    // 自定义内容处理逻辑
+    // Custom content-processing logic
     content.to_uppercase()
 }
 ```
 
-详细开发路线图和当前进度请参考 docs/roadmap.md；平台愿景与架构请参考 docs/vision.md。
+For the detailed roadmap and current progress see docs/roadmap.md; for the platform vision and architecture see docs/vision.md.
 
-## � 性能基准
+## 📊 Performance Targets
 
-| 指标 | 数值 |
+| Metric | Target |
 |------|------|
-| 并发请求处理 | 10,000+ RPS |
-| 冷启动时间 | < 100ms |
-| 内存占用 | < 50MB |
-| 事件处理延迟 | < 10ms |
+| Concurrent request throughput | 10,000+ RPS |
+| Cold-start time | < 100ms |
+| Memory footprint | < 50MB |
+| Event-processing latency | < 10ms |
 
-## 🗺️ 开发路线图
+## 🗺️ Roadmap
 
-### Phase 1: 基础架构 (✅ 完成)
-- [x] 单体仓库设置
-- [x] 核心域模型
-- [x] CLI 工具 (init, dev, migrate, codegen, test, deploy)
-- [x] 事件溯源基础 (event_log, replay, entity history)
-- [x] Schema 解析器 (TypeScript → Rust/GraphQL)
-- [x] 基础 CRUD 操作 (动态 SQL, 参数化查询)
-- [x] GraphQL 订阅 (WebSocket, 模型过滤)
-- [x] 认证授权 (Argon2id, JWT, RBAC 在 GraphQL 层强制；数据层调用方待补, OAuth2/OIDC)
-- [x] 软删除, 分页, 关系解析
-- [x] 输入验证, 结构化错误
-- [x] 速率限制, 请求追踪
+### Phase 1: Foundation (✅ Done)
+- [x] Monorepo setup
+- [x] Core domain models
+- [x] CLI tooling (init, dev, migrate, codegen, test, deploy)
+- [x] Event-sourcing foundation (event_log, replay, entity history)
+- [x] Schema parser (TypeScript → Rust/GraphQL)
+- [x] Basic CRUD (dynamic SQL, parameterized queries)
+- [x] GraphQL subscriptions (WebSocket, model filtering)
+- [x] AuthN/AuthZ (Argon2id, JWT, RBAC enforced at the GraphQL layer; data-layer callers TBD, OAuth2/OIDC)
+- [x] Soft delete, pagination, relation resolution
+- [x] Input validation, structured errors
+- [x] Rate limiting, request tracing
 
-### Phase 2: 智能化升级 (大部分完成)
-- [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子) + JS 脚本插件 (Javy)
-- [x] CQRS 读投影 (事件驱动物化视图；删除/数值修正见 B2)
-- [x] 读缓存 (TTL + 事件失效)
-- [x] 文件上传/存储 (`File` 字段, multipart, 内容类型校验+魔术字节嗅探, 事件溯源; 本地后端✅, S3 后端在 `storage-s3` feature 后; 详见 docs/guide/advanced/upload-storage-plan)
-- [~] 工作流引擎 (触发器, 条件, 重试, YAML 加载, HTTP 步骤；Mutation/Plugin 步骤待实现)
-- [~] 多租户隔离 (`tenant_id` 列 + 读写隔离；订阅过滤/用户绑定/PG RLS 待实现)
-- [~] AI 工作流集成 (pgvector EmbeddingStore；尚未端到端验证，需 pgvector 环境)
-- [~] 本地优先 SDK (离线队列, 重连同步；尚未集成测试)
+### Phase 2: Intelligence Upgrade (mostly done)
+- [x] WASM plugin system (sandbox, permissions, lifecycle hooks) + JS script plugins (Javy)
+- [x] CQRS read projections (event-driven materialized views; deletes/numeric corrections see B2)
+- [x] Read cache (TTL + event invalidation)
+- [x] File upload/storage (`File` field, multipart, content-type validation + magic-byte sniffing, event-sourced; local backend ✅, S3 backend behind the `storage-s3` feature; see docs/guide/advanced/upload-storage-plan)
+- [~] Workflow engine (triggers, conditions, retries, YAML loading, HTTP steps; Mutation/Plugin steps TBD)
+- [~] Multi-tenant isolation (`tenant_id` column + read/write isolation; subscription filtering / user binding / PG RLS TBD)
+- [~] AI workflow integration (pgvector EmbeddingStore; not yet end-to-end verified, needs a pgvector environment)
+- [~] Local-first SDK (offline queue, reconnect sync; not yet integration-tested)
 
-> 各能力的真实验证状态以 CRM 一致性测试套件为准，详见 docs/guide/advanced/crm-conformance-plan。
+> The real verification status of each capability is governed by the CRM conformance test suite; see docs/guide/advanced/crm-conformance-plan.
 
-### Phase 3: 生态系统 (进行中)
+### Phase 3: Ecosystem (in progress)
 - [x] OAuth2/OIDC SSO (Google, GitHub, Microsoft, Okta)
-- [x] 项目模板 (CRM, 博客, 电商)
-- [x] 工作流设计器 (Admin UI 编辑器：触发器/步骤/动作表单 + 流程预览)
-- [ ] 插件市场
-- [ ] Atomo Cloud 托管平台
+- [x] Project templates (CRM, blog, e-commerce)
+- [x] Workflow designer (Admin UI editor: trigger/step/action forms + flow preview)
+- [ ] Plugin marketplace
+- [ ] Atomo Cloud hosted platform
 
-## 🤝 贡献指南
+## 🤝 Contributing
 
-我们欢迎社区贡献！请阅读我们的 [贡献指南](CONTRIBUTING.md) 了解如何参与。
+We welcome community contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to learn how to get involved.
 
-### 快速贡献
+### Quick contribution
 
-1. Fork 项目
-2. 创建功能分支: `git checkout -b feature/amazing-feature`
-3. 提交更改: `git commit -m 'Add amazing feature'`
-4. 推送分支: `git push origin feature/amazing-feature`
-5. 创建 Pull Request
+1. Fork the project
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m 'Add amazing feature'`
+4. Push the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
-## � 文档
+## 📚 Documentation
 
-- [用户指南](docs/user-guide.md)
-- [API 文档](docs/api.md)
-- [部署指南](docs/deployment.md)
-- [插件开发](docs/plugins.md)
+- [User Guide](docs/user-guide.md)
+- [API Docs](docs/api.md)
+- [Deployment Guide](docs/deployment.md)
+- [Plugin Development](docs/plugins.md)
 
-## � 社区
+## 💬 Community
 
-- **GitHub Issues**: 报告问题和功能请求
-- **GitHub Discussions**: 技术讨论和问答
-- **Discord**: 实时聊天 (即将开放)
+- **GitHub Issues**: Report bugs and feature requests
+- **GitHub Discussions**: Technical discussion and Q&A
+- **Discord**: Realtime chat (coming soon)
 
-## 📄 许可证
+## 📄 License
 
-本项目使用 [MIT 许可证](LICENSE)。
+This project is licensed under the [MIT License](LICENSE).
 
-## 🙏 致谢
+## 🙏 Acknowledgements
 
-感谢所有贡献者和以下开源项目：
+Thanks to all contributors and the following open-source projects:
 
-- [Rust](https://rust-lang.org/) - 系统编程语言
-- [Axum](https://github.com/tokio-rs/axum) - Web 框架
-- [async-graphql](https://github.com/async-graphql/async-graphql) - GraphQL 服务器
-- [SvelteKit](https://kit.svelte.dev/) - 前端框架
+- [Rust](https://rust-lang.org/) — systems programming language
+- [Axum](https://github.com/tokio-rs/axum) — web framework
+- [async-graphql](https://github.com/async-graphql/async-graphql) — GraphQL server
+- [React](https://react.dev/) — frontend framework
 
 ---
 
-**让内容管理变得简单而强大！** 🚀
+**Make content management simple and powerful!** 🚀
 
-[开始使用](https://github.com/atomo-cc/atomo/releases) | [查看文档](docs/) | [加入社区](https://github.com/atomo-cc/atomo/discussions)
+[Get Started](https://github.com/atomo-cc/atomo/releases) | [Read the Docs](docs/) | [Join the Community](https://github.com/atomo-cc/atomo/discussions)
