@@ -5,6 +5,10 @@ This page lists the routes available while developing locally and clarifies whic
 Common (both modes)
 - `/health` — health check
 - `/ready` — readiness probe; checks DB connectivity
+- `/version` — build/version info: `{ name, version, commit, buildTime }`. Values are
+  baked into the published image at build time (`ATOMO_VERSION`/`ATOMO_GIT_SHA`/
+  `ATOMO_BUILD_TIME`); a plain `cargo run` reports the crate version + `unknown`. Use
+  it to confirm *which* build is deployed.
 - `/graphql` — GraphQL endpoint (POST for operations)
 - GraphQL IDE
   - `atomo dev`: `GET /graphql` serves the playground

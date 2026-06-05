@@ -79,6 +79,9 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 - P2 可扩展性与 AI 基础（部分）
   - Hook/Access DSL 与插件接口
   - WASM 运行时脚手架
+  - 无需 fork 的扩展能力：可声明的 schema 约束
+    （`@unique`/`@index`/`@@unique`/`@@index`/`@@check`，含带 `WHERE` 的部分索引），
+    以及插件提供的自定义 HTTP 路由（`/ext/<plugin>`）；事务型路由处理器已完成设计（第 3 阶段）
   - AI 基础（pgvector、内容 API）
 
 ### 第 2 阶段 — 认知与边缘（6–9 个月）

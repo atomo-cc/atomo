@@ -103,6 +103,10 @@ This page is the single source of truth for delivery status and upcoming milesto
 - P2 Extensibility & AI Foundation (partial)
   - Hook/Access DSL and plugin interfaces
   - WASM runtime scaffolding
+  - Extend-without-forking seams: declarable schema constraints
+    (`@unique`/`@index`/`@@unique`/`@@index`/`@@check`, incl. partial `WHERE`) and
+    plugin-served custom HTTP routes (`/ext/<plugin>`); transactional route handlers
+    designed (phase 3)
   - AI groundwork (pgvector, content APIs)
 
 ### Phase 2 — Cognition & Edge (6–9 months)
