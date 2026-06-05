@@ -13,6 +13,17 @@ struct JsPlugin {
     permissions: HashSet<Permission>,
 }
 
+/// The parsed result of running a plugin route handler (see `run_route`). The
+/// `transaction` batch is executed by the async route dispatcher in one DB
+/// transaction; `response` is mapped to the HTTP response (unless an expectation in
+/// the batch fails and substitutes an else-response).
+pub struct RouteOutput {
+    pub response: serde_json::Value,
+    pub transaction: Vec<serde_json::Value>,
+    /// Whether the plugin holds `WriteDatabase` — required to run a `transaction`.
+    pub can_write_db: bool,
+}
+
 pub struct WasmPluginManager {
     runtime: WasmRuntime,
     js_runtime: JsRuntime,
@@ -174,30 +185,43 @@ impl WasmPluginManager {
             .collect()
     }
 
-    /// Dispatch an HTTP request to a JS plugin's route handler.
+    /// Run an HTTP request through a JS plugin's route handler and return the parsed
+    /// plan. `request_json` is the request envelope — `{ method, path, query, headers,
+    /// body, principal }`. The plugin runs with `{ "route": <request> }` on stdin and
+    /// returns `{ "response": { status, headers, body }, "transaction": [...] }`.
     ///
-    /// `request_json` is the request envelope — `{ method, path, query, headers, body,
-    /// principal }`. The plugin runs with `{ "route": <request> }` on stdin and returns
-    /// `{ "response": { status, headers, body }, "effects": [...] }`. Effects it records
-    /// (db writes / http / emit) are applied; the `response` object is returned.
-    pub fn call_route(&mut self, plugin_name: &str, request_json: &str) -> Result<String> {
+    /// This only RUNS the JS (sync, via the Javy runtime) and parses its output. The
+    /// `transaction` batch — the phase-3 atomic read-modify-write primitive — is
+    /// executed by the async caller (`plugin_routes`), which owns a DB pool; the sync
+    /// runtime here cannot touch the async pool.
+    pub fn run_route(&mut self, plugin_name: &str, request_json: &str) -> Result<RouteOutput> {
         if let Some(js) = self.js_plugins.get(plugin_name) {
             let module = js.module.clone();
-            let perms = js.permissions.clone();
-            let request =
-                serde_json::from_str::<serde_json::Value>(request_json).unwrap_or(serde_json::Value::Null);
+            let can_write_db = js.permissions.contains(&Permission::WriteDatabase);
+            let request = serde_json::from_str::<serde_json::Value>(request_json)
+                .unwrap_or(serde_json::Value::Null);
             let envelope = serde_json::json!({ "route": request }).to_string();
             let out = self.js_runtime.run_module(&module, &envelope)?;
             let trimmed = out.trim();
-            if trimmed.is_empty() {
-                return Ok("{}".to_string());
-            }
-            let parsed: serde_json::Value = serde_json::from_str(trimmed)?;
-            if let Some(effects) = parsed.get("effects").and_then(|e| e.as_array()) {
-                self.apply_js_effects(plugin_name, &perms, effects)?;
-            }
-            let response = parsed.get("response").cloned().unwrap_or(parsed);
-            return Ok(response.to_string());
+            let parsed: serde_json::Value = if trimmed.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::from_str(trimmed)?
+            };
+            let response = parsed
+                .get("response")
+                .cloned()
+                .unwrap_or_else(|| parsed.clone());
+            let transaction = parsed
+                .get("transaction")
+                .and_then(|t| t.as_array())
+                .cloned()
+                .unwrap_or_default();
+            return Ok(RouteOutput {
+                response,
+                transaction,
+                can_write_db,
+            });
         }
         anyhow::bail!("plugin '{}' has no JS route handler", plugin_name)
     }

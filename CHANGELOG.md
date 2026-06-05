@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Custom routes — transactional DB (phase 3).** A plugin route handler can now
+  return a `transaction` array of `{ sql, params, expect }` statements that the server
+  runs **atomically in one DB transaction** with bound parameters. A statement's
+  `expect` (`{ minRowsAffected, elseStatus?, elseBody? }`) that isn't met rolls the
+  whole batch back and returns the else-response. This is the synchronous
+  read-modify-write primitive — e.g. a no-overdraw `UPDATE … WHERE balance >= cost`
+  paired with an idempotent ledger insert — that lets billing-style logic live in a
+  plugin instead of a sidecar. Requires the plugin's `WriteDatabase` permission.
+  (`atomo_server::wasm_plugins::run_route` + `atomo_server::plugin_routes`; phase 3 of
+  the [Custom Routes RFC](docs/guide/advanced/custom-routes-phase3-design.md).) DB-backed
+  test verifies the atomic debit commits when sufficient and rolls back (balance
+  unchanged) when not.
+
 ## [0.2.3] - 2026-06-05
 
 > Admin UI goes from demo-grade to production, plus an admin-seeding fix. No

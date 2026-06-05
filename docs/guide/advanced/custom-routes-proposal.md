@@ -124,13 +124,14 @@ was the seam users actually write against.
    `{method, path, auth}` → handler returning `{status, headers, body}`, mounted
    under `/ext/<plugin>`; verified principal injected. *Shipped — see "Using it"
    below.*
-3. **Transactional DB access** in the handler — the piece that enables
-   money/idempotency logic. Still open: the JS (Javy) runtime is stdin→stdout, so
-   its effects (`dbQuery`/`http`) are **deferred** and a handler can't
-   read-modify-write synchronously yet. Designed in
-   **[Custom Routes Phase 3 — Synchronous Transactional DB](/guide/advanced/custom-routes-phase3-design)**
-   (recommendation: a declarative atomic-statement batch run in one host-owned
-   transaction — no Javy toolchain change).
+3. ✅ **Transactional DB access** in the handler — the piece that enables
+   money/idempotency logic. *Shipped:* a handler returns a `transaction` array of
+   `{ sql, params, expect }` statements that the server runs **atomically in one DB
+   transaction** with bound params; an `expect` (`minRowsAffected`) that fails rolls
+   the batch back and returns an else-response — so a no-overdraw debit + idempotent
+   ledger insert lives in the plugin, not a sidecar. Requires `WriteDatabase`. Full
+   spec + example in
+   **[Custom Routes Phase 3 — Synchronous Transactional DB](/guide/advanced/custom-routes-phase3-design)**.
 4. Harden: per-route auth + rate limits, request-size caps, timeouts, structured
    logs without PII; WASM handler support.
 

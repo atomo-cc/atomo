@@ -4,9 +4,17 @@
 //! `auth`); atomo-server mounts each under `/ext/<plugin><path>` and dispatches the
 //! request to the plugin's JS handler. The handler receives a request envelope
 //! (`{ method, path, query, headers, body, principal }`) and returns
-//! `{ response: { status, headers, body }, effects: [...] }`. This is the
+//! `{ response: { status, headers, body }, transaction: [...] }`. This is the
 //! extend-without-forking seam: business-logic endpoints live in a plugin, not a
 //! fork of the server.
+//!
+//! **Transactional routes (phase 3).** When the handler returns a `transaction`
+//! array, the server runs those statements atomically in ONE DB transaction with
+//! bound parameters — the synchronous read-modify-write primitive that lets logic
+//! like a no-overdraw debit live in a plugin instead of a sidecar. A statement may
+//! carry an `expect` (`{ minRowsAffected, elseStatus?, elseBody? }`): if fewer rows
+//! are affected, the whole transaction rolls back and the else-response is returned.
+//! Running a `transaction` requires the plugin's `WriteDatabase` permission.
 
 use std::sync::Arc;
 
@@ -20,6 +28,7 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
+use sqlx::PgPool;
 use tokio::sync::Mutex;
 
 use crate::auth::HttpAuthService;
@@ -32,6 +41,7 @@ const MAX_BODY: usize = 1024 * 1024; // 1 MiB
 pub fn plugin_routes_router(
     manager: Arc<Mutex<WasmPluginManager>>,
     auth: HttpAuthService,
+    pool: PgPool,
     routes: Vec<(String, RouteDef)>,
 ) -> Router {
     let mut router = Router::new();
@@ -40,6 +50,7 @@ pub fn plugin_routes_router(
         let filter = method_filter(&route.method);
         let mgr = manager.clone();
         let auth = auth.clone();
+        let pool = pool.clone();
         let plugin = plugin.clone();
         let require_auth = route.auth;
         router = router.route(
@@ -47,8 +58,9 @@ pub fn plugin_routes_router(
             on(filter, move |req: Request| {
                 let mgr = mgr.clone();
                 let auth = auth.clone();
+                let pool = pool.clone();
                 let plugin = plugin.clone();
-                async move { dispatch(req, mgr, auth, plugin, require_auth).await }
+                async move { dispatch(req, mgr, auth, pool, plugin, require_auth).await }
             }),
         );
     }
@@ -69,6 +81,7 @@ async fn dispatch(
     req: Request,
     manager: Arc<Mutex<WasmPluginManager>>,
     auth: HttpAuthService,
+    pool: PgPool,
     plugin: String,
     require_auth: bool,
 ) -> Response {
@@ -112,10 +125,10 @@ async fn dispatch(
     })
     .to_string();
 
-    let response_json = {
+    let output = {
         let mut mgr = manager.lock().await;
-        match mgr.call_route(&plugin, &request_json) {
-            Ok(r) => r,
+        match mgr.run_route(&plugin, &request_json) {
+            Ok(o) => o,
             Err(e) => {
                 return (StatusCode::INTERNAL_SERVER_ERROR, format!("plugin error: {e}"))
                     .into_response()
@@ -123,7 +136,119 @@ async fn dispatch(
         }
     };
 
-    build_response(&response_json)
+    // Phase 3: run the handler's `transaction` batch atomically before responding.
+    if !output.transaction.is_empty() {
+        if !output.can_write_db {
+            return (
+                StatusCode::FORBIDDEN,
+                "plugin lacks the WriteDatabase permission required for transactional routes",
+            )
+                .into_response();
+        }
+        match run_transaction(&pool, &output.transaction).await {
+            // All statements met their expectations → fall through to the handler response.
+            Ok(None) => {}
+            // An `expect` failed → the transaction rolled back; return its else-response.
+            Ok(Some((status, body))) => return json_response(status, body),
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("transaction error: {e}"),
+                )
+                    .into_response()
+            }
+        }
+    }
+
+    build_response(&output.response.to_string())
+}
+
+/// Run a plugin's `transaction` batch in ONE DB transaction with bound params.
+/// Returns `Ok(None)` when every statement met its `expect` (committed), or
+/// `Ok(Some((status, body)))` when a statement's expectation failed (rolled back —
+/// the else-response is returned). Each statement is `{ sql, params?, expect? }`,
+/// where `expect` is `{ minRowsAffected, elseStatus?, elseBody? }`.
+async fn run_transaction(
+    pool: &PgPool,
+    statements: &[Value],
+) -> Result<Option<(StatusCode, Value)>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    for stmt in statements {
+        let sql = match stmt.get("sql").and_then(|s| s.as_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        let empty: Vec<Value> = Vec::new();
+        let params = stmt.get("params").and_then(|p| p.as_array()).unwrap_or(&empty);
+        let mut q = sqlx::query(sql);
+        for p in params {
+            q = bind_value(q, p);
+        }
+        let result = match q.execute(&mut *tx).await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tx.rollback().await;
+                return Err(e);
+            }
+        };
+        if let Some(expect) = stmt.get("expect") {
+            let min = expect
+                .get("minRowsAffected")
+                .and_then(|m| m.as_u64())
+                .unwrap_or(0);
+            if result.rows_affected() < min {
+                let _ = tx.rollback().await;
+                let status = expect
+                    .get("elseStatus")
+                    .and_then(|s| s.as_u64())
+                    .and_then(|s| u16::try_from(s).ok())
+                    .and_then(|s| StatusCode::from_u16(s).ok())
+                    .unwrap_or(StatusCode::CONFLICT);
+                let body = expect.get("elseBody").cloned().unwrap_or(Value::Null);
+                return Ok(Some((status, body)));
+            }
+        }
+    }
+    tx.commit().await?;
+    Ok(None)
+}
+
+/// Bind one JSON parameter to a query by its underlying type. Strings/numbers/bools
+/// bind as the matching SQL scalar; objects/arrays bind as JSONB (json feature).
+fn bind_value<'q>(
+    q: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    v: &Value,
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    match v {
+        Value::String(s) => q.bind(s.clone()),
+        Value::Bool(b) => q.bind(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                q.bind(i)
+            } else if let Some(f) = n.as_f64() {
+                q.bind(f)
+            } else {
+                q.bind(n.to_string())
+            }
+        }
+        Value::Null => q.bind(Option::<String>::None),
+        other => q.bind(other.clone()),
+    }
+}
+
+/// Build an HTTP response from a status + JSON body (used for transaction else-responses).
+fn json_response(status: StatusCode, body: Value) -> Response {
+    let body_str = match body {
+        Value::String(s) => s,
+        Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        body_str,
+    )
+        .into_response()
 }
 
 /// Turn the plugin's `{ status, headers, body }` JSON into an HTTP response.
@@ -176,6 +301,50 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
 mod tests {
     use super::*;
     use axum::http::HeaderValue;
+
+    // Phase-3 atomic debit: the canonical no-overdraw primitive. Needs Postgres via
+    // DATABASE_URL. Run: cargo test -p atomo_server --lib plugin_routes -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn run_transaction_atomic_debit_and_rollback() {
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        sqlx::query("DROP TABLE IF EXISTS bal_test").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE bal_test (user_id TEXT PRIMARY KEY, balance BIGINT NOT NULL)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO bal_test (user_id, balance) VALUES ('u1', 10)")
+            .execute(&pool).await.unwrap();
+
+        let debit = |cost: i64| {
+            vec![json!({
+                "sql": "UPDATE bal_test SET balance = balance - $1 WHERE user_id = $2 AND balance >= $1",
+                "params": [cost, "u1"],
+                "expect": { "minRowsAffected": 1, "elseStatus": 402, "elseBody": { "error": "insufficient" } }
+            })]
+        };
+
+        // Sufficient: applies and commits → Ok(None); balance 10 - 4 = 6.
+        let r = run_transaction(&pool, &debit(4)).await.unwrap();
+        assert!(r.is_none(), "sufficient debit should commit, got {:?}", r);
+        let (bal,): (i64,) = sqlx::query_as("SELECT balance FROM bal_test WHERE user_id='u1'")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(bal, 6);
+
+        // Insufficient: 0 rows affected → rollback + 402 else-response; balance unchanged.
+        let r2 = run_transaction(&pool, &debit(100)).await.unwrap();
+        match r2 {
+            Some((status, body)) => {
+                assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+                assert_eq!(body["error"], "insufficient");
+            }
+            None => panic!("insufficient debit should return the else-response"),
+        }
+        let (bal2,): (i64,) = sqlx::query_as("SELECT balance FROM bal_test WHERE user_id='u1'")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(bal2, 6, "balance must be unchanged after a rolled-back debit");
+
+        sqlx::query("DROP TABLE IF EXISTS bal_test").execute(&pool).await.unwrap();
+    }
 
     #[test]
     fn method_filter_maps_verbs_and_defaults_to_post() {

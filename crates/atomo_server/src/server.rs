@@ -376,6 +376,7 @@ impl AtomoServer {
                 Some(crate::plugin_routes::plugin_routes_router(
                     mgr.clone(),
                     auth_service.clone(),
+                    self.atomo.db_pool().clone(),
                     routes,
                 ))
             }

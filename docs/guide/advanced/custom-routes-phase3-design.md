@@ -5,10 +5,51 @@ description: How a plugin route handler can do an atomic read-modify-write in on
 
 # Design: Custom Routes Phase 3 — Synchronous Transactional DB
 
-> Status: **Design (RFC)** · Builds on [Custom HTTP Routes](/guide/advanced/custom-routes-proposal)
+> Status: **Implemented (Option B)** · Builds on [Custom HTTP Routes](/guide/advanced/custom-routes-proposal)
 > (phase 2 shipped) · Pull trigger: a real consumer running billing in a sidecar
 > **solely** because a route handler can't do a transactional read-modify-write.
 > This is the milestone that deletes that sidecar.
+
+## Using it (shipped)
+
+A route handler returns a `transaction` array alongside (or instead of) `response`.
+The server runs those statements **atomically in one DB transaction** with bound
+parameters, then returns `response` — unless a statement's `expect` fails, in which
+case the whole transaction rolls back and the statement's else-response is returned.
+Running a `transaction` requires the plugin's **`WriteDatabase`** permission.
+
+The canonical no-overdraw debit + idempotent ledger insert, expressed in the handler:
+
+```js
+// route handler return value
+{
+  // The atomic batch — runs in ONE transaction, in order, with bound params ($1, $2…).
+  transaction: [
+    { sql: "UPDATE credit_balance SET balance = balance - $1 WHERE user_id = $2 AND balance >= $1",
+      params: [cost, userId],
+      // If the guard matched 0 rows (insufficient balance), roll back the whole batch
+      // and respond 402 with this body. No overdraw, decided in SQL.
+      expect: { minRowsAffected: 1, elseStatus: 402, elseBody: { error: "insufficient_credits" } } },
+    { sql: "INSERT INTO credit_ledger (id, user_id, delta, idempotency_key) VALUES ($1,$2,$3,$4) ON CONFLICT (idempotency_key) DO NOTHING",
+      params: [jobId, userId, -cost, idemKey] }
+  ],
+  // Returned only if the whole batch commits.
+  response: { status: 200, body: { ok: true } }
+}
+```
+
+- **Statement** = `{ sql, params?, expect? }`. `params` bind as `$1, $2, …` (strings,
+  numbers, bools, null, or JSON → JSONB) — never string-interpolated, so it's
+  injection-safe.
+- **`expect`** = `{ minRowsAffected, elseStatus?, elseBody? }`. Fewer rows → rollback +
+  else-response (default status 409). The no-overdraw guard lives in the SQL predicate;
+  rows-affected says whether it applied.
+- Any statement error rolls the whole batch back (500).
+
+This is **Option B** below — chosen because it works against the runtime as-is (no
+Javy toolchain change) and fully expresses the atomic debit. *Note:* `effects`
+(deferred `emit`/`dbQuery`/`http`) are **not** run on the route path — use
+`transaction` for a route's DB writes.
 
 ## The one capability
 
