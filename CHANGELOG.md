@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-05
+
+> Consumer-feedback round (the "silent failures" theme). Fixes a real auth bug
+> (`/auth/me` 401'd on valid login tokens), stops models silently half-registering
+> or losing timestamps, adds `/version` + partial-unique constraints, validates the
+> admin session on load, and lands the phase-3 transactional-routes design. No
+> breaking changes. `:latest` + `:v0.2.2` are built from this tag.
+
 ### Added
 - **Schema — partial unique/index**: `// @@unique([col]) WHERE <predicate>` and
   `// @@index([col]) WHERE <predicate>` now emit partial indexes
