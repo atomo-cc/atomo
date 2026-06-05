@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-05
+
+> Build/docs patch — no behavior change. Headline: the `atomo-server` image is
+> **~56% smaller** (124 MB → ~55 MB). `:latest` and `:v0.2.1` are the slim image;
+> `:v0.2.0` is left untouched.
+
+### Changed
+- **Image size**: `atomo-server` runtime base switched from `debian:bookworm-slim`
+  to `gcr.io/distroless/cc-debian12` (~75 MB → ~25 MB; CA certs + a `nonroot` user
+  ship in the base, so the `apt-get ca-certificates` layer is gone), plus a
+  `[profile.release]` that strips symbols and uses thin LTO (binary ~40 MB →
+  ~28 MB). Verified: the distroless image boots, serves `/health` 200, and still
+  emits + enforces schema constraints. Note: distroless has **no shell** — use the
+  `:debug` base or a sidecar to inspect a running container.
+- **Docs**: genericized the two extensibility RFC examples (removed a named
+  consumer) and added an AGENTS rule to keep the platform vendor-neutral.
+- **Docs**: README is now **multilingual** — English is the default `README.md`
+  (was Chinese), with `README.zh-CN.md` / `.es` / `.ja` / `.fr` / `.de` and a
+  language switcher in each.
+
 ## [0.2.0] - 2026-06-05
 
 > First tagged release since `0.1.0`. Headline: two **extensibility** features —
