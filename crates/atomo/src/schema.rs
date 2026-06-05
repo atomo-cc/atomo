@@ -86,6 +86,20 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             }
         }
 
+        // Platform timestamp convention: every model gets created_at + updated_at so
+        // the admin list view (which orders by created_at), audit, and replay behave
+        // uniformly. Auto-added only when the model didn't declare them — a model that
+        // declares created_at/updated_at already got those columns above (with DEFAULT
+        // NOW()). Previously a model that declared only `updatedAt` silently lacked
+        // created_at and 500'd the list view at query time (consumer feedback #2).
+        let declared: std::collections::HashSet<String> =
+            model.fields.values().map(|f| to_snake_case(&f.name)).collect();
+        if !declared.contains("created_at") {
+            columns.push("  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
+        }
+        if !declared.contains("updated_at") {
+            columns.push("  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
+        }
         // Add soft delete column
         columns.push("  deleted_at TIMESTAMPTZ".to_string());
         // Multi-tenant scoping column. Nullable so single-tenant deployments (no TenantCtx)
@@ -120,6 +134,26 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                     let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
                     migrations.push(format!(
                         "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list});",
+                        joined = snake.join("_"),
+                        list = snake.join(", ")
+                    ));
+                }
+                // PARTIAL unique/index: same as above plus a `WHERE <predicate>`. The
+                // predicate is raw SQL over column names (snake_case), so a nullable
+                // anti-abuse anchor like UNIQUE(store_account_id) WHERE store_account_id
+                // IS NOT NULL is expressible in the schema instead of hand-written SQL.
+                ModelConstraint::UniqueWhere(cols, predicate) => {
+                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                    migrations.push(format!(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
+                        joined = snake.join("_"),
+                        list = snake.join(", ")
+                    ));
+                }
+                ModelConstraint::IndexWhere(cols, predicate) => {
+                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                    migrations.push(format!(
+                        "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
                         joined = snake.join("_"),
                         list = snake.join(", ")
                     ));
@@ -307,6 +341,19 @@ mod tests {
             "tenant_id missing:\n{}",
             sql
         );
+        // ...and auto-provisioned created_at/updated_at (consumer feedback #2): a
+        // model that declares neither still gets both, so the list view's default
+        // `ORDER BY created_at` never hits a missing column.
+        assert!(
+            sql.contains("created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+            "auto created_at missing:\n{}",
+            sql
+        );
+        assert!(
+            sql.contains("updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+            "auto updated_at missing:\n{}",
+            sql
+        );
         // belongsTo → FK constraint to the target table's id (referential integrity).
         assert!(
             sql.contains("ALTER TABLE deal ADD CONSTRAINT fk_deal_contact_id FOREIGN KEY (contact_id) REFERENCES contact(id)"),
@@ -372,6 +419,10 @@ mod tests {
         ledger.constraints = vec![
             ModelConstraint::Unique(vec!["accountId".into(), "idempotencyKey".into()]),
             ModelConstraint::Check("amount <> 0".into()),
+            ModelConstraint::UniqueWhere(
+                vec!["accountId".into()],
+                "account_id IS NOT NULL".into(),
+            ),
         ];
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
@@ -386,6 +437,11 @@ mod tests {
         assert!(
             sql.contains("ADD CONSTRAINT chk_credit_ledger_1 CHECK (amount <> 0)"),
             "check constraint missing:\n{sql}"
+        );
+        // Partial unique (consumer feedback #6) -> UNIQUE INDEX ... WHERE <predicate>.
+        assert!(
+            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_account_id ON credit_ledger (account_id) WHERE account_id IS NOT NULL"),
+            "partial unique index missing:\n{sql}"
         );
     }
 }

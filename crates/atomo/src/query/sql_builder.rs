@@ -20,8 +20,22 @@ impl SqlBuilder {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
         if !order_by.is_empty() {
+            // Tolerant sort: only order by columns the model actually has, so an
+            // `orderBy` on a column a given model lacks (e.g. the admin UI's default
+            // `created_at` against a model that diverged) degrades to "no sort"
+            // instead of a runtime `column does not exist` error (consumer feedback
+            // #2). System columns are always present (see generate_migrations).
+            let mut valid: std::collections::HashSet<String> = model
+                .fields
+                .values()
+                .map(|f| to_snake_case(&f.name))
+                .collect();
+            for sys in ["created_at", "updated_at", "deleted_at", "tenant_id"] {
+                valid.insert(sys.to_string());
+            }
             let clauses: Vec<String> = order_by
                 .iter()
+                .filter(|(f, _)| valid.contains(&to_snake_case(f)))
                 .map(|(f, d)| {
                     let dir = match d {
                         OrderDirection::Asc => "ASC",
@@ -30,7 +44,9 @@ impl SqlBuilder {
                     format!("{} {}", to_snake_case(f), dir)
                 })
                 .collect();
-            sql.push_str(&format!(" ORDER BY {}", clauses.join(", ")));
+            if !clauses.is_empty() {
+                sql.push_str(&format!(" ORDER BY {}", clauses.join(", ")));
+            }
         }
         if let Some(l) = limit {
             sql.push_str(&format!(" LIMIT {}", l));
@@ -344,6 +360,35 @@ mod tests {
             sql,
             "SELECT * FROM deal WHERE stage::text = $1 ORDER BY created_at DESC LIMIT 20 OFFSET 40"
         );
+    }
+
+    #[test]
+    fn select_drops_unknown_order_columns() {
+        // Tolerant sort (consumer feedback #2): an `orderBy` on a column the model
+        // lacks is dropped rather than producing a `column does not exist` error.
+        // System columns (created_at) are always valid; `bogus` is neither field nor
+        // system, so it's filtered out — leaving only the valid column.
+        let (sql, _) = SqlBuilder::select(
+            &model("Deal", Some("deal")),
+            &[],
+            &[
+                ("createdAt".into(), OrderDirection::Desc),
+                ("bogus".into(), OrderDirection::Asc),
+            ],
+            None,
+            None,
+        );
+        assert_eq!(sql, "SELECT * FROM deal ORDER BY created_at DESC");
+
+        // All-unknown order → no ORDER BY clause at all (not a SQL error).
+        let (sql2, _) = SqlBuilder::select(
+            &model("Deal", Some("deal")),
+            &[],
+            &[("bogus".into(), OrderDirection::Asc)],
+            None,
+            None,
+        );
+        assert_eq!(sql2, "SELECT * FROM deal");
     }
 
     #[test]

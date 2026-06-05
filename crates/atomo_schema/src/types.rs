@@ -38,6 +38,13 @@ pub enum ModelConstraint {
     Index(Vec<String>),
     /// `@@check(expr)` — a raw SQL CHECK expression, e.g. `amount <> 0`.
     Check(String),
+    /// `@@unique([a, b]) WHERE <predicate>` — a PARTIAL unique index. The predicate
+    /// is raw SQL over column names (snake_case, like `@@check`), e.g.
+    /// `@@unique([storeAccountId]) WHERE store_account_id IS NOT NULL` for a nullable
+    /// anti-abuse anchor where NULLs must not collide.
+    UniqueWhere(Vec<String>, String),
+    /// `@@index([a, b]) WHERE <predicate>` — a partial secondary index.
+    IndexWhere(Vec<String>, String),
 }
 
 /// A declared relationship: `{ type: 'belongsTo'|'hasMany', model: 'Company', foreignKey: 'companyId' }`.

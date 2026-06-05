@@ -450,7 +450,9 @@ fn parse_model_constraints(annotations: &str, out: &mut Vec<crate::types::ModelC
     if !annotations.contains("@@") {
         return;
     }
-    let list_re = Regex::new(r"@@(unique|index)\s*\(\s*\[([^\]]*)\]\s*\)").unwrap();
+    // Optional trailing `WHERE <predicate>` (to end of line) makes it a PARTIAL index.
+    let list_re =
+        Regex::new(r"@@(unique|index)\s*\(\s*\[([^\]]*)\]\s*\)(?:\s+WHERE\s+([^\n]+))?").unwrap();
     for cap in list_re.captures_iter(annotations) {
         let cols: Vec<String> = cap[2]
             .split(',')
@@ -460,9 +462,15 @@ fn parse_model_constraints(annotations: &str, out: &mut Vec<crate::types::ModelC
         if cols.is_empty() {
             continue;
         }
-        match &cap[1] {
-            "unique" => out.push(ModelConstraint::Unique(cols)),
-            "index" => out.push(ModelConstraint::Index(cols)),
+        let where_clause = cap
+            .get(3)
+            .map(|m| m.as_str().trim().to_string())
+            .filter(|s| !s.is_empty());
+        match (&cap[1], where_clause) {
+            ("unique", Some(w)) => out.push(ModelConstraint::UniqueWhere(cols, w)),
+            ("unique", None) => out.push(ModelConstraint::Unique(cols)),
+            ("index", Some(w)) => out.push(ModelConstraint::IndexWhere(cols, w)),
+            ("index", None) => out.push(ModelConstraint::Index(cols)),
             _ => {}
         }
     }
@@ -778,6 +786,34 @@ mod validation_tests {
         );
         assert!(m.constraints.contains(&ModelConstraint::Index(vec!["accountId".into()])));
         assert!(m.constraints.contains(&ModelConstraint::Check("amount <> 0".into())));
+    }
+
+    #[test]
+    fn parses_partial_unique_constraint() {
+        use crate::types::ModelConstraint;
+        // Partial unique (consumer feedback #6): a trailing `WHERE <predicate>` makes
+        // the @@unique partial — for a nullable anti-abuse anchor where NULLs must not
+        // collide. The predicate is raw SQL (snake_case column names), like @@check.
+        let content = r#"
+        export interface User {
+          id: string
+          storeAccountId: string
+          // @@unique([storeAccountId]) WHERE store_account_id IS NOT NULL
+        }
+        "#;
+        let models = TypeScriptParser::new().parse_interfaces(content).unwrap();
+        let m = models
+            .iter()
+            .find(|m| m.name == "User")
+            .expect("User parsed");
+        assert!(
+            m.constraints.contains(&ModelConstraint::UniqueWhere(
+                vec!["storeAccountId".into()],
+                "store_account_id IS NOT NULL".into()
+            )),
+            "partial unique missing: {:?}",
+            m.constraints
+        );
     }
 
     #[test]
