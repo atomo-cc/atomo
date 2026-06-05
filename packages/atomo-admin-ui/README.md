@@ -86,6 +86,18 @@ In production the SPA is served by `atomo-server` at `/admin` (built with
 - **Service-specific views** — ship a runtime component plugin and register it via
   `service-plugin-loader.ts` (the admin core stays service-agnostic).
 
+## Roadmap (scaffolded, not yet wired)
+
+These components exist in the tree but are **not yet routed into the UI** — they're
+intended Phase-2/3 features awaiting integration (and currently use placeholder data).
+They're tree-shaken out of the production bundle until wired:
+
+- `components/observability/` — event stream, performance metrics, workflow monitor,
+  error tracker
+- `components/ai/` — global search, "magic wand" assist
+- `components/collaboration/` — presence indicator
+- `components/notifications/` — in-app notifications
+
 ## License
 
 MIT — see [LICENSE](../../LICENSE).
