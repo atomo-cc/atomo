@@ -1,5 +1,5 @@
 /**
- * Select Component - 基于 Radix UI 的选择器组件
+ * Select Component — a select built on Radix UI
  */
 
 import * as React from 'react'

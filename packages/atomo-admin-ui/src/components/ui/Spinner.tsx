@@ -1,5 +1,5 @@
 /**
- * Spinner Component - 加载指示器
+ * Spinner Component — loading indicator
  */
 
 import * as React from 'react'

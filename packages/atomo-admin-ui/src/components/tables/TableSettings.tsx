@@ -1,7 +1,7 @@
 /**
- * Table Settings - 表格设置面板
- * 
- * 支持列显示/隐藏、排序、宽度调整等功能
+ * Table Settings - Table settings panel
+ *
+ * Supports showing/hiding columns, ordering, width adjustment, and more
  */
 
 import React, { useState } from 'react'
@@ -135,14 +135,14 @@ export function TableSettings({
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
-              表格设置
+              Table Settings
             </CardTitle>
             <Button variant="ghost" size="sm" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
           </div>
           
-          {/* 标签页切换 */}
+          {/* Tab switcher */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
             <button
               onClick={() => setActiveTab('columns')}
@@ -154,7 +154,7 @@ export function TableSettings({
               )}
             >
               <Columns className="h-4 w-4 mr-2 inline" />
-              列设置
+              Columns
             </button>
             <button
               onClick={() => setActiveTab('export')}
@@ -166,7 +166,7 @@ export function TableSettings({
               )}
             >
               <Download className="h-4 w-4 mr-2 inline" />
-              数据导出
+              Export Data
             </button>
           </div>
         </CardHeader>
@@ -174,22 +174,22 @@ export function TableSettings({
         <CardContent className="p-0">
           {activeTab === 'columns' && (
             <div className="p-6 space-y-6 max-h-96 overflow-y-auto">
-              {/* 统计信息 */}
+              {/* Summary info */}
               <div className="flex items-center justify-between text-sm">
                 <div className="flex gap-4">
                   <span className="text-gray-600">
-                    显示列数: <span className="font-medium">{visibleColumnsCount}/{columns.length}</span>
+                    Visible columns: <span className="font-medium">{visibleColumnsCount}/{columns.length}</span>
                   </span>
                   <span className="text-gray-600">
-                    固定列: <span className="font-medium">左侧 {pinnedLeftCount} | 右侧 {pinnedRightCount}</span>
+                    Pinned columns: <span className="font-medium">Left {pinnedLeftCount} | Right {pinnedRightCount}</span>
                   </span>
                 </div>
                 <Button variant="ghost" size="sm" onClick={resetToDefaults}>
-                  重置默认
+                  Reset to defaults
                 </Button>
               </div>
 
-              {/* 列配置列表 */}
+              {/* Column configuration list */}
               <div className="space-y-2">
                 {columns.map((column, index) => (
                   <div
@@ -204,39 +204,39 @@ export function TableSettings({
                       draggedColumn === column.key && 'opacity-50'
                     )}
                   >
-                    {/* 拖拽手柄 */}
+                    {/* Drag handle */}
                     <GripVertical className="h-4 w-4 text-gray-400" />
 
-                    {/* 列信息 */}
+                    {/* Column info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">{column.label}</span>
                         {column.pinned && (
                           <Badge variant="secondary" className="text-xs">
-                            固定{column.pinned === 'left' ? '左' : '右'}
+                            Pinned {column.pinned === 'left' ? 'left' : 'right'}
                           </Badge>
                         )}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {column.key} • 类型: {column.type}
-                        {column.width && ` • 宽度: ${column.width}px`}
+                        {column.key} • Type: {column.type}
+                        {column.width && ` • Width: ${column.width}px`}
                       </div>
                     </div>
 
-                    {/* 列控制 */}
+                    {/* Column controls */}
                     <div className="flex items-center gap-2">
-                      {/* 宽度设置 */}
+                      {/* Width setting */}
                       <input
                         type="number"
                         value={column.width || ''}
                         onChange={(e) => updateColumnWidth(column.key, parseInt(e.target.value) || 0)}
-                        placeholder="宽度"
+                        placeholder="Width"
                         className="w-16 px-2 py-1 text-xs border border-gray-300 rounded"
                         min="50"
                         max="500"
                       />
 
-                      {/* 固定列按钮 */}
+                      {/* Pin column buttons */}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -245,7 +245,7 @@ export function TableSettings({
                           'h-8 w-8 p-0',
                           column.pinned === 'left' && 'bg-primary-100 text-primary-700'
                         )}
-                        title="固定到左侧"
+                        title="Pin to left"
                       >
                         <SortAsc className="h-3 w-3" />
                       </Button>
@@ -258,12 +258,12 @@ export function TableSettings({
                           'h-8 w-8 p-0',
                           column.pinned === 'right' && 'bg-primary-100 text-primary-700'
                         )}
-                        title="固定到右侧"
+                        title="Pin to right"
                       >
                         <SortDesc className="h-3 w-3" />
                       </Button>
 
-                      {/* 可见性开关 */}
+                      {/* Visibility toggle */}
                       <div className="flex items-center gap-1">
                         {column.visible ? (
                           <Eye className="h-4 w-4 text-green-600" />
@@ -286,9 +286,9 @@ export function TableSettings({
             <div className="p-6 space-y-6">
               <div className="text-center space-y-4">
                 <div className="space-y-2">
-                  <h3 className="text-lg font-medium text-gray-900">导出数据</h3>
+                  <h3 className="text-lg font-medium text-gray-900">Export Data</h3>
                   <p className="text-sm text-gray-600">
-                    选择导出格式，将当前筛选和排序的数据导出到文件
+                    Choose an export format to export the currently filtered and sorted data to a file
                   </p>
                 </div>
 
@@ -299,8 +299,8 @@ export function TableSettings({
                     className="h-20 flex flex-col gap-2"
                   >
                     <Download className="h-6 w-6" />
-                    <span>CSV 文件</span>
-                    <span className="text-xs text-gray-500">兼容 Excel</span>
+                    <span>CSV File</span>
+                    <span className="text-xs text-gray-500">Excel compatible</span>
                   </Button>
 
                   <Button
@@ -309,15 +309,15 @@ export function TableSettings({
                     className="h-20 flex flex-col gap-2"
                   >
                     <Download className="h-6 w-6" />
-                    <span>Excel 文件</span>
-                    <span className="text-xs text-gray-500">原生格式</span>
+                    <span>Excel File</span>
+                    <span className="text-xs text-gray-500">Native format</span>
                   </Button>
                 </div>
 
                 <div className="text-sm text-gray-500 space-y-1">
-                  <p>• 导出数据将包含当前的筛选条件</p>
-                  <p>• 只导出可见列的数据</p>
-                  <p>• 隐藏列不会包含在导出文件中</p>
+                  <p>• Exported data includes the current filter conditions</p>
+                  <p>• Only data from visible columns is exported</p>
+                  <p>• Hidden columns are not included in the export file</p>
                 </div>
               </div>
             </div>

@@ -1,37 +1,37 @@
 /**
- * Flow Canvas - Atomo 流动画布编辑器
- * 
- * 可视化的拖拽式画布，支持自由布局、组件连接和实时预览
- * 这是 Atomo Admin UI 动态页面构建的核心组件
+ * Flow Canvas - Atomo flow canvas editor
+ *
+ * A visual drag-and-drop canvas supporting free-form layout, component connections, and live preview.
+ * This is the core component for building dynamic pages in the Atomo Admin UI.
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { 
-  // 画布操作
-  ZoomIn, 
-  ZoomOut, 
+import {
+  // Canvas controls
+  ZoomIn,
+  ZoomOut,
   Grid3X3,
   Layers,
-  
-  // UI组件
-  Type, 
-  Image, 
-  Video, 
+
+  // UI components
+  Type,
+  Image,
+  Video,
   Square,
   Circle,
-  
-  // 表单组件
+
+  // Form components
   FileText,
   CheckSquare,
   ToggleLeft,
   Calendar,
   List,
-  
-  // 布局组件
+
+  // Layout components
   Layout,
   Columns,
-  
-  // 操作图标
+
+  // Action icons
   Trash2,
   Copy,
   Settings,
@@ -45,7 +45,7 @@ import { Input } from '../ui/Input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/Tabs'
 import { cn } from '../../lib/utils'
 
-// ==================== 类型定义 ====================
+// ==================== Type definitions ====================
 
 export interface FlowNode {
   id: string
@@ -74,16 +74,16 @@ export interface NodeData {
   styles?: Record<string, any>
 }
 
-export type NodeType = 
-  // UI 基础组件
+export type NodeType =
+  // Basic UI components
   | 'text' | 'heading' | 'button' | 'image' | 'video'
-  // 表单组件
+  // Form components
   | 'input' | 'textarea' | 'select' | 'checkbox' | 'switch' | 'datepicker'
-  // 布局组件
+  // Layout components
   | 'container' | 'grid' | 'flex' | 'card' | 'tabs'
-  // 数据组件
+  // Data components
   | 'table' | 'chart' | 'list' | 'form'
-  // 自定义组件
+  // Custom components
   | 'custom'
 
 interface FlowCanvasProps {
@@ -97,52 +97,52 @@ interface FlowCanvasProps {
   mode?: 'edit' | 'preview'
 }
 
-// ==================== 组件库定义 ====================
+// ==================== Component library definition ====================
 
 const nodeLibrary = [
   {
-    category: 'UI组件',
+    category: 'UI Components',
     items: [
-      { type: 'text', label: '文本', icon: Type, description: '静态文本内容' },
-      { type: 'heading', label: '标题', icon: Type, description: '页面标题' },
-      { type: 'button', label: '按钮', icon: Square, description: '交互按钮' },
-      { type: 'image', label: '图片', icon: Image, description: '图片展示' },
-      { type: 'video', label: '视频', icon: Video, description: '视频播放器' },
+      { type: 'text', label: 'Text', icon: Type, description: 'Static text content' },
+      { type: 'heading', label: 'Heading', icon: Type, description: 'Page heading' },
+      { type: 'button', label: 'Button', icon: Square, description: 'Interactive button' },
+      { type: 'image', label: 'Image', icon: Image, description: 'Image display' },
+      { type: 'video', label: 'Video', icon: Video, description: 'Video player' },
     ]
   },
   {
-    category: '表单组件',
+    category: 'Form Components',
     items: [
-      { type: 'input', label: '输入框', icon: FileText, description: '文本输入' },
-      { type: 'textarea', label: '多行输入', icon: FileText, description: '多行文本' },
-      { type: 'select', label: '下拉选择', icon: List, description: '选项选择' },
-      { type: 'checkbox', label: '复选框', icon: CheckSquare, description: '多选' },
-      { type: 'switch', label: '开关', icon: ToggleLeft, description: '布尔值' },
-      { type: 'datepicker', label: '日期选择', icon: Calendar, description: '日期时间' },
+      { type: 'input', label: 'Input', icon: FileText, description: 'Text input' },
+      { type: 'textarea', label: 'Multiline Input', icon: FileText, description: 'Multiline text' },
+      { type: 'select', label: 'Dropdown', icon: List, description: 'Option selection' },
+      { type: 'checkbox', label: 'Checkbox', icon: CheckSquare, description: 'Multiple selection' },
+      { type: 'switch', label: 'Switch', icon: ToggleLeft, description: 'Boolean value' },
+      { type: 'datepicker', label: 'Date Picker', icon: Calendar, description: 'Date and time' },
     ]
   },
   {
-    category: '布局组件',
+    category: 'Layout Components',
     items: [
-      { type: 'container', label: '容器', icon: Square, description: '布局容器' },
-      { type: 'grid', label: '网格', icon: Grid3X3, description: '网格布局' },
-      { type: 'flex', label: '弹性布局', icon: Columns, description: 'Flexbox' },
-      { type: 'card', label: '卡片', icon: Layout, description: '内容卡片' },
-      { type: 'tabs', label: '标签页', icon: Layers, description: '选项卡' },
+      { type: 'container', label: 'Container', icon: Square, description: 'Layout container' },
+      { type: 'grid', label: 'Grid', icon: Grid3X3, description: 'Grid layout' },
+      { type: 'flex', label: 'Flex Layout', icon: Columns, description: 'Flexbox' },
+      { type: 'card', label: 'Card', icon: Layout, description: 'Content card' },
+      { type: 'tabs', label: 'Tabs', icon: Layers, description: 'Tabbed panels' },
     ]
   },
   {
-    category: '数据组件',
+    category: 'Data Components',
     items: [
-      { type: 'table', label: '表格', icon: Grid3X3, description: '数据表格' },
-      { type: 'chart', label: '图表', icon: Circle, description: '数据可视化' },
-      { type: 'list', label: '列表', icon: List, description: '数据列表' },
-      { type: 'form', label: '表单', icon: FileText, description: '表单容器' },
+      { type: 'table', label: 'Table', icon: Grid3X3, description: 'Data table' },
+      { type: 'chart', label: 'Chart', icon: Circle, description: 'Data visualization' },
+      { type: 'list', label: 'List', icon: List, description: 'Data list' },
+      { type: 'form', label: 'Form', icon: FileText, description: 'Form container' },
     ]
   }
 ]
 
-// ==================== 主组件 ====================
+// ==================== Main component ====================
 
 export function FlowCanvas({
   value = { nodes: [], connections: [] },
@@ -172,7 +172,7 @@ export function FlowCanvas({
     offset: { x: 0, y: 0 }
   })
 
-  // ==================== 画布操作 ====================
+  // ==================== Canvas operations ====================
 
   const addNode = useCallback((type: NodeType, position?: { x: number; y: number }) => {
     const newNode: FlowNode = {
@@ -225,7 +225,7 @@ export function FlowCanvas({
     }
   }, [value, onChange])
 
-  // ==================== 拖拽处理 ====================
+  // ==================== Drag handling ====================
 
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
     if (disabled || mode === 'preview') return
@@ -257,7 +257,7 @@ export function FlowCanvas({
         let newX = node.position.x + deltaX
         let newY = node.position.y + deltaY
 
-        // 网格对齐
+        // Snap to grid
         if (canvasState.snapToGrid) {
           newX = Math.round(newX / canvasState.gridSize) * canvasState.gridSize
           newY = Math.round(newY / canvasState.gridSize) * canvasState.gridSize
@@ -283,7 +283,7 @@ export function FlowCanvas({
     })
   }, [])
 
-  // 事件监听
+  // Event listeners
   useEffect(() => {
     if (dragState.isDragging) {
       document.addEventListener('mousemove', handleMouseMove)
@@ -295,7 +295,7 @@ export function FlowCanvas({
     }
   }, [dragState.isDragging, handleMouseMove, handleMouseUp])
 
-  // ==================== 工具函数 ====================
+  // ==================== Utility functions ====================
 
   const getDefaultNodeSize = (type: NodeType) => {
     switch (type) {
@@ -313,36 +313,36 @@ export function FlowCanvas({
   const getDefaultNodeData = (type: NodeType): NodeData => {
     switch (type) {
       case 'text':
-        return { 
-          label: '文本',
-          content: { text: '这是一段文本' },
+        return {
+          label: 'Text',
+          content: { text: 'This is some text' },
           properties: { fontSize: 14, color: '#000000' }
         }
       case 'heading':
-        return { 
-          label: '标题',
-          content: { text: '页面标题', level: 2 },
+        return {
+          label: 'Heading',
+          content: { text: 'Page heading', level: 2 },
           properties: { fontSize: 24, fontWeight: 'bold' }
         }
       case 'button':
-        return { 
-          label: '按钮',
-          content: { text: '点击按钮' },
+        return {
+          label: 'Button',
+          content: { text: 'Click me' },
           properties: { variant: 'primary', size: 'medium' },
           events: { onClick: 'handleClick' }
         }
       case 'input':
-        return { 
-          label: '输入框',
-          content: { placeholder: '请输入内容' },
+        return {
+          label: 'Input',
+          content: { placeholder: 'Enter a value' },
           properties: { type: 'text', required: false }
         }
       default:
-        return { label: `${type}组件` }
+        return { label: `${type} component` }
     }
   }
 
-  // ==================== 渲染函数 ====================
+  // ==================== Render functions ====================
 
   if (mode === 'preview') {
     return <CanvasPreview nodes={value.nodes} />
@@ -350,17 +350,17 @@ export function FlowCanvas({
 
   return (
     <div className={cn('flex h-[600px] bg-gray-50 rounded-lg overflow-hidden', error && 'border-2 border-red-500')}>
-      {/* 组件库面板 */}
+      {/* Component library panel */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
-          <h3 className="font-medium text-gray-900">组件库</h3>
+          <h3 className="font-medium text-gray-900">Component Library</h3>
         </div>
-        
+
         <Tabs defaultValue="components" className="flex-1">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="components">组件</TabsTrigger>
-            <TabsTrigger value="layers">图层</TabsTrigger>
-            <TabsTrigger value="properties">属性</TabsTrigger>
+            <TabsTrigger value="components">Components</TabsTrigger>
+            <TabsTrigger value="layers">Layers</TabsTrigger>
+            <TabsTrigger value="properties">Properties</TabsTrigger>
           </TabsList>
           
           <TabsContent value="components" className="flex-1 overflow-auto p-2">
@@ -386,9 +386,9 @@ export function FlowCanvas({
         </Tabs>
       </div>
 
-      {/* 主画布区域 */}
+      {/* Main canvas area */}
       <div className="flex-1 flex flex-col">
-        {/* 工具栏 */}
+        {/* Toolbar */}
         <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <Button
@@ -433,13 +433,13 @@ export function FlowCanvas({
             </Button>
             <Button variant="ghost" size="sm">
               <Eye className="h-4 w-4" />
-              预览
+              Preview
             </Button>
           </div>
         </div>
 
-        {/* 画布 */}
-        <div 
+        {/* Canvas */}
+        <div
           ref={canvasRef}
           className="flex-1 relative overflow-hidden cursor-crosshair"
           style={{
@@ -456,7 +456,7 @@ export function FlowCanvas({
             }
           }}
         >
-          {/* 渲染节点 */}
+          {/* Render nodes */}
           {value.nodes.map(node => (
             <NodeRenderer
               key={node.id}
@@ -468,7 +468,7 @@ export function FlowCanvas({
             />
           ))}
 
-          {/* 选择框 */}
+          {/* Selection box */}
           {selectedNodes.length > 0 && (
             <SelectionBox 
               nodes={value.nodes.filter(n => selectedNodes.includes(n.id))}
@@ -487,7 +487,7 @@ export function FlowCanvas({
   )
 }
 
-// ==================== 子组件 ====================
+// ==================== Subcomponents ====================
 
 function ComponentLibrary({ onAddNode, disabled }: { 
   onAddNode: (type: NodeType) => void
@@ -584,17 +584,17 @@ function PropertiesPanel({
     return (
       <div className="text-center text-gray-500 py-8">
         <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
-        <p>选择一个组件查看属性</p>
+        <p>Select a component to view its properties</p>
       </div>
     )
   }
 
-  const node = nodes[0] // 暂时只支持单选
+  const node = nodes[0] // Only single selection is supported for now
 
   return (
     <div className="space-y-4">
       <div>
-        <label className="text-sm font-medium text-gray-700">标签</label>
+        <label className="text-sm font-medium text-gray-700">Label</label>
         <Input
           value={node.data.label || ''}
           onChange={(e) => onUpdateNode(node.id, {
@@ -605,7 +605,7 @@ function PropertiesPanel({
       </div>
 
       <div>
-        <label className="text-sm font-medium text-gray-700">位置</label>
+        <label className="text-sm font-medium text-gray-700">Position</label>
         <div className="grid grid-cols-2 gap-2 mt-1">
           <Input
             type="number"
@@ -627,7 +627,7 @@ function PropertiesPanel({
       </div>
 
       <div>
-        <label className="text-sm font-medium text-gray-700">尺寸</label>
+        <label className="text-sm font-medium text-gray-700">Size</label>
         <div className="grid grid-cols-2 gap-2 mt-1">
           <Input
             type="number"
@@ -635,7 +635,7 @@ function PropertiesPanel({
             onChange={(e) => onUpdateNode(node.id, {
               size: { ...node.size, width: Number(e.target.value) }
             })}
-            placeholder="宽度"
+            placeholder="Width"
           />
           <Input
             type="number"
@@ -643,7 +643,7 @@ function PropertiesPanel({
             onChange={(e) => onUpdateNode(node.id, {
               size: { ...node.size, height: Number(e.target.value) }
             })}
-            placeholder="高度"
+            placeholder="Height"
           />
         </div>
       </div>
@@ -719,7 +719,7 @@ function NodeRenderer({
         </div>
         
         <div className="flex-1 text-xs text-gray-600">
-          {node.data.content?.text || `${node.type}组件`}
+          {node.data.content?.text || `${node.type} component`}
         </div>
 
         {selected && (
@@ -768,7 +768,7 @@ function SelectionBox({ nodes, zoom }: { nodes: FlowNode[]; zoom: number }) {
 function CanvasPreview({ nodes }: { nodes: FlowNode[] }) {
   return (
     <div className="w-full h-full bg-white p-4">
-      <h3 className="text-lg font-medium mb-4">预览模式</h3>
+      <h3 className="text-lg font-medium mb-4">Preview Mode</h3>
       <div className="space-y-4">
         {nodes.map(node => (
           <div key={node.id} className="p-4 border rounded-lg">
@@ -781,5 +781,5 @@ function CanvasPreview({ nodes }: { nodes: FlowNode[] }) {
   )
 }
 
-// 导出别名保持兼容性
+// Export alias kept for backward compatibility
 export { FlowCanvas as BlocksEditor }

@@ -1,11 +1,11 @@
 /**
- * WASM Plugin System - WASM UI插件运行时系统
- * 
- * 提供安全的WASM插件加载和运行环境，支持：
- * - 沙箱化执行
- * - 虚拟DOM代理
- * - 开发模式HMR
- * - 插件生命周期管理
+ * WASM Plugin System - WASM UI plugin runtime
+ *
+ * Provides a secure environment for loading and running WASM plugins, supporting:
+ * - Sandboxed execution
+ * - Virtual DOM proxying
+ * - HMR in development mode
+ * - Plugin lifecycle management
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
@@ -18,8 +18,8 @@ export interface WasmPluginConfig {
   id: string
   name: string
   version: string
-  wasmUrl?: string       // 生产模式WASM文件URL
-  jsUrl?: string         // 开发模式JS文件URL
+  wasmUrl?: string       // WASM file URL for production mode
+  jsUrl?: string         // JS file URL for development mode
   isDevelopment?: boolean
   metadata?: {
     description?: string
@@ -47,7 +47,7 @@ interface WasmPluginProps {
 }
 
 /**
- * WASM插件运行时组件
+ * WASM plugin runtime component
  */
 export function WasmPlugin({ 
   config, 
@@ -63,13 +63,13 @@ export function WasmPlugin({
   const workerRef = useRef<Worker | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 初始化插件
+  // Initialize the plugin
   useEffect(() => {
     initializePlugin()
     return () => cleanup()
   }, [config.id])
 
-  // 当props变化时通知插件
+  // Notify the plugin when props change
   useEffect(() => {
     if (status === 'ready' && workerRef.current) {
       sendMessageToPlugin({
@@ -85,63 +85,63 @@ export function WasmPlugin({
       setError(null)
       
       if (config.isDevelopment && config.jsUrl) {
-        // 开发模式：加载JS版本，支持HMR
+        // Development mode: load the JS build, with HMR support
         await initializeDevelopmentPlugin()
       } else if (config.wasmUrl) {
-        // 生产模式：加载WASM版本
+        // Production mode: load the WASM build
         await initializeProductionPlugin()
       } else {
-        throw new Error('插件配置无效：缺少WASM或JS文件URL')
+        throw new Error('Invalid plugin config: missing WASM or JS file URL')
       }
-      
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : '未知错误')
+      setError(err instanceof Error ? err.message : 'Unknown error')
       setStatus('error')
     }
   }
 
   const initializeDevelopmentPlugin = async () => {
-    // 开发模式：直接在主线程加载JS版本
+    // Development mode: load the JS build directly on the main thread
     try {
       const response = await fetch(config.jsUrl!)
       const jsCode = await response.text()
-      
-      // 创建安全的执行环境
+
+      // Create a secure execution environment
       const pluginFunction = new Function('props', 'sendEvent', 'log', jsCode)
-      
-      // 模拟插件API
+
+      // Mock plugin API
       const sendEvent = (event: string, data: any) => {
         onEvent?.(event, data)
       }
-      
+
       const log = (message: string) => {
         setLogs(prev => [...prev.slice(-9), `[${config.name}] ${message}`])
       }
-      
-      // 执行插件并获取渲染函数
+
+      // Execute the plugin and obtain its render function
       const plugin = pluginFunction(props, sendEvent, log)
-      
+
       if (typeof plugin.render === 'function') {
         const vdom = plugin.render(props)
         setVirtualDOM(vdom)
         setStatus('ready')
       } else {
-        throw new Error('插件必须导出render函数')
+        throw new Error('Plugin must export a render function')
       }
-      
+
     } catch (err) {
-      throw new Error(`加载开发模式插件失败: ${err instanceof Error ? err.message : '未知错误'}`)
+      throw new Error(`Failed to load development-mode plugin: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
   const initializeProductionPlugin = async () => {
-    // 生产模式：在Worker中加载WASM版本
+    // Production mode: load the WASM build inside a Worker
     try {
-      // 创建Worker
+      // Create the Worker
       const workerCode = `
         let wasmModule = null;
-        
-        // 处理主线程消息
+
+        // Handle messages from the main thread
         self.onmessage = async function(e) {
           const { type, payload } = e.data;
           
@@ -179,13 +179,13 @@ export function WasmPlugin({
           try {
             const wasmResponse = await fetch(wasmUrl);
             const wasmBytes = await wasmResponse.arrayBuffer();
-            
-            // 实例化WASM模块
+
+            // Instantiate the WASM module
             const wasmModule = await WebAssembly.instantiate(wasmBytes, {
               env: {
-                // 提供给WASM的环境函数
+                // Environment functions provided to WASM
                 log: (ptr, len) => {
-                  // 从WASM内存读取字符串并输出日志
+                  // Read a string from WASM memory and log it
                   console.log('WASM Log:', ptr, len);
                 }
               }
@@ -199,7 +199,7 @@ export function WasmPlugin({
             });
             
           } catch (error) {
-            throw new Error('WASM模块初始化失败: ' + error.message);
+            throw new Error('WASM module initialization failed: ' + error.message);
           }
         }
       `
@@ -207,23 +207,23 @@ export function WasmPlugin({
       const blob = new Blob([workerCode], { type: 'application/javascript' })
       const worker = new Worker(URL.createObjectURL(blob))
       
-      // 设置消息处理器
+      // Set up message handlers
       worker.onmessage = handleWorkerMessage
       worker.onerror = (error) => {
-        setError(`Worker错误: ${error.message}`)
+        setError(`Worker error: ${error.message}`)
         setStatus('error')
       }
-      
-      // 初始化WASM模块
+
+      // Initialize the WASM module
       worker.postMessage({
         type: 'init',
         payload: { wasmUrl: config.wasmUrl }
       })
-      
+
       workerRef.current = worker
-      
+
     } catch (err) {
-      throw new Error(`创建WASM运行环境失败: ${err instanceof Error ? err.message : '未知错误'}`)
+      throw new Error(`Failed to create WASM runtime environment: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -233,7 +233,7 @@ export function WasmPlugin({
     switch (type) {
       case 'ready':
         setStatus('ready')
-        // 发送初始props
+        // Send the initial props
         sendMessageToPlugin({
           type: 'props',
           payload: props
@@ -254,7 +254,7 @@ export function WasmPlugin({
         break
         
       default:
-        console.warn('未知的插件消息类型:', type)
+        console.warn('Unknown plugin message type:', type)
     }
   }
 
@@ -287,7 +287,7 @@ export function WasmPlugin({
     initializePlugin()
   }
 
-  // 渲染虚拟DOM为真实DOM
+  // Render the virtual DOM into real DOM
   const renderVirtualDOM = (vnode: VirtualNode | string): React.ReactNode => {
     if (typeof vnode === 'string') {
       return vnode
@@ -299,11 +299,11 @@ export function WasmPlugin({
 
     const { type, props: nodeProps = {}, children = [] } = vnode
 
-    // 处理事件属性
+    // Handle event props
     const eventProps: Record<string, any> = {}
     Object.entries(nodeProps).forEach(([key, value]) => {
       if (key.startsWith('on') && typeof value === 'string') {
-        // 将事件名转换为处理函数
+        // Convert the event name into a handler function
         eventProps[key] = (e: any) => {
           handleVirtualDOMEvent(value, {
             type: e.type,
@@ -316,12 +316,12 @@ export function WasmPlugin({
       }
     })
 
-    // 渲染子元素
-    const renderedChildren = children.map((child, index) => 
+    // Render child elements
+    const renderedChildren = children.map((child, index) =>
       React.createElement(React.Fragment, { key: index }, renderVirtualDOM(child))
     )
 
-    // 创建React元素
+    // Create the React element
     return React.createElement(type, eventProps, ...renderedChildren)
   }
 
@@ -331,7 +331,7 @@ export function WasmPlugin({
         <Card className="border-dashed">
           <CardContent className="py-8 text-center">
             <Spinner className="mx-auto mb-4" />
-            <p className="text-sm text-gray-600">正在加载插件 {config.name}...</p>
+            <p className="text-sm text-gray-600">Loading plugin {config.name}...</p>
           </CardContent>
         </Card>
       )}
@@ -342,12 +342,12 @@ export function WasmPlugin({
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="font-medium text-red-900">插件加载失败</h3>
+                <h3 className="font-medium text-red-900">Plugin failed to load</h3>
                 <p className="text-sm text-red-700 mt-1">{error}</p>
                 <div className="mt-3">
                   <Button variant="secondary" size="sm" onClick={reload}>
                     <RefreshCw className="h-4 w-4 mr-1" />
-                    重试加载
+                    Retry
                   </Button>
                 </div>
               </div>
@@ -362,12 +362,12 @@ export function WasmPlugin({
         </div>
       )}
 
-      {/* 开发模式调试信息 */}
+      {/* Debug info in development mode */}
       {config.isDevelopment && logs.length > 0 && (
         <details className="mt-4">
           <summary className="cursor-pointer text-sm font-medium text-gray-700 flex items-center gap-2">
             <Code className="h-4 w-4" />
-            插件日志 ({logs.length})
+            Plugin Logs ({logs.length})
           </summary>
           <div className="mt-2 p-3 bg-gray-50 rounded-md">
             <div className="space-y-1 text-xs font-mono">
@@ -383,7 +383,7 @@ export function WasmPlugin({
 }
 
 /**
- * 插件管理器组件
+ * Plugin manager component
  */
 interface PluginManagerProps {
   plugins: WasmPluginConfig[]
@@ -409,8 +409,8 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Zap className="h-5 w-5 text-primary-600" />
-        <h3 className="text-lg font-semibold">WASM 插件管理器</h3>
-        <span className="text-sm text-gray-500">({plugins.length} 个插件)</span>
+        <h3 className="text-lg font-semibold">WASM Plugin Manager</h3>
+        <span className="text-sm text-gray-500">({plugins.length} plugins)</span>
       </div>
 
       <div className="grid gap-4">
@@ -426,7 +426,7 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
                     </span>
                     {plugin.isDevelopment && (
                       <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">
-                        开发模式
+                        Dev Mode
                       </span>
                     )}
                   </div>
@@ -439,7 +439,7 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
                   
                   {plugin.metadata?.author && (
                     <p className="text-xs text-gray-500 mt-2">
-                      作者: {plugin.metadata.author}
+                      Author: {plugin.metadata.author}
                     </p>
                   )}
                 </div>
@@ -450,7 +450,7 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
                     size="sm"
                     onClick={() => togglePlugin(plugin.id)}
                   >
-                    {activePlugins.has(plugin.id) ? '停用' : '启用'}
+                    {activePlugins.has(plugin.id) ? 'Disable' : 'Enable'}
                   </Button>
                   
                   {plugin.isDevelopment && (
@@ -458,7 +458,7 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
                       variant="ghost"
                       size="sm"
                       onClick={() => onPluginUpdate?.(plugin.id)}
-                      title="热重载"
+                      title="Hot Reload"
                     >
                       <RefreshCw className="h-4 w-4" />
                     </Button>
@@ -466,14 +466,14 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
                 </div>
               </div>
 
-              {/* 插件实例 */}
+              {/* Plugin instance */}
               {activePlugins.has(plugin.id) && (
                 <div className="mt-4 border-t pt-4">
                   <WasmPlugin
                     config={plugin}
                     props={{ message: 'Hello from Atomo!' }}
                     onEvent={(event, data) => {
-                      console.log(`插件事件 [${plugin.name}]:`, event, data)
+                      console.log(`Plugin event [${plugin.name}]:`, event, data)
                     }}
                   />
                 </div>
@@ -487,9 +487,9 @@ export function PluginManager({ plugins, onPluginUpdate }: PluginManagerProps) {
         <Card className="border-dashed">
           <CardContent className="py-8 text-center">
             <Zap className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-600">暂无已安装的插件</p>
+            <p className="text-gray-600">No plugins installed</p>
             <p className="text-sm text-gray-500 mt-1">
-              使用 <code className="bg-gray-100 px-1 rounded">atomo plugin install</code> 安装插件
+              Run <code className="bg-gray-100 px-1 rounded">atomo plugin install</code> to install a plugin
             </p>
           </CardContent>
         </Card>

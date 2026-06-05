@@ -1,11 +1,11 @@
 /**
- * Notification System - 通知系统
- * 
- * 提供实时通知和提醒功能，包括：
- * - 实时推送通知
- * - 通知中心管理
- * - 通知偏好设置
- * - 桌面和移动端推送
+ * Notification System - Notification system
+ *
+ * Provides real-time notifications and reminders, including:
+ * - Real-time push notifications
+ * - Notification center management
+ * - Notification preferences
+ * - Desktop and mobile push
  */
 
 import React, { useState, useEffect } from 'react'
@@ -82,33 +82,33 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
   const [filter, setFilter] = useState<string>('all')
   const [activeTab, setActiveTab] = useState<'notifications' | 'settings'>('notifications')
 
-  // 模拟实时通知接收
+  // Simulate receiving real-time notifications
   useEffect(() => {
-    // 加载初始通知
+    // Load initial notifications
     setNotifications(generateMockNotifications())
 
-    // 模拟实时通知
+    // Simulate real-time notifications
     const interval = setInterval(() => {
-      if (Math.random() < 0.3) { // 30% 概率收到新通知
+      if (Math.random() < 0.3) { // 30% chance of receiving a new notification
         const newNotification = generateRandomNotification()
         setNotifications(prev => [newNotification, ...prev])
-        
-        // 显示桌面通知
+
+        // Show desktop notification
         if (preferences.desktop && 'Notification' in window) {
           showDesktopNotification(newNotification)
         }
-        
-        // 播放声音
+
+        // Play sound
         if (preferences.sound) {
           playNotificationSound()
         }
       }
-    }, 10000) // 每10秒检查一次
+    }, 10000) // Check every 10 seconds
 
     return () => clearInterval(interval)
   }, [preferences.desktop, preferences.sound])
 
-  // 请求桌面通知权限
+  // Request desktop notification permission
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
@@ -168,7 +168,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
-              <CardTitle>通知中心</CardTitle>
+              <CardTitle>Notification Center</CardTitle>
               {unreadCount > 0 && (
                 <Badge variant="danger" className="text-xs">
                   {unreadCount}
@@ -180,7 +180,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
             </Button>
           </div>
 
-          {/* 标签页切换 */}
+          {/* Tab switcher */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
             <button
               onClick={() => setActiveTab('notifications')}
@@ -191,7 +191,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
                   : 'text-gray-600 hover:text-gray-900'
               )}
             >
-              通知
+              Notifications
             </button>
             <button
               onClick={() => setActiveTab('settings')}
@@ -202,7 +202,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
                   : 'text-gray-600 hover:text-gray-900'
               )}
             >
-              设置
+              Settings
             </button>
           </div>
         </CardHeader>
@@ -210,7 +210,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
         <CardContent className="p-0 h-full overflow-auto">
           {activeTab === 'notifications' && (
             <div className="h-full flex flex-col">
-              {/* 筛选和操作栏 */}
+              {/* Filter and action bar */}
               <div className="p-4 border-b bg-gray-50">
                 <div className="flex items-center justify-between mb-3">
                   <select
@@ -218,37 +218,37 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
                     onChange={(e) => setFilter(e.target.value)}
                     className="px-3 py-1 border border-gray-300 rounded text-sm"
                   >
-                    <option value="all">全部通知</option>
-                    <option value="unread">未读</option>
-                    <option value="system">系统</option>
-                    <option value="workflow">工作流</option>
-                    <option value="task">任务</option>
-                    <option value="security">安全</option>
+                    <option value="all">All Notifications</option>
+                    <option value="unread">Unread</option>
+                    <option value="system">System</option>
+                    <option value="workflow">Workflow</option>
+                    <option value="task">Task</option>
+                    <option value="security">Security</option>
                   </select>
 
                   <div className="flex gap-2">
                     {unreadCount > 0 && (
                       <Button variant="ghost" size="sm" onClick={markAllAsRead}>
                         <Check className="h-4 w-4 mr-1" />
-                        全部已读
+                        Mark all read
                       </Button>
                     )}
                     <Button variant="ghost" size="sm" onClick={clearAllNotifications}>
                       <Trash2 className="h-4 w-4 mr-1" />
-                      清空
+                      Clear all
                     </Button>
                   </div>
                 </div>
               </div>
 
-              {/* 通知列表 */}
+              {/* Notification list */}
               <div className="flex-1 overflow-y-auto">
                 {filteredNotifications.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-gray-500">
                     <div className="text-center">
                       <Bell className="h-8 w-8 mx-auto mb-3 text-gray-400" />
-                      <p>暂无通知</p>
-                      <p className="text-sm mt-1">当有新通知时会显示在这里</p>
+                      <p>No notifications</p>
+                      <p className="text-sm mt-1">New notifications will appear here</p>
                     </div>
                   </div>
                 ) : (
@@ -288,7 +288,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
                                 </Badge>
                                 {notification.priority === 'urgent' && (
                                   <Badge variant="danger" className="text-xs">
-                                    紧急
+                                    Urgent
                                   </Badge>
                                 )}
                               </div>
@@ -328,7 +328,7 @@ export function NotificationSystem({ isOpen, onClose }: NotificationSystemProps)
   )
 }
 
-// 通知设置组件
+// Notification settings component
 interface NotificationSettingsProps {
   preferences: NotificationPreferences
   onPreferencesChange: (preferences: NotificationPreferences) => void
@@ -354,14 +354,14 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
 
   return (
     <div className="space-y-6">
-      {/* 基本设置 */}
+      {/* Basic settings */}
       <div>
-        <h3 className="font-medium text-gray-900 mb-3">通知方式</h3>
+        <h3 className="font-medium text-gray-900 mb-3">Notification Methods</h3>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell className="h-4 w-4 text-gray-600" />
-              <span className="text-sm">桌面通知</span>
+              <span className="text-sm">Desktop notifications</span>
             </div>
             <Switch
               checked={preferences.desktop}
@@ -376,7 +376,7 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
               ) : (
                 <VolumeX className="h-4 w-4 text-gray-600" />
               )}
-              <span className="text-sm">声音提醒</span>
+              <span className="text-sm">Sound alerts</span>
             </div>
             <Switch
               checked={preferences.sound}
@@ -386,7 +386,7 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-sm">邮件通知</span>
+              <span className="text-sm">Email notifications</span>
             </div>
             <Switch
               checked={preferences.email}
@@ -396,18 +396,18 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
         </div>
       </div>
 
-      {/* 通知类别 */}
+      {/* Notification categories */}
       <div>
-        <h3 className="font-medium text-gray-900 mb-3">通知类别</h3>
+        <h3 className="font-medium text-gray-900 mb-3">Notification Categories</h3>
         <div className="space-y-3">
           {Object.entries(preferences.categories).map(([category, enabled]) => (
             <div key={category} className="flex items-center justify-between">
               <span className="text-sm capitalize">
-                {category === 'system' && '系统通知'}
-                {category === 'workflow' && '工作流'}
-                {category === 'task' && '任务'}
-                {category === 'security' && '安全'}
-                {category === 'update' && '更新'}
+                {category === 'system' && 'System notifications'}
+                {category === 'workflow' && 'Workflow'}
+                {category === 'task' && 'Task'}
+                {category === 'security' && 'Security'}
+                {category === 'update' && 'Update'}
               </span>
               <Switch
                 checked={enabled}
@@ -418,12 +418,12 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
         </div>
       </div>
 
-      {/* 免打扰时间 */}
+      {/* Do not disturb hours */}
       <div>
-        <h3 className="font-medium text-gray-900 mb-3">免打扰时间</h3>
+        <h3 className="font-medium text-gray-900 mb-3">Do Not Disturb</h3>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm">启用免打扰</span>
+            <span className="text-sm">Enable Do Not Disturb</span>
             <Switch
               checked={preferences.quietHours.enabled}
               onCheckedChange={(checked) => 
@@ -438,7 +438,7 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
           {preferences.quietHours.enabled && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-600">开始时间</label>
+                <label className="text-xs text-gray-600">Start time</label>
                 <input
                   type="time"
                   value={preferences.quietHours.start}
@@ -452,7 +452,7 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-600">结束时间</label>
+                <label className="text-xs text-gray-600">End time</label>
                 <input
                   type="time"
                   value={preferences.quietHours.end}
@@ -470,17 +470,17 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
         </div>
       </div>
 
-      {/* 测试通知 */}
+      {/* Test notification */}
       <div>
-        <h3 className="font-medium text-gray-900 mb-3">测试</h3>
+        <h3 className="font-medium text-gray-900 mb-3">Test</h3>
         <Button
           variant="secondary"
           onClick={() => {
             const testNotification: Notification = {
               id: `test-${Date.now()}`,
               type: 'info',
-              title: '测试通知',
-              message: '这是一条测试通知，用于验证您的通知设置',
+              title: 'Test Notification',
+              message: 'This is a test notification to verify your notification settings',
               timestamp: new Date(),
               read: false,
               category: 'system',
@@ -497,21 +497,21 @@ function NotificationSettings({ preferences, onPreferencesChange }: Notification
           }}
         >
           <Bell className="h-4 w-4 mr-2" />
-          发送测试通知
+          Send test notification
         </Button>
       </div>
     </div>
   )
 }
 
-// 辅助函数
+// Helper functions
 function generateMockNotifications(): Notification[] {
   return [
     {
       id: '1',
       type: 'success',
-      title: '工作流完成',
-      message: '客户欢迎邮件工作流已成功执行',
+      title: 'Workflow Completed',
+      message: 'The customer welcome email workflow ran successfully',
       timestamp: new Date(Date.now() - 300000),
       read: false,
       category: 'workflow',
@@ -520,8 +520,8 @@ function generateMockNotifications(): Notification[] {
     {
       id: '2',
       type: 'warning',
-      title: '任务即将到期',
-      message: '准备客户演示PPT将在1天后到期',
+      title: 'Task Due Soon',
+      message: 'Prepare customer demo slides is due in 1 day',
       timestamp: new Date(Date.now() - 600000),
       read: false,
       category: 'task',
@@ -530,8 +530,8 @@ function generateMockNotifications(): Notification[] {
     {
       id: '3',
       type: 'info',
-      title: '系统维护通知',
-      message: '系统将在今晚23:00-01:00进行维护，期间可能影响服务',
+      title: 'System Maintenance Notice',
+      message: 'The system will undergo maintenance tonight from 23:00 to 01:00, which may affect service',
       timestamp: new Date(Date.now() - 900000),
       read: true,
       category: 'system',
@@ -546,10 +546,10 @@ function generateRandomNotification(): Notification {
   const priorities: Notification['priority'][] = ['low', 'medium', 'high', 'urgent']
   
   const templates = [
-    { title: '新交易创建', message: '用户创建了一个新的交易记录' },
-    { title: '数据同步完成', message: '客户数据同步已成功完成' },
-    { title: '登录异常', message: '检测到异常登录行为，请注意安全' },
-    { title: '备份完成', message: '数据库备份已成功完成' }
+    { title: 'New Deal Created', message: 'A user created a new deal record' },
+    { title: 'Data Sync Completed', message: 'Customer data sync completed successfully' },
+    { title: 'Login Anomaly', message: 'Unusual login activity detected, please review your security' },
+    { title: 'Backup Completed', message: 'Database backup completed successfully' }
   ]
   
   const template = templates[Math.floor(Math.random() * templates.length)]
@@ -577,7 +577,7 @@ function showDesktopNotification(notification: Notification) {
 }
 
 function playNotificationSound() {
-  // 简单的通知音效（使用Web Audio API）
+  // Simple notification sound (using the Web Audio API)
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
   const oscillator = audioContext.createOscillator()
   const gainNode = audioContext.createGain()

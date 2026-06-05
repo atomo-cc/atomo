@@ -52,13 +52,13 @@ export function TrashView({ schema }: TrashViewProps) {
       <div className="flex items-center gap-3">
         <Trash2 className="h-7 w-7 text-primary-600" />
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">回收站</h1>
-          <p className="text-gray-600 mt-1">查看已软删除的记录，可还原或永久删除</p>
+          <h1 className="text-3xl font-bold text-gray-900">Trash</h1>
+          <p className="text-gray-600 mt-1">View soft-deleted records; restore them or delete permanently</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">模型</label>
+        <label className="text-sm font-medium text-gray-700">Model</label>
         <select
           value={model}
           onChange={(e) => setModel(e.target.value)}
@@ -78,14 +78,14 @@ export function TrashView({ schema }: TrashViewProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>已删除的 {model}</CardTitle>
-          <CardDescription>还原会恢复记录；永久删除不可撤销。</CardDescription>
+          <CardTitle>Deleted {model}</CardTitle>
+          <CardDescription>Restoring brings the record back; permanent deletion cannot be undone.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <Spinner />
           ) : deleted.length === 0 ? (
-            <p className="text-gray-500 text-sm">回收站为空。</p>
+            <p className="text-gray-500 text-sm">Trash is empty.</p>
           ) : (
             <ul className="divide-y divide-gray-200">
               {deleted.map((row: any) => (
@@ -93,10 +93,10 @@ export function TrashView({ schema }: TrashViewProps) {
                   <span className="font-mono text-xs text-gray-700">{row.id}</span>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="secondary" onClick={() => restore.mutate(row.id)} disabled={restore.isPending}>
-                      <RotateCcw className="h-4 w-4 mr-1" /> 还原
+                      <RotateCcw className="h-4 w-4 mr-1" /> Restore
                     </Button>
                     <Button size="sm" variant="danger" onClick={() => purge.mutate(row.id)} disabled={purge.isPending}>
-                      <XCircle className="h-4 w-4 mr-1" /> 永久删除
+                      <XCircle className="h-4 w-4 mr-1" /> Delete Permanently
                     </Button>
                   </div>
                 </li>

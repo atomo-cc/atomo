@@ -1,5 +1,5 @@
 /**
- * Textarea Component - 多行文本输入组件
+ * Textarea Component — multi-line text input
  */
 
 import * as React from 'react'

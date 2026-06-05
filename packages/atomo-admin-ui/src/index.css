@@ -27,7 +27,7 @@ body {
   min-height: 100vh;
 }
 
-/* 滚动条样式 */
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -46,7 +46,7 @@ body {
   background: #94a3b8;
 }
 
-/* 动画 */
+/* Animations */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -73,7 +73,7 @@ body {
   animation: slideIn 300ms ease-out;
 }
 
-/* 表格虚拟化样式 */
+/* Table virtualization */
 .virtual-table-container {
   contain: strict;
 }

@@ -1,11 +1,11 @@
 /**
- * Magic Wand - AI魔法棒组件
- * 
- * 为文本编辑器提供AI增强功能，包括：
- * - 内容生成
- * - 文本润色
- * - 风格转换
- * - 智能建议
+ * Magic Wand - AI magic wand component
+ *
+ * Provides AI-enhanced features for the text editor, including:
+ * - Content generation
+ * - Text refinement
+ * - Style transformation
+ * - Smart suggestions
  */
 
 import React, { useState, useRef, useEffect } from 'react'
@@ -53,7 +53,7 @@ export function MagicWand({
   const [showCustomPrompt, setShowCustomPrompt] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
-  // 点击外部关闭
+  // Close when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
@@ -70,49 +70,49 @@ export function MagicWand({
   const magicActions = [
     {
       id: 'improve',
-      name: '润色文本',
+      name: 'Refine Text',
       icon: <PenTool className="h-4 w-4" />,
-      description: '优化语言表达和逻辑结构',
+      description: 'Improve wording and logical structure',
       needsSelection: true,
-      prompt: '请优化这段文本，使其更加清晰、专业且易读'
+      prompt: 'Please refine this text to make it clearer, more professional, and easier to read'
     },
     {
       id: 'generate',
-      name: '续写内容',
+      name: 'Continue Writing',
       icon: <MessageSquare className="h-4 w-4" />,
-      description: '基于上下文生成后续内容',
+      description: 'Generate follow-up content based on context',
       needsSelection: false,
-      prompt: '请基于上述内容，继续生成相关的文本'
+      prompt: 'Based on the content above, please continue generating relevant text'
     },
     {
       id: 'summarize',
-      name: '总结要点',
+      name: 'Summarize',
       icon: <Lightbulb className="h-4 w-4" />,
-      description: '提取关键信息和要点',
+      description: 'Extract key information and takeaways',
       needsSelection: true,
-      prompt: '请总结这段文本的关键要点'
+      prompt: 'Please summarize the key points of this text'
     },
     {
       id: 'expand',
-      name: '扩展内容',
+      name: 'Expand Content',
       icon: <Zap className="h-4 w-4" />,
-      description: '添加更多细节和说明',
+      description: 'Add more detail and explanation',
       needsSelection: true,
-      prompt: '请扩展这段文本，添加更多细节和解释'
+      prompt: 'Please expand this text by adding more detail and explanation'
     },
     {
       id: 'translate',
-      name: '翻译文本',
+      name: 'Translate Text',
       icon: <RefreshCw className="h-4 w-4" />,
-      description: '翻译为其他语言',
+      description: 'Translate into another language',
       needsSelection: true,
-      prompt: '请将这段文本翻译为英文'
+      prompt: 'Please translate this text into English'
     },
     {
       id: 'custom',
-      name: '自定义',
+      name: 'Custom',
       icon: <Wand2 className="h-4 w-4" />,
-      description: '使用自定义提示',
+      description: 'Use a custom prompt',
       needsSelection: false,
       prompt: ''
     }
@@ -120,7 +120,7 @@ export function MagicWand({
 
   const handleMagicAction = async (action: typeof magicActions[0]) => {
     if (action.needsSelection && !selectedText) {
-      alert('请先选择文本')
+      alert('Please select some text first')
       return
     }
 
@@ -140,14 +140,14 @@ export function MagicWand({
       } else {
         response = await assistant.generateText(
           action.prompt,
-          selectedText || '当前上下文'
+          selectedText || 'Current context'
         )
       }
 
       setAiResponse(response)
     } catch (error) {
-      console.error('AI处理失败:', error)
-      alert('AI处理失败，请稍后重试')
+      console.error('AI processing failed:', error)
+      alert('AI processing failed, please try again later')
       setActiveAction(null)
     }
   }
@@ -162,12 +162,12 @@ export function MagicWand({
     try {
       const response = await assistant.generateText(
         customPrompt,
-        selectedText || '当前上下文'
+        selectedText || 'Current context'
       )
       setAiResponse(response)
     } catch (error) {
-      console.error('AI处理失败:', error)
-      alert('AI处理失败，请稍后重试')
+      console.error('AI processing failed:', error)
+      alert('AI processing failed, please try again later')
       setActiveAction(null)
     }
   }
@@ -220,13 +220,13 @@ export function MagicWand({
         minWidth: '300px'
       }}
     >
-      {/* AI响应显示 */}
+      {/* AI response display */}
       {aiResponse && (
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-purple-600" />
-              <span className="font-medium text-sm">AI建议</span>
+              <span className="font-medium text-sm">AI Suggestion</span>
               <Badge variant="secondary" className="text-xs">
                 {Math.round(aiResponse.confidence * 100)}%
               </Badge>
@@ -248,33 +248,33 @@ export function MagicWand({
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={handleAcceptSuggestion}>
               <Check className="h-3 w-3 mr-1" />
-              采用
+              Accept
             </Button>
             <Button variant="secondary" size="sm" onClick={handleRejectSuggestion}>
               <X className="h-3 w-3 mr-1" />
-              拒绝
+              Reject
             </Button>
             {aiResponse.alternatives && aiResponse.alternatives.length > 0 && (
               <span className="text-xs text-gray-500">
-                +{aiResponse.alternatives.length} 个备选方案
+                +{aiResponse.alternatives.length} alternative(s)
               </span>
             )}
           </div>
         </div>
       )}
 
-      {/* 自定义提示输入 */}
+      {/* Custom prompt input */}
       {showCustomPrompt && (
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center gap-2 mb-3">
             <Wand2 className="h-4 w-4 text-purple-600" />
-            <span className="font-medium text-sm">自定义提示</span>
+            <span className="font-medium text-sm">Custom Prompt</span>
           </div>
-          
+
           <textarea
             value={customPrompt}
             onChange={(e) => setCustomPrompt(e.target.value)}
-            placeholder="输入您的自定义提示..."
+            placeholder="Enter your custom prompt..."
             className="w-full h-20 p-2 text-sm border border-gray-300 rounded-md resize-none"
             autoFocus
           />
@@ -282,24 +282,24 @@ export function MagicWand({
           <div className="flex items-center gap-2 mt-3">
             <Button size="sm" onClick={handleCustomPrompt} disabled={!customPrompt.trim()}>
               <Zap className="h-3 w-3 mr-1" />
-              执行
+              Run
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowCustomPrompt(false)}>
-              取消
+              Cancel
             </Button>
           </div>
         </div>
       )}
 
-      {/* 魔法操作列表 */}
+      {/* Magic action list */}
       {!aiResponse && !showCustomPrompt && (
         <div className="p-4">
           <div className="flex items-center gap-2 mb-3">
             <Wand2 className="h-4 w-4 text-purple-600" />
-            <span className="font-medium text-sm">AI魔法棒</span>
+            <span className="font-medium text-sm">AI Magic Wand</span>
             {selectedText && (
               <Badge variant="secondary" className="text-xs">
-                已选择 {selectedText.length} 字符
+                {selectedText.length} characters selected
               </Badge>
             )}
           </div>
@@ -337,13 +337,13 @@ export function MagicWand({
 
           {capabilities.length === 0 && (
             <div className="text-center py-4 text-gray-500 text-sm">
-              AI功能暂不可用
+              AI features are currently unavailable
             </div>
           )}
         </div>
       )}
 
-      {/* 关闭按钮 */}
+      {/* Close button */}
       <div className="absolute top-2 right-2">
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="h-3 w-3" />
@@ -354,7 +354,7 @@ export function MagicWand({
 }
 
 /**
- * AI增强的文本区域组件
+ * AI-enhanced textarea component
  */
 interface AIEnhancedTextareaProps {
   value: string
@@ -387,7 +387,7 @@ export function AIEnhancedTextarea({
     setSelectedText(selected)
 
     if (selected.length > 0) {
-      // 计算选择位置
+      // Calculate the selection position
       const rect = textarea.getBoundingClientRect()
       setMagicWandPosition({
         x: rect.left + 20,
@@ -397,7 +397,7 @@ export function AIEnhancedTextarea({
   }
 
   const handleMagicWandTrigger = (e: React.KeyboardEvent) => {
-    // Ctrl/Cmd + M 打开魔法棒
+    // Ctrl/Cmd + M opens the magic wand
     if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
       e.preventDefault()
       handleTextSelection()
@@ -415,7 +415,7 @@ export function AIEnhancedTextarea({
     const newValue = value.substring(0, start) + newText + value.substring(end)
     onChange(newValue)
 
-    // 设置新的光标位置
+    // Set the new cursor position
     setTimeout(() => {
       textarea.focus()
       textarea.setSelectionRange(start + newText.length, start + newText.length)
@@ -431,7 +431,7 @@ export function AIEnhancedTextarea({
     const newValue = value.substring(0, start) + newText + value.substring(start)
     onChange(newValue)
 
-    // 设置新的光标位置
+    // Set the new cursor position
     setTimeout(() => {
       textarea.focus()
       textarea.setSelectionRange(start + newText.length, start + newText.length)
@@ -456,7 +456,7 @@ export function AIEnhancedTextarea({
         )}
       />
       
-      {/* AI魔法棒按钮 */}
+      {/* AI magic wand button */}
       <Button
         variant="ghost"
         size="sm"
@@ -465,12 +465,12 @@ export function AIEnhancedTextarea({
           setShowMagicWand(true)
         }}
         className="absolute bottom-2 right-2 opacity-70 hover:opacity-100"
-        title="AI魔法棒 (Ctrl+M)"
+        title="AI Magic Wand (Ctrl+M)"
       >
         <Wand2 className="h-4 w-4 text-purple-600" />
       </Button>
 
-      {/* 魔法棒组件 */}
+      {/* Magic wand component */}
       <MagicWand
         selectedText={selectedText}
         onTextReplace={handleTextReplace}

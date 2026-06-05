@@ -1,7 +1,7 @@
 /**
  * Validation Schema Generator
- * 
- * 根据模型元数据生成 Zod 验证模式
+ *
+ * Generate a Zod validation schema from model metadata.
  */
 
 import { z } from 'zod'
@@ -11,7 +11,7 @@ export function generateValidationSchema(modelMetadata: ModelMetadata): z.ZodSch
   const schemaFields: Record<string, z.ZodTypeAny> = {}
 
   Object.entries(modelMetadata.fields).forEach(([fieldName, field]) => {
-    // 跳过系统字段，它们不应该在表单验证中
+    // Skip system fields; they shouldn't be part of form validation
     if (['id', 'createdAt', 'updatedAt', 'created_at', 'updated_at'].includes(fieldName)) {
       return
     }
@@ -25,43 +25,43 @@ export function generateValidationSchema(modelMetadata: ModelMetadata): z.ZodSch
 function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
   let schema: z.ZodTypeAny
 
-  // 根据字段类型创建基础 schema
+  // Create the base schema based on the field type
   switch (field.type) {
     case 'string':
     case 'text':
     case 'email':
     case 'url':
-      // 创建一个可以处理null值的字符串schema
+      // Create a string schema that can handle null values
       schema = z.union([z.string(), z.null()]).transform((val) => val === null ? '' : val)
-      
-      // 邮箱验证
+
+      // Email validation
       if (field.name.toLowerCase().includes('email') || field.type === 'email') {
-        schema = z.union([z.string().email('请输入有效的邮箱地址'), z.null()]).transform((val) => val === null ? '' : val)
+        schema = z.union([z.string().email('Please enter a valid email address'), z.null()]).transform((val) => val === null ? '' : val)
       }
-      
-      // URL验证
+
+      // URL validation
       if (field.name.toLowerCase().includes('url') || field.type === 'url') {
-        schema = z.union([z.string().url('请输入有效的URL'), z.null()]).transform((val) => val === null ? '' : val)
+        schema = z.union([z.string().url('Please enter a valid URL'), z.null()]).transform((val) => val === null ? '' : val)
       }
-      
-      // 对于已经transformed的schema，需要先检查是否为空字符串
+
+      // For an already-transformed schema, check for an empty string first
       const stringSchema = schema as z.ZodEffects<any, string, any>
-      
-      // 长度验证
+
+      // Length validation
       if (field.ui?.validation?.minLength) {
-        schema = stringSchema.refine((val) => !val || val.length >= field.ui!.validation!.minLength!, 
-          `最少需要 ${field.ui!.validation!.minLength} 个字符`)
+        schema = stringSchema.refine((val) => !val || val.length >= field.ui!.validation!.minLength!,
+          `Must be at least ${field.ui!.validation!.minLength} characters`)
       }
-      
+
       if (field.ui?.validation?.maxLength) {
-        schema = stringSchema.refine((val) => !val || val.length <= field.ui!.validation!.maxLength!, 
-          `最多允许 ${field.ui!.validation!.maxLength} 个字符`)
+        schema = stringSchema.refine((val) => !val || val.length <= field.ui!.validation!.maxLength!,
+          `Must be at most ${field.ui!.validation!.maxLength} characters`)
       }
-      
-      // 模式验证
+
+      // Pattern validation
       if (field.ui?.validation?.pattern) {
         const regex = new RegExp(field.ui.validation.pattern)
-        schema = stringSchema.refine((val) => !val || regex.test(val), '格式不正确')
+        schema = stringSchema.refine((val) => !val || regex.test(val), 'Invalid format')
       }
       
       break
@@ -70,13 +70,13 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
       schema = z.number()
       
       if (field.ui?.validation?.min !== undefined) {
-        schema = (schema as z.ZodNumber).min(field.ui.validation.min, 
-          `最小值为 ${field.ui.validation.min}`)
+        schema = (schema as z.ZodNumber).min(field.ui.validation.min,
+          `Minimum value is ${field.ui.validation.min}`)
       }
       
       if (field.ui?.validation?.max !== undefined) {
-        schema = (schema as z.ZodNumber).max(field.ui.validation.max, 
-          `最大值为 ${field.ui.validation.max}`)
+        schema = (schema as z.ZodNumber).max(field.ui.validation.max,
+          `Maximum value is ${field.ui.validation.max}`)
       }
       
       break
@@ -91,7 +91,7 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
         if (typeof val === 'string') {
           const date = new Date(val)
           if (isNaN(date.getTime())) {
-            throw new Error('无效的日期格式')
+            throw new Error('Invalid date format')
           }
           return date
         }
@@ -103,13 +103,13 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
       schema = z.array(z.unknown())
       
       if (field.ui?.validation?.minItems) {
-        schema = (schema as z.ZodArray<any>).min(field.ui.validation.minItems, 
-          `至少需要 ${field.ui.validation.minItems} 个项目`)
+        schema = (schema as z.ZodArray<any>).min(field.ui.validation.minItems,
+          `At least ${field.ui.validation.minItems} items are required`)
       }
       
       if (field.ui?.validation?.maxItems) {
-        schema = (schema as z.ZodArray<any>).max(field.ui.validation.maxItems, 
-          `最多允许 ${field.ui.validation.maxItems} 个项目`)
+        schema = (schema as z.ZodArray<any>).max(field.ui.validation.maxItems,
+          `At most ${field.ui.validation.maxItems} items are allowed`)
       }
       
       break
@@ -129,37 +129,37 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
       break
   }
 
-  // 处理可选字段和必填验证
+  // Handle optional fields and required-field validation
   if (field.optional) {
-    // 可选字段允许空值
+    // Optional fields allow empty values
     schema = schema.optional()
   } else {
-    // 必填字段的特殊处理
+    // Special handling for required fields
     switch (field.type) {
       case 'json':
       case 'array':
-        // JSON和数组字段即使必填也可以为空（空数组或空对象）
+        // JSON and array fields can be empty even when required (an empty array or object)
         schema = schema.optional()
         break
       case 'string':
       case 'text':
       case 'email':
       case 'url':
-        // 字符串字段：如果是某些特殊字段，允许为空
-        if (field.name === 'notes' || field.name.includes('description') || 
-            field.name === 'phone' || field.name === 'website' || 
+        // String fields: allow certain special fields to be empty
+        if (field.name === 'notes' || field.name.includes('description') ||
+            field.name === 'phone' || field.name === 'website' ||
             field.name === 'address' || field.name === 'industry') {
           schema = schema.optional()
         } else {
-          // 必填字符串字段：不能为空字符串
+          // Required string fields: cannot be an empty string
           schema = (schema as z.ZodEffects<any, string, any>).refine(
-            (val) => val && val.trim().length > 0, 
-            '此字段为必填项'
+            (val) => val && val.trim().length > 0,
+            'This field is required'
           )
         }
         break
       default:
-        // 其他类型的必填字段保持原样
+        // Required fields of other types are left as-is
         break
     }
   }
@@ -168,7 +168,7 @@ function generateFieldSchema(field: FieldMetadata): z.ZodTypeAny {
 }
 
 /**
- * 客户端验证
+ * Client-side validation.
  */
 export function validateField(value: any, field: FieldMetadata): string | null {
   try {
@@ -177,14 +177,14 @@ export function validateField(value: any, field: FieldMetadata): string | null {
     return null
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return error.errors[0]?.message || '验证失败'
+      return error.errors[0]?.message || 'Validation failed'
     }
-    return '验证失败'
+    return 'Validation failed'
   }
 }
 
 /**
- * 验证整个表单
+ * Validate the entire form.
  */
 export function validateForm(data: Record<string, any>, modelMetadata: ModelMetadata): Record<string, string> {
   const errors: Record<string, string> = {}

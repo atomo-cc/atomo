@@ -1,7 +1,7 @@
 /**
  * Atomo API Client
- * 
- * 统一的API客户端，用于与Atomo Core通信
+ *
+ * Unified API client for communicating with Atomo Core.
  */
 
 import axios, { AxiosInstance } from 'axios'
@@ -36,7 +36,7 @@ class AtomoApiClient {
       timeout: 10000, // Add timeout for better error handling
     })
 
-    // 请求拦截器 - 添加认证 token
+    // Request interceptor - attach the auth token
     this.client.interceptors.request.use((config) => {
       const token = localStorage.getItem('atomo_auth_token')
       if (token) {
@@ -45,7 +45,7 @@ class AtomoApiClient {
       return config
     })
 
-    // 响应拦截器 - 统一错误处理
+    // Response interceptor - unified error handling
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
@@ -79,6 +79,17 @@ class AtomoApiClient {
   /** Clear the stored token (sign out). */
   logout(): void {
     localStorage.removeItem('atomo_auth_token')
+  }
+
+  /** The resolved API base URL (empty string = same-origin). For the Settings page. */
+  getBaseUrl(): string {
+    return this.baseUrl
+  }
+
+  /** Build/version info from GET /version (commit + build time of the running server). */
+  async getVersion(): Promise<{ name?: string; version?: string; commit?: string; buildTime?: string }> {
+    const res = await this.client.get('/version')
+    return res.data
   }
 
   /**
@@ -115,14 +126,14 @@ class AtomoApiClient {
   }
 
   /**
-   * 获取服务的 Schema 元数据
+   * Get the service's schema metadata.
    */
   async getSchemaMetadata(): Promise<SchemaMetadata> {
     return loadSchemaMetadata()
   }
 
   /**
-   * GraphQL 查询 with better error handling
+   * GraphQL query with better error handling.
    */
   async graphql(query: string, variables?: Record<string, any>): Promise<any> {
     try {
@@ -148,7 +159,7 @@ class AtomoApiClient {
   }
 
   /**
-   * 列表查询 - 支持分页、排序、筛选
+   * List query - supports pagination, sorting, and filtering.
    */
   async listEntities(modelName: string, options: QueryOptions = {}): Promise<{
     data: EntityData[]
@@ -203,7 +214,7 @@ class AtomoApiClient {
   }
 
   /**
-   * 获取单个实体
+   * Get a single entity.
    */
   async getEntity(modelName: string, id: string): Promise<EntityData> {
     let result: any
@@ -225,7 +236,7 @@ class AtomoApiClient {
   }
 
   /**
-   * 创建实体
+   * Create an entity.
    */
   async createEntity(modelName: string, data: Record<string, any>): Promise<EntityData> {
     let result: any
@@ -253,7 +264,7 @@ class AtomoApiClient {
   }
 
   /**
-   * 更新实体
+   * Update an entity.
    */
   async updateEntity(modelName: string, id: string, data: Record<string, any>): Promise<EntityData> {
     let result: any
@@ -283,7 +294,7 @@ class AtomoApiClient {
   }
 
   /**
-   * 删除实体
+   * Delete an entity.
    */
   async deleteEntity(modelName: string, id: string): Promise<void> {
     try {
@@ -339,7 +350,7 @@ class AtomoApiClient {
   }
 
   /**
-   * 批量操作
+   * Bulk operations.
    */
   async bulkDelete(modelName: string, ids: string[]): Promise<number> {
     const query = `
@@ -531,6 +542,6 @@ class AtomoApiClient {
   }
 }
 
-// 导出单例实例
+// Export the singleton instance
 export const apiClient = new AtomoApiClient()
 export default apiClient

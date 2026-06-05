@@ -1,5 +1,5 @@
 /**
- * Progress Component - 进度条组件
+ * Progress Component — progress bar
  */
 
 import * as React from 'react'

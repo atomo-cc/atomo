@@ -1,11 +1,11 @@
 /**
- * Global Search - 全局智能搜索组件
- * 
- * 基于LLM的全局知识库搜索，提供：
- * - 自然语言查询
- * - 跨模型智能搜索
- * - 上下文感知结果
- * - 问答式交互
+ * Global Search - Global intelligent search component
+ *
+ * LLM-powered search across the entire knowledge base, providing:
+ * - Natural language queries
+ * - Intelligent cross-model search
+ * - Context-aware results
+ * - Q&A-style interaction
  */
 
 import React, { useState, useRef, useEffect } from 'react'
@@ -70,30 +70,30 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
   const { assistant, isAvailable } = useAIAssistant()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 搜索过滤器
+  // Search filters
   const searchFilters = [
-    { id: 'all', label: '全部', icon: <Search className="h-4 w-4" /> },
-    { id: 'contacts', label: '联系人', icon: <Users className="h-4 w-4" /> },
-    { id: 'companies', label: '公司', icon: <Building className="h-4 w-4" /> },
-    { id: 'documents', label: '文档', icon: <FileText className="h-4 w-4" /> },
-    { id: 'workflows', label: '工作流', icon: <Zap className="h-4 w-4" /> }
+    { id: 'all', label: 'All', icon: <Search className="h-4 w-4" /> },
+    { id: 'contacts', label: 'Contacts', icon: <Users className="h-4 w-4" /> },
+    { id: 'companies', label: 'Companies', icon: <Building className="h-4 w-4" /> },
+    { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
+    { id: 'workflows', label: 'Workflows', icon: <Zap className="h-4 w-4" /> }
   ]
 
-  // 聚焦输入框
+  // Focus the input
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus()
     }
   }, [isOpen])
 
-  // 初始化建议
+  // Initialize suggestions
   useEffect(() => {
     if (isOpen && !query) {
       setSuggestions(getInitialSuggestions())
     }
   }, [isOpen, query])
 
-  // 加载最近搜索
+  // Load recent searches
   useEffect(() => {
     const recent = localStorage.getItem('recent-searches')
     if (recent) {
@@ -108,31 +108,31 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
     setIsSearching(true)
     
     try {
-      // 保存到最近搜索
+      // Save to recent searches
       const updatedRecent = [finalQuery, ...recentSearches.filter(q => q !== finalQuery)].slice(0, 5)
       setRecentSearches(updatedRecent)
       localStorage.setItem('recent-searches', JSON.stringify(updatedRecent))
 
       if (isAvailable) {
-        // 使用AI智能搜索
+        // Use AI-powered search
         const aiResponse = await assistant.intelligentSearch(
           finalQuery,
           selectedFilter === 'all' ? undefined : [selectedFilter]
         )
-        
-        // 解析AI响应并转换为搜索结果
+
+        // Parse the AI response and convert it into search results
         const results = await parseAISearchResponse(aiResponse.content, finalQuery)
         setResults(results)
       } else {
-        // 后备搜索
+        // Fallback search
         const results = await performFallbackSearch(finalQuery, selectedFilter)
         setResults(results)
       }
 
       setSuggestions([])
     } catch (error) {
-      console.error('搜索失败:', error)
-      // 显示错误状态或使用后备搜索
+      console.error('Search failed:', error)
+      // Show an error state or fall back to the fallback search
       const fallbackResults = await performFallbackSearch(finalQuery, selectedFilter)
       setResults(fallbackResults)
     } finally {
@@ -142,8 +142,8 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
 
   const handleQueryChange = (value: string) => {
     setQuery(value)
-    
-    // 动态生成建议
+
+    // Generate suggestions dynamically
     if (value.length > 0) {
       const newSuggestions = generateQuerySuggestions(value)
       setSuggestions(newSuggestions)
@@ -183,13 +183,13 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
 
   const getResultTypeLabel = (type: SearchResult['type']) => {
     const labels = {
-      entity: '实体',
-      document: '文档',
-      workflow: '工作流',
-      user: '用户',
-      insight: '洞察'
+      entity: 'Entity',
+      document: 'Document',
+      workflow: 'Workflow',
+      user: 'User',
+      insight: 'Insight'
     }
-    return labels[type] || '未知'
+    return labels[type] || 'Unknown'
   }
 
   if (!isOpen) return null
@@ -198,7 +198,7 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black bg-opacity-50 pt-20">
       <Card className="w-full max-w-2xl max-h-[80vh] overflow-hidden">
         <CardContent className="p-0">
-          {/* 搜索头部 */}
+          {/* Search header */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <div className="flex-1 relative">
@@ -208,7 +208,7 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
                   value={query}
                   onChange={(e) => handleQueryChange(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="智能搜索：询问任何关于您业务的问题..."
+                  placeholder="Smart search: ask anything about your business..."
                   className="pl-11 pr-4 py-3 text-base"
                 />
                 {isSearching && (
@@ -222,7 +222,7 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
               </Button>
             </div>
 
-            {/* 过滤器 */}
+            {/* Filters */}
             <div className="flex items-center gap-2 mt-3 overflow-x-auto">
               {searchFilters.map((filter) => (
                 <button
@@ -242,14 +242,14 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
             </div>
           </div>
 
-          {/* 搜索内容 */}
+          {/* Search content */}
           <div className="max-h-96 overflow-y-auto">
-            {/* 搜索结果 */}
+            {/* Search results */}
             {results.length > 0 && (
               <div className="p-4 space-y-3">
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                   <Sparkles className="h-4 w-4" />
-                  找到 {results.length} 个相关结果
+                  Found {results.length} matching results
                 </div>
                 
                 {results.map((result, index) => (
@@ -266,7 +266,7 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
                             {getResultTypeLabel(result.type)}
                           </Badge>
                           <Badge variant="secondary" className="text-xs">
-                            {Math.round(result.score * 100)}% 匹配
+                            {Math.round(result.score * 100)}% match
                           </Badge>
                         </div>
                         
@@ -288,7 +288,7 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
                             </span>
                           )}
                           {result.metadata.author && (
-                            <span>作者: {result.metadata.author}</span>
+                            <span>Author: {result.metadata.author}</span>
                           )}
                           {result.metadata.tags && result.metadata.tags.length > 0 && (
                             <div className="flex gap-1">
@@ -311,13 +311,13 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
               </div>
             )}
 
-            {/* 搜索建议 */}
+            {/* Search suggestions */}
             {suggestions.length > 0 && results.length === 0 && (
               <div className="p-4">
                 <div className="space-y-3">
                   {!query && recentSearches.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">最近搜索</h4>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Searches</h4>
                       <div className="space-y-1">
                         {recentSearches.map((search, index) => (
                           <button
@@ -335,7 +335,7 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
 
                   <div>
                     <h4 className="text-sm font-medium text-gray-700 mb-2">
-                      {query ? '智能建议' : '热门搜索'}
+                      {query ? 'Smart Suggestions' : 'Popular Searches'}
                     </h4>
                     <div className="space-y-1">
                       {suggestions.map((suggestion) => (
@@ -354,19 +354,19 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
               </div>
             )}
 
-            {/* 空状态 */}
+            {/* Empty state */}
             {results.length === 0 && suggestions.length === 0 && query && !isSearching && (
               <div className="p-8 text-center text-gray-500">
                 <Search className="h-8 w-8 mx-auto mb-3 text-gray-400" />
-                <p>未找到相关结果</p>
-                <p className="text-sm mt-1">尝试使用不同的关键词或更改过滤条件</p>
+                <p>No matching results found</p>
+                <p className="text-sm mt-1">Try different keywords or adjust your filters</p>
               </div>
             )}
           </div>
 
-          {/* 搜索提示 */}
+          {/* Search tip */}
           <div className="p-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-600">
-            💡 提示：您可以问"最近的交易情况如何？"或"哪些客户最活跃？"等自然语言问题
+            💡 Tip: Try natural-language questions like "How are recent deals doing?" or "Which customers are most active?"
           </div>
         </CardContent>
       </Card>
@@ -374,30 +374,30 @@ export function GlobalSearch({ isOpen, onClose, initialQuery = '' }: GlobalSearc
   )
 }
 
-// 辅助函数
+// Helper functions
 function getInitialSuggestions(): SearchSuggestion[] {
   return [
     {
       id: 'recent-deals',
-      text: '最近的交易情况如何？',
+      text: 'How are recent deals doing?',
       type: 'query',
       icon: <MessageCircle className="h-4 w-4 text-blue-600" />
     },
     {
       id: 'active-contacts',
-      text: '哪些联系人最活跃？',
+      text: 'Which contacts are most active?',
       type: 'query',
       icon: <Users className="h-4 w-4 text-green-600" />
     },
     {
       id: 'workflow-status',
-      text: '工作流状态总览',
+      text: 'Workflow status overview',
       type: 'query',
       icon: <Zap className="h-4 w-4 text-purple-600" />
     },
     {
       id: 'performance-metrics',
-      text: '性能指标分析',
+      text: 'Performance metrics analysis',
       type: 'query',
       icon: <Star className="h-4 w-4 text-orange-600" />
     }
@@ -406,27 +406,27 @@ function getInitialSuggestions(): SearchSuggestion[] {
 
 function generateQuerySuggestions(query: string): SearchSuggestion[] {
   const suggestions: SearchSuggestion[] = []
-  
-  // 基于查询内容生成建议
-  if (query.includes('客户') || query.includes('联系')) {
+
+  // Generate suggestions based on the query content
+  if (query.includes('customer') || query.includes('contact')) {
     suggestions.push({
       id: 'contacts-by-name',
-      text: `查找包含"${query}"的联系人`,
+      text: `Find contacts containing "${query}"`,
       type: 'query',
       icon: <Users className="h-4 w-4 text-blue-600" />
     })
   }
-  
-  if (query.includes('公司') || query.includes('企业')) {
+
+  if (query.includes('company') || query.includes('business')) {
     suggestions.push({
       id: 'companies-by-name',
-      text: `查找包含"${query}"的公司`,
+      text: `Find companies containing "${query}"`,
       type: 'query',
       icon: <Building className="h-4 w-4 text-green-600" />
     })
   }
 
-  // 添加一些通用建议
+  // Add some generic suggestions
   suggestions.push(
     {
       id: 'exact-match',
@@ -436,7 +436,7 @@ function generateQuerySuggestions(query: string): SearchSuggestion[] {
     },
     {
       id: 'ai-explain',
-      text: `解释"${query}"的含义`,
+      text: `Explain what "${query}" means`,
       type: 'query',
       icon: <Brain className="h-4 w-4 text-purple-600" />
     }
@@ -446,13 +446,13 @@ function generateQuerySuggestions(query: string): SearchSuggestion[] {
 }
 
 async function parseAISearchResponse(aiContent: string, query: string): Promise<SearchResult[]> {
-  // 这里应该解析AI的响应并转换为标准的搜索结果格式
-  // 暂时返回模拟数据
+  // This should parse the AI response and convert it into the standard search result format
+  // For now, return mock data
   return generateMockResults(query)
 }
 
 async function performFallbackSearch(query: string, filter: string): Promise<SearchResult[]> {
-  // 模拟搜索延迟
+  // Simulate search latency
   await new Promise(resolve => setTimeout(resolve, 500))
   return generateMockResults(query)
 }
@@ -462,29 +462,29 @@ function generateMockResults(query: string): SearchResult[] {
     {
       id: 'result-1',
       type: 'entity',
-      title: `与"${query}"相关的联系人`,
-      content: '找到了几个可能相关的联系人记录，包括最近有过互动的客户。',
+      title: `Contacts related to "${query}"`,
+      content: 'Found several potentially relevant contact records, including customers you have interacted with recently.',
       score: 0.85,
       metadata: {
         entityType: 'Contact',
         lastModified: new Date(Date.now() - 86400000),
-        author: '系统',
-        tags: ['客户', '活跃']
+        author: 'System',
+        tags: ['Customer', 'Active']
       },
-      context: 'AI分析了联系记录和互动历史'
+      context: 'AI analyzed contact records and interaction history'
     },
     {
       id: 'result-2',
       type: 'insight',
-      title: '数据洞察',
-      content: `基于"${query}"的分析显示了一些有趣的业务模式和趋势。`,
+      title: 'Data Insight',
+      content: `Analysis based on "${query}" reveals some interesting business patterns and trends.`,
       score: 0.78,
       metadata: {
         lastModified: new Date(),
-        author: 'AI助手',
-        tags: ['分析', '趋势']
+        author: 'AI Assistant',
+        tags: ['Analysis', 'Trends']
       },
-      context: 'AI生成的智能洞察'
+      context: 'AI-generated intelligent insight'
     }
   ]
 }

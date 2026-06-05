@@ -1,7 +1,7 @@
 /**
- * Entity Table - 虚拟化数据表格组件
- * 
- * 支持大量数据的高性能渲染，使用虚拟化技术
+ * Entity Table - Virtualized data table component
+ *
+ * Supports high-performance rendering of large datasets using virtualization
  */
 
 import React, { useRef, useState, useEffect } from 'react'
@@ -56,7 +56,7 @@ export function EntityTable({
   const tableRef = useRef<HTMLDivElement>(null)
   const [openMenuRowId, setOpenMenuRowId] = useState<string | null>(null)
 
-  // 点击外部关闭菜单
+  // Close the menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (openMenuRowId) {
@@ -73,15 +73,15 @@ export function EntityTable({
     }
   }, [openMenuRowId])
   
-  // 虚拟化配置
+  // Virtualization config
   const virtualizer = useVirtualizer({
     count: data.length,
     getScrollElement: () => tableRef.current,
-    estimateSize: () => 60, // 每行预估高度
-    enabled: enableVirtualization && data.length > 50, // 数据量大时启用虚拟化
+    estimateSize: () => 60, // Estimated height per row
+    enabled: enableVirtualization && data.length > 50, // Enable virtualization for large datasets
   })
 
-  // 全选/取消全选
+  // Select all / deselect all
   const handleSelectAll = () => {
     if (!onSelectionChange) return
     
@@ -92,7 +92,7 @@ export function EntityTable({
     }
   }
 
-  // 单行选择
+  // Single row selection
   const handleRowSelect = (rowId: string) => {
     if (!onSelectionChange) return
     
@@ -103,7 +103,7 @@ export function EntityTable({
     }
   }
 
-  // 排序图标
+  // Sort icon
   const SortIcon = ({ field }: { field: string }) => {
     if (sortField !== field) {
       return <div className="w-4 h-4" />
@@ -114,7 +114,7 @@ export function EntityTable({
       : <ChevronDown className="w-4 h-4" />
   }
 
-  // 行操作菜单
+  // Row action menu
   const RowActionMenu = ({ row }: { row: EntityData }) => {
     const isMenuOpen = openMenuRowId === row.id
 
@@ -143,7 +143,7 @@ export function EntityTable({
                 }}
               >
                 <Eye className="h-4 w-4 mr-2" />
-                查看
+                View
               </button>
               
               {onRowEdit && (
@@ -156,7 +156,7 @@ export function EntityTable({
                   }}
                 >
                   <Edit2 className="h-4 w-4 mr-2" />
-                  编辑
+                  Edit
                 </button>
               )}
               
@@ -165,14 +165,14 @@ export function EntityTable({
                   className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (confirm('确定要删除这个项目吗？')) {
+                    if (confirm('Are you sure you want to delete this item?')) {
                       onRowDelete(row)
                     }
                     setOpenMenuRowId(null)
                   }}
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
-                  删除
+                  Delete
                 </button>
               )}
             </div>
@@ -182,10 +182,10 @@ export function EntityTable({
     )
   }
 
-  // 表格头部
+  // Table header
   const renderHeader = () => (
     <div className="grid grid-cols-12 bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
-      {/* 选择列 */}
+      {/* Selection column */}
       {onSelectionChange && (
         <div className="col-span-1 px-4 py-3 flex items-center">
           <Checkbox
@@ -195,7 +195,7 @@ export function EntityTable({
         </div>
       )}
       
-      {/* 数据列 */}
+      {/* Data columns */}
       {columns.map((column, index) => (
         <div
           key={column.key}
@@ -213,17 +213,17 @@ export function EntityTable({
         </div>
       ))}
       
-      {/* 操作列 */}
+      {/* Actions column */}
       <div className="col-span-1 px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-        操作
+        Actions
       </div>
     </div>
   )
 
-  // 表格行
+  // Table row
   const renderRow = (row: EntityData, index: number) => {
     const isSelected = selectedRows.includes(row.id)
-    
+
     return (
       <div
         key={row.id}
@@ -232,7 +232,7 @@ export function EntityTable({
           isSelected && 'bg-primary-50'
         )}
       >
-        {/* 选择列 */}
+        {/* Selection column */}
         {onSelectionChange && (
           <div className="col-span-1 px-4 py-4 flex items-center">
             <Checkbox
@@ -242,7 +242,7 @@ export function EntityTable({
           </div>
         )}
         
-        {/* 数据列 */}
+        {/* Data columns */}
         {columns.map((column) => (
           <div
             key={column.key}
@@ -256,7 +256,7 @@ export function EntityTable({
           </div>
         ))}
         
-        {/* 操作列 */}
+        {/* Actions column */}
         <div className="col-span-1 px-4 py-4 text-right">
           <RowActionMenu row={row} />
         </div>
@@ -264,26 +264,26 @@ export function EntityTable({
     )
   }
 
-  // 加载状态
+  // Loading state
   if (loading) {
     return (
       <div className="p-8 text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">加载中...</p>
+        <p className="mt-4 text-gray-600">Loading...</p>
       </div>
     )
   }
 
-  // 空状态
+  // Empty state
   if (data.length === 0) {
     return (
       <div className="p-8 text-center">
-        <p className="text-gray-600">暂无数据</p>
+        <p className="text-gray-600">No data</p>
       </div>
     )
   }
 
-  // 虚拟化渲染
+  // Virtualized rendering
   if (enableVirtualization && virtualizer.getVirtualItems().length > 0) {
     return (
       <div className="w-full">
@@ -325,7 +325,7 @@ export function EntityTable({
     )
   }
 
-  // 常规渲染（数据量较少时）
+  // Standard rendering (for smaller datasets)
   return (
     <div className="w-full max-h-screen overflow-auto">
       {renderHeader()}

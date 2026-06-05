@@ -1,7 +1,7 @@
 /**
- * Table Component - 表格组件
+ * Table Component — table
  * 
- * 基础的HTML表格组件，用于简单的数据展示
+ * A basic HTML table for simple data display.
  */
 
 import * as React from 'react'

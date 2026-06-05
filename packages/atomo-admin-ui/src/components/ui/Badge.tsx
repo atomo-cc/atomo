@@ -1,5 +1,5 @@
 /**
- * Badge Component - 徽章组件
+ * Badge Component — badge
  */
 
 import * as React from 'react'

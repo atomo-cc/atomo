@@ -1,5 +1,5 @@
 /**
- * Button Component - 基于 Radix UI 的按钮组件
+ * Button Component — a button built on Radix UI
  */
 
 import * as React from 'react'

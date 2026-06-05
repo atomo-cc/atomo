@@ -1,5 +1,5 @@
 /**
- * Command Component - 基于 cmdk 的命令面板组件
+ * Command Component — a command palette built on cmdk
  */
 
 import * as React from 'react'

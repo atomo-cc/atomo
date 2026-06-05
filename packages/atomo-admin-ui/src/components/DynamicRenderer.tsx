@@ -1,7 +1,7 @@
 /**
- * Dynamic Renderer - Atomo Admin UI 的核心渲染引擎
+ * Dynamic Renderer — the core rendering engine of the Atomo Admin UI
  * 
- * 这是整个 Admin UI 的"大脑"，负责根据 Schema 元数据动态生成界面
+ * Drives the whole Admin UI: builds the interface dynamically from the schema metadata.
  */
 
 import React, { Suspense } from 'react'
@@ -15,16 +15,18 @@ import { Dashboard } from './views/Dashboard'
 import { WorkflowsView } from './views/WorkflowsView'
 import { WorkflowDesigner } from './views/WorkflowDesigner'
 import { TrashView } from './views/TrashView'
+import { Settings } from './views/Settings'
+import { Help } from './views/Help'
 import { Card, CardContent } from './ui/Card'
 import { Spinner } from './ui/Spinner'
 import { componentPluginManager } from '../lib/component-plugins'
 
 export interface DynamicRendererProps {
   /**
-   * 当前路由信息
+   * Current route info
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows' | 'trash' | 'workflow-design'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows' | 'trash' | 'workflow-design' | 'settings' | 'help' | 'not-found'
     modelName?: string
     entityId?: string
     contactId?: string
@@ -34,37 +36,37 @@ export interface DynamicRendererProps {
 }
 
 /**
- * 动态渲染引擎组件
+ * Dynamic rendering engine component
  */
 export function DynamicRenderer({ route }: DynamicRendererProps) {
-  // 加载 Schema 元数据
-  const { 
-    data: schema, 
-    isLoading, 
-    error 
+  // Load schema metadata
+  const {
+    data: schema,
+    isLoading,
+    error
   } = useQuery({
     queryKey: ['schema-metadata'],
     queryFn: () => apiClient.getSchemaMetadata(),
-    staleTime: 5 * 60 * 1000, // 5分钟缓存
+    staleTime: 5 * 60 * 1000, // 5-minute cache
   })
 
-  // 错误状态
+  // Error state
   if (error) {
     return (
       <Card className="m-6">
         <CardContent className="flex items-center justify-center py-8">
           <div className="text-center">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              无法加载 Schema 元数据
+              Couldn’t load schema metadata
             </h3>
             <p className="text-gray-600 mb-4">
-              请检查 Atomo Server 是否正常运行
+              Check that the Atomo server is running and reachable.
             </p>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
             >
-              重新加载
+              Reload
             </button>
           </div>
         </CardContent>
@@ -72,21 +74,28 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
     )
   }
 
-  // 加载状态
+  // Loading state
   if (isLoading || !schema) {
     return (
       <Card className="m-6">
         <CardContent className="flex items-center justify-center py-8">
           <div className="text-center">
             <Spinner className="mx-auto mb-4" />
-            <p className="text-gray-600">正在加载 Schema 元数据...</p>
+            <p className="text-gray-600">Loading schema metadata…</p>
           </div>
         </CardContent>
       </Card>
     )
   }
 
-  // 根据路由类型渲染对应视图
+  // Inline error state for a malformed route or an unknown model.
+  const routeError = (message: string) => (
+    <Card className="m-6">
+      <CardContent className="py-8 text-center text-gray-600">{message}</CardContent>
+    </Card>
+  )
+
+  // Render the view for the current route type
   switch (route.type) {
     case 'dashboard':
       return <Dashboard schema={schema} />
@@ -99,15 +108,37 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
 
     case 'trash':
       return <TrashView schema={schema} />
-      
+
+    case 'settings':
+      return <Settings schema={schema} />
+
+    case 'help':
+      return <Help />
+
+    case 'not-found':
+      return (
+        <Card className="m-6">
+          <CardContent className="py-12 text-center">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Page not found</h3>
+            <p className="text-gray-600 mb-4">This route doesn’t exist in the admin.</p>
+            <a
+              href={(import.meta as any).env.BASE_URL}
+              className="inline-block px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              Back to dashboard
+            </a>
+          </CardContent>
+        </Card>
+      )
+
     case 'list':
       if (!route.modelName) {
-        return <div>错误：缺少模型名称</div>
+        return routeError('Missing model name.')
       }
       
       const modelMetadata = schema.models[route.modelName]
       if (!modelMetadata) {
-        return <div>错误：未找到模型 {route.modelName}</div>
+        return routeError(`Model not found: ${route.modelName}`)
       }
       
       return (
@@ -121,12 +152,12 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
     case 'detail':
     case 'edit':
       if (!route.modelName || !route.entityId) {
-        return <div>错误：缺少模型名称或实体ID</div>
+        return routeError('Missing model name or record ID.')
       }
       
       const detailModelMetadata = schema.models[route.modelName]
       if (!detailModelMetadata) {
-        return <div>错误：未找到模型 {route.modelName}</div>
+        return routeError(`Model not found: ${route.modelName}`)
       }
       
       return (
@@ -141,12 +172,12 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
       
     case 'create':
       if (!route.modelName) {
-        return <div>错误：缺少模型名称</div>
+        return routeError('Missing model name.')
       }
       
       const createModelMetadata = schema.models[route.modelName]
       if (!createModelMetadata) {
-        return <div>错误：未找到模型 {route.modelName}</div>
+        return routeError(`Model not found: ${route.modelName}`)
       }
       
       return (
@@ -168,7 +199,7 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
               <CardContent className="flex items-center justify-center py-8">
                 <div className="text-center">
                   <Spinner className="mx-auto mb-4" />
-                  <p className="text-gray-600">正在加载看板组件...</p>
+                  <p className="text-gray-600">Loading board component…</p>
                 </div>
               </CardContent>
             </Card>
@@ -177,9 +208,9 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
           </Suspense>
         )
       }
-      return <div>错误：未找到看板组件</div>
+      return routeError('Board component not found.')
     case 'timeline':
-      if (!route.contactId) return <div>错误：缺少联系人ID</div>
+      if (!route.contactId) return routeError('Missing contact ID.')
       // Try to get component from plugin system
       const timelinePath = `/contacts/${route.contactId}/timeline`
       const timelineHandler = componentPluginManager.getRouteHandler(timelinePath)
@@ -191,7 +222,7 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
               <CardContent className="flex items-center justify-center py-8">
                 <div className="text-center">
                   <Spinner className="mx-auto mb-4" />
-                  <p className="text-gray-600">正在加载时间线组件...</p>
+                  <p className="text-gray-600">Loading timeline component…</p>
                 </div>
               </CardContent>
             </Card>
@@ -200,10 +231,10 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
           </Suspense>
         )
       }
-      return <div>错误：未找到时间线组件</div>
+      return routeError('Timeline component not found.')
       
     case 'plugin':
-      if (!route.pluginHandler) return <div>错误：缺少插件处理器</div>
+      if (!route.pluginHandler) return routeError('Missing plugin handler.')
       const PluginComponent = route.pluginHandler.component
       return (
         <Suspense fallback={
@@ -211,7 +242,7 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
             <CardContent className="flex items-center justify-center py-8">
               <div className="text-center">
                 <Spinner className="mx-auto mb-4" />
-                <p className="text-gray-600">正在加载插件组件...</p>
+                <p className="text-gray-600">Loading plugin component…</p>
               </div>
             </CardContent>
           </Card>
@@ -221,7 +252,7 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
       )
 
     default:
-      return <div>错误：未知的路由类型</div>
+      return routeError('Unknown route type.')
   }
 }
 
@@ -252,7 +283,15 @@ export function useRouteParser(): DynamicRendererProps['route'] {
     if (path === '/trash') {
       return { type: 'trash' as const }
     }
-    
+
+    // Settings + Help pages
+    if (path === '/settings') {
+      return { type: 'settings' as const }
+    }
+    if (path === '/help') {
+      return { type: 'help' as const }
+    }
+
     // Entity routes: /entities/:modelName
     const entityListMatch = path.match(/^\/entities\/([^\/]+)$/)
     if (entityListMatch) {
@@ -262,7 +301,7 @@ export function useRouteParser(): DynamicRendererProps['route'] {
       }
     }
     
-    // Create new: /entities/:modelName/new (必须在详情路由之前匹配)
+    // Create new: /entities/:modelName/new (must match before the detail route)
     const entityCreateMatch = path.match(/^\/entities\/([^\/]+)\/new$/)
     if (entityCreateMatch) {
       return {
@@ -287,8 +326,8 @@ export function useRouteParser(): DynamicRendererProps['route'] {
       return { type: 'plugin' as const, pluginHandler }
     }
 
-    // Fallback to generic routes
-    return { type: 'dashboard' as const }
+    // Anything unmatched is a real 404 (previously this silently showed the dashboard).
+    return { type: 'not-found' as const }
   }
 
   return parseRoute(location.pathname)

@@ -1,5 +1,5 @@
 /**
- * Card Component - 卡片容器组件
+ * Card Component — card container
  */
 
 import * as React from 'react'

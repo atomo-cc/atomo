@@ -1,7 +1,7 @@
 /**
- * Date Picker Component - 日期选择器组件
+ * Date Picker Component — date picker
  * 
- * 简化版本的日期选择器
+ * A simplified date picker.
  */
 
 import * as React from 'react'
@@ -27,7 +27,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
     onChange, 
     disabled = false, 
     error, 
-    placeholder = '选择日期',
+    placeholder = 'Select date',
     showTime = false,
     minDate,
     maxDate,
@@ -35,14 +35,14 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
   }, ref) => {
       const [inputValue, setInputValue] = React.useState('')
 
-    // 转换值为 Date 对象
+    // Convert the value to a Date object
     const dateValue = React.useMemo(() => {
       if (!value) return undefined
       if (value instanceof Date) return value
       return new Date(value)
     }, [value])
 
-    // 同步输入框值
+    // Sync the input value
     React.useEffect(() => {
       if (dateValue && !isNaN(dateValue.getTime())) {
         const formatted = showTime 
@@ -54,7 +54,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
       }
     }, [dateValue, showTime])
 
-    // 处理输入变化
+    // Handle input changes
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const newValue = e.target.value
       setInputValue(newValue)
@@ -62,7 +62,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
       if (newValue) {
         const date = new Date(newValue)
         if (!isNaN(date.getTime())) {
-          // 检查日期范围
+          // Check the date range
           if (minDate && date < minDate) return
           if (maxDate && date > maxDate) return
           
@@ -73,13 +73,13 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
       }
     }
 
-    // 清空日期
+    // Clear the date
     const handleClear = () => {
       setInputValue('')
       onChange(undefined)
     }
 
-    // 设置为今天
+    // Set to today
     const handleToday = () => {
       const today = new Date()
       onChange(today)
@@ -123,14 +123,14 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
               onClick={handleToday}
               disabled={disabled}
               className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
-              title={showTime ? '设为现在' : '设为今天'}
+              title={showTime ? 'Set to now' : 'Set to today'}
             >
               {showTime ? <Clock className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
             </Button>
           </div>
         </div>
 
-        {/* 显示格式化的日期（如果有值） */}
+        {/* Show the formatted date (if any) */}
         {dateValue && !error && (
           <p className="text-xs text-gray-500 mt-1">
             {formatDate(dateValue, showTime ? 'time' : 'long')}

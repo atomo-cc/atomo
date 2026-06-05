@@ -1,11 +1,11 @@
 /**
- * Event Stream Viewer - 事件河流可视化组件
- * 
- * 实现Atomo"事件的河流"哲学的核心可视化，提供：
- * - 实时事件流展示
- * - 时间旅行功能
- * - 事件关联分析
- * - 审计追踪能力
+ * Event Stream Viewer
+ *
+ * The core visualization realizing Atomo's "river of events" philosophy, providing:
+ * - Real-time event stream display
+ * - Time-travel capability
+ * - Event correlation analysis
+ * - Audit trail support
  */
 
 import React, { useState, useEffect, useRef } from 'react'
@@ -82,14 +82,14 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
   const [currentTime, setCurrentTime] = useState(new Date())
   const streamRef = useRef<HTMLDivElement>(null)
 
-  // 事件流查询
+  // Event stream query
   const { data: events, isLoading, refetch } = useQuery({
     queryKey: ['event-stream', timeRange, filters],
     queryFn: () => fetchEventStream(timeRange, filters),
-    refetchInterval: isPlaying ? 3000 / playbackSpeed : false, // 根据播放速度调整刷新间隔
+    refetchInterval: isPlaying ? 3000 / playbackSpeed : false, // Adjust refresh interval based on playback speed
   })
 
-  // 时间旅行控制
+  // Time-travel control
   useEffect(() => {
     if (isPlaying) {
       const interval = setInterval(() => {
@@ -99,7 +99,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
     }
   }, [isPlaying, playbackSpeed])
 
-  // 自动滚动到最新事件
+  // Auto-scroll to the latest event
   useEffect(() => {
     if (isPlaying && streamRef.current) {
       streamRef.current.scrollTop = streamRef.current.scrollHeight
@@ -132,7 +132,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
 
   const playbackSpeeds = [0.5, 1, 2, 4, 8]
 
-  // 统计信息
+  // Statistics
   const stats = events ? {
     total: events.length,
     byType: events.reduce((acc, event) => {
@@ -148,14 +148,14 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
 
   return (
     <div className="space-y-6">
-      {/* 事件流统计 */}
+      {/* Event stream statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-600">
               {stats?.total || 0}
             </div>
-            <div className="text-sm text-gray-600">总事件数</div>
+            <div className="text-sm text-gray-600">Total Events</div>
           </CardContent>
         </Card>
 
@@ -164,7 +164,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
             <div className="text-2xl font-bold text-green-600">
               {stats?.uniqueUsers || 0}
             </div>
-            <div className="text-sm text-gray-600">活跃用户</div>
+            <div className="text-sm text-gray-600">Active Users</div>
           </CardContent>
         </Card>
 
@@ -173,7 +173,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
             <div className="text-2xl font-bold text-purple-600">
               {Object.keys(stats?.byType || {}).length}
             </div>
-            <div className="text-sm text-gray-600">事件类型</div>
+            <div className="text-sm text-gray-600">Event Types</div>
           </CardContent>
         </Card>
 
@@ -182,21 +182,21 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
             <div className="text-2xl font-bold text-orange-600">
               {stats?.timeSpan ? Math.round(stats.timeSpan / 1000 / 60) : 0}
             </div>
-            <div className="text-sm text-gray-600">时间跨度(分钟)</div>
+            <div className="text-sm text-gray-600">Time Span (minutes)</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 时间旅行控制面板 */}
+      {/* Time-travel control panel */}
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
-            {/* 播放控制 */}
+            {/* Playback controls */}
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {/* 跳到开始 */}}
+                onClick={() => {/* Jump to start */}}
               >
                 <SkipBack className="h-4 w-4" />
               </Button>
@@ -204,7 +204,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {/* 倒退 */}}
+                onClick={() => {/* Rewind */}}
               >
                 <Rewind className="h-4 w-4" />
               </Button>
@@ -215,13 +215,13 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
                 onClick={() => setIsPlaying(!isPlaying)}
               >
                 {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                {isPlaying ? '暂停' : '播放'}
+                {isPlaying ? 'Pause' : 'Play'}
               </Button>
 
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {/* 快进 */}}
+                onClick={() => {/* Fast forward */}}
               >
                 <FastForward className="h-4 w-4" />
               </Button>
@@ -229,12 +229,12 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {/* 跳到最新 */}}
+                onClick={() => {/* Jump to latest */}}
               >
                 <SkipForward className="h-4 w-4" />
               </Button>
 
-              {/* 播放速度 */}
+              {/* Playback speed */}
               <select
                 value={playbackSpeed}
                 onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
@@ -248,18 +248,18 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
               </select>
             </div>
 
-            {/* 当前时间 */}
+            {/* Current time */}
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="h-4 w-4" />
               <span>{formatDate(currentTime, 'time')}</span>
             </div>
 
-            {/* 筛选控制 */}
+            {/* Filter controls */}
             <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="搜索事件..."
+                  placeholder="Search events..."
                   value={filters.searchTerm || ''}
                   onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
                   className="pl-9 w-48"
@@ -268,25 +268,25 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
 
               <Button variant="secondary" size="sm">
                 <Filter className="h-4 w-4 mr-1" />
-                筛选
+                Filter
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 事件流时间轴 */}
+      {/* Event stream timeline */}
       <div className="grid grid-cols-12 gap-6">
-        {/* 事件列表 */}
+        {/* Event list */}
         <div className="col-span-8">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
-                事件河流
+                Event Stream
                 {isPlaying && (
                   <Badge variant="secondary" className="animate-pulse">
-                    实时
+                    Live
                   </Badge>
                 )}
               </CardTitle>
@@ -302,7 +302,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
                   </div>
                 ) : events && events.length > 0 ? (
                   <div className="relative">
-                    {/* 时间线 */}
+                    {/* Timeline */}
                     <div className="absolute left-4 top-0 bottom-0 w-px bg-gradient-to-b from-blue-500 via-green-500 to-purple-500"></div>
                     
                     {events.map((event, index) => (
@@ -314,7 +314,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
                         )}
                         onClick={() => setSelectedEvent(event)}
                       >
-                        {/* 时间线节点 */}
+                        {/* Timeline node */}
                         <div className="absolute left-2 top-4 w-4 h-4 bg-white border-2 border-blue-500 rounded-full flex items-center justify-center">
                           {getEventIcon(event.type)}
                         </div>
@@ -363,8 +363,8 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
                   <div className="flex items-center justify-center h-full text-gray-500">
                     <div className="text-center">
                       <Database className="h-8 w-8 mx-auto mb-3 text-gray-400" />
-                      <p>暂无事件数据</p>
-                      <p className="text-sm mt-1">事件将在产生时实时显示在这里</p>
+                      <p>No event data yet</p>
+                      <p className="text-sm mt-1">Events will appear here in real time as they occur</p>
                     </div>
                   </div>
                 )}
@@ -373,11 +373,11 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
           </Card>
         </div>
 
-        {/* 事件详情面板 */}
+        {/* Event detail panel */}
         <div className="col-span-4">
           <Card className="sticky top-6">
             <CardHeader>
-              <CardTitle>事件详情</CardTitle>
+              <CardTitle>Event Details</CardTitle>
             </CardHeader>
             <CardContent>
               {selectedEvent ? (
@@ -385,7 +385,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
               ) : (
                 <div className="text-center text-gray-500 py-8">
                   <Eye className="h-8 w-8 mx-auto mb-3 text-gray-400" />
-                  <p>选择一个事件查看详情</p>
+                  <p>Select an event to view details</p>
                 </div>
               )}
             </CardContent>
@@ -396,7 +396,7 @@ export function EventStreamViewer({ timeRange }: EventStreamViewerProps) {
   )
 }
 
-// 事件详情视图组件
+// Event detail view component
 interface EventDetailViewProps {
   event: StreamEvent
 }
@@ -404,81 +404,81 @@ interface EventDetailViewProps {
 function EventDetailView({ event }: EventDetailViewProps) {
   return (
     <div className="space-y-4">
-      {/* 基本信息 */}
+      {/* Basic information */}
       <div>
-        <h4 className="font-medium text-gray-900 mb-2">基本信息</h4>
+        <h4 className="font-medium text-gray-900 mb-2">Basic Information</h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-600">事件ID</span>
+            <span className="text-gray-600">Event ID</span>
             <span className="font-mono text-xs">{event.id}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">类型</span>
+            <span className="text-gray-600">Type</span>
             <Badge className="text-xs">{event.type}</Badge>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">时间</span>
+            <span className="text-gray-600">Time</span>
             <span>{formatDate(event.timestamp, 'time')}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">用户</span>
+            <span className="text-gray-600">User</span>
             <span>{event.userName}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">实体</span>
+            <span className="text-gray-600">Entity</span>
             <span>{event.entityType}#{event.entityId}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">版本</span>
+            <span className="text-gray-600">Version</span>
             <span>v{event.aggregateVersion}</span>
           </div>
         </div>
       </div>
 
-      {/* 载荷数据 */}
+      {/* Payload data */}
       <div>
-        <h4 className="font-medium text-gray-900 mb-2">载荷数据</h4>
+        <h4 className="font-medium text-gray-900 mb-2">Payload Data</h4>
         <pre className="text-xs bg-gray-50 p-3 rounded border overflow-auto max-h-32">
           {JSON.stringify(event.payload, null, 2)}
         </pre>
       </div>
 
-      {/* 元数据 */}
+      {/* Metadata */}
       <div>
-        <h4 className="font-medium text-gray-900 mb-2">元数据</h4>
+        <h4 className="font-medium text-gray-900 mb-2">Metadata</h4>
         <div className="space-y-2 text-sm">
           {event.metadata.correlationId && (
             <div className="flex justify-between">
-              <span className="text-gray-600">关联ID</span>
+              <span className="text-gray-600">Correlation ID</span>
               <span className="font-mono text-xs">{event.metadata.correlationId}</span>
             </div>
           )}
           {event.metadata.parentEventId && (
             <div className="flex justify-between">
-              <span className="text-gray-600">父事件</span>
+              <span className="text-gray-600">Parent Event</span>
               <span className="font-mono text-xs">{event.metadata.parentEventId}</span>
             </div>
           )}
           {event.metadata.ip && (
             <div className="flex justify-between">
-              <span className="text-gray-600">IP地址</span>
+              <span className="text-gray-600">IP Address</span>
               <span className="font-mono text-xs">{event.metadata.ip}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 操作按钮 */}
+      {/* Action buttons */}
       <div className="pt-4 border-t border-gray-200">
         <div className="space-y-2">
           <Button variant="secondary" size="sm" className="w-full">
-            查看相关事件
+            View Related Events
           </Button>
           <Button variant="secondary" size="sm" className="w-full">
-            时间旅行到此刻
+            Time Travel to This Moment
           </Button>
           <Button variant="secondary" size="sm" className="w-full">
-            导出事件数据
+            Export Event Data
           </Button>
         </div>
       </div>
@@ -486,12 +486,12 @@ function EventDetailView({ event }: EventDetailViewProps) {
   )
 }
 
-// 模拟API函数
+// Mock API function
 async function fetchEventStream(
-  timeRange: string, 
+  timeRange: string,
   filters: Partial<EventFilter>
 ): Promise<StreamEvent[]> {
-  // 模拟API调用
+  // Simulate an API call
   await new Promise(resolve => setTimeout(resolve, 500))
 
   const mockEvents: StreamEvent[] = [
@@ -502,12 +502,12 @@ async function fetchEventStream(
       entityType: 'Contact',
       entityId: 'contact-123',
       userId: 'user-001',
-      userName: '张三',
-      action: '创建联系人',
+      userName: 'John Smith',
+      action: 'Created contact',
       payload: {
-        firstName: '张',
-        lastName: '三',
-        email: 'zhangsan@example.com'
+        firstName: 'John',
+        lastName: 'Smith',
+        email: 'john.smith@example.com'
       },
       metadata: {
         ip: '192.168.1.100',
@@ -522,10 +522,10 @@ async function fetchEventStream(
       entityType: 'Contact',
       entityId: 'contact-123',
       userId: 'user-001',
-      userName: '张三',
-      action: '更新联系人信息',
+      userName: 'John Smith',
+      action: 'Updated contact information',
       payload: {
-        phone: '+86 138 0013 8000'
+        phone: '+1 555 0100'
       },
       metadata: {
         ip: '192.168.1.100',
@@ -541,8 +541,8 @@ async function fetchEventStream(
       entityType: 'Contact',
       entityId: 'contact-123',
       userId: 'system',
-      userName: '系统',
-      action: '触发欢迎邮件工作流',
+      userName: 'System',
+      action: 'Triggered welcome email workflow',
       payload: {
         workflowId: 'wf-welcome-email',
         status: 'started'
@@ -559,8 +559,8 @@ async function fetchEventStream(
       entityType: 'User',
       entityId: 'user-002',
       userId: 'user-002',
-      userName: '李四',
-      action: '用户登录',
+      userName: 'Jane Doe',
+      action: 'User logged in',
       payload: {
         loginMethod: 'password',
         sessionId: 'sess-456'
@@ -573,7 +573,7 @@ async function fetchEventStream(
     }
   ]
 
-  // 应用筛选
+  // Apply filters
   let filtered = mockEvents
 
   if (filters.searchTerm) {
@@ -583,6 +583,6 @@ async function fetchEventStream(
     )
   }
 
-  // 按时间排序（最新的在后面）
+  // Sort by time (most recent last)
   return filtered.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
 }

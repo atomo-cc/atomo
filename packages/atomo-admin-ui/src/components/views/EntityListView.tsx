@@ -1,11 +1,11 @@
 /**
- * Entity List View - 实体列表视图
- * 
- * 动态生成任何模型的列表界面，支持：
- * - 虚拟化滚动
- * - 搜索和筛选
- * - 排序
- * - 批量操作
+ * Entity List View
+ *
+ * Dynamically generates a list interface for any model, supporting:
+ * - Virtualized scrolling
+ * - Search and filtering
+ * - Sorting
+ * - Bulk operations
  */
 
 import { useState, useMemo, useEffect } from 'react'
@@ -45,7 +45,7 @@ interface EntityListViewProps {
 export function EntityListView({ modelName, modelMetadata, schema }: EntityListViewProps) {
   const navigate = useNavigate()
   
-  // 状态管理
+  // State management
   const [queryOptions, setQueryOptions] = useState<QueryOptions>({
     page: 1,
     limit: schema.config.defaultPageSize || 20,
@@ -61,8 +61,8 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   const [showTableSettings, setShowTableSettings] = useState(false)
   const [tableColumns, setTableColumns] = useState<TableColumn[]>([])
   
-  // 数据查询
-  const { 
+  // Data query
+  const {
     data, 
     isLoading, 
     error, 
@@ -71,11 +71,11 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   } = useQuery({
     queryKey: ['entities', modelName, queryOptions],
     queryFn: () => apiClient.listEntities(modelName, queryOptions),
-    // 移除 keepPreviousData 以避免显示上一个模型的数据
-    staleTime: 5 * 1000, // 5秒内数据被认为是新鲜的
+    // Omit keepPreviousData so we don't show the previous model's data
+    staleTime: 5 * 1000, // Data is considered fresh for 5 seconds
   })
 
-  // 列配置（基于 schema 的 listView 配置）
+  // Column config (based on the schema's listView configuration)
   const baseColumns = useMemo(() => {
     if (!modelMetadata?.ui?.listView || !modelMetadata?.fields) {
       return []
@@ -90,30 +90,30 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         sortable: true,
         visible: true,
         render: (value: any, _row: EntityData) => {
-          // 根据字段类型渲染不同的内容
+          // Render different content depending on the field type
           switch (field?.type) {
             case 'date':
             case 'datetime':
               return value ? formatDate(value) : '-'
             case 'boolean':
-              return value ? '是' : '否'
+              return value ? 'Yes' : 'No'
             case 'reference':
               return value?.name || value?.title || value || '-'
             case 'array':
               return Array.isArray(value) ? value.join(', ') : '-'
             case 'json':
-              // JSON字段的显示处理
+              // Display handling for JSON fields
               if (!value) return '-'
               if (typeof value === 'string') {
                 try {
                   const parsed = JSON.parse(value)
-                  return Array.isArray(parsed) ? `[${parsed.length} 项]` : `{${Object.keys(parsed).length} 个字段}`
+                  return Array.isArray(parsed) ? `[${parsed.length} items]` : `{${Object.keys(parsed).length} fields}`
                 } catch {
                   return value.substring(0, 50) + (value.length > 50 ? '...' : '')
                 }
               }
               if (typeof value === 'object') {
-                return Array.isArray(value) ? `[${value.length} 项]` : `{${Object.keys(value).length} 个字段}`
+                return Array.isArray(value) ? `[${value.length} items]` : `{${Object.keys(value).length} fields}`
               }
               return JSON.stringify(value).substring(0, 50) + '...'
             default:
@@ -124,9 +124,9 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
     })
   }, [modelMetadata, modelName])
 
-  // 🔧 模型切换时重置表格状态
+  // 🔧 Reset table state when switching models
   useEffect(() => {
-    // 重置查询选项为默认值
+    // Reset query options to defaults
     setQueryOptions({
       page: 1,
       limit: schema.config.defaultPageSize || 20,
@@ -135,35 +135,35 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       filters: {},
       search: ''
     })
-    // 重置其他状态
+    // Reset other state
     setSelectedRows([])
     setActiveFilters([])
     setShowAdvancedFilter(false)
     setShowTableSettings(false)
-    // 重置表格列配置，让baseColumns重新初始化
+    // Reset table column config so baseColumns reinitializes
     setTableColumns([])
   }, [modelName, schema.config.defaultPageSize])
 
-  // 初始化表格列配置
+  // Initialize table column config
   useEffect(() => {
     if (baseColumns.length > 0) {
       setTableColumns(baseColumns)
     }
   }, [baseColumns])
 
-  // 当前可见的列
+  // Currently visible columns
   const visibleColumns = tableColumns.filter(col => col.visible)
 
-  // 搜索处理
+  // Handle search
   const handleSearch = (searchTerm: string) => {
     setQueryOptions(prev => ({
       ...prev,
       search: searchTerm,
-      page: 1 // 重置到第一页
+      page: 1 // Reset to the first page
     }))
   }
 
-  // 排序处理
+  // Handle sorting
   const handleSort = (field: string) => {
     setQueryOptions(prev => ({
       ...prev,
@@ -173,49 +173,49 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
     }))
   }
 
-  // 分页处理
+  // Handle pagination
   const handlePageChange = (page: number) => {
     setQueryOptions(prev => ({ ...prev, page }))
   }
 
-  // 批量删除
+  // Bulk delete
   const handleBulkDelete = async () => {
     if (selectedRows.length === 0) return
-    
-    if (!confirm(`确定要删除选中的 ${selectedRows.length} 个项目吗？`)) {
+
+    if (!confirm(`Are you sure you want to delete the ${selectedRows.length} selected items?`)) {
       return
     }
-    
+
     try {
       await apiClient.bulkDelete(modelName, selectedRows)
       setSelectedRows([])
       refetch()
     } catch (error) {
-      console.error('批量删除失败:', error)
-      alert('删除失败，请重试')
+      console.error('Bulk delete failed:', error)
+      alert('Delete failed, please try again')
     }
   }
 
-  // 单个删除
+  // Delete a single row
   const handleRowDelete = async (row: EntityData) => {
     try {
       await apiClient.deleteEntity(modelName, row.id)
       refetch()
     } catch (error) {
-      console.error('删除失败:', error)
-      alert('删除失败，请重试')
+      console.error('Delete failed:', error)
+      alert('Delete failed, please try again')
     }
   }
 
-  // 编辑行
+  // Edit a row
   const handleRowEdit = (row: EntityData) => {
     navigate(`/entities/${modelName}/${row.id}`)
   }
 
-  // 导出数据
+  // Export data
   const handleExport = async (format: 'csv' | 'excel') => {
     if (!data?.data || visibleColumns.length === 0) {
-      alert('没有数据可导出')
+      alert('No data to export')
       return
     }
 
@@ -227,8 +227,8 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         `${modelName}_${new Date().toISOString().split('T')[0]}`
       )
     } catch (error) {
-      console.error('导出失败:', error)
-      alert('导出失败，请重试')
+      console.error('Export failed:', error)
+      alert('Export failed, please try again')
     }
   }
 
@@ -236,9 +236,9 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
     return (
       <Card className="m-6">
         <CardContent className="py-8 text-center">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">加载失败</h3>
-          <p className="text-gray-600 mb-4">无法加载 {modelName} 数据</p>
-          <Button onClick={() => refetch()}>重试</Button>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Failed to Load</h3>
+          <p className="text-gray-600 mb-4">Unable to load {modelName} data</p>
+          <Button onClick={() => refetch()}>Retry</Button>
         </CardContent>
       </Card>
     )
@@ -248,14 +248,14 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
 
   return (
     <div className="p-6 space-y-6">
-      {/* 页面标题和操作 */}
+      {/* Page header and actions */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
-            {getFieldLabel(modelName)} 列表
+            {getFieldLabel(modelName)} List
           </h1>
           <p className="text-gray-600 mt-1">
-            {data && `共 ${data.total} 个项目`}
+            {data && `${data.total} items total`}
           </p>
         </div>
         
@@ -266,7 +266,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
             disabled={isFetching}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
-            刷新
+            Refresh
           </Button>
 
           <Button
@@ -274,26 +274,26 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
             onClick={() => setShowTableSettings(true)}
           >
             <Settings className="h-4 w-4 mr-2" />
-            表格设置
+            Table Settings
           </Button>
-          
+
           <Button onClick={() => navigate(`/entities/${modelName}/new`)}>
             <Plus className="h-4 w-4 mr-2" />
-            新建 {getFieldLabel(modelName)}
+            New {getFieldLabel(modelName)}
           </Button>
         </div>
       </div>
 
-      {/* 搜索和筛选栏 */}
+      {/* Search and filter bar */}
       <Card>
         <CardContent className="p-4">
           <div className="space-y-4">
-            {/* 搜索栏和工具按钮 */}
+            {/* Search bar and tool buttons */}
             <div className="flex gap-4 items-center">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder={`搜索 ${getFieldLabel(modelName)}...`}
+                  placeholder={`Search ${getFieldLabel(modelName)}...`}
                   value={queryOptions.search}
                   onChange={(e) => handleSearch(e.target.value)}
                   className="pl-9 max-w-sm"
@@ -306,7 +306,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
                 className={activeFilters.length > 0 ? 'bg-primary-100 text-primary-700' : ''}
               >
                 <Filter className="h-4 w-4 mr-2" />
-                高级筛选
+                Advanced Filter
                 {activeFilters.length > 0 && (
                   <Badge variant="default" className="ml-2 h-5 w-5 p-0 flex items-center justify-center">
                     {activeFilters.length}
@@ -317,7 +317,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
               {selectedRows.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-600">
-                    已选择 {selectedRows.length} 个项目
+                    {selectedRows.length} items selected
                   </span>
                   <Button
                     variant="danger"
@@ -325,16 +325,16 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
                     onClick={handleBulkDelete}
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
-                    删除选中
+                    Delete Selected
                   </Button>
                 </div>
               )}
             </div>
 
-            {/* 活跃筛选条件展示 */}
+            {/* Active filter conditions */}
             {activeFilters.length > 0 && (
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-600">当前筛选:</span>
+                <span className="text-sm text-gray-600">Active filters:</span>
                 {activeFilters.map((filter, index) => (
                   <Badge
                     key={filter.id}
@@ -350,8 +350,8 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
                       {modelMetadata.fields[filter.field]?.ui?.label || filter.field}
                     </span>
                     <span className="opacity-70">
-                      {filter.operator === 'equals' ? '=' : 
-                       filter.operator === 'contains' ? '包含' : 
+                      {filter.operator === 'equals' ? '=' :
+                       filter.operator === 'contains' ? 'contains' :
                        filter.operator}
                     </span>
                     {!['is_null', 'is_not_null', 'is_empty', 'is_not_empty'].includes(filter.operator) && (
@@ -361,7 +361,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
                       onClick={() => {
                         const newFilters = activeFilters.filter(f => f.id !== filter.id)
                         setActiveFilters(newFilters)
-                        // 这里应该触发实际的筛选逻辑
+                        // This should trigger the actual filtering logic
                       }}
                       className="ml-1 hover:bg-gray-200 rounded-full p-0.5"
                     >
@@ -375,7 +375,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
                   onClick={() => setActiveFilters([])}
                   className="text-gray-500 hover:text-gray-700"
                 >
-                  清空筛选
+                  Clear Filters
                 </Button>
               </div>
             )}
@@ -383,12 +383,12 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         </CardContent>
       </Card>
 
-      {/* 数据表格 */}
+      {/* Data table */}
       <Card>
         <CardContent className="p-0">
           {visibleColumns.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
-              正在加载 {modelName} 列表配置...
+              Loading {modelName} list configuration...
             </div>
           ) : (
             <EntityTable
@@ -406,12 +406,11 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         </CardContent>
       </Card>
 
-      {/* 分页 */}
+      {/* Pagination */}
       {data && totalPages > 1 && (
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
-            显示第 {(queryOptions.page! - 1) * queryOptions.limit! + 1} - {Math.min(queryOptions.page! * queryOptions.limit!, data.total)} 个，
-            共 {data.total} 个项目
+            Showing {(queryOptions.page! - 1) * queryOptions.limit! + 1} - {Math.min(queryOptions.page! * queryOptions.limit!, data.total)} of {data.total} items
           </div>
           
           <div className="flex gap-2">
@@ -422,27 +421,27 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
               disabled={queryOptions.page! <= 1}
             >
               <ChevronLeft className="h-4 w-4" />
-              上一页
+              Previous
             </Button>
-            
+
             <span className="flex items-center px-3 py-1 text-sm">
-              第 {queryOptions.page} / {totalPages} 页
+              Page {queryOptions.page} / {totalPages}
             </span>
-            
+
             <Button
               variant="secondary"
               size="sm"
               onClick={() => handlePageChange(queryOptions.page! + 1)}
               disabled={queryOptions.page! >= totalPages}
             >
-              下一页
+              Next
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* 高级筛选面板 */}
+      {/* Advanced filter panel */}
       <AdvancedFilterPanel
         modelMetadata={modelMetadata}
         onFiltersChange={setActiveFilters}
@@ -451,7 +450,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         onClose={() => setShowAdvancedFilter(false)}
       />
 
-      {/* 表格设置面板 */}
+      {/* Table settings panel */}
       <TableSettings
         columns={tableColumns}
         onColumnsChange={setTableColumns}

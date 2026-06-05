@@ -1,11 +1,13 @@
 /**
- * Dashboard View - 仪表盘视图
- * 
- * 展示系统概览和快速操作
+ * Dashboard View
+ *
+ * Displays a system overview and quick actions.
  */
 
 import React from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { SchemaMetadata } from '../../lib/types'
+import { apiClient } from '../../lib/api'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { useNavigate } from 'react-router-dom'
@@ -24,11 +26,31 @@ interface DashboardProps {
 
 export function Dashboard({ schema }: DashboardProps) {
   const navigate = useNavigate()
-  
-  // 从 schema 中提取模型列表
+
+  // Extract the list of models from the schema
   const models = Object.keys(schema.models)
-  
-  // 图标映射
+
+  // Real per-model record counts (one cheap count query per model). A failed count
+  // shows "—" rather than breaking the card.
+  const { data: counts } = useQuery({
+    queryKey: ['dashboard-counts', models],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        models.map(async (m) => {
+          try {
+            const res = await apiClient.listEntities(m, { limit: 1 })
+            return [m, res.total] as const
+          } catch {
+            return [m, null] as const
+          }
+        })
+      )
+      return Object.fromEntries(entries) as Record<string, number | null>
+    },
+    staleTime: 60_000,
+  })
+
+  // Icon mapping
   const getModelIcon = (modelName: string) => {
     const iconMap: Record<string, React.ComponentType<any>> = {
       contact: Users,
@@ -43,13 +65,13 @@ export function Dashboard({ schema }: DashboardProps) {
 
   return (
     <div className="p-6 space-y-6">
-      {/* 标题区域 */}
+      {/* Header section */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">仪表盘</h1>
-        <p className="text-gray-600 mt-2">欢迎使用 Atomo Admin UI</p>
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-600 mt-2">Welcome to Atomo Admin UI</p>
       </div>
 
-      {/* 统计卡片区域 */}
+      {/* Stat cards section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {models.map((modelName) => {
           const IconComponent = getModelIcon(modelName)
@@ -64,9 +86,11 @@ export function Dashboard({ schema }: DashboardProps) {
                 <IconComponent className="h-4 w-4 text-gray-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">--</div>
+                <div className="text-2xl font-bold">
+                  {counts?.[modelName] ?? (counts === undefined ? '…' : '—')}
+                </div>
                 <p className="text-xs text-gray-600">
-                  总计 {modelName.toLowerCase()} 数量
+                  Total {modelName.toLowerCase()} count
                 </p>
                 <div className="mt-4">
                   <Button
@@ -75,7 +99,7 @@ export function Dashboard({ schema }: DashboardProps) {
                     onClick={() => navigate(`/entities/${modelName}`)}
                     className="w-full"
                   >
-                    查看全部
+                    View all
                   </Button>
                 </div>
               </CardContent>
@@ -84,9 +108,9 @@ export function Dashboard({ schema }: DashboardProps) {
         })}
       </div>
 
-      {/* 快速操作区域 */}
+      {/* Quick actions section */}
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">快速操作</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {models.map((modelName) => {
             const modelMeta = schema.models[modelName]
@@ -101,10 +125,10 @@ export function Dashboard({ schema }: DashboardProps) {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-900">
-                        新建 {modelMeta.ui.displayField || modelName}
+                        New {modelMeta.ui.displayField || modelName}
                       </h3>
                       <p className="text-sm text-gray-600">
-                        快速创建新的 {modelName.toLowerCase()}
+                        Quickly create a new {modelName.toLowerCase()}
                       </p>
                     </div>
                     <Button
@@ -121,37 +145,37 @@ export function Dashboard({ schema }: DashboardProps) {
         </div>
       </div>
 
-      {/* 系统信息 */}
+      {/* System info */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            系统信息
+            System Information
           </CardTitle>
           <CardDescription>
-            当前连接的 Atomo 服务状态
+            Status of the currently connected Atomo service
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <div className="font-medium text-gray-900">模型数量</div>
+              <div className="font-medium text-gray-900">Models</div>
               <div className="text-gray-600">{models.length}</div>
             </div>
             <div>
-              <div className="font-medium text-gray-900">审计日志</div>
+              <div className="font-medium text-gray-900">Audit Log</div>
               <div className="text-gray-600">
-                {schema.config.auditLog ? '已启用' : '已禁用'}
+                {schema.config.auditLog ? 'Enabled' : 'Disabled'}
               </div>
             </div>
             <div>
-              <div className="font-medium text-gray-900">软删除</div>
+              <div className="font-medium text-gray-900">Soft Deletes</div>
               <div className="text-gray-600">
-                {schema.config.softDeletes ? '已启用' : '已禁用'}
+                {schema.config.softDeletes ? 'Enabled' : 'Disabled'}
               </div>
             </div>
             <div>
-              <div className="font-medium text-gray-900">分页大小</div>
+              <div className="font-medium text-gray-900">Page Size</div>
               <div className="text-gray-600">
                 {schema.config.defaultPageSize || 20}
               </div>

@@ -1,7 +1,7 @@
 /**
- * Form Field - 动态表单字段组件
- * 
- * 根据字段类型自动选择合适的输入组件
+ * Form Field - dynamic form field component
+ *
+ * Automatically selects the appropriate input component based on the field type
  */
 
 
@@ -43,7 +43,7 @@ export function FormField({
   const placeholder = fieldConfig.placeholder
   const helpText = fieldConfig.helpText
 
-  // 根据字段类型渲染不同的输入组件
+  // Render a different input component depending on the field type
   const renderInput = () => {
     switch (field.type) {
       case 'string':
@@ -130,7 +130,7 @@ export function FormField({
         )
 
       case 'reference':
-        // 引用字段需要获取关联模型信息
+        // Reference fields need to look up the related model information
         const relationshipKey = field.name.replace(/Id$/, '')
         const relationship = modelMetadata.relationships?.[relationshipKey]
         
@@ -139,7 +139,7 @@ export function FormField({
             <Input
               value={value || ''}
               onChange={(e) => onChange(e.target.value)}
-              placeholder={`${field.name} (关系未定义)`}
+              placeholder={`${field.name} (relationship not defined)`}
               disabled={disabled}
             />
           )
@@ -156,7 +156,7 @@ export function FormField({
         )
 
       case 'array':
-        // 处理数组字段，如标签
+        // Handle array fields, such as tags
         if (field.name.toLowerCase().includes('tag')) {
           return (
             <TagInput
@@ -171,21 +171,21 @@ export function FormField({
           <Textarea
             value={Array.isArray(value) ? value.join('\n') : ''}
             onChange={(e) => onChange(e.target.value.split('\n').filter(Boolean))}
-            placeholder="每行一个项目"
+            placeholder="One item per line"
             disabled={disabled}
           />
         )
 
       case 'blocks':
-        // 🎯 Atomo 的富文本块系统 - 智能数据格式转换
-        // GraphQL返回的ContentBlock数据需要转换为FlowCanvas期望的格式
+        // 🎯 Atomo's rich-text block system - smart data-format conversion
+        // ContentBlock data returned by GraphQL must be converted to the format FlowCanvas expects
         const normalizeBlocksValue = (rawValue: any) => {
-          // 空值处理
+          // Handle empty values
           if (!rawValue) {
             return { nodes: [], connections: [] }
           }
-          
-          // 如果已经是正确的格式（包含nodes和connections）
+
+          // If it is already in the correct format (contains nodes and connections)
           if (rawValue.nodes && Array.isArray(rawValue.nodes)) {
             return {
               nodes: rawValue.nodes || [],
@@ -193,7 +193,7 @@ export function FormField({
             }
           }
           
-          // 如果是数组格式的ContentBlock数据，转换为FlowCanvas格式
+          // If it is ContentBlock data in array form, convert it to the FlowCanvas format
           if (Array.isArray(rawValue)) {
             return {
               nodes: rawValue.map((block: any, index: number) => ({
@@ -213,7 +213,7 @@ export function FormField({
             }
           }
           
-          // 如果是单个ContentBlock对象
+          // If it is a single ContentBlock object
           if (typeof rawValue === 'object') {
             return {
               nodes: [{
@@ -233,8 +233,8 @@ export function FormField({
             }
           }
           
-          // 默认返回空结构
-          console.warn('无法识别的ContentBlock数据格式:', rawValue)
+          // Return an empty structure by default
+          console.warn('Unrecognized ContentBlock data format:', rawValue)
           return { nodes: [], connections: [] }
         }
         
@@ -242,7 +242,7 @@ export function FormField({
           <BlocksEditor
             value={normalizeBlocksValue(value)}
             onChange={(newValue) => {
-              // 将FlowCanvas格式转换回ContentBlock格式以保存
+              // Convert the FlowCanvas format back to ContentBlock format for saving
               const blocks = newValue.nodes.map(node => ({
                 type: node.type,
                 content: node.data.content || '',
@@ -263,7 +263,7 @@ export function FormField({
             value={value}
             onChange={onChange}
             disabled={disabled}
-            placeholder={placeholder || "请输入有效的JSON"}
+            placeholder={placeholder || "Enter valid JSON"}
           />
         )
 
@@ -282,7 +282,7 @@ export function FormField({
         )
 
       case 'custom':
-        // 自定义字段类型，可以通过 fieldConfig.component 指定组件
+        // Custom field type; the component can be specified via fieldConfig.component
         if (fieldConfig.component === 'media-uploader') {
           return (
             <MediaUploader
@@ -299,7 +299,7 @@ export function FormField({
         }
         
         if (fieldConfig.component && fieldConfig.component.startsWith('wasm:')) {
-          // WASM 插件组件
+          // WASM plugin component
           const pluginId = fieldConfig.component.replace('wasm:', '')
           const pluginConfig: WasmPluginConfig = {
             id: pluginId,
@@ -333,12 +333,12 @@ export function FormField({
         }
         
         if (fieldConfig.component) {
-          // 其他自定义组件
+          // Other custom components
           return (
             <div className="p-4 border border-dashed border-gray-300 rounded-md text-center text-gray-500">
-              自定义组件: {fieldConfig.component}
+              Custom component: {fieldConfig.component}
               <br />
-              <small>请确保组件已正确注册</small>
+              <small>Make sure the component is registered correctly</small>
             </div>
           )
         }
@@ -347,7 +347,7 @@ export function FormField({
           <Input
             value={value || ''}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder || '自定义字段'}
+            placeholder={placeholder || 'Custom field'}
             disabled={disabled}
           />
         )

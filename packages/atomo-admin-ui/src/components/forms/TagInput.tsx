@@ -1,7 +1,7 @@
 /**
- * Tag Input - 标签输入组件
- * 
- * 支持添加、删除标签，输入提示等功能
+ * Tag Input - tag input component
+ *
+ * Supports adding and removing tags, input suggestions, and more.
  */
 
 import { useState, useRef, KeyboardEvent } from 'react'
@@ -25,7 +25,7 @@ export function TagInput({
   onChange,
   disabled = false,
   error,
-  placeholder = '输入标签并按回车',
+  placeholder = 'Type a tag and press Enter',
   suggestions = [],
   maxTags,
   allowDuplicates = false
@@ -34,14 +34,14 @@ export function TagInput({
   const [showSuggestions, setShowSuggestions] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 过滤建议
+  // Filter suggestions
   const filteredSuggestions = suggestions.filter(
     suggestion => 
       suggestion.toLowerCase().includes(inputValue.toLowerCase()) &&
       (allowDuplicates || !value.includes(suggestion))
   )
 
-  // 添加标签
+  // Add a tag
   const addTag = (tag: string) => {
     const trimmedTag = tag.trim()
     if (!trimmedTag) return
@@ -60,12 +60,12 @@ export function TagInput({
     setShowSuggestions(false)
   }
 
-  // 删除标签
+  // Remove a tag
   const removeTag = (indexToRemove: number) => {
     onChange(value.filter((_, index) => index !== indexToRemove))
   }
 
-  // 键盘事件处理
+  // Handle keyboard events
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
       case 'Enter':
@@ -87,18 +87,18 @@ export function TagInput({
         
       case 'ArrowDown':
       case 'ArrowUp':
-        // TODO: 实现建议列表导航
+        // TODO: implement suggestion list navigation
         break
     }
   }
 
-  // 输入变化处理
+  // Handle input changes
   const handleInputChange = (newValue: string) => {
     setInputValue(newValue)
     setShowSuggestions(newValue.length > 0 && filteredSuggestions.length > 0)
   }
 
-  // 点击建议项
+  // Handle clicking a suggestion
   const handleSuggestionClick = (suggestion: string) => {
     addTag(suggestion)
     inputRef.current?.focus()
@@ -108,7 +108,7 @@ export function TagInput({
 
   return (
     <div className="space-y-2">
-      {/* 标签容器 */}
+      {/* Tag container */}
       <div
         className={cn(
           'min-h-[2.5rem] w-full rounded-md border border-gray-300 bg-white px-3 py-2',
@@ -119,7 +119,7 @@ export function TagInput({
         )}
         onClick={() => !disabled && inputRef.current?.focus()}
       >
-        {/* 已有标签 */}
+        {/* Existing tags */}
         {value.map((tag, index) => (
           <Badge
             key={index}
@@ -142,7 +142,7 @@ export function TagInput({
           </Badge>
         ))}
 
-        {/* 输入框 */}
+        {/* Input field */}
         {canAddMore && !disabled && (
           <input
             ref={inputRef}
@@ -157,7 +157,7 @@ export function TagInput({
           />
         )}
 
-        {/* 添加按钮 */}
+        {/* Add button */}
         {canAddMore && !disabled && inputValue && (
           <button
             type="button"
@@ -169,7 +169,7 @@ export function TagInput({
         )}
       </div>
 
-      {/* 建议列表 */}
+      {/* Suggestion list */}
       {showSuggestions && filteredSuggestions.length > 0 && (
         <div className="relative">
           <div className="absolute top-0 left-0 right-0 z-10 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
@@ -187,16 +187,16 @@ export function TagInput({
         </div>
       )}
 
-      {/* 错误信息 */}
+      {/* Error message */}
       {error && (
         <p className="text-sm text-danger-600">{error}</p>
       )}
 
-      {/* 帮助信息 */}
+      {/* Help text */}
       {maxTags && (
         <p className="text-xs text-gray-500">
-          {value.length} / {maxTags} 个标签
-          {value.length >= maxTags && ' (已达上限)'}
+          {value.length} / {maxTags} tags
+          {value.length >= maxTags && ' (limit reached)'}
         </p>
       )}
     </div>

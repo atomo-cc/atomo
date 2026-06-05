@@ -1,13 +1,13 @@
 /**
  * Data Export Utilities
- * 
- * 数据导出功能，支持 CSV 和 Excel 格式
+ *
+ * Data export functionality, supporting CSV and Excel formats.
  */
 
 import { EntityData, ColumnConfig } from './types'
 
 /**
- * 导出数据到指定格式
+ * Export data to the specified format.
  */
 export async function exportData(
   data: EntityData[],
@@ -22,28 +22,28 @@ export async function exportData(
       await exportToExcel(data, columns, filename)
     }
   } catch (error) {
-    console.error('导出失败:', error)
-    throw new Error('导出失败，请重试')
+    console.error('Export failed:', error)
+    throw new Error('Export failed, please try again')
   }
 }
 
 /**
- * 导出为 CSV 格式
+ * Export to CSV format.
  */
 async function exportToCSV(
   data: EntityData[],
   columns: ColumnConfig[],
   filename: string
 ): Promise<void> {
-  // 准备表头
+  // Prepare the header row
   const headers = columns.map(col => col.label)
-  
-  // 准备数据行
+
+  // Prepare the data rows
   const rows = data.map(row => {
     return columns.map(col => {
       const value = row[col.key]
       
-      // 格式化不同类型的数据
+      // Format the different data types
       if (value === null || value === undefined) {
         return ''
       }
@@ -58,7 +58,7 @@ async function exportToCSV(
         return JSON.stringify(value)
       }
       
-      // 处理包含逗号或换行的字符串
+      // Handle strings containing commas or newlines
       const stringValue = String(value)
       if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
         return `"${stringValue.replace(/"/g, '""')}"`
@@ -68,27 +68,27 @@ async function exportToCSV(
     })
   })
 
-  // 组合 CSV 内容
+  // Assemble the CSV content
   const csvContent = [
     headers.join(','),
     ...rows.map(row => row.join(','))
   ].join('\n')
 
-  // 创建和下载文件
+  // Create and download the file
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
   downloadBlob(blob, `${filename}.csv`)
 }
 
 /**
- * 导出为 Excel 格式
- * 注意：这是一个简化版本，生产环境中建议使用专门的 Excel 库如 SheetJS
+ * Export to Excel format.
+ * Note: this is a simplified version; for production use a dedicated Excel library such as SheetJS.
  */
 async function exportToExcel(
   data: EntityData[],
   columns: ColumnConfig[],
   filename: string
 ): Promise<void> {
-  // 创建简单的 XML 格式（Excel 兼容）
+  // Create a simple XML format (Excel-compatible)
   const xmlHeader = '<?xml version="1.0"?>\n' +
     '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n' +
     ' xmlns:o="urn:schemas-microsoft-com:office:office"\n' +
@@ -99,12 +99,12 @@ async function exportToExcel(
 
   const xmlFooter = '</Table>\n</Worksheet>\n</Workbook>'
 
-  // 表头行
-  const headerRow = '<Row>\n' + 
+  // Header row
+  const headerRow = '<Row>\n' +
     columns.map(col => `<Cell><Data ss:Type="String">${escapeXml(col.label)}</Data></Cell>`).join('\n') +
     '\n</Row>\n'
 
-  // 数据行
+  // Data rows
   const dataRows = data.map(row => {
     const cells = columns.map(col => {
       const value = row[col.key]
@@ -138,13 +138,13 @@ async function exportToExcel(
 
   const xmlContent = xmlHeader + headerRow + dataRows + xmlFooter
 
-  // 创建和下载文件
+  // Create and download the file
   const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel' })
   downloadBlob(blob, `${filename}.xls`)
 }
 
 /**
- * 转义 XML 特殊字符
+ * Escape XML special characters.
  */
 function escapeXml(text: string): string {
   return text
@@ -156,7 +156,7 @@ function escapeXml(text: string): string {
 }
 
 /**
- * 下载 Blob 文件
+ * Download a Blob as a file.
  */
 function downloadBlob(blob: Blob, filename: string): void {
   const url = window.URL.createObjectURL(blob)
@@ -169,14 +169,14 @@ function downloadBlob(blob: Blob, filename: string): void {
   link.click()
   document.body.removeChild(link)
   
-  // 清理 URL
+  // Clean up the URL
   setTimeout(() => {
     window.URL.revokeObjectURL(url)
   }, 100)
 }
 
 /**
- * 格式化数据用于显示
+ * Format a value for display in the export.
  */
 export function formatValueForExport(value: any, type: string): string {
   if (value === null || value === undefined) {
@@ -194,7 +194,7 @@ export function formatValueForExport(value: any, type: string): string {
       return String(value)
 
     case 'boolean':
-      return value ? '是' : '否'
+      return value ? 'Yes' : 'No'
 
     case 'array':
       return Array.isArray(value) ? value.join(', ') : String(value)

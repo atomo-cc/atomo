@@ -1,11 +1,11 @@
 /**
- * JSON Editor - 增强的JSON字段编辑器
- * 
- * 功能：
- * - 语法高亮
- * - 错误提示
- * - 格式化
- * - 预览模式
+ * JSON Editor - enhanced JSON field editor
+ *
+ * Features:
+ * - Syntax highlighting
+ * - Error reporting
+ * - Formatting
+ * - Preview mode
  */
 
 import React, { useState, useEffect } from 'react'
@@ -36,7 +36,7 @@ export function JsonEditor({
   onChange,
   disabled = false,
   error,
-  placeholder = '请输入有效的JSON',
+  placeholder = 'Enter valid JSON',
   className = ''
 }: JsonEditorProps): React.JSX.Element {
   const [jsonText, setJsonText] = useState('')
@@ -45,7 +45,7 @@ export function JsonEditor({
   const [showPreview, setShowPreview] = useState(false)
   const [isFormatted, setIsFormatted] = useState(false)
 
-  // 初始化和同步外部值
+  // Initialize and sync with the external value
   useEffect(() => {
     if (value !== undefined && value !== null) {
       try {
@@ -57,7 +57,7 @@ export function JsonEditor({
       } catch (err) {
         setJsonText(String(value))
         setIsValid(false)
-        setValidationError('无效的JSON格式')
+        setValidationError('Invalid JSON format')
       }
     } else {
       setJsonText('')
@@ -66,7 +66,7 @@ export function JsonEditor({
     }
   }, [value])
 
-  // JSON文本变化处理
+  // Handle changes to the JSON text
   const handleTextChange = (newText: string) => {
     setJsonText(newText)
     
@@ -84,13 +84,13 @@ export function JsonEditor({
       onChange(parsed)
     } catch (err) {
       setIsValid(false)
-      const errorMessage = err instanceof Error ? err.message : '无效的JSON格式'
+      const errorMessage = err instanceof Error ? err.message : 'Invalid JSON format'
       setValidationError(errorMessage)
-      // 不立即调用onChange，让用户继续编辑
+      // Don't call onChange immediately, so the user can keep editing
     }
   }
 
-  // 格式化JSON
+  // Format the JSON
   const formatJson = () => {
     if (!isValid) return
     
@@ -100,11 +100,11 @@ export function JsonEditor({
       setJsonText(formatted)
       setIsFormatted(true)
     } catch (err) {
-      // 已经在handleTextChange中处理了错误
+      // The error is already handled in handleTextChange
     }
   }
 
-  // 压缩JSON
+  // Minify the JSON
   const compactJson = () => {
     if (!isValid) return
     
@@ -114,11 +114,11 @@ export function JsonEditor({
       setJsonText(compacted)
       setIsFormatted(false)
     } catch (err) {
-      // 已经在handleTextChange中处理了错误
+      // The error is already handled in handleTextChange
     }
   }
 
-  // 重置
+  // Reset
   const reset = () => {
     setJsonText('')
     setIsValid(true)
@@ -126,16 +126,16 @@ export function JsonEditor({
     onChange(null)
   }
 
-  // 复制到剪贴板
+  // Copy to clipboard
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(jsonText)
     } catch (err) {
-      console.error('复制失败:', err)
+      console.error('Copy failed:', err)
     }
   }
 
-  // 获取JSON预览信息
+  // Get JSON preview info
   const getPreviewInfo = () => {
     if (!isValid || !jsonText.trim()) return null
     
@@ -143,16 +143,16 @@ export function JsonEditor({
       const parsed = JSON.parse(jsonText)
       if (Array.isArray(parsed)) {
         return {
-          type: '数组',
+          type: 'Array',
           length: parsed.length,
-          preview: `[${parsed.length} 项]`
+          preview: `[${parsed.length} items]`
         }
       } else if (typeof parsed === 'object' && parsed !== null) {
         const keys = Object.keys(parsed)
         return {
-          type: '对象',
+          type: 'Object',
           length: keys.length,
-          preview: `{${keys.length} 个字段: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}}`
+          preview: `{${keys.length} fields: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}}`
         }
       } else {
         return {
@@ -170,19 +170,19 @@ export function JsonEditor({
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* 工具栏 */}
+      {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Badge variant={isValid ? 'success' : 'danger'} className="text-xs">
             {isValid ? (
               <>
                 <CheckCircle className="w-3 h-3 mr-1" />
-                有效
+                Valid
               </>
             ) : (
               <>
                 <AlertCircle className="w-3 h-3 mr-1" />
-                错误
+                Error
               </>
             )}
           </Badge>
@@ -202,7 +202,7 @@ export function JsonEditor({
             size="sm"
             onClick={() => setShowPreview(!showPreview)}
             disabled={disabled || !isValid}
-            title={showPreview ? "隐藏预览" : "显示预览"}
+            title={showPreview ? "Hide preview" : "Show preview"}
           >
             {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </Button>
@@ -213,7 +213,7 @@ export function JsonEditor({
             size="sm"
             onClick={isFormatted ? compactJson : formatJson}
             disabled={disabled || !isValid || !jsonText.trim()}
-            title={isFormatted ? "压缩" : "格式化"}
+            title={isFormatted ? "Minify" : "Format"}
           >
             <FileText className="w-4 h-4" />
           </Button>
@@ -224,7 +224,7 @@ export function JsonEditor({
             size="sm"
             onClick={copyToClipboard}
             disabled={disabled || !jsonText.trim()}
-            title="复制"
+            title="Copy"
           >
             <Copy className="w-4 h-4" />
           </Button>
@@ -235,14 +235,14 @@ export function JsonEditor({
             size="sm"
             onClick={reset}
             disabled={disabled}
-            title="重置"
+            title="Reset"
           >
             <RotateCcw className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
-      {/* JSON编辑器 */}
+      {/* JSON editor */}
       <div className="relative">
         <Textarea
           value={jsonText}
@@ -256,22 +256,22 @@ export function JsonEditor({
           }}
         />
         
-        {/* 错误提示 */}
+        {/* Error indicator */}
         {validationError && (
           <div className="absolute top-2 right-2">
             <Badge variant="danger" className="text-xs">
               <AlertCircle className="w-3 h-3 mr-1" />
-              JSON错误
+              JSON error
             </Badge>
           </div>
         )}
       </div>
 
-      {/* 预览面板 */}
+      {/* Preview panel */}
       {showPreview && isValid && jsonText.trim() && (
         <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
           <div className="text-sm font-medium text-gray-700 mb-2">
-            预览 ({previewInfo?.type})
+            Preview ({previewInfo?.type})
           </div>
           <pre className="text-xs text-gray-600 overflow-auto max-h-40 whitespace-pre-wrap">
             {JSON.stringify(JSON.parse(jsonText), null, 2)}
@@ -279,13 +279,13 @@ export function JsonEditor({
         </div>
       )}
 
-      {/* 错误详情 */}
+      {/* Error details */}
       {validationError && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">
-          <div className="font-medium mb-1">JSON语法错误:</div>
+          <div className="font-medium mb-1">JSON syntax error:</div>
           <div className="font-mono">{validationError}</div>
           <div className="mt-2 text-xs text-red-500">
-            请检查括号、引号和逗号是否正确匹配
+            Check that brackets, quotes, and commas are correctly matched
           </div>
         </div>
       )}

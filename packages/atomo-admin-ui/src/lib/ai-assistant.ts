@@ -1,16 +1,16 @@
 /**
- * AI Assistant System - AI辅助系统
- * 
- * 提供基于LLM的智能辅助功能，包括：
- * - 内容生成和润色
- * - 智能搜索和问答
- * - 自动化建议
- * - 数据分析洞察
+ * AI Assistant System
+ *
+ * Provides LLM-based intelligent assistance, including:
+ * - Content generation and polishing
+ * - Intelligent search and Q&A
+ * - Automation suggestions
+ * - Data analysis insights
  */
 
 import React from 'react'
 
-// 使用简单的事件系统替代 Node.js EventEmitter
+// Use a simple event system instead of the Node.js EventEmitter
 class SimpleEventEmitter {
   private events: Record<string, Function[]> = {}
   
@@ -70,7 +70,7 @@ export class AIAssistant extends SimpleEventEmitter {
   }
 
   /**
-   * 初始化AI助手，获取可用能力
+   * Initialize the AI assistant and fetch the available capabilities.
    */
   async initialize(): Promise<void> {
     try {
@@ -86,14 +86,14 @@ export class AIAssistant extends SimpleEventEmitter {
       this.emit('initialized', this.capabilities)
     } catch (error) {
       console.error('AI Assistant initialization failed:', error)
-      // 使用模拟数据作为后备
+      // Fall back to mock data
       this.capabilities = this.getMockCapabilities()
       this.emit('initialized', this.capabilities)
     }
   }
 
   /**
-   * 发送AI请求
+   * Send an AI request.
    */
   async request(request: AIRequest): Promise<AIResponse> {
     const startTime = Date.now()
@@ -101,7 +101,7 @@ export class AIAssistant extends SimpleEventEmitter {
     try {
       this.emit('request-start', request)
       
-      // 检查能力是否可用
+      // Check whether the capability is available
       const capability = this.capabilities.find(c => 
         c.type === this.getCapabilityType(request.type) && c.available
       )
@@ -132,7 +132,7 @@ export class AIAssistant extends SimpleEventEmitter {
     } catch (error) {
       console.error('AI request failed:', error)
       
-      // 返回模拟响应作为后备
+      // Return a mock response as a fallback
       const mockResponse = await this.getMockResponse(request)
       mockResponse.processingTime = Date.now() - startTime
       
@@ -142,7 +142,7 @@ export class AIAssistant extends SimpleEventEmitter {
   }
 
   /**
-   * 文本生成
+   * Text generation.
    */
   async generateText(prompt: string, context?: string): Promise<AIResponse> {
     return this.request({
@@ -154,19 +154,19 @@ export class AIAssistant extends SimpleEventEmitter {
   }
 
   /**
-   * 文本改进
+   * Text improvement.
    */
   async improveText(text: string, style?: string): Promise<AIResponse> {
     return this.request({
       type: 'improve',
       context: text,
-      prompt: style || '请优化这段文本的表达，使其更加清晰、专业且易读',
+      prompt: style || 'Please refine the wording of this text to make it clearer, more professional, and easier to read',
       metadata: { originalText: text }
     })
   }
 
   /**
-   * 智能搜索
+   * Intelligent search.
    */
   async intelligentSearch(query: string, scope?: string[]): Promise<AIResponse> {
     return this.request({
@@ -178,38 +178,38 @@ export class AIAssistant extends SimpleEventEmitter {
   }
 
   /**
-   * 数据分析
+   * Data analysis.
    */
   async analyzeData(data: any, question?: string): Promise<AIResponse> {
     return this.request({
       type: 'analyze',
       context: JSON.stringify(data),
-      prompt: question || '请分析这些数据并提供洞察',
+      prompt: question || 'Please analyze this data and provide insights',
       metadata: { dataType: typeof data }
     })
   }
 
   /**
-   * 获取建议
+   * Get suggestions.
    */
   async getSuggestions(context: string, type?: string): Promise<AIResponse> {
     return this.request({
       type: 'suggest',
       context,
-      prompt: `请为以下情况提供${type || '优化'}建议`,
+      prompt: `Please provide ${type || 'optimization'} suggestions for the following situation`,
       metadata: { suggestionType: type }
     })
   }
 
   /**
-   * 获取可用能力
+   * Get the available capabilities.
    */
   getCapabilities(): AICapability[] {
     return [...this.capabilities]
   }
 
   /**
-   * 检查特定能力是否可用
+   * Check whether a specific capability is available.
    */
   isCapabilityAvailable(type: string): boolean {
     return this.capabilities.some(c => 
@@ -249,40 +249,40 @@ export class AIAssistant extends SimpleEventEmitter {
     return [
       {
         id: 'text-generation',
-        name: '文本生成',
-        description: '基于提示生成高质量文本内容',
+        name: 'Text Generation',
+        description: 'Generate high-quality text content from a prompt',
         type: 'text',
         available: true,
         model: 'gpt-3.5-turbo'
       },
       {
         id: 'text-improvement',
-        name: '文本润色',
-        description: '优化文本表达和语言风格',
+        name: 'Text Polishing',
+        description: 'Refine text wording and language style',
         type: 'text',
         available: true,
         model: 'gpt-3.5-turbo'
       },
       {
         id: 'intelligent-search',
-        name: '智能搜索',
-        description: '理解自然语言查询，提供精准搜索结果',
+        name: 'Intelligent Search',
+        description: 'Understand natural-language queries and deliver precise search results',
         type: 'search',
         available: true,
         model: 'text-embedding-ada-002'
       },
       {
         id: 'data-analysis',
-        name: '数据分析',
-        description: '自动分析数据并提供业务洞察',
+        name: 'Data Analysis',
+        description: 'Automatically analyze data and provide business insights',
         type: 'analysis',
         available: true,
         model: 'gpt-4'
       },
       {
         id: 'automation-suggestions',
-        name: '自动化建议',
-        description: '基于上下文提供智能优化建议',
+        name: 'Automation Suggestions',
+        description: 'Provide intelligent optimization suggestions based on context',
         type: 'automation',
         available: true,
         model: 'gpt-3.5-turbo'
@@ -291,34 +291,34 @@ export class AIAssistant extends SimpleEventEmitter {
   }
 
   private async getMockResponse(request: AIRequest): Promise<AIResponse> {
-    // 模拟API响应时间
+    // Simulate API response time
     await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000))
 
     const responses: Record<AIRequest['type'], string[]> = {
       generate: [
-        '这是一段由AI生成的示例文本。在实际应用中，这里会根据您的提示生成相关的内容。',
-        '基于您的需求，我建议从以下几个方面来考虑这个问题...',
-        '让我为您创建一个结构清晰的内容框架，包含以下要点...'
+        'This is a sample text generated by AI. In a real application, relevant content would be generated here based on your prompt.',
+        'Based on your requirements, I suggest considering this problem from the following angles...',
+        'Let me create a clearly structured content outline for you, covering the following key points...'
       ],
       improve: [
-        '经过优化的文本版本：表达更加清晰，逻辑更加连贯，专业性有所提升。',
-        '改进后的内容在保持原意的基础上，语言更加精炼，表达更加准确。',
-        '润色后的文本具有更好的可读性和更强的说服力。'
+        'Optimized version of the text: clearer wording, more coherent logic, and a more professional tone.',
+        'The improved content preserves the original meaning while using more concise language and more precise expression.',
+        'The polished text reads more smoothly and is more persuasive.'
       ],
       search: [
-        '基于您的查询，我找到了以下相关信息和资源...',
-        '搜索结果显示了几个关键匹配项，按相关性排序如下...',
-        '智能分析您的需求后，推荐以下最相关的内容...'
+        'Based on your query, I found the following relevant information and resources...',
+        'The search results show several key matches, ranked by relevance as follows...',
+        'After intelligently analyzing your needs, here are the most relevant results...'
       ],
       analyze: [
-        '数据分析显示以下关键趋势和模式...',
-        '通过深入分析，我发现了几个值得关注的数据洞察...',
-        '基于当前数据，建议重点关注以下业务指标...'
+        'The data analysis reveals the following key trends and patterns...',
+        'Through in-depth analysis, I identified several noteworthy data insights...',
+        'Based on the current data, I recommend focusing on the following business metrics...'
       ],
       suggest: [
-        '基于当前情况，我建议采取以下优化措施...',
-        '为了改善效果，您可以考虑以下几个方面的调整...',
-        '结合最佳实践，建议实施以下改进策略...'
+        'Based on the current situation, I recommend taking the following optimization measures...',
+        'To improve results, you may want to consider adjustments in the following areas...',
+        'Drawing on best practices, I recommend implementing the following improvement strategies...'
       ]
     }
 
@@ -335,13 +335,13 @@ export class AIAssistant extends SimpleEventEmitter {
         model: 'mock-ai-model',
         tokens: content.length * 0.75
       },
-      processingTime: 0 // 将在调用处设置
+      processingTime: 0 // Set by the caller
     }
   }
 }
 
 /**
- * AI助手钩子
+ * AI assistant hook.
  */
 export function useAIAssistant() {
   const [assistant] = React.useState(() => new AIAssistant())
@@ -360,7 +360,7 @@ export function useAIAssistant() {
     assistant.on('request-start', handleRequestStart)
     assistant.on('request-complete', handleRequestComplete)
 
-    // 初始化
+    // Initialize
     assistant.initialize()
 
     return () => {

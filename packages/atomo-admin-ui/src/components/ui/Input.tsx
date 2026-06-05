@@ -1,5 +1,5 @@
 /**
- * Input Component - 基础输入组件
+ * Input Component — basic input
  */
 
 import * as React from 'react'
@@ -43,7 +43,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         
-        {/* 只显示error，不显示helpText，因为FormField会处理这些 */}
+        {/* Only show error, not helpText — FormField handles those */}
         {error && (
           <p className="text-sm text-danger-600">{error}</p>
         )}

@@ -99,23 +99,23 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
 
   return (
     <div className="p-6 space-y-6 max-w-3xl">
-      <h1 className="text-3xl font-bold text-gray-900">工作流设计器</h1>
+      <h1 className="text-3xl font-bold text-gray-900">Workflow Designer</h1>
 
       {error && (
         <div className="rounded-md bg-danger-50 border border-danger-500 px-4 py-3 text-sm text-danger-700">{error}</div>
       )}
       {saved && (
-        <div className="rounded-md bg-success-50 border border-success-500 px-4 py-3 text-sm text-success-700">已保存</div>
+        <div className="rounded-md bg-success-50 border border-success-500 px-4 py-3 text-sm text-success-700">Saved</div>
       )}
 
       <Card>
-        <CardHeader><CardTitle>基本信息</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Basic Information</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <Input label="名称" value={graph.name} disabled={!!name}
+          <Input label="Name" value={graph.name} disabled={!!name}
             onChange={(e) => update({ name: e.target.value })} placeholder="my-workflow" />
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">触发器</label>
+            <label className="text-sm font-medium text-gray-700">Trigger</label>
             <select value={tk} onChange={(e) => setTriggerKind(e.target.value)}
               className="block rounded-md border border-gray-300 px-3 py-2 text-sm">
               <option value="Manual">Manual</option>
@@ -126,21 +126,21 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
 
           {tk === 'OnEvent' && graph.trigger !== 'Manual' && 'OnEvent' in graph.trigger && (
             <div className="flex gap-3">
-              <Input label="模型" value={graph.trigger.OnEvent.model}
+              <Input label="Model" value={graph.trigger.OnEvent.model}
                 onChange={(e) => update({ trigger: { OnEvent: { ...(graph.trigger as any).OnEvent, model: e.target.value } } })} />
-              <Input label="事件类型" value={graph.trigger.OnEvent.event_type}
+              <Input label="Event Type" value={graph.trigger.OnEvent.event_type}
                 onChange={(e) => update({ trigger: { OnEvent: { ...(graph.trigger as any).OnEvent, event_type: e.target.value } } })} />
             </div>
           )}
           {tk === 'Schedule' && graph.trigger !== 'Manual' && 'Schedule' in graph.trigger && (
-            <Input label="Cron (6 字段)" value={graph.trigger.Schedule.cron}
+            <Input label="Cron (6 fields)" value={graph.trigger.Schedule.cron}
               onChange={(e) => update({ trigger: { Schedule: { cron: e.target.value } } })} />
           )}
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>步骤 ({graph.steps.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Steps ({graph.steps.length})</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {graph.steps.map((step, idx) => (
             <div key={step.id} className="rounded-md border border-gray-200 p-4 space-y-3">
@@ -156,7 +156,7 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
 
               <div className="flex gap-3 items-end">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">动作</label>
+                  <label className="text-xs font-medium text-gray-600">Action</label>
                   <select
                     value={Object.keys(step.action)[0]}
                     onChange={(e) => patchStep(step.id, { action: defaultStep(e.target.value).action })}
@@ -165,7 +165,7 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">失败策略</label>
+                  <label className="text-xs font-medium text-gray-600">Failure Policy</label>
                   <select
                     value={typeof step.on_failure === 'string' ? step.on_failure : 'Retry'}
                     onChange={(e) => patchStep(step.id, { on_failure: e.target.value === 'Retry' ? { Retry: { max_attempts: 3 } } : e.target.value })}
@@ -181,20 +181,20 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
               />
             </div>
           ))}
-          <Button variant="secondary" onClick={addStep}><Plus className="h-4 w-4 mr-1" /> 添加步骤</Button>
+          <Button variant="secondary" onClick={addStep}><Plus className="h-4 w-4 mr-1" /> Add Step</Button>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>预览</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Preview</CardTitle></CardHeader>
         <CardContent>
           <WorkflowGraphView graph={graph} />
         </CardContent>
       </Card>
 
       <div className="flex gap-2">
-        <Button onClick={save}><Save className="h-4 w-4 mr-1" /> 保存</Button>
-        <Button variant="ghost" onClick={() => navigate('/workflows')}>取消</Button>
+        <Button onClick={save}><Save className="h-4 w-4 mr-1" /> Save</Button>
+        <Button variant="ghost" onClick={() => navigate('/workflows')}>Cancel</Button>
       </div>
     </div>
   )

@@ -6,14 +6,14 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
 /**
- * 合并 Tailwind CSS 类名
+ * Merge Tailwind CSS class names.
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
 /**
- * 格式化日期
+ * Format a date.
  */
 export function formatDate(date: Date | string | null | undefined, format: 'short' | 'long' | 'time' = 'short') {
   // Guard missing/invalid dates — many records have null timestamps, and an
@@ -39,7 +39,7 @@ export function formatDate(date: Date | string | null | undefined, format: 'shor
 }
 
 /**
- * 格式化文件大小
+ * Format a file size.
  */
 export function formatFileSize(bytes: number) {
   if (bytes === 0) return '0 Bytes'
@@ -52,7 +52,7 @@ export function formatFileSize(bytes: number) {
 }
 
 /**
- * 防抖函数
+ * Debounce function.
  */
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
@@ -67,7 +67,7 @@ export function debounce<T extends (...args: any[]) => any>(
 }
 
 /**
- * 截断文本
+ * Truncate text.
  */
 export function truncate(text: string, length: number) {
   if (text.length <= length) return text
@@ -75,12 +75,12 @@ export function truncate(text: string, length: number) {
 }
 
 /**
- * 获取字段显示名称
+ * Get a field's display name.
  */
 export function getFieldLabel(fieldName: string, customLabel?: string) {
   if (customLabel) return customLabel
-  
-  // 将 camelCase 转换为可读标签
+
+  // Convert camelCase into a readable label
   return fieldName
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (str) => str.toUpperCase())

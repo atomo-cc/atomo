@@ -1,5 +1,5 @@
 /**
- * Tabs Component - 基于 Radix UI 的标签页组件
+ * Tabs Component — tabs built on Radix UI
  */
 
 import * as React from 'react'

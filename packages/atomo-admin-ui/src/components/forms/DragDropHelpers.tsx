@@ -1,19 +1,19 @@
 /**
- * Drag & Drop Helpers - 拖拽辅助组件
- * 
- * 提供高级拖拽功能：
- * - 智能吸附
- * - 碰撞检测
- * - 拖拽预览
- * - 多选拖拽
- * - 区域选择
+ * Drag & Drop Helpers - drag-and-drop helper components
+ *
+ * Provides advanced drag-and-drop features:
+ * - Smart snapping
+ * - Collision detection
+ * - Drag preview
+ * - Multi-select dragging
+ * - Area selection
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { FlowNode } from './BlocksEditor'
 import { cn } from '../../lib/utils'
 
-// ==================== 类型定义 ====================
+// ==================== Type definitions ====================
 
 export interface DragState {
   isDragging: boolean
@@ -45,7 +45,7 @@ export interface DragDropConfig {
   magneticSnap: boolean
 }
 
-// ==================== 拖拽管理器 ====================
+// ==================== Drag-and-drop manager ====================
 
 export class DragDropManager {
   private nodes: FlowNode[] = []
@@ -65,28 +65,28 @@ export class DragDropManager {
     this.config = { ...this.config, ...config }
   }
 
-  // 计算吸附点
+  // Calculate snap points
   private calculateSnapPoints() {
     this.snapPoints = []
 
-    // 网格吸附点
+    // Grid snap points
     if (this.config.snapToGrid) {
-      // 网格点会在拖拽时动态计算
+      // Grid points are calculated dynamically during dragging
     }
 
-    // 节点边缘吸附点
+    // Node edge snap points
     this.nodes.forEach(node => {
-      // 节点的关键位置点
+      // Key position points of the node
       const points = [
-        { x: node.position.x, y: node.position.y }, // 左上
-        { x: node.position.x + node.size.width, y: node.position.y }, // 右上
-        { x: node.position.x, y: node.position.y + node.size.height }, // 左下
-        { x: node.position.x + node.size.width, y: node.position.y + node.size.height }, // 右下
-        { x: node.position.x + node.size.width / 2, y: node.position.y }, // 顶部中心
-        { x: node.position.x + node.size.width / 2, y: node.position.y + node.size.height }, // 底部中心
-        { x: node.position.x, y: node.position.y + node.size.height / 2 }, // 左侧中心
-        { x: node.position.x + node.size.width, y: node.position.y + node.size.height / 2 }, // 右侧中心
-        { x: node.position.x + node.size.width / 2, y: node.position.y + node.size.height / 2 } // 中心
+        { x: node.position.x, y: node.position.y }, // Top-left
+        { x: node.position.x + node.size.width, y: node.position.y }, // Top-right
+        { x: node.position.x, y: node.position.y + node.size.height }, // Bottom-left
+        { x: node.position.x + node.size.width, y: node.position.y + node.size.height }, // Bottom-right
+        { x: node.position.x + node.size.width / 2, y: node.position.y }, // Top center
+        { x: node.position.x + node.size.width / 2, y: node.position.y + node.size.height }, // Bottom center
+        { x: node.position.x, y: node.position.y + node.size.height / 2 }, // Left center
+        { x: node.position.x + node.size.width, y: node.position.y + node.size.height / 2 }, // Right center
+        { x: node.position.x + node.size.width / 2, y: node.position.y + node.size.height / 2 } // Center
       ]
 
       points.forEach(point => {
@@ -99,18 +99,18 @@ export class DragDropManager {
     })
   }
 
-  // 计算最佳吸附位置
+  // Calculate the best snap position
   calculateSnap(position: { x: number; y: number }, excludeNodes: string[] = []): { x: number; y: number } {
     let snappedX = position.x
     let snappedY = position.y
 
-    // 网格吸附
+    // Snap to grid
     if (this.config.snapToGrid) {
       snappedX = Math.round(position.x / this.config.gridSize) * this.config.gridSize
       snappedY = Math.round(position.y / this.config.gridSize) * this.config.gridSize
     }
 
-    // 磁性吸附到其他节点
+    // Magnetic snapping to other nodes
     if (this.config.magneticSnap) {
       const availableSnapPoints = this.snapPoints.filter(point => 
         !excludeNodes.includes(point.nodeId || '')
@@ -143,7 +143,7 @@ export class DragDropManager {
     return { x: snappedX, y: snappedY }
   }
 
-  // 碰撞检测
+  // Collision detection
   checkCollision(node: FlowNode, excludeNodes: string[] = []): CollisionInfo {
     if (!this.config.enableCollisionDetection) {
       return { hasCollision: false, collidingNodes: [] }
@@ -156,7 +156,7 @@ export class DragDropManager {
         return
       }
 
-      // AABB 碰撞检测
+      // AABB collision detection
       const isColliding = !(
         node.position.x >= otherNode.position.x + otherNode.size.width ||
         node.position.x + node.size.width <= otherNode.position.x ||
@@ -175,7 +175,7 @@ export class DragDropManager {
     }
   }
 
-  // 获取建议的无碰撞位置
+  // Get a suggested collision-free position
   getSafePosition(node: FlowNode, preferredPosition: { x: number; y: number }): { x: number; y: number } {
     if (this.config.allowOverlap) {
       return preferredPosition
@@ -188,7 +188,7 @@ export class DragDropManager {
       return preferredPosition
     }
 
-    // 尝试在附近找到安全位置
+    // Try to find a safe position nearby
     const searchRadius = 50
     const step = 10
 
@@ -207,12 +207,12 @@ export class DragDropManager {
       }
     }
 
-    // 如果找不到安全位置，返回原始位置
+    // If no safe position is found, return the original position
     return preferredPosition
   }
 }
 
-// ==================== 拖拽预览组件 ====================
+// ==================== Drag preview component ====================
 
 export function DragPreview({ 
   nodes, 
@@ -241,7 +241,7 @@ export function DragPreview({
           key={node.id}
           className="absolute bg-blue-500 border-2 border-blue-600 rounded-lg shadow-lg"
           style={{
-            left: index * 5, // 轻微偏移显示多个节点
+            left: index * 5, // Slight offset to show multiple nodes
             top: index * 5,
             width: node.size.width,
             height: node.size.height,
@@ -258,7 +258,7 @@ export function DragPreview({
   )
 }
 
-// ==================== 区域选择组件 ====================
+// ==================== Area selection component ====================
 
 export function SelectionArea({
   startPosition,
@@ -289,7 +289,7 @@ export function SelectionArea({
   )
 }
 
-// ==================== 对齐辅助线组件 ====================
+// ==================== Alignment guides component ====================
 
 export function AlignmentGuides({ 
   guides 
@@ -315,7 +315,7 @@ export function AlignmentGuides({
   )
 }
 
-// ==================== 拖拽钩子 ====================
+// ==================== Drag-and-drop hook ====================
 
 export function useDragDrop(
   nodes: FlowNode[],
@@ -337,13 +337,13 @@ export function useDragDrop(
 
   const dragManagerRef = useRef(new DragDropManager(config))
 
-  // 更新拖拽管理器
+  // Update the drag-and-drop manager
   useEffect(() => {
     dragManagerRef.current.updateNodes(nodes)
     dragManagerRef.current.updateConfig(config)
   }, [nodes, config])
 
-  // 开始拖拽节点
+  // Start dragging nodes
   const startNodeDrag = useCallback((nodeIds: string[], startPos: { x: number; y: number }) => {
     setDragState({
       isDragging: true,
@@ -355,14 +355,14 @@ export function useDragDrop(
     })
   }, [])
 
-  // 开始区域选择
+  // Start area selection
   const startAreaSelection = useCallback((startPos: { x: number; y: number }) => {
     setIsSelecting(true)
     setSelectionStart(startPos)
     setSelectionEnd(startPos)
   }, [])
 
-  // 更新拖拽位置
+  // Update the drag position
   const updateDrag = useCallback((currentPos: { x: number; y: number }) => {
     if (dragState.isDragging) {
       const offset = {
@@ -376,7 +376,7 @@ export function useDragDrop(
         offset
       }))
 
-      // 实时更新节点位置
+      // Update node positions in real time
       const updatedNodes = nodes.map(node => {
         if (dragState.draggedNodes.includes(node.id)) {
           const newPosition = {
@@ -384,7 +384,7 @@ export function useDragDrop(
             y: node.position.y + offset.y
           }
 
-          // 应用吸附
+          // Apply snapping
           const snappedPosition = dragManagerRef.current.calculateSnap(
             newPosition,
             dragState.draggedNodes
@@ -404,10 +404,10 @@ export function useDragDrop(
     }
   }, [dragState, isSelecting, nodes, onNodesChange])
 
-  // 结束拖拽
+  // End dragging
   const endDrag = useCallback(() => {
     if (dragState.isDragging) {
-      // 应用最终位置和碰撞检测
+      // Apply the final position and run collision detection
       const finalNodes = nodes.map(node => {
         if (dragState.draggedNodes.includes(node.id)) {
           const safePosition = dragManagerRef.current.getSafePosition(
@@ -435,10 +435,10 @@ export function useDragDrop(
     })
   }, [dragState, nodes, onNodesChange])
 
-  // 结束区域选择
+  // End area selection
   const endAreaSelection = useCallback(() => {
     if (isSelecting) {
-      // 计算选择区域内的节点
+      // Find the nodes inside the selection area
       const selectionRect = {
         left: Math.min(selectionStart.x, selectionEnd.x),
         top: Math.min(selectionStart.y, selectionEnd.y),
@@ -455,7 +455,7 @@ export function useDragDrop(
             bottom: node.position.y + node.size.height
           }
 
-          // 检查节点是否与选择区域相交
+          // Check whether the node intersects the selection area
           return !(
             nodeRect.right < selectionRect.left ||
             nodeRect.left > selectionRect.right ||

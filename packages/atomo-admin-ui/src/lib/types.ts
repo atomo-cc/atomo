@@ -40,8 +40,8 @@ export interface FieldUIConfig {
   label?: string
   placeholder?: string
   helpText?: string
-  component?: string  // 自定义组件名称
-  options?: any[]     // 选择器选项
+  component?: string  // Custom component name
+  options?: any[]     // Options for the selector
   validation?: Record<string, any>
 }
 
@@ -89,7 +89,7 @@ export type FieldType =
   | 'email'
   | 'url'
   | 'json'
-  | 'blocks'  // Atomo 富文本块
+  | 'blocks'  // Atomo rich-text blocks
   | 'reference'
   | 'array'
   | 'file'

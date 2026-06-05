@@ -1,7 +1,7 @@
 /**
- * Collaboration Indicator - 实时协作指示器
- * 
- * 显示在线用户、协作状态和用户活动
+ * Collaboration Indicator - Real-time collaboration indicator
+ *
+ * Displays online users, collaboration status, and user activity
  */
 
 import React from 'react'
@@ -28,7 +28,7 @@ export function CollaborationIndicator({
 
   return (
     <div className={cn('flex items-center gap-3', className)}>
-      {/* 连接状态 */}
+      {/* Connection status */}
       <div className="flex items-center gap-1">
         {isConnected ? (
           <Wifi className="h-4 w-4 text-green-600" />
@@ -39,11 +39,11 @@ export function CollaborationIndicator({
           'text-xs font-medium',
           isConnected ? 'text-green-600' : 'text-red-600'
         )}>
-          {isConnected ? '已连接' : '已断开'}
+          {isConnected ? 'Connected' : 'Disconnected'}
         </span>
       </div>
 
-      {/* 在线用户 */}
+      {/* Online users */}
       {isConnected && otherUsers.length > 0 && (
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-gray-600" />
@@ -60,9 +60,9 @@ export function CollaborationIndicator({
         </div>
       )}
 
-      {/* 无其他用户时的提示 */}
+      {/* Message shown when no other users are online */}
       {isConnected && otherUsers.length === 0 && (
-        <span className="text-xs text-gray-500">只有你在线</span>
+        <span className="text-xs text-gray-500">You're the only one online</span>
       )}
     </div>
   )
@@ -99,8 +99,8 @@ function UserAvatar({ user, size = 'sm' }: UserAvatarProps) {
         user.name.charAt(0).toUpperCase()
       )}
       
-      {/* 在线状态指示器 */}
-      <Circle 
+      {/* Online status indicator */}
+      <Circle
         className="absolute -bottom-0.5 -right-0.5 h-2 w-2 fill-green-500 text-green-500 border border-white rounded-full" 
       />
     </div>
@@ -108,7 +108,7 @@ function UserAvatar({ user, size = 'sm' }: UserAvatarProps) {
 }
 
 /**
- * 协作光标组件
+ * Collaboration cursor component
  */
 interface CollaborationCursorProps {
   user: CollaborationUser
@@ -123,8 +123,8 @@ export function CollaborationCursor({ user, x, y }: CollaborationCursorProps) {
       style={{ left: x, top: y }}
     >
       <div className="relative">
-        {/* 光标 */}
-        <svg 
+        {/* Cursor */}
+        <svg
           width="16" 
           height="16" 
           viewBox="0 0 16 16" 
@@ -138,8 +138,8 @@ export function CollaborationCursor({ user, x, y }: CollaborationCursorProps) {
           />
         </svg>
         
-        {/* 用户名标签 */}
-        <div 
+        {/* Username label */}
+        <div
           className="absolute top-4 left-2 px-2 py-1 rounded text-white text-xs font-medium whitespace-nowrap"
           style={{ backgroundColor: user.color }}
         >
@@ -151,7 +151,7 @@ export function CollaborationCursor({ user, x, y }: CollaborationCursorProps) {
 }
 
 /**
- * 协作选择范围组件
+ * Collaboration selection-range component
  */
 interface CollaborationSelectionProps {
   user: CollaborationUser
@@ -164,28 +164,28 @@ export function CollaborationSelection({ user, element, start, end }: Collaborat
   React.useEffect(() => {
     if (!element) return
 
-    // 创建选择范围高亮
+    // Create the selection-range highlight
     const range = document.createRange()
     const selection = window.getSelection()
-    
+
     try {
       range.setStart(element.firstChild || element, start)
       range.setEnd(element.firstChild || element, end)
-      
-      // 创建高亮元素
+
+      // Create the highlight element
       const highlight = document.createElement('span')
       highlight.className = 'collaboration-selection'
-      highlight.style.backgroundColor = user.color + '30' // 30% 透明度
+      highlight.style.backgroundColor = user.color + '30' // 30% opacity
       highlight.style.position = 'relative'
-      
+
       range.surroundContents(highlight)
-      
+
     } catch (error) {
-      console.warn('无法创建协作选择高亮:', error)
+      console.warn('Failed to create collaboration selection highlight:', error)
     }
 
     return () => {
-      // 清理高亮
+      // Clean up highlights
       const highlights = element.querySelectorAll('.collaboration-selection')
       highlights.forEach(h => {
         const parent = h.parentNode
@@ -201,7 +201,7 @@ export function CollaborationSelection({ user, element, start, end }: Collaborat
 }
 
 /**
- * 输入状态指示器
+ * Typing status indicator
  */
 interface TypingIndicatorProps {
   users: CollaborationUser[]
@@ -223,11 +223,11 @@ export function TypingIndicator({ users, element }: TypingIndicatorProps) {
         ))}
       </div>
       <span>
-        {users.length === 1 
-          ? `${users[0].name} 正在输入...`
+        {users.length === 1
+          ? `${users[0].name} is typing...`
           : users.length === 2
-          ? `${users[0].name} 和 ${users[1].name} 正在输入...`
-          : `${users[0].name} 等 ${users.length} 人正在输入...`
+          ? `${users[0].name} and ${users[1].name} are typing...`
+          : `${users[0].name} and ${users.length - 1} others are typing...`
         }
       </span>
     </div>

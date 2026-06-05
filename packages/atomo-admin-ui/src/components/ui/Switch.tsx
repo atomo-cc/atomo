@@ -1,5 +1,5 @@
 /**
- * Switch Component - 基于 Radix UI 的开关组件
+ * Switch Component — a switch built on Radix UI
  */
 
 import * as React from 'react'

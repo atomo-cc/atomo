@@ -1,11 +1,11 @@
 /**
  * Real-time Collaboration System
- * 
- * 提供实时协作功能的基础架构，包括：
- * - WebSocket连接管理
- * - 用户状态同步
- * - 冲突解决机制
- * - 协作事件处理
+ *
+ * Foundational infrastructure for real-time collaboration, including:
+ * - WebSocket connection management
+ * - User presence synchronization
+ * - Conflict resolution
+ * - Collaboration event handling
  */
 
 import React from 'react'
@@ -84,7 +84,7 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 连接到协作服务
+   * Connect to the collaboration service.
    */
   async connect(wsUrl?: string): Promise<void> {
     const url = wsUrl || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/collaboration`
@@ -98,13 +98,13 @@ export class CollaborationManager extends BrowserEventEmitter {
       this.ws.onerror = this.handleError.bind(this)
       
     } catch (error) {
-      console.error('协作连接失败:', error)
+      console.error('Collaboration connection failed:', error)
       this.emit('error', error)
     }
   }
 
   /**
-   * 断开连接
+   * Disconnect.
    */
   disconnect(): void {
     if (this.heartbeatInterval) {
@@ -123,11 +123,11 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 发送协作事件
+   * Send a collaboration event.
    */
   sendEvent(event: Omit<CollaborationEvent, 'userId' | 'timestamp'>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket 未连接，无法发送事件')
+      console.warn('WebSocket is not connected; cannot send event')
       return
     }
 
@@ -141,7 +141,7 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 更新光标位置
+   * Update the cursor position.
    */
   updateCursor(x: number, y: number, element?: string): void {
     this.state.currentUser.cursor = { x, y, element }
@@ -153,7 +153,7 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 更新选择范围
+   * Update the selection range.
    */
   updateSelection(start: number, end: number, element?: string): void {
     this.state.currentUser.selection = { start, end, element }
@@ -165,7 +165,7 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 发送数据变更
+   * Send a data change.
    */
   sendDataChange(path: string, operation: 'create' | 'update' | 'delete', data: any): void {
     this.sendEvent({
@@ -175,7 +175,7 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 发送输入状态
+   * Send typing status.
    */
   sendTyping(element: string, isTyping: boolean): void {
     this.sendEvent({
@@ -185,31 +185,31 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   /**
-   * 获取当前状态
+   * Get the current state.
    */
   getState(): CollaborationState {
     return { ...this.state }
   }
 
   /**
-   * 获取在线用户列表
+   * Get the list of online users.
    */
   getOnlineUsers(): CollaborationUser[] {
     return Array.from(this.state.users.values())
   }
 
   private handleOpen(): void {
-    console.log('协作连接已建立')
+    console.log('Collaboration connection established')
     this.state.isConnected = true
     this.reconnectAttempts = 0
     
-    // 发送用户加入事件
+    // Send the user-join event
     this.sendEvent({
       type: 'user-join',
       data: this.state.currentUser
     })
 
-    // 启动心跳
+    // Start the heartbeat
     this.startHeartbeat()
     
     this.emit('connected')
@@ -220,12 +220,12 @@ export class CollaborationManager extends BrowserEventEmitter {
       const collaborationEvent: CollaborationEvent = JSON.parse(event.data)
       this.processEvent(collaborationEvent)
     } catch (error) {
-      console.error('解析协作消息失败:', error)
+      console.error('Failed to parse collaboration message:', error)
     }
   }
 
   private handleClose(): void {
-    console.log('协作连接已断开')
+    console.log('Collaboration connection closed')
     this.state.isConnected = false
     
     if (this.heartbeatInterval) {
@@ -233,10 +233,10 @@ export class CollaborationManager extends BrowserEventEmitter {
       this.heartbeatInterval = null
     }
 
-    // 尝试重连
+    // Attempt to reconnect
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      console.log(`尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+      console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
       setTimeout(() => this.connect(), 2000 * this.reconnectAttempts)
     }
 
@@ -244,12 +244,12 @@ export class CollaborationManager extends BrowserEventEmitter {
   }
 
   private handleError(error: Event): void {
-    console.error('协作连接错误:', error)
+    console.error('Collaboration connection error:', error)
     this.emit('error', error)
   }
 
   private processEvent(event: CollaborationEvent): void {
-    // 忽略自己发送的事件
+    // Ignore events sent by ourselves
     if (event.userId === this.state.currentUser.id) {
       return
     }
@@ -301,12 +301,12 @@ export class CollaborationManager extends BrowserEventEmitter {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'ping' }))
       }
-    }, 30000) // 30秒心跳
+    }, 30000) // 30-second heartbeat
   }
 }
 
 /**
- * 用户颜色生成器
+ * User color generator.
  */
 export function generateUserColor(userId: string): string {
   const colors = [
@@ -323,7 +323,7 @@ export function generateUserColor(userId: string): string {
 }
 
 /**
- * 协作钩子
+ * Collaboration hook.
  */
 export function useCollaboration(roomId: string, currentUser: Omit<CollaborationUser, 'lastSeen' | 'color'>) {
   const [manager] = React.useState(() => {
@@ -350,7 +350,7 @@ export function useCollaboration(roomId: string, currentUser: Omit<Collaboration
     manager.on('cursor-move', updateState)
     manager.on('selection-change', updateState)
 
-    // 连接到协作服务
+    // Connect to the collaboration service
     manager.connect()
 
     return () => {

@@ -1,7 +1,7 @@
 /**
- * Media Uploader - 媒体文件上传组件
- * 
- * 支持拖拽上传、预览、进度显示等功能
+ * Media Uploader - Media file upload component
+ *
+ * Supports drag-and-drop upload, preview, progress display, and more
  */
 
 import { useState, useRef, useCallback } from 'react'
@@ -61,7 +61,7 @@ export function MediaUploader({
   // Keep the raw File per item id so retry can actually re-upload (was faked before).
   const filesRef = useRef<Record<string, File>>({})
 
-  // 文件类型检测
+  // Detect file type
   const getFileType = (file: File) => {
     if (file.type.startsWith('image/')) return 'image'
     if (file.type.startsWith('video/')) return 'video'
@@ -72,10 +72,10 @@ export function MediaUploader({
 
 
 
-  // 验证文件
+  // Validate file
   const validateFile = (file: File): string | null => {
     if (file.size > maxFileSize) {
-      return `文件大小超过限制 (${formatFileSize(maxFileSize)})`
+      return `File size exceeds the limit (${formatFileSize(maxFileSize)})`
     }
 
     if (accept !== '*/*') {
@@ -88,14 +88,14 @@ export function MediaUploader({
       })
       
       if (!isAccepted) {
-        return '文件类型不被支持'
+        return 'File type is not supported'
       }
     }
 
     return null
   }
 
-  // 上传文件
+  // Upload file
   const uploadFile = async (file: File): Promise<UploadedFile> => {
     const fileId = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     filesRef.current[fileId] = file
@@ -118,12 +118,12 @@ export function MediaUploader({
       throw {
         ...uploadedFile,
         status: 'error',
-        error: error instanceof Error ? error.message : '上传失败'
+        error: error instanceof Error ? error.message : 'Upload failed'
       } as UploadedFile
     }
   }
 
-  // 处理文件选择
+  // Handle file selection
   const handleFiles = useCallback(async (files: FileList) => {
     if (disabled) return
 
@@ -136,7 +136,7 @@ export function MediaUploader({
     for (const file of filesToProcess) {
       const error = validateFile(file)
       if (error) {
-        // 添加错误文件
+        // Add error file
         const errorFile: UploadedFile = {
           id: `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: file.name,
@@ -149,7 +149,7 @@ export function MediaUploader({
         continue
       }
 
-      // 添加到上传队列
+      // Add to upload queue
       const uploadingFile: UploadedFile = {
         id: `uploading_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         name: file.name,
@@ -170,7 +170,7 @@ export function MediaUploader({
     }
   }, [value, onChange, disabled, multiple, maxFiles, maxFileSize, accept, uploadEndpoint])
 
-  // 拖拽处理
+  // Drag-and-drop handling
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
@@ -195,26 +195,26 @@ export function MediaUploader({
     setDragOver(false)
   }, [])
 
-  // 删除文件
+  // Remove file
   const removeFile = (fileId: string) => {
     onChange(value.filter(f => f.id !== fileId))
   }
 
-  // 重试上传
+  // Retry upload
   const retryUpload = async (file: UploadedFile) => {
     const updatedFile = { ...file, status: 'uploading' as const, progress: 0, error: undefined }
     onChange(value.map(f => f.id === file.id ? updatedFile : f))
 
     const original = filesRef.current[file.id]
     if (!original) {
-      onChange(value.map(f => f.id === file.id ? { ...f, status: 'error' as const, error: '无法重试（文件已丢失）' } : f))
+      onChange(value.map(f => f.id === file.id ? { ...f, status: 'error' as const, error: 'Cannot retry (file is no longer available)' } : f))
       return
     }
     try {
       const { url } = await apiClient.uploadMedia(original)
       onChange(value.map(f => f.id === file.id ? { ...f, status: 'success' as const, progress: 100, url } : f))
     } catch (error) {
-      onChange(value.map(f => f.id === file.id ? { ...f, status: 'error' as const, error: error instanceof Error ? error.message : '重试失败' } : f))
+      onChange(value.map(f => f.id === file.id ? { ...f, status: 'error' as const, error: error instanceof Error ? error.message : 'Retry failed' } : f))
     }
   }
 
@@ -222,7 +222,7 @@ export function MediaUploader({
 
   return (
     <div className="space-y-4">
-      {/* 上传区域 */}
+      {/* Upload area */}
       {canUploadMore && !disabled && (
         <div
           data-testid="media-uploader-dropzone"
@@ -240,12 +240,12 @@ export function MediaUploader({
         >
           <Upload className="h-8 w-8 mx-auto mb-4 text-gray-400" />
           <p className="text-sm text-gray-600 mb-2">
-            拖拽文件到此处或点击上传
+            Drag and drop files here, or click to upload
           </p>
           <p className="text-xs text-gray-500">
-            支持 {accept === '*/*' ? '所有文件类型' : accept}，
-            最大 {formatFileSize(maxFileSize)}，
-            最多 {maxFiles} 个文件
+            Supports {accept === '*/*' ? 'all file types' : accept},
+            up to {formatFileSize(maxFileSize)},
+            max {maxFiles} files
           </p>
           
           <input
@@ -259,7 +259,7 @@ export function MediaUploader({
         </div>
       )}
 
-      {/* 文件列表 */}
+      {/* File list */}
       {value.length > 0 && (
         <div className="space-y-2">
           {value.map((file) => (
@@ -274,18 +274,18 @@ export function MediaUploader({
         </div>
       )}
 
-      {/* 状态信息 */}
+      {/* Status info */}
       {value.length > 0 && (
         <div className="text-xs text-gray-500">
-          {value.length} / {maxFiles} 个文件
-          {value.length >= maxFiles && ' (已达上限)'}
+          {value.length} / {maxFiles} files
+          {value.length >= maxFiles && ' (limit reached)'}
         </div>
       )}
     </div>
   )
 }
 
-// 文件项组件
+// File item component
 interface FileItemProps {
   file: UploadedFile
   onRemove: () => void
@@ -294,7 +294,7 @@ interface FileItemProps {
 }
 
 function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
-  // 文件图标
+  // File icon
   const getFileIcon = (fileType: string) => {
     switch (fileType) {
       case 'image': return ImageIcon
@@ -312,7 +312,7 @@ function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
     <Card>
       <CardContent className="p-3">
         <div className="flex items-center gap-3">
-          {/* 文件图标/预览 */}
+          {/* File icon / preview */}
           <div className="flex-shrink-0">
             {showPreview && isImage ? (
               <img 
@@ -327,7 +327,7 @@ function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
             )}
           </div>
 
-          {/* 文件信息 */}
+          {/* File info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium text-gray-900 truncate">
@@ -340,8 +340,8 @@ function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
                 }
                 className="text-xs"
               >
-                {file.status === 'uploading' ? '上传中' :
-                 file.status === 'success' ? '完成' : '失败'}
+                {file.status === 'uploading' ? 'Uploading' :
+                 file.status === 'success' ? 'Done' : 'Failed'}
               </Badge>
             </div>
             
@@ -349,7 +349,7 @@ function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
               {formatFileSize(file.size)}
             </p>
 
-                      {/* 进度条 */}
+                      {/* Progress bar */}
           {file.status === 'uploading' && file.progress !== undefined && (
             <div className="mt-2">
               <div className="w-full bg-gray-200 rounded-full h-1">
@@ -362,20 +362,20 @@ function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
             </div>
           )}
 
-            {/* 错误信息 */}
+            {/* Error message */}
             {file.status === 'error' && file.error && (
               <p className="text-xs text-danger-600 mt-1">{file.error}</p>
             )}
           </div>
 
-          {/* 操作按钮 */}
+          {/* Action buttons */}
           <div className="flex items-center gap-1">
             {file.status === 'error' && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onRetry}
-                title="重试"
+                title="Retry"
               >
                 <RotateCcw className="h-4 w-4" />
               </Button>
@@ -385,7 +385,7 @@ function FileItem({ file, onRemove, onRetry, showPreview }: FileItemProps) {
               variant="ghost"
               size="sm"
               onClick={onRemove}
-              title="删除"
+              title="Remove"
             >
               <X className="h-4 w-4" />
             </Button>

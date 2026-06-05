@@ -1,11 +1,11 @@
 /**
- * Connection Editor - 连接线编辑器
- * 
- * 用于创建和管理组件之间的连接：
- * - 数据流连接
- * - 事件触发连接
- * - 样式继承连接
- * - 可视化连接线
+ * Connection Editor - connection line editor
+ *
+ * Used to create and manage connections between components:
+ * - Data-flow connections
+ * - Event-trigger connections
+ * - Style-inheritance connections
+ * - Visual connection lines
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
@@ -24,7 +24,7 @@ import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { cn } from '../../lib/utils'
 
-// ==================== 类型定义 ====================
+// ==================== Type definitions ====================
 
 export interface ConnectionPoint {
   nodeId: string
@@ -59,30 +59,30 @@ interface ConnectionEditorProps {
   mode?: 'connect' | 'select'
 }
 
-// ==================== 连接类型配置 ====================
+// ==================== Connection type configuration ====================
 
 const connectionTypes = {
   data: {
-    label: '数据流',
+    label: 'Data Flow',
     icon: Database,
     color: '#3b82f6',
-    description: '传递数据值'
+    description: 'Passes data values'
   },
   event: {
-    label: '事件触发',
+    label: 'Event Trigger',
     icon: Zap,
     color: '#f59e0b',
-    description: '触发动作或事件'
+    description: 'Triggers an action or event'
   },
   style: {
-    label: '样式继承',
+    label: 'Style Inheritance',
     icon: Palette,
     color: '#8b5cf6',
-    description: '共享样式属性'
+    description: 'Shares style properties'
   }
 }
 
-// ==================== 主组件 ====================
+// ==================== Main component ====================
 
 export function ConnectionEditor({
   nodes,
@@ -106,13 +106,13 @@ export function ConnectionEditor({
   const [selectedConnection, setSelectedConnection] = useState<string | null>(null)
   const [connectionType, setConnectionType] = useState<'data' | 'event' | 'style'>('data')
 
-  // ==================== 连接点计算 ====================
+  // ==================== Connection point calculation ====================
 
   const getConnectionPoints = useCallback((node: FlowNode): ConnectionPoint[] => {
     const points: ConnectionPoint[] = []
     const { position, size } = node
 
-    // 根据节点类型确定连接点
+    // Determine connection points based on the node type
     const getNodeConnectionConfig = (nodeType: string) => {
       switch (nodeType) {
         case 'input':
@@ -148,7 +148,7 @@ export function ConnectionEditor({
 
     const config = getNodeConnectionConfig(node.type)
 
-    // 添加输入点
+    // Add input points
     config.inputs.forEach((side, index) => {
       points.push({
         nodeId: node.id,
@@ -158,7 +158,7 @@ export function ConnectionEditor({
       })
     })
 
-    // 添加输出点
+    // Add output points
     config.outputs.forEach((side, index) => {
       points.push({
         nodeId: node.id,
@@ -171,7 +171,7 @@ export function ConnectionEditor({
     return points
   }, [])
 
-  // 获取连接点的屏幕坐标
+  // Get the screen coordinates of a connection point
   const getConnectionPointPosition = useCallback((node: FlowNode, point: ConnectionPoint) => {
     const { position, size } = node
     const padding = 8
@@ -202,7 +202,7 @@ export function ConnectionEditor({
     }
   }, [])
 
-  // ==================== 路径计算 ====================
+  // ==================== Path calculation ====================
 
   const calculateConnectionPath = useCallback((
     start: { x: number; y: number },
@@ -214,13 +214,13 @@ export function ConnectionEditor({
     const dy = end.y - start.y
     const distance = Math.sqrt(dx * dx + dy * dy)
     
-    // 计算控制点
+    // Calculate the control points
     const controlOffset = Math.min(distance * 0.3, 100)
     
     let control1: { x: number; y: number }
     let control2: { x: number; y: number }
 
-    // 根据连接方向调整控制点
+    // Adjust the control points based on the connection direction
     switch (startSide) {
       case 'right':
         control1 = { x: start.x + controlOffset, y: start.y }
@@ -262,7 +262,7 @@ export function ConnectionEditor({
     }
   }, [])
 
-  // ==================== 拖拽处理 ====================
+  // ==================== Drag handling ====================
 
   const handleConnectionStart = useCallback((point: ConnectionPoint, position: { x: number; y: number }) => {
     if (disabled || mode !== 'connect') return
@@ -286,7 +286,7 @@ export function ConnectionEditor({
       startPos,
       position,
       dragState.sourcePoint.side,
-      'left' // 默认目标方向
+      'left' // Default target direction
     )
 
     setDragState(prev => ({
@@ -299,7 +299,7 @@ export function ConnectionEditor({
     if (!dragState.isDragging || !dragState.sourcePoint) return
 
     if (targetPoint && targetPoint.nodeId !== dragState.sourcePoint.nodeId) {
-      // 创建新连接
+      // Create a new connection
       const newConnection: NodeConnection = {
         id: `conn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         source: dragState.sourcePoint.nodeId,
@@ -318,14 +318,14 @@ export function ConnectionEditor({
     })
   }, [dragState, connectionType, connections, onConnectionsChange])
 
-  // ==================== 连接删除 ====================
+  // ==================== Connection deletion ====================
 
   const deleteConnection = useCallback((connectionId: string) => {
     onConnectionsChange(connections.filter(conn => conn.id !== connectionId))
     setSelectedConnection(null)
   }, [connections, onConnectionsChange])
 
-  // ==================== 渲染连接线 ====================
+  // ==================== Render connection lines ====================
 
   const renderConnection = useCallback((connection: NodeConnection) => {
     const sourceNode = nodes.find(n => n.id === connection.source)
@@ -336,7 +336,7 @@ export function ConnectionEditor({
     const sourcePoints = getConnectionPoints(sourceNode)
     const targetPoints = getConnectionPoints(targetNode)
 
-    // 简化：使用节点右侧到左侧的连接
+    // Simplified: connect from the node's right side to the left side
     const sourcePos = getConnectionPointPosition(sourceNode, {
       nodeId: sourceNode.id,
       side: 'right',
@@ -357,7 +357,7 @@ export function ConnectionEditor({
 
     return (
       <g key={connection.id}>
-        {/* 连接线 */}
+        {/* Connection line */}
         <path
           d={pathD}
           stroke={typeConfig.color}
@@ -370,7 +370,7 @@ export function ConnectionEditor({
           onClick={() => setSelectedConnection(connection.id)}
         />
 
-        {/* 箭头 */}
+        {/* Arrow */}
         <defs>
           <marker
             id={`arrow-${connection.id}`}
@@ -394,7 +394,7 @@ export function ConnectionEditor({
           markerEnd={`url(#arrow-${connection.id})`}
         />
 
-        {/* 连接类型图标 */}
+        {/* Connection type icon */}
         <foreignObject
           x={path.controlPoints[0].x - 10}
           y={path.controlPoints[0].y - 10}
@@ -410,7 +410,7 @@ export function ConnectionEditor({
     )
   }, [nodes, getConnectionPoints, getConnectionPointPosition, calculateConnectionPath, selectedConnection])
 
-  // ==================== 连接点渲染 ====================
+  // ==================== Connection point rendering ====================
 
   const renderConnectionPoints = useCallback((node: FlowNode) => {
     if (mode !== 'connect') return null
@@ -441,7 +441,7 @@ export function ConnectionEditor({
     })
   }, [mode, getConnectionPoints, getConnectionPointPosition, handleConnectionStart])
 
-  // ==================== 鼠标事件 ====================
+  // ==================== Mouse events ====================
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -474,20 +474,20 @@ export function ConnectionEditor({
     }
   }, [dragState.isDragging, zoom, handleConnectionDrag, handleConnectionEnd])
 
-  // ==================== 渲染 ====================
+  // ==================== Render ====================
 
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {/* 连接线 SVG */}
+      {/* Connection line SVG */}
       <svg
         ref={svgRef}
         className="absolute inset-0 w-full h-full pointer-events-auto"
         style={{ zIndex: 10 }}
       >
-        {/* 渲染现有连接 */}
+        {/* Render existing connections */}
         {connections.map(renderConnection)}
 
-        {/* 渲染拖拽中的连接线 */}
+        {/* Render the connection line being dragged */}
         {dragState.isDragging && dragState.currentPath && (
           <path
             d={`M ${dragState.currentPath.start.x} ${dragState.currentPath.start.y} C ${dragState.currentPath.controlPoints[0].x} ${dragState.currentPath.controlPoints[0].y}, ${dragState.currentPath.controlPoints[1].x} ${dragState.currentPath.controlPoints[1].y}, ${dragState.currentPath.end.x} ${dragState.currentPath.end.y}`}
@@ -499,14 +499,14 @@ export function ConnectionEditor({
           />
         )}
 
-        {/* 渲染连接点 */}
+        {/* Render connection points */}
         {nodes.map(renderConnectionPoints)}
       </svg>
 
-      {/* 连接工具栏 */}
+      {/* Connection toolbar */}
       {mode === 'connect' && (
         <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg border p-3 pointer-events-auto">
-          <div className="text-sm font-medium mb-2">连接模式</div>
+          <div className="text-sm font-medium mb-2">Connection Mode</div>
           <div className="space-y-2">
             {Object.entries(connectionTypes).map(([key, config]) => (
               <Button
@@ -524,11 +524,11 @@ export function ConnectionEditor({
         </div>
       )}
 
-      {/* 连接属性面板 */}
+      {/* Connection properties panel */}
       {selectedConnection && (
         <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg border p-3 pointer-events-auto w-64">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-medium">连接属性</div>
+            <div className="text-sm font-medium">Connection Properties</div>
             <Button
               variant="ghost"
               size="sm"
@@ -540,7 +540,7 @@ export function ConnectionEditor({
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-gray-600">连接类型</label>
+              <label className="text-xs text-gray-600">Connection Type</label>
               <Select
                 value={connections.find(c => c.id === selectedConnection)?.type || 'data'}
                 onValueChange={(value) => {

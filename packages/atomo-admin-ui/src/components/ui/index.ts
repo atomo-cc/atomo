@@ -1,8 +1,8 @@
 /**
- * Atomo UI Components - 第三层：精装修组件
- * 
- * 基于 Radix UI + Tailwind CSS 的完整组件库
- * 为 Atomo Admin UI 提供统一的设计语言
+ * Atomo UI Components - Layer 3: fully-styled components
+ *
+ * A complete component library built on Radix UI + Tailwind CSS,
+ * providing a unified design language for the Atomo Admin UI.
  */
 
 export { Button } from './Button'

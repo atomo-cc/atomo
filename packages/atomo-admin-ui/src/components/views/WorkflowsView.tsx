@@ -91,11 +91,11 @@ export function WorkflowsView() {
       <div className="flex items-center gap-3">
         <WorkflowIcon className="h-7 w-7 text-primary-600" />
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">工作流</h1>
-          <p className="text-gray-600 mt-1">注册、查看并手动运行工作流</p>
+          <h1 className="text-3xl font-bold text-gray-900">Workflows</h1>
+          <p className="text-gray-600 mt-1">Register, view, and manually run workflows</p>
         </div>
         <Button className="ml-auto" onClick={() => navigate('/workflows/design')}>
-          <Plus className="h-4 w-4 mr-1" /> 设计器新建
+          <Plus className="h-4 w-4 mr-1" /> New in Designer
         </Button>
       </div>
 
@@ -107,14 +107,14 @@ export function WorkflowsView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>已注册的工作流</CardTitle>
-          <CardDescription>事件触发的工作流会自动运行；也可在此手动运行。</CardDescription>
+          <CardTitle>Registered Workflows</CardTitle>
+          <CardDescription>Event-triggered workflows run automatically; you can also run them manually here.</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <Spinner />
           ) : workflows.length === 0 ? (
-            <p className="text-gray-500 text-sm">暂无已注册的工作流。</p>
+            <p className="text-gray-500 text-sm">No workflows registered yet.</p>
           ) : (
             <ul className="divide-y divide-gray-200">
               {workflows.map((name) => (
@@ -122,7 +122,7 @@ export function WorkflowsView() {
                   <span className="font-medium text-gray-900">{name}</span>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="ghost" onClick={() => handleEdit(name)}>
-                      <Edit className="h-4 w-4 mr-1" /> 编辑
+                      <Edit className="h-4 w-4 mr-1" /> Edit
                     </Button>
                     <Button
                       size="sm"
@@ -130,7 +130,7 @@ export function WorkflowsView() {
                       onClick={() => run.mutate(name)}
                       disabled={run.isPending}
                     >
-                      <Play className="h-4 w-4 mr-1" /> 运行
+                      <Play className="h-4 w-4 mr-1" /> Run
                     </Button>
                     <Button
                       size="sm"
@@ -138,7 +138,7 @@ export function WorkflowsView() {
                       onClick={() => remove.mutate(name)}
                       disabled={remove.isPending}
                     >
-                      <Trash2 className="h-4 w-4 mr-1" /> 删除
+                      <Trash2 className="h-4 w-4 mr-1" /> Delete
                     </Button>
                   </div>
                 </li>
@@ -151,7 +151,7 @@ export function WorkflowsView() {
       {lastRun && (
         <Card>
           <CardHeader>
-            <CardTitle>上次运行结果</CardTitle>
+            <CardTitle>Last Run Result</CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="text-xs bg-gray-50 rounded-md p-3 overflow-auto">
@@ -163,8 +163,8 @@ export function WorkflowsView() {
 
       <Card>
         <CardHeader>
-          <CardTitle>注册工作流</CardTitle>
-          <CardDescription>粘贴工作流 JSON 定义（trigger / steps）。</CardDescription>
+          <CardTitle>Register Workflow</CardTitle>
+          <CardDescription>Paste a workflow JSON definition (trigger / steps).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Textarea
@@ -174,7 +174,7 @@ export function WorkflowsView() {
             className="font-mono text-xs"
           />
           <Button onClick={handleRegister} disabled={register.isPending}>
-            <Plus className="h-4 w-4 mr-1" /> 注册
+            <Plus className="h-4 w-4 mr-1" /> Register
           </Button>
         </CardContent>
       </Card>

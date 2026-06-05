@@ -1,7 +1,7 @@
 /**
- * Entity Detail View - 实体详情/编辑视图
- * 
- * 支持查看、编辑和创建实体，动态生成表单
+ * Entity Detail View
+ *
+ * Supports viewing, editing, and creating records with dynamically generated forms.
  */
 
 import React, { useState } from 'react'
@@ -30,7 +30,7 @@ import { formatDate, getFieldLabel } from '../../lib/utils'
 
 interface EntityDetailViewProps {
   modelName: string
-  entityId?: string // undefined 表示创建模式
+  entityId?: string // undefined indicates create mode
   modelMetadata: ModelMetadata
   schema: SchemaMetadata
   mode: 'detail' | 'edit' | 'create'
@@ -47,8 +47,8 @@ export function EntityDetailView({
   const queryClient = useQueryClient()
   const [mode, setMode] = useState(initialMode)
   
-  // 获取实体数据（仅在非创建模式下）
-  const { 
+  // Fetch entity data (only when not in create mode)
+  const {
     data: entity, 
     isLoading, 
     error 
@@ -58,7 +58,7 @@ export function EntityDetailView({
     enabled: !!entityId && mode !== 'create',
   })
 
-  // 更新实体
+  // Update entity
   const updateMutation = useMutation({
     mutationFn: (data: Partial<EntityData>) => 
       apiClient.updateEntity(modelName, entityId!, data),
@@ -69,7 +69,7 @@ export function EntityDetailView({
     },
   })
 
-  // 创建实体
+  // Create entity
   const createMutation = useMutation({
     mutationFn: (data: Partial<EntityData>) => 
       apiClient.createEntity(modelName, data),
@@ -79,7 +79,7 @@ export function EntityDetailView({
     },
   })
 
-  // 删除实体
+  // Delete entity
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.deleteEntity(modelName, entityId!),
     onSuccess: () => {
@@ -88,7 +88,7 @@ export function EntityDetailView({
     },
   })
 
-  // 表单提交
+  // Form submission
   const handleSave = async (formData: any) => {
     try {
       if (mode === 'create') {
@@ -97,27 +97,27 @@ export function EntityDetailView({
         await updateMutation.mutateAsync(formData)
       }
     } catch (error) {
-      console.error('保存失败:', error)
-      alert('保存失败，请重试')
+      console.error('Save failed:', error)
+      alert('Save failed, please try again')
     }
   }
 
-  // 删除确认
+  // Delete confirmation
   const handleDelete = () => {
-    if (confirm(`确定要删除这个 ${getFieldLabel(modelName)} 吗？`)) {
+    if (confirm(`Are you sure you want to delete this ${getFieldLabel(modelName)}?`)) {
       deleteMutation.mutate()
     }
   }
 
-  // 错误状态
+  // Error state
   if (error) {
     return (
       <Card className="m-6">
         <CardContent className="py-8 text-center">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">加载失败</h3>
-          <p className="text-gray-600 mb-4">无法加载 {getFieldLabel(modelName)} 数据</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Failed to Load</h3>
+          <p className="text-gray-600 mb-4">Unable to load {getFieldLabel(modelName)} data</p>
           <Button onClick={() => navigate(`/entities/${modelName}`)}>
-            返回列表
+            Back to List
           </Button>
         </CardContent>
       </Card>
@@ -130,7 +130,7 @@ export function EntityDetailView({
 
   return (
     <div className="p-6 space-y-6">
-      {/* 页面标题和操作 */}
+      {/* Page header and actions */}
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
           <Button
@@ -139,13 +139,13 @@ export function EntityDetailView({
             onClick={() => navigate(`/entities/${modelName}`)}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            返回列表
+            Back to List
           </Button>
-          
+
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
-              {isCreate ? `新建 ${getFieldLabel(modelName)}` : 
-               isEdit ? `编辑 ${getFieldLabel(modelName)}` : 
+              {isCreate ? `New ${getFieldLabel(modelName)}` :
+               isEdit ? `Edit ${getFieldLabel(modelName)}` :
                getFieldLabel(modelName)}
             </h1>
             {entity && (
@@ -162,7 +162,7 @@ export function EntityDetailView({
               variant="secondary"
               onClick={() => navigate(`/contacts/${entity.id}/timeline`)}
             >
-              查看时间线
+              View Timeline
             </Button>
           )}
           {isDetail && (
@@ -172,16 +172,16 @@ export function EntityDetailView({
                 onClick={() => setMode('edit')}
               >
                 <Edit2 className="h-4 w-4 mr-2" />
-                编辑
+                Edit
               </Button>
-              
+
               <Button
                 variant="danger"
                 onClick={handleDelete}
                 disabled={deleteMutation.isPending}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                删除
+                Delete
               </Button>
             </>
           )}
@@ -192,33 +192,33 @@ export function EntityDetailView({
               onClick={() => setMode('detail')}
             >
               <Eye className="h-4 w-4 mr-2" />
-              查看
+              View
             </Button>
           )}
         </div>
       </div>
 
-      {/* 主要内容 */}
+      {/* Main content */}
       {isLoading ? (
         <Card>
           <CardContent className="py-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">加载中...</p>
+            <p className="mt-4 text-gray-600">Loading...</p>
           </CardContent>
         </Card>
       ) : (
         <Tabs defaultValue="details" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="details">详情</TabsTrigger>
+            <TabsTrigger value="details">Details</TabsTrigger>
             {entity && (
               <>
-                <TabsTrigger value="history">历史记录</TabsTrigger>
-                <TabsTrigger value="relations">关联数据</TabsTrigger>
+                <TabsTrigger value="history">History</TabsTrigger>
+                <TabsTrigger value="relations">Related Data</TabsTrigger>
               </>
             )}
           </TabsList>
 
-          {/* 详情标签页 */}
+          {/* Details tab */}
           <TabsContent value="details">
             <Card>
               <CardContent className="p-6">
@@ -235,14 +235,14 @@ export function EntityDetailView({
             </Card>
           </TabsContent>
 
-          {/* 历史记录标签页 */}
+          {/* History tab */}
           {entity && (
             <TabsContent value="history">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="h-5 w-5" />
-                    变更历史
+                    Change History
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -250,7 +250,7 @@ export function EntityDetailView({
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
                       <User className="h-4 w-4 text-gray-500" />
                       <div className="flex-1">
-                        <div className="text-sm font-medium">创建记录</div>
+                        <div className="text-sm font-medium">Record Created</div>
                         <div className="text-xs text-gray-500">
                           {formatDate(entity.createdAt, 'time')}
                         </div>
@@ -261,7 +261,7 @@ export function EntityDetailView({
                       <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
                         <Edit2 className="h-4 w-4 text-gray-500" />
                         <div className="flex-1">
-                          <div className="text-sm font-medium">最后更新</div>
+                          <div className="text-sm font-medium">Last Updated</div>
                           <div className="text-xs text-gray-500">
                             {formatDate(entity.updatedAt, 'time')}
                           </div>
@@ -274,15 +274,15 @@ export function EntityDetailView({
             </TabsContent>
           )}
 
-          {/* 关联数据标签页 */}
+          {/* Related data tab */}
           {entity && (
             <TabsContent value="relations">
               <Card>
                 <CardHeader>
-                  <CardTitle>关联数据</CardTitle>
+                  <CardTitle>Related Data</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-gray-600">关联数据功能正在开发中...</p>
+                  <p className="text-gray-600">Related data is under development...</p>
                 </CardContent>
               </Card>
             </TabsContent>

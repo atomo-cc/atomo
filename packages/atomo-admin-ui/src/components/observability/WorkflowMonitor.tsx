@@ -1,7 +1,7 @@
 /**
- * Workflow Monitor - 工作流监控组件
- * 
- * 实时监控所有工作流的执行状态和性能指标
+ * Workflow Monitor
+ *
+ * Monitors the execution status and performance metrics of all workflows in real time
  */
 
 import React, { useState, useEffect } from 'react'
@@ -63,11 +63,11 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowInstance | null>(null)
 
-  // 工作流实例查询
+  // Workflow instance query
   const { data: workflows, isLoading, refetch } = useQuery({
     queryKey: ['workflows', timeRange, searchTerm, statusFilter],
     queryFn: () => fetchWorkflows(timeRange, searchTerm, statusFilter),
-    refetchInterval: 5000, // 5秒刷新
+    refetchInterval: 5000, // Refresh every 5s
   })
 
   const getStatusIcon = (status: WorkflowInstance['status']) => {
@@ -104,7 +104,7 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
     return `${seconds}s`
   }
 
-  // 统计信息
+  // Statistics
   const stats = workflows ? {
     total: workflows.length,
     running: workflows.filter(w => w.status === 'running').length,
@@ -117,14 +117,14 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
 
   return (
     <div className="space-y-6">
-      {/* 统计概览 */}
+      {/* Statistics overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-600">
               {stats?.total || 0}
             </div>
-            <div className="text-sm text-gray-600">总工作流</div>
+            <div className="text-sm text-gray-600">Total Workflows</div>
           </CardContent>
         </Card>
 
@@ -133,7 +133,7 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
             <div className="text-2xl font-bold text-green-600">
               {stats?.completed || 0}
             </div>
-            <div className="text-sm text-gray-600">已完成</div>
+            <div className="text-sm text-gray-600">Completed</div>
           </CardContent>
         </Card>
 
@@ -142,7 +142,7 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
             <div className="text-2xl font-bold text-orange-600">
               {stats?.running || 0}
             </div>
-            <div className="text-sm text-gray-600">运行中</div>
+            <div className="text-sm text-gray-600">Running</div>
           </CardContent>
         </Card>
 
@@ -151,52 +151,52 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
             <div className="text-2xl font-bold text-red-600">
               {stats?.failed || 0}
             </div>
-            <div className="text-sm text-gray-600">失败</div>
+            <div className="text-sm text-gray-600">Failed</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 搜索和筛选 */}
+      {/* Search and filter */}
       <Card>
         <CardContent className="p-4">
           <div className="flex gap-4 items-center">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="搜索工作流名称或ID..."
+                placeholder="Search workflows by name or ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9"
               />
             </div>
-            
+
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md text-sm"
             >
-              <option value="all">所有状态</option>
-              <option value="running">运行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">失败</option>
-              <option value="paused">暂停</option>
-              <option value="pending">等待中</option>
+              <option value="all">All Statuses</option>
+              <option value="running">Running</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="paused">Paused</option>
+              <option value="pending">Pending</option>
             </select>
 
             <Button variant="secondary" onClick={() => refetch()}>
-              刷新
+              Refresh
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* 工作流列表 */}
+      {/* Workflow list */}
       <div className="grid gap-4">
         {isLoading ? (
           <Card>
             <CardContent className="py-8 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">加载工作流数据...</p>
+              <p className="mt-4 text-gray-600">Loading workflow data...</p>
             </CardContent>
           </Card>
         ) : workflows && workflows.length > 0 ? (
@@ -215,28 +215,28 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
                     
                     <div className="mt-2 text-sm text-gray-600">
                       <p>ID: {workflow.id}</p>
-                      <p>触发者: {workflow.metadata.triggeredBy}</p>
-                      <p>实体: {workflow.metadata.entityType}#{workflow.metadata.entityId}</p>
+                      <p>Triggered by: {workflow.metadata.triggeredBy}</p>
+                      <p>Entity: {workflow.metadata.entityType}#{workflow.metadata.entityId}</p>
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
-                        <span className="font-medium text-gray-700">开始时间</span>
+                        <span className="font-medium text-gray-700">Start Time</span>
                         <p className="text-gray-600">{formatDate(workflow.startTime, 'time')}</p>
                       </div>
-                      
+
                       <div>
-                        <span className="font-medium text-gray-700">持续时间</span>
+                        <span className="font-medium text-gray-700">Duration</span>
                         <p className="text-gray-600">{formatDuration(workflow.duration)}</p>
                       </div>
-                      
+
                       <div>
-                        <span className="font-medium text-gray-700">当前步骤</span>
+                        <span className="font-medium text-gray-700">Current Step</span>
                         <p className="text-gray-600">{workflow.currentStep}</p>
                       </div>
-                      
+
                       <div>
-                        <span className="font-medium text-gray-700">进度</span>
+                        <span className="font-medium text-gray-700">Progress</span>
                         <div className="flex items-center gap-2">
                           <Progress value={workflow.progress} className="h-2 flex-1" />
                           <span className="text-xs">{workflow.progress}%</span>
@@ -248,7 +248,7 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
                       <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
                         <div className="flex items-center gap-2 text-red-800">
                           <AlertTriangle className="h-4 w-4" />
-                          <span className="font-medium">错误信息</span>
+                          <span className="font-medium">Error Message</span>
                         </div>
                         <p className="text-sm text-red-700 mt-1">{workflow.errorMessage}</p>
                       </div>
@@ -261,7 +261,7 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
                       size="sm"
                       onClick={() => setSelectedWorkflow(workflow)}
                     >
-                      查看详情
+                      View Details
                     </Button>
                     
                     <Button variant="ghost" size="sm">
@@ -276,16 +276,16 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
           <Card>
             <CardContent className="py-8 text-center">
               <Zap className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600">暂无工作流数据</p>
+              <p className="text-gray-600">No workflow data yet</p>
               <p className="text-sm text-gray-500 mt-1">
-                在指定时间范围内没有找到匹配的工作流实例
+                No matching workflow instances found in the selected time range
               </p>
             </CardContent>
           </Card>
         )}
       </div>
 
-      {/* 工作流详情模态框 */}
+      {/* Workflow detail modal */}
       {selectedWorkflow && (
         <WorkflowDetailModal
           workflow={selectedWorkflow}
@@ -296,7 +296,7 @@ export function WorkflowMonitor({ timeRange }: WorkflowMonitorProps) {
   )
 }
 
-// 工作流详情模态框组件
+// Workflow detail modal component
 interface WorkflowDetailModalProps {
   workflow: WorkflowInstance
   onClose: () => void
@@ -308,7 +308,7 @@ function WorkflowDetailModal({ workflow, onClose }: WorkflowDetailModalProps) {
       <Card className="w-full max-w-4xl max-h-[80vh] overflow-auto m-4">
         <CardHeader className="border-b">
           <div className="flex items-center justify-between">
-            <CardTitle>工作流详情: {workflow.name}</CardTitle>
+            <CardTitle>Workflow Details: {workflow.name}</CardTitle>
             <Button variant="ghost" onClick={onClose}>
               ×
             </Button>
@@ -316,51 +316,51 @@ function WorkflowDetailModal({ workflow, onClose }: WorkflowDetailModalProps) {
         </CardHeader>
         <CardContent className="p-6">
           <div className="space-y-6">
-            {/* 基本信息 */}
+            {/* Basic information */}
             <div>
-              <h3 className="font-medium mb-3">基本信息</h3>
+              <h3 className="font-medium mb-3">Basic Information</h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="font-medium text-gray-700">工作流ID</span>
+                  <span className="font-medium text-gray-700">Workflow ID</span>
                   <p className="text-gray-600">{workflow.id}</p>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">状态</span>
+                  <span className="font-medium text-gray-700">Status</span>
                   <p className="text-gray-600">{workflow.status}</p>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">开始时间</span>
+                  <span className="font-medium text-gray-700">Start Time</span>
                   <p className="text-gray-600">{formatDate(workflow.startTime, 'time')}</p>
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">持续时间</span>
+                  <span className="font-medium text-gray-700">Duration</span>
                   <p className="text-gray-600">{formatDuration(workflow.duration)}</p>
                 </div>
               </div>
             </div>
 
-            {/* 执行进度 */}
+            {/* Execution progress */}
             <div>
-              <h3 className="font-medium mb-3">执行进度</h3>
+              <h3 className="font-medium mb-3">Execution Progress</h3>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">
-                    步骤 {workflow.completedSteps}/{workflow.totalSteps}
+                    Step {workflow.completedSteps}/{workflow.totalSteps}
                   </span>
                   <span className="text-sm font-medium">{workflow.progress}%</span>
                 </div>
                 <Progress value={workflow.progress} className="h-3" />
                 <p className="text-sm text-gray-600">
-                  当前步骤: {workflow.currentStep}
+                  Current step: {workflow.currentStep}
                 </p>
               </div>
             </div>
 
-            {/* 步骤详情 - 这里可以添加更详细的步骤执行历史 */}
+            {/* Step details - more detailed step execution history can be added here */}
             <div>
-              <h3 className="font-medium mb-3">执行历史</h3>
+              <h3 className="font-medium mb-3">Execution History</h3>
               <div className="text-sm text-gray-600">
-                详细的步骤执行历史将在后续版本中提供...
+                Detailed step execution history will be available in a future release...
               </div>
             </div>
           </div>
@@ -370,24 +370,24 @@ function WorkflowDetailModal({ workflow, onClose }: WorkflowDetailModalProps) {
   )
 }
 
-// 模拟API函数
+// Mock API function
 async function fetchWorkflows(
-  timeRange: string, 
-  search: string, 
+  timeRange: string,
+  search: string,
   statusFilter: string
 ): Promise<WorkflowInstance[]> {
-  // 模拟API调用
+  // Simulate an API call
   await new Promise(resolve => setTimeout(resolve, 800))
 
   const mockWorkflows: WorkflowInstance[] = [
     {
       id: 'wf-001',
-      name: '客户数据同步工作流',
+      name: 'Customer Data Sync Workflow',
       status: 'running',
       startTime: new Date(Date.now() - 300000),
       duration: 300000,
       progress: 65,
-      currentStep: '数据验证',
+      currentStep: 'Data validation',
       totalSteps: 5,
       completedSteps: 3,
       metadata: {
@@ -398,13 +398,13 @@ async function fetchWorkflows(
     },
     {
       id: 'wf-002',
-      name: '订单处理工作流',
+      name: 'Order Processing Workflow',
       status: 'completed',
       startTime: new Date(Date.now() - 600000),
       endTime: new Date(Date.now() - 120000),
       duration: 480000,
       progress: 100,
-      currentStep: '完成',
+      currentStep: 'Completed',
       totalSteps: 4,
       completedSteps: 4,
       metadata: {
@@ -415,15 +415,15 @@ async function fetchWorkflows(
     },
     {
       id: 'wf-003',
-      name: '邮件通知工作流',
+      name: 'Email Notification Workflow',
       status: 'failed',
       startTime: new Date(Date.now() - 900000),
       duration: 60000,
       progress: 25,
-      currentStep: '发送邮件',
+      currentStep: 'Sending email',
       totalSteps: 3,
       completedSteps: 1,
-      errorMessage: 'SMTP服务器连接超时',
+      errorMessage: 'SMTP server connection timed out',
       metadata: {
         triggeredBy: 'automation',
         entityType: 'Company',
@@ -432,7 +432,7 @@ async function fetchWorkflows(
     }
   ]
 
-  // 应用筛选
+  // Apply filters
   let filtered = mockWorkflows
   
   if (search) {

@@ -1,14 +1,14 @@
 /**
- * Enhanced Flow Canvas - 增强版 Atomo 流动画布编辑器
- * 
- * 在原有基础上添加：
- * - 撤销/重做功能
- * - 键盘快捷键
- * - 高级拖拽交互
- * - 组件模板系统
- * - 导入/导出功能
- * - 多选操作
- * - 智能对齐辅助线
+ * Enhanced Flow Canvas - enhanced Atomo flow canvas editor
+ *
+ * Adds the following on top of the base editor:
+ * - Undo/redo
+ * - Keyboard shortcuts
+ * - Advanced drag interactions
+ * - Component template system
+ * - Import/export
+ * - Multi-select operations
+ * - Smart alignment guides
  */
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
@@ -33,7 +33,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip } from '../ui/Tooltip'
 import { cn } from '../../lib/utils'
 
-// ==================== 增强功能接口 ====================
+// ==================== Enhanced feature interfaces ====================
 
 interface HistoryState {
   nodes: FlowNode[]
@@ -75,13 +75,13 @@ interface EnhancedFlowCanvasProps {
   maxHistorySize?: number
 }
 
-// ==================== 模板库 ====================
+// ==================== Template library ====================
 
 const canvasTemplates: CanvasTemplate[] = [
   {
     id: 'contact-form',
-    name: '联系表单',
-    description: '标准的联系信息收集表单',
+    name: 'Contact Form',
+    description: 'A standard contact-information collection form',
     preview: '📝',
     data: {
       nodes: [
@@ -90,35 +90,35 @@ const canvasTemplates: CanvasTemplate[] = [
           type: 'form',
           position: { x: 50, y: 50 },
           size: { width: 400, height: 500 },
-          data: { label: '联系表单' }
+          data: { label: 'Contact Form' }
         },
         {
           id: 'name-input',
           type: 'input',
           position: { x: 80, y: 120 },
           size: { width: 200, height: 40 },
-          data: { label: '姓名', content: { placeholder: '请输入姓名' } }
+          data: { label: 'Name', content: { placeholder: 'Enter your name' } }
         },
         {
           id: 'email-input',
           type: 'input',
           position: { x: 80, y: 180 },
           size: { width: 200, height: 40 },
-          data: { label: '邮箱', content: { placeholder: '请输入邮箱' } }
+          data: { label: 'Email', content: { placeholder: 'Enter your email' } }
         },
         {
           id: 'message-textarea',
           type: 'textarea',
           position: { x: 80, y: 240 },
           size: { width: 300, height: 120 },
-          data: { label: '留言', content: { placeholder: '请输入留言内容' } }
+          data: { label: 'Message', content: { placeholder: 'Enter your message' } }
         },
         {
           id: 'submit-button',
           type: 'button',
           position: { x: 80, y: 380 },
           size: { width: 120, height: 40 },
-          data: { label: '提交按钮', content: { text: '提交' } }
+          data: { label: 'Submit Button', content: { text: 'Submit' } }
         }
       ],
       connections: []
@@ -126,8 +126,8 @@ const canvasTemplates: CanvasTemplate[] = [
   },
   {
     id: 'dashboard-layout',
-    name: '仪表板布局',
-    description: '标准的数据仪表板布局',
+    name: 'Dashboard Layout',
+    description: 'A standard data dashboard layout',
     preview: '📊',
     data: {
       nodes: [
@@ -136,42 +136,42 @@ const canvasTemplates: CanvasTemplate[] = [
           type: 'heading',
           position: { x: 50, y: 20 },
           size: { width: 600, height: 60 },
-          data: { label: '页面标题', content: { text: '数据仪表板', level: 1 } }
+          data: { label: 'Page Title', content: { text: 'Data Dashboard', level: 1 } }
         },
         {
           id: 'stats-card-1',
           type: 'card',
           position: { x: 50, y: 100 },
           size: { width: 180, height: 120 },
-          data: { label: '统计卡片1' }
+          data: { label: 'Stat Card 1' }
         },
         {
           id: 'stats-card-2',
           type: 'card',
           position: { x: 250, y: 100 },
           size: { width: 180, height: 120 },
-          data: { label: '统计卡片2' }
+          data: { label: 'Stat Card 2' }
         },
         {
           id: 'stats-card-3',
           type: 'card',
           position: { x: 450, y: 100 },
           size: { width: 180, height: 120 },
-          data: { label: '统计卡片3' }
+          data: { label: 'Stat Card 3' }
         },
         {
           id: 'chart-area',
           type: 'chart',
           position: { x: 50, y: 240 },
           size: { width: 400, height: 250 },
-          data: { label: '主图表' }
+          data: { label: 'Main Chart' }
         },
         {
           id: 'data-table',
           type: 'table',
           position: { x: 470, y: 240 },
           size: { width: 350, height: 250 },
-          data: { label: '数据表格' }
+          data: { label: 'Data Table' }
         }
       ],
       connections: []
@@ -179,21 +179,21 @@ const canvasTemplates: CanvasTemplate[] = [
   }
 ]
 
-// ==================== 键盘快捷键配置 ====================
+// ==================== Keyboard shortcut configuration ====================
 
 const keyboardShortcuts = [
-  { key: 'Ctrl+Z', action: 'undo', description: '撤销' },
-  { key: 'Ctrl+Y', action: 'redo', description: '重做' },
-  { key: 'Ctrl+S', action: 'save', description: '保存' },
-  { key: 'Ctrl+A', action: 'selectAll', description: '全选' },
-  { key: 'Delete', action: 'delete', description: '删除' },
-  { key: 'Ctrl+C', action: 'copy', description: '复制' },
-  { key: 'Ctrl+V', action: 'paste', description: '粘贴' },
-  { key: 'Ctrl+D', action: 'duplicate', description: '复制' },
-  { key: 'Escape', action: 'deselect', description: '取消选择' }
+  { key: 'Ctrl+Z', action: 'undo', description: 'Undo' },
+  { key: 'Ctrl+Y', action: 'redo', description: 'Redo' },
+  { key: 'Ctrl+S', action: 'save', description: 'Save' },
+  { key: 'Ctrl+A', action: 'selectAll', description: 'Select all' },
+  { key: 'Delete', action: 'delete', description: 'Delete' },
+  { key: 'Ctrl+C', action: 'copy', description: 'Copy' },
+  { key: 'Ctrl+V', action: 'paste', description: 'Paste' },
+  { key: 'Ctrl+D', action: 'duplicate', description: 'Duplicate' },
+  { key: 'Escape', action: 'deselect', description: 'Deselect' }
 ]
 
-// ==================== 主组件 ====================
+// ==================== Main component ====================
 
 export function EnhancedFlowCanvas({
   value = { nodes: [], connections: [] },
@@ -207,26 +207,26 @@ export function EnhancedFlowCanvas({
   enableAlignment = true,
   maxHistorySize = 50
 }: EnhancedFlowCanvasProps) {
-  // 历史记录管理
+  // History management
   const [history, setHistory] = useState<HistoryState[]>([{
     nodes: value.nodes,
     connections: value.connections,
     timestamp: Date.now()
   }])
   const [historyIndex, setHistoryIndex] = useState(0)
-  
-  // 对齐辅助线
+
+  // Alignment guides
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([])
   const [showAlignmentGuides, setShowAlignmentGuides] = useState(enableAlignment)
-  
-  // 剪贴板
+
+  // Clipboard
   const [clipboard, setClipboard] = useState<FlowNode[]>([])
-  
-  // 选择状态
+
+  // Selection state
   const [selectedNodes, setSelectedNodes] = useState<string[]>([])
   const [multiSelectMode, setMultiSelectMode] = useState(false)
 
-  // ==================== 历史记录操作 ====================
+  // ==================== History operations ====================
 
   const addToHistory = useCallback((newState: { nodes: FlowNode[]; connections: NodeConnection[] }) => {
     if (!enableHistory) return
@@ -240,7 +240,7 @@ export function EnhancedFlowCanvas({
       const newHistory = prev.slice(0, historyIndex + 1)
       newHistory.push(newHistoryState)
       
-      // 限制历史记录大小
+      // Limit the history size
       if (newHistory.length > maxHistorySize) {
         return newHistory.slice(-maxHistorySize)
       }
@@ -269,7 +269,7 @@ export function EnhancedFlowCanvas({
     }
   }, [history, historyIndex, onChange])
 
-  // ==================== 对齐功能 ====================
+  // ==================== Alignment features ====================
 
   const calculateAlignmentGuides = useCallback((draggedNodes: FlowNode[], allNodes: FlowNode[]) => {
     if (!showAlignmentGuides) return []
@@ -279,7 +279,7 @@ export function EnhancedFlowCanvas({
 
     draggedNodes.forEach(draggedNode => {
       staticNodes.forEach(staticNode => {
-        // 垂直对齐（左边缘、中心、右边缘）
+        // Vertical alignment (left edge, center, right edge)
         const leftAlign = staticNode.position.x
         const centerAlign = staticNode.position.x + staticNode.size.width / 2
         const rightAlign = staticNode.position.x + staticNode.size.width
@@ -315,7 +315,7 @@ export function EnhancedFlowCanvas({
           })
         }
 
-        // 水平对齐（顶部、中心、底部）
+        // Horizontal alignment (top, center, bottom)
         const topAlign = staticNode.position.y
         const centerYAlign = staticNode.position.y + staticNode.size.height / 2
         const bottomAlign = staticNode.position.y + staticNode.size.height
@@ -356,7 +356,7 @@ export function EnhancedFlowCanvas({
     return guides
   }, [showAlignmentGuides])
 
-  // ==================== 批量操作 ====================
+  // ==================== Bulk operations ====================
 
   const alignNodes = useCallback((alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
     if (selectedNodes.length < 2) return
@@ -409,7 +409,7 @@ export function EnhancedFlowCanvas({
     addToHistory(newState)
   }, [selectedNodes, value, onChange, addToHistory])
 
-  // ==================== 剪贴板操作 ====================
+  // ==================== Clipboard operations ====================
 
   const copyNodes = useCallback(() => {
     const nodesToCopy = value.nodes.filter(n => selectedNodes.includes(n.id))
@@ -438,7 +438,7 @@ export function EnhancedFlowCanvas({
     setSelectedNodes(newNodes.map(n => n.id))
   }, [clipboard, value, onChange, addToHistory])
 
-  // ==================== 模板操作 ====================
+  // ==================== Template operations ====================
 
   const applyTemplate = useCallback((template: CanvasTemplate) => {
     const newState = {
@@ -453,15 +453,15 @@ export function EnhancedFlowCanvas({
     addToHistory(newState)
   }, [onChange, addToHistory])
 
-  // ==================== 键盘快捷键 ====================
+  // ==================== Keyboard shortcuts ====================
 
   useEffect(() => {
     if (!enableKeyboardShortcuts) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCtrl = e.ctrlKey || e.metaKey
-      
-      // 撤销/重做
+
+      // Undo/redo
       if (isCtrl && e.key === 'z' && !e.shiftKey) {
         e.preventDefault()
         undo()
@@ -470,7 +470,7 @@ export function EnhancedFlowCanvas({
         redo()
       }
       
-      // 复制/粘贴
+      // Copy/paste
       else if (isCtrl && e.key === 'c') {
         e.preventDefault()
         copyNodes()
@@ -479,7 +479,7 @@ export function EnhancedFlowCanvas({
         pasteNodes()
       }
       
-      // 删除
+      // Delete
       else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedNodes.length > 0) {
           e.preventDefault()
@@ -496,13 +496,13 @@ export function EnhancedFlowCanvas({
         }
       }
       
-      // 全选
+      // Select all
       else if (isCtrl && e.key === 'a') {
         e.preventDefault()
         setSelectedNodes(value.nodes.map(n => n.id))
       }
-      
-      // 取消选择
+
+      // Deselect
       else if (e.key === 'Escape') {
         setSelectedNodes([])
       }
@@ -512,7 +512,7 @@ export function EnhancedFlowCanvas({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [enableKeyboardShortcuts, undo, redo, copyNodes, pasteNodes, selectedNodes, value, onChange, addToHistory])
 
-  // ==================== 导入/导出 ====================
+  // ==================== Import/export ====================
 
   const exportCanvas = useCallback(() => {
     const data = {
@@ -542,25 +542,25 @@ export function EnhancedFlowCanvas({
           addToHistory(data.canvas)
         }
       } catch (error) {
-        console.error('导入失败:', error)
+        console.error('Import failed:', error)
       }
     }
     reader.readAsText(file)
   }, [onChange, addToHistory])
 
-  // ==================== 增强工具栏 ====================
+  // ==================== Enhanced toolbar ====================
 
   const canUndo = enableHistory && historyIndex > 0
   const canRedo = enableHistory && historyIndex < history.length - 1
 
   const enhancedToolbar = (
     <div className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4">
-      {/* 左侧工具组 */}
+      {/* Left tool group */}
       <div className="flex items-center gap-1">
-        {/* 历史操作 */}
+        {/* History operations */}
         {enableHistory && (
           <>
-            <Tooltip content="撤销 (Ctrl+Z)">
+            <Tooltip content="Undo (Ctrl+Z)">
               <Button
                 variant="ghost"
                 size="sm"
@@ -570,7 +570,7 @@ export function EnhancedFlowCanvas({
                 <Undo2 className="h-4 w-4" />
               </Button>
             </Tooltip>
-            <Tooltip content="重做 (Ctrl+Y)">
+            <Tooltip content="Redo (Ctrl+Y)">
               <Button
                 variant="ghost"
                 size="sm"
@@ -584,7 +584,7 @@ export function EnhancedFlowCanvas({
           </>
         )}
 
-        {/* 对齐工具 */}
+        {/* Alignment tools */}
         {selectedNodes.length > 1 && (
           <>
             <DropdownMenu>
@@ -596,24 +596,24 @@ export function EnhancedFlowCanvas({
               <DropdownMenuContent>
                 <DropdownMenuItem onClick={() => alignNodes('left')}>
                   <AlignLeft className="h-4 w-4 mr-2" />
-                  左对齐
+                  Align left
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => alignNodes('center')}>
                   <AlignCenter className="h-4 w-4 mr-2" />
-                  水平居中
+                  Center horizontally
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => alignNodes('right')}>
                   <AlignRight className="h-4 w-4 mr-2" />
-                  右对齐
+                  Align right
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => alignNodes('top')}>
-                  上对齐
+                  Align top
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => alignNodes('middle')}>
-                  垂直居中
+                  Center vertically
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => alignNodes('bottom')}>
-                  下对齐
+                  Align bottom
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -621,8 +621,8 @@ export function EnhancedFlowCanvas({
           </>
         )}
 
-        {/* 辅助功能 */}
-        <Tooltip content="对齐辅助线">
+        {/* Assistive features */}
+        <Tooltip content="Alignment guides">
           <Button
             variant={showAlignmentGuides ? 'secondary' : 'ghost'}
             size="sm"
@@ -633,15 +633,15 @@ export function EnhancedFlowCanvas({
         </Tooltip>
       </div>
 
-      {/* 右侧工具组 */}
+      {/* Right tool group */}
       <div className="flex items-center gap-1">
-        {/* 模板 */}
+        {/* Templates */}
         {enableTemplates && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm">
                 <Layers3 className="h-4 w-4" />
-                模板
+                Templates
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-64">
@@ -662,7 +662,7 @@ export function EnhancedFlowCanvas({
           </DropdownMenu>
         )}
 
-        {/* 导入/导出 */}
+        {/* Import/export */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm">
@@ -672,12 +672,12 @@ export function EnhancedFlowCanvas({
           <DropdownMenuContent>
             <DropdownMenuItem onClick={exportCanvas}>
               <Download className="h-4 w-4 mr-2" />
-              导出画布
+              Export canvas
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <label className="flex items-center cursor-pointer">
                 <Upload className="h-4 w-4 mr-2" />
-                导入画布
+                Import canvas
                 <input
                   type="file"
                   accept=".json"
@@ -691,12 +691,12 @@ export function EnhancedFlowCanvas({
             </DropdownMenuItem>
             <DropdownMenuItem>
               <Save className="h-4 w-4 mr-2" />
-              保存为模板
+              Save as template
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* 快捷键帮助 */}
+        {/* Keyboard shortcut help */}
         {enableKeyboardShortcuts && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -705,7 +705,7 @@ export function EnhancedFlowCanvas({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-48">
-              <div className="p-2 font-medium text-sm">键盘快捷键</div>
+              <div className="p-2 font-medium text-sm">Keyboard Shortcuts</div>
               {keyboardShortcuts.map(shortcut => (
                 <div key={shortcut.key} className="flex justify-between items-center px-2 py-1 text-xs">
                   <span className="text-gray-600">{shortcut.description}</span>
@@ -719,7 +719,7 @@ export function EnhancedFlowCanvas({
     </div>
   )
 
-  // ==================== 对齐辅助线渲染 ====================
+  // ==================== Alignment guide rendering ====================
 
   const alignmentGuidesOverlay = showAlignmentGuides && alignmentGuides.length > 0 && (
     <div className="absolute inset-0 pointer-events-none">
@@ -739,7 +739,7 @@ export function EnhancedFlowCanvas({
     </div>
   )
 
-  // ==================== 增强的 FlowCanvas ====================
+  // ==================== Enhanced FlowCanvas ====================
 
   const handleEnhancedChange = useCallback((newValue: { nodes: FlowNode[]; connections: NodeConnection[] }) => {
     onChange(newValue)
@@ -761,14 +761,14 @@ export function EnhancedFlowCanvas({
         
         {alignmentGuidesOverlay}
         
-        {/* 状态指示器 */}
+        {/* Status indicator */}
         {mode === 'edit' && (
           <div className="absolute bottom-4 left-4 bg-white bg-opacity-90 rounded-lg px-3 py-2 text-sm text-gray-600 shadow-sm">
             <div className="flex items-center gap-4">
-              <span>节点: {value.nodes.length}</span>
-              <span>已选: {selectedNodes.length}</span>
+              <span>Nodes: {value.nodes.length}</span>
+              <span>Selected: {selectedNodes.length}</span>
               {enableHistory && (
-                <span>历史: {historyIndex + 1}/{history.length}</span>
+                <span>History: {historyIndex + 1}/{history.length}</span>
               )}
             </div>
           </div>

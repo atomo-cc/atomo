@@ -1,5 +1,5 @@
 /**
- * Dropdown Menu Component - 基于 Radix UI 的下拉菜单组件
+ * Dropdown Menu Component — a dropdown menu built on Radix UI
  */
 
 import * as React from 'react'

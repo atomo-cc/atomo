@@ -1,7 +1,7 @@
 /**
- * Error Tracker - 错误追踪组件
- * 
- * 监控和分析系统错误，提供错误统计和详细信息
+ * Error Tracker
+ *
+ * Monitors and analyzes system errors, providing error statistics and detailed information
  */
 
 import React from 'react'
@@ -39,7 +39,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
   const { data: errors, isLoading } = useQuery({
     queryKey: ['error-tracker', timeRange],
     queryFn: () => fetchErrors(timeRange),
-    refetchInterval: 10000, // 10秒刷新
+    refetchInterval: 10000, // Refresh every 10s
   })
 
   const getSeverityColor = (severity: ErrorRecord['severity']) => {
@@ -66,7 +66,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
     total: errors.reduce((sum, error) => sum + error.count, 0),
     unique: errors.length,
     critical: errors.filter(e => e.severity === 'critical').length,
-    resolved: 0 // 暂时硬编码
+    resolved: 0 // Hardcoded for now
   } : null
 
   if (isLoading) {
@@ -74,7 +74,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
       <Card>
         <CardContent className="py-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">加载错误数据...</p>
+          <p className="mt-4 text-gray-600">Loading error data...</p>
         </CardContent>
       </Card>
     )
@@ -82,7 +82,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
 
   return (
     <div className="space-y-6">
-      {/* 错误统计 */}
+      {/* Error statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
@@ -90,7 +90,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
             <div className="text-2xl font-bold text-red-600">
               {stats?.total || 0}
             </div>
-            <div className="text-xs text-gray-600">总错误数</div>
+            <div className="text-xs text-gray-600">Total Errors</div>
           </CardContent>
         </Card>
 
@@ -100,7 +100,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
             <div className="text-2xl font-bold text-orange-600">
               {stats?.unique || 0}
             </div>
-            <div className="text-xs text-gray-600">独特错误</div>
+            <div className="text-xs text-gray-600">Unique Errors</div>
           </CardContent>
         </Card>
 
@@ -110,7 +110,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
             <div className="text-2xl font-bold text-purple-600">
               {stats?.critical || 0}
             </div>
-            <div className="text-xs text-gray-600">严重错误</div>
+            <div className="text-xs text-gray-600">Critical Errors</div>
           </CardContent>
         </Card>
 
@@ -120,15 +120,15 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
             <div className="text-2xl font-bold text-green-600">
               {stats?.resolved || 0}
             </div>
-            <div className="text-xs text-gray-600">已解决</div>
+            <div className="text-xs text-gray-600">Resolved</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 错误列表 */}
+      {/* Error list */}
       <Card>
         <CardHeader>
-          <CardTitle>错误详情</CardTitle>
+          <CardTitle>Error Details</CardTitle>
         </CardHeader>
         <CardContent>
           {errors && errors.length > 0 ? (
@@ -146,7 +146,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
                           {error.type}
                         </Badge>
                         <Badge variant="secondary">
-                          {error.count}次
+                          {error.count}x
                         </Badge>
                       </div>
                       
@@ -160,14 +160,14 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
                           {formatDate(error.timestamp, 'time')}
                         </span>
                         {error.userId && (
-                          <span>用户: {error.userId}</span>
+                          <span>User: {error.userId}</span>
                         )}
                       </div>
                       
                       {error.stack && (
                         <details className="mt-3">
                           <summary className="cursor-pointer text-sm text-gray-600">
-                            查看堆栈跟踪
+                            View Stack Trace
                           </summary>
                           <pre className="mt-2 text-xs bg-gray-50 p-3 rounded overflow-auto max-h-32">
                             {error.stack}
@@ -182,8 +182,8 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <Shield className="h-8 w-8 mx-auto mb-3 text-gray-400" />
-              <p>暂无错误记录</p>
-              <p className="text-sm mt-1">系统运行正常</p>
+              <p>No error records</p>
+              <p className="text-sm mt-1">The system is operating normally</p>
             </div>
           )}
         </CardContent>
@@ -192,7 +192,7 @@ export function ErrorTracker({ timeRange }: ErrorTrackerProps) {
   )
 }
 
-// 模拟API函数
+// Mock API function
 async function fetchErrors(timeRange: string): Promise<ErrorRecord[]> {
   await new Promise(resolve => setTimeout(resolve, 600))
   

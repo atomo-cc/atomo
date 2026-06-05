@@ -1,5 +1,5 @@
 /**
- * Tooltip Component - 基于 Radix UI 的工具提示组件
+ * Tooltip Component — a tooltip built on Radix UI
  */
 
 import * as React from 'react'

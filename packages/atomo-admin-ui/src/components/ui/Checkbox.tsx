@@ -1,5 +1,5 @@
 /**
- * Checkbox Component - 基于 Radix UI 的复选框组件
+ * Checkbox Component — a checkbox built on Radix UI
  */
 
 import * as React from 'react'
