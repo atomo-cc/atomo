@@ -14,7 +14,6 @@
  */
 
 import { SchemaMetadata, ModelMetadata, FieldMetadata, FieldType, FieldAttribute } from './types'
-import { demoSchemaMetadata } from './demo-data'
 
 export interface ParsedSchema {
   models: Record<string, ModelMetadata>
@@ -572,9 +571,8 @@ export async function loadSchemaMetadata(): Promise<SchemaMetadata> {
     const content = await loadSchemaWithRetry()
     return await parseSchemaFromTypeScript(content)
   } catch (error) {
-    console.error('Failed to load schema.ts:', error)
-    console.warn('Using the built-in CRM demo schema metadata')
-    return demoSchemaMetadata
+    console.error('Failed to load schema:', error)
+    throw error
   }
 }
 

@@ -26,10 +26,9 @@ export interface DynamicRendererProps {
    * Current route info
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'kanban' | 'timeline' | 'plugin' | 'workflows' | 'trash' | 'workflow-design' | 'settings' | 'help' | 'not-found'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'plugin' | 'workflows' | 'trash' | 'workflow-design' | 'settings' | 'help' | 'not-found'
     modelName?: string
     entityId?: string
-    contactId?: string
     pluginHandler?: any
     workflowName?: string
   }
@@ -188,51 +187,6 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
           mode="create"
         />
       )
-    case 'kanban':
-      // Try to get component from plugin system
-      const kanbanHandler = componentPluginManager.getRouteHandler('/deals/board')
-      if (kanbanHandler) {
-        const Component = kanbanHandler.component
-        return (
-          <Suspense fallback={
-            <Card className="m-6">
-              <CardContent className="flex items-center justify-center py-8">
-                <div className="text-center">
-                  <Spinner className="mx-auto mb-4" />
-                  <p className="text-gray-600">Loading board component…</p>
-                </div>
-              </CardContent>
-            </Card>
-          }>
-            <Component {...kanbanHandler.props} />
-          </Suspense>
-        )
-      }
-      return routeError('Board component not found.')
-    case 'timeline':
-      if (!route.contactId) return routeError('Missing contact ID.')
-      // Try to get component from plugin system
-      const timelinePath = `/contacts/${route.contactId}/timeline`
-      const timelineHandler = componentPluginManager.getRouteHandler(timelinePath)
-      if (timelineHandler) {
-        const Component = timelineHandler.component
-        return (
-          <Suspense fallback={
-            <Card className="m-6">
-              <CardContent className="flex items-center justify-center py-8">
-                <div className="text-center">
-                  <Spinner className="mx-auto mb-4" />
-                  <p className="text-gray-600">Loading timeline component…</p>
-                </div>
-              </CardContent>
-            </Card>
-          }>
-            <Component {...timelineHandler.props} />
-          </Suspense>
-        )
-      }
-      return routeError('Timeline component not found.')
-      
     case 'plugin':
       if (!route.pluginHandler) return routeError('Missing plugin handler.')
       const PluginComponent = route.pluginHandler.component

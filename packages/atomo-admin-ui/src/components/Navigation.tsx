@@ -83,19 +83,6 @@ export function Navigation({ user }: { user?: AuthUser | null }) {
     })) : [])
   ]
 
-  // Add custom CRM links when relevant models exist
-  if (schema && schema.models['Deal']) {
-    navigationItems = [
-      ...navigationItems,
-      {
-        name: 'Deals Board',
-        href: '/deals/board',
-        icon: DollarSign,
-        active: isActive('/deals/board')
-      }
-    ]
-  }
-
   // Workflows management (backend-driven; always available)
   navigationItems = [
     ...navigationItems,
