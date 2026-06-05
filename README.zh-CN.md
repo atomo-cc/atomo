@@ -2,13 +2,13 @@
 
 [English](README.md) · **简体中文** · [Español](README.es.md) · [日本語](README.ja.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
 
-> 开源、可自托管的**应用后端**（Rust 编写）——用 TypeScript schema 即可生成事件溯源的 GraphQL API、认证、实时与管理后台。一个可自托管的 **Firebase/Supabase 替代方案**。
+> **下一代 Content Core** —— 面向内容型应用、可自托管的事件溯源后端：用 TypeScript schema 即可生成带认证、实时与管理后台的 GraphQL API。一个可自托管的 **Firebase/Supabase 替代方案**。
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo 是一个开源、可自托管的**应用后端**。在 TypeScript `schema.ts` 中定义数据模型，Atomo 即为你生成**事件溯源的 GraphQL API**、**认证与 RBAC**、**实时通道**以及自动生成的**管理后台**——可通过 **WASM/JS 插件**扩展，并用 **Docker** 部署（无需 Rust 工具链）。可以把它看作运行在你自己的 Postgres 上、可自托管的 **Firebase/Supabase 替代方案**。
+Atomo Content Core 是一个开源、可自托管、面向内容型应用的**事件溯源后端**。在 TypeScript `schema.ts` 中定义数据模型，Atomo 即为你生成 **GraphQL API**、**认证与 RBAC**、**实时通道**以及自动生成的**管理后台**——可通过 **WASM/JS 插件**扩展，并用 **Docker** 部署（无需 Rust 工具链）。可以把它看作运行在你自己的 Postgres 上、可自托管的 **Firebase/Supabase 替代方案**。
 
 ## ✨ 核心特性
 

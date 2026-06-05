@@ -2,13 +2,13 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [Español](README.es.md) · [日本語](README.ja.md) · **Français** · [Deutsch](README.de.md)
 
-> **Backend applicatif** open-source et auto-hébergeable, en Rust — un schéma TypeScript devient une API GraphQL en event sourcing, avec auth, temps réel et une interface d'administration. Une **alternative à Firebase/Supabase** auto-hébergée.
+> **Content Core nouvelle génération** — un backend en event sourcing, auto-hébergeable, pour les applications orientées contenu : un schéma TypeScript devient une API GraphQL avec auth, temps réel et une interface d'administration. Une **alternative à Firebase/Supabase** auto-hébergée.
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo est un **backend applicatif** open-source et auto-hébergeable. Définissez votre modèle de données dans un `schema.ts` TypeScript et Atomo vous fournit une **API GraphQL en event sourcing**, l'**authentification + RBAC**, le **temps réel** et une **interface d'administration** générée — extensible via des **plugins WASM/JS** et déployable avec **Docker** (sans toolchain Rust). Voyez-le comme une **alternative à Firebase/Supabase** auto-hébergée qui tourne sur votre propre Postgres.
+Atomo Content Core est un **backend en event sourcing** open-source et auto-hébergeable pour les applications orientées contenu. Définissez votre modèle de données dans un `schema.ts` TypeScript et Atomo vous fournit une **API GraphQL**, l'**authentification + RBAC**, le **temps réel** et une **interface d'administration** générée — extensible via des **plugins WASM/JS** et déployable avec **Docker** (sans toolchain Rust). Voyez-le comme une **alternative à Firebase/Supabase** auto-hébergée qui tourne sur votre propre Postgres.
 
 ## ✨ Fonctionnalités clés
 

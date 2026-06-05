@@ -2,13 +2,13 @@
 
 **English** · [简体中文](README.zh-CN.md) · [Español](README.es.md) · [日本語](README.ja.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
 
-> Open-source, self-hostable **app backend** in Rust — a TypeScript schema becomes an event-sourced GraphQL API with auth, realtime, and an admin UI. A self-hosted **Firebase/Supabase alternative**.
+> **Next-Generation Content Core** — a self-hostable, event-sourced backend for content-driven apps: a TypeScript schema becomes a GraphQL API with auth, realtime, and an admin UI. A self-hosted **Firebase/Supabase alternative**.
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo is an open-source, self-hostable **application backend**. Define your data model in a TypeScript `schema.ts` and Atomo gives you an **event-sourced GraphQL API**, **authentication + RBAC**, **realtime**, and a generated **admin UI** — extensible with **WASM/JS plugins** and deployable with **Docker** (no Rust toolchain required). Think of it as a self-hosted **Firebase/Supabase alternative** that runs on your own Postgres.
+Atomo Content Core is an open-source, self-hostable **event-sourced backend** for content-driven apps. Define your data model in a TypeScript `schema.ts` and Atomo gives you a **GraphQL API**, **authentication + RBAC**, **realtime**, and a generated **admin UI** — extensible with **WASM/JS plugins** and deployable with **Docker** (no Rust toolchain required). Think of it as a self-hosted **Firebase/Supabase alternative** that runs on your own Postgres.
 
 ## ✨ Core Features
 
