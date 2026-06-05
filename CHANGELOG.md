@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-05
+
+> First tagged release since `0.1.0`. Headline: two **extensibility** features —
+> declarable schema constraints and plugin-served custom HTTP routes — plus the
+> realtime tier, the no-Rust distribution (Docker image + npm scaffolder/SDK), and
+> the bundled generic Admin UI. The `ghcr.io/atomo-cc/atomo-server:0.2.0` /
+> `:latest` image is built from this tag.
+
 ### Added
 - **Extensibility — Custom HTTP routes**: plugins can now declare `[[routes]]`
   (`method`/`path`/`auth`) in `plugin.toml`; `atomo-server` mounts each at
