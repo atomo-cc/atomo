@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Admin seeding — fail loud on ignored credential changes.** Seeding from
+  `ADMIN_EMAIL`/`ADMIN_PASSWORD` is create-once keyed by email, so changing
+  `ADMIN_PASSWORD` and restarting was a **silent no-op** (the old password kept
+  working, the new one was rejected). The server now logs a `WARN` when the env
+  password differs from the seeded admin's, and honors **`ADMIN_RESET_PASSWORD=true`**
+  to rotate the existing admin's password on boot. Documented in `.env.example`,
+  `api/auth.md`, and `configuration.md`. (consumer feedback #7)
+
 ## [0.2.2] - 2026-06-05
 
 > Consumer-feedback round (the "silent failures" theme). Fixes a real auth bug

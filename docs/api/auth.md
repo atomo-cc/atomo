@@ -11,7 +11,9 @@ Environment
 Admin bootstrap
 - On startup the server ensures platform tables exist and, if `ADMIN_EMAIL` and `ADMIN_PASSWORD` are both set, creates an admin user when that email does not already exist.
 - The user is created with a ULID id, the `admin` role, and an argon2id password hash.
-- Idempotent: restarting does not duplicate the user, and an existing user's password is left unchanged.
+- **Create-once, keyed by email.** Restarting does not duplicate the user, and an existing admin's password is **not** updated from `ADMIN_PASSWORD`. Two consequences to know:
+  - Changing `ADMIN_PASSWORD` and restarting is otherwise a silent no-op (the old password keeps working). The server now logs a `WARN` when the env password differs from the stored one. To actually rotate it on boot, set **`ADMIN_RESET_PASSWORD=true`** (a one-shot that updates the existing admin's hash from `ADMIN_PASSWORD`); unset it again afterward.
+  - Changing `ADMIN_EMAIL` seeds an **additional** admin (the old one remains). Remove stale admins manually if that's not intended.
 
 Endpoints
 ```http

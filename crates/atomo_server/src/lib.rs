@@ -112,8 +112,16 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Create an admin user from `ADMIN_EMAIL`/`ADMIN_PASSWORD` env vars if it doesn't already exist.
-/// No-op when the vars are unset. Idempotent (skips if the email already exists).
+/// Seed an admin user from `ADMIN_EMAIL`/`ADMIN_PASSWORD`. No-op when the vars are unset.
+///
+/// Seeding is **create-once keyed by email**: on first boot it inserts the admin; on
+/// later boots the row already exists. Two operator surprises fall out of that, so we
+/// make them explicit instead of silent (consumer feedback #7):
+/// - **Changed `ADMIN_PASSWORD`, same email** — otherwise a silent no-op (the old
+///   password keeps working). We now `WARN`, and honor `ADMIN_RESET_PASSWORD=true` to
+///   actually rotate the password on boot.
+/// - **Changed `ADMIN_EMAIL`** — the new email doesn't exist, so this seeds an
+///   *additional* admin (the old one stays). Documented; not auto-removed.
 pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<()> {
     let (email, password) = match (
         std::env::var("ADMIN_EMAIL"),
@@ -123,13 +131,35 @@ pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<(
         _ => return Ok(()),
     };
     let pool = auth.db_pool();
-    let exists: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
-        .bind(&email)
-        .fetch_optional(pool)
-        .await?;
-    if exists.is_some() {
+    let existing: Option<(String, String)> =
+        sqlx::query_as("SELECT id, password_hash FROM users WHERE email = $1")
+            .bind(&email)
+            .fetch_optional(pool)
+            .await?;
+
+    if let Some((_id, current_hash)) = existing {
+        let reset = std::env::var("ADMIN_RESET_PASSWORD")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        if reset {
+            let hash = auth.hash_password(&password)?;
+            sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE email = $2")
+                .bind(&hash)
+                .bind(&email)
+                .execute(pool)
+                .await?;
+            tracing::info!(%email, "ADMIN_RESET_PASSWORD set — reset the existing admin's password from ADMIN_PASSWORD");
+        } else if !auth.verify_password(&password, &current_hash).unwrap_or(false) {
+            tracing::warn!(
+                %email,
+                "admin already exists and ADMIN_PASSWORD differs from the seeded password — it is \
+                 IGNORED (seeding is create-once keyed by email). Set ADMIN_RESET_PASSWORD=true to \
+                 rotate it on boot, or change it via the admin UI."
+            );
+        }
         return Ok(());
     }
+
     let id = atomo_core::types::EntityId::new().to_string();
     let hash = auth.hash_password(&password)?;
     sqlx::query(
