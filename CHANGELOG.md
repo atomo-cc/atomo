@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-05
+
+> Admin UI goes from demo-grade to production, plus an admin-seeding fix. No
+> breaking changes. `:latest` + `:v0.2.3` are built from this tag.
+
 ### Changed
+- **Admin UI — production pass.** The bundled `/admin` was demo-grade; it's now a
+  real production app: the entire UI is **English** (was mixed Chinese/English —
+  ~1670 strings translated); **dead Settings/Help menus** now render real pages
+  (account, server build via `/version`, platform config; docs/about); unknown routes
+  show a real **404** instead of silently rendering the dashboard; the Dashboard shows
+  **real per-model counts**; a top-level **ErrorBoundary** replaces white-screen
+  crashes; a real favicon replaces the default Vite one. The demo-data fallback,
+  demo placeholders, and dead code were removed; the JS bundle is **code-split**
+  (601 kB single chunk → 135 kB app + cacheable vendor chunks). Unfinished Phase-2/3
+  features (observability/AI/collaboration/notifications) remain in the tree as
+  documented, tree-shaken scaffolding.
 - **Admin seeding — fail loud on ignored credential changes.** Seeding from
   `ADMIN_EMAIL`/`ADMIN_PASSWORD` is create-once keyed by email, so changing
   `ADMIN_PASSWORD` and restarting was a **silent no-op** (the old password kept
