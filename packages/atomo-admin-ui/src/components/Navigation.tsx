@@ -19,16 +19,26 @@ import {
   Settings,
   HelpCircle,
   Workflow,
-  Trash2
+  Trash2,
+  LogOut
 } from 'lucide-react'
 
-import { apiClient } from '../lib/api'
+import { apiClient, AuthUser } from '../lib/api'
 import { cn, getFieldLabel } from '../lib/utils'
 import { Button } from './ui/Button'
 
-export function Navigation() {
+export function Navigation({ user }: { user?: AuthUser | null }) {
   const location = useLocation()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
+
+  // Real signed-in identity (from /auth/me), with sensible fallbacks.
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
+  const primaryName = fullName || user?.email || 'Signed in'
+  const avatarInitial = (fullName || user?.email || 'A').charAt(0).toUpperCase()
+  const handleSignOut = () => {
+    apiClient.logout()
+    window.location.href = `${(import.meta as any).env.BASE_URL}login`
+  }
 
   // 加载 Schema 元数据用于生成导航
   const { data: schema, isLoading } = useQuery({
@@ -167,16 +177,26 @@ export function Navigation() {
         </Link>
       </div>
 
-      {/* 用户信息 */}
+      {/* 用户信息 — the real signed-in user (from /auth/me), with sign-out. */}
       <div className="border-t border-gray-200 p-4">
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-            <span className="text-gray-600 text-sm font-medium">A</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center min-w-0">
+            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center shrink-0">
+              <span className="text-gray-600 text-sm font-medium">{avatarInitial}</span>
+            </div>
+            <div className="ml-3 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">{primaryName}</p>
+              <p className="text-xs text-gray-500 truncate">{user?.role ?? ''}</p>
+            </div>
           </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium text-gray-900">管理员</p>
-            <p className="text-xs text-gray-500">admin@atomo.dev</p>
-          </div>
+          <button
+            onClick={handleSignOut}
+            title="Sign out"
+            aria-label="Sign out"
+            className="ml-2 p-1.5 text-gray-400 rounded shrink-0 hover:bg-gray-100 hover:text-gray-700"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </div>

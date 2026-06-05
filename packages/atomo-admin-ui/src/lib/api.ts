@@ -9,6 +9,15 @@ import { SchemaMetadata, EntityData, QueryOptions } from './types'
 import { loadSchemaMetadata } from './schema-parser'
 import { cloneDemoEntities } from './demo-data'
 
+/** The signed-in user, as returned by GET /auth/me. */
+export interface AuthUser {
+  id: string
+  email: string
+  role: string
+  first_name?: string
+  last_name?: string
+}
+
 class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
@@ -40,8 +49,11 @@ class AtomoApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.status === 401) {
-          // 认证失败，清除 token 并跳转登录
+        // Global 401 handling: clear the token and bounce to login. Skip this for
+        // /auth/me so the mount-time session check (App.tsx) can handle an invalid
+        // token in-app (render <Login/>) instead of a hard page redirect.
+        const url: string = error.config?.url ?? ''
+        if (error.response?.status === 401 && !url.includes('/auth/me')) {
           localStorage.removeItem('atomo_auth_token')
           // Base-aware so it stays under /admin when served from a subpath.
           window.location.href = `${(import.meta as any).env.BASE_URL}login`
@@ -67,6 +79,16 @@ class AtomoApiClient {
   /** Clear the stored token (sign out). */
   logout(): void {
     localStorage.removeItem('atomo_auth_token')
+  }
+
+  /**
+   * Validate the stored token and fetch the current user from GET /auth/me.
+   * Resolves with the user when the token is valid; rejects (401) when it isn't —
+   * the caller (App mount check) clears the token and shows the login form.
+   */
+  async getCurrentUser(): Promise<AuthUser> {
+    const res = await this.client.get('/auth/me')
+    return res.data as AuthUser
   }
 
   /**

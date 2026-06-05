@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `orderBy` on a column a model lacks is dropped instead of erroring. (consumer feedback #2)
 
 ### Changed
+- **Admin UI — validates the session on load.** It previously treated "a token
+  exists in localStorage" as signed-in and never re-checked, so an expired/revoked
+  token showed a half-rendered admin that 401'd on the first data fetch, and the
+  sidebar showed a hardcoded user (`管理员 / admin@atomo.dev`). Now it calls
+  `/auth/me` on mount (refresh + reopen): valid → renders with the real signed-in
+  user (name + role) and a sign-out button; invalid → clears the token and shows the
+  login form cleanly. Builds on the `/auth/me` fix above.
 - **Server — fail loud on silent half-registration.** A model with no `id` field gets
   its table created but is **not** registered (invisible to `/meta/schema`, the admin
   UI, GraphQL by-id lookups, the projector) — previously with zero warning. atomo now
