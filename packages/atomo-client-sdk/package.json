@@ -49,9 +49,13 @@
     "typescript",
     "sdk",
     "graphql",
-    "crm",
     "client",
-    "type-safe"
+    "type-safe",
+    "backend",
+    "realtime",
+    "self-hosted",
+    "firebase-alternative",
+    "event-sourcing"
   ],
   "author": "Atomo Team",
   "license": "MIT",

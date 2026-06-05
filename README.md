@@ -2,13 +2,13 @@
 
 **English** · [简体中文](README.zh-CN.md) · [Español](README.es.md) · [日本語](README.ja.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
 
-> Next-generation content management platform — event-sourced architecture + AI-native design
+> Open-source, self-hostable **app backend** in Rust — a TypeScript schema becomes an event-sourced GraphQL API with auth, realtime, and an admin UI. A self-hosted **Firebase/Supabase alternative**.
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo is a modern content management platform built on an event-sourcing architecture with native AI integration, delivering a high-performance, scalable content-management solution for enterprise-grade applications.
+Atomo is an open-source, self-hostable **application backend**. Define your data model in a TypeScript `schema.ts` and Atomo gives you an **event-sourced GraphQL API**, **authentication + RBAC**, **realtime**, and a generated **admin UI** — extensible with **WASM/JS plugins** and deployable with **Docker** (no Rust toolchain required). Think of it as a self-hosted **Firebase/Supabase alternative** that runs on your own Postgres.
 
 ## ✨ Core Features
 

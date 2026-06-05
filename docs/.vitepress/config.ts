@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'Atomo',
-  description: 'The Next-Generation Content Core - Developer Documentation',
+  description: 'Atomo — open-source, self-hostable app backend (event-sourced GraphQL API, auth, realtime, admin UI). Documentation.',
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.ico' }],

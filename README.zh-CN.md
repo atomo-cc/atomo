@@ -2,13 +2,13 @@
 
 [English](README.md) · **简体中文** · [Español](README.es.md) · [日本語](README.ja.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
 
-> 下一代内容管理平台 - 事件溯源架构 + AI 原生设计
+> 开源、可自托管的**应用后端**（Rust 编写）——用 TypeScript schema 即可生成事件溯源的 GraphQL API、认证、实时与管理后台。一个可自托管的 **Firebase/Supabase 替代方案**。
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo 是一个现代化的内容管理平台，基于事件溯源架构设计，原生支持 AI 集成，为企业级应用提供高性能、可扩展的内容管理解决方案。
+Atomo 是一个开源、可自托管的**应用后端**。在 TypeScript `schema.ts` 中定义数据模型，Atomo 即为你生成**事件溯源的 GraphQL API**、**认证与 RBAC**、**实时通道**以及自动生成的**管理后台**——可通过 **WASM/JS 插件**扩展，并用 **Docker** 部署（无需 Rust 工具链）。可以把它看作运行在你自己的 Postgres 上、可自托管的 **Firebase/Supabase 替代方案**。
 
 ## ✨ 核心特性
 

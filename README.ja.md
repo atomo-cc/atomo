@@ -2,13 +2,13 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [Español](README.es.md) · **日本語** · [Français](README.fr.md) · [Deutsch](README.de.md)
 
-> 次世代コンテンツ管理プラットフォーム — イベントソーシングアーキテクチャ + AI ネイティブ設計
+> オープンソースでセルフホスト可能な **アプリバックエンド**（Rust 製）— TypeScript スキーマから、イベントソース化された GraphQL API・認証・リアルタイム・管理 UI を生成。セルフホスト型の **Firebase/Supabase 代替**。
 
 [![CI](https://github.com/atomo-cc/atomo/workflows/CI/badge.svg)](https://github.com/atomo-cc/atomo/actions)
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo は、イベントソーシングアーキテクチャ上に構築され、AI 統合をネイティブにサポートするモダンなコンテンツ管理プラットフォームです。エンタープライズ級アプリケーション向けに、高性能でスケーラブルなコンテンツ管理ソリューションを提供します。
+Atomo は、オープンソースでセルフホスト可能な**アプリケーションバックエンド**です。TypeScript の `schema.ts` でデータモデルを定義すると、**イベントソース化された GraphQL API**、**認証 + RBAC**、**リアルタイム**、自動生成の**管理 UI** が手に入ります。**WASM/JS プラグイン**で拡張でき、**Docker** でデプロイ可能（Rust ツールチェーン不要）。自分の Postgres 上で動く、セルフホスト型の **Firebase/Supabase 代替**と考えてください。
 
 ## ✨ 主な特徴
 
