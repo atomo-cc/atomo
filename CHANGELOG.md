@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Schema — partial unique/index**: `// @@unique([col]) WHERE <predicate>` and
+  `// @@index([col]) WHERE <predicate>` now emit partial indexes
+  (`CREATE [UNIQUE] INDEX ... WHERE <predicate>`). Lets a nullable anti-abuse anchor
+  like `UNIQUE(store_account_id) WHERE store_account_id IS NOT NULL` live in the
+  schema instead of hand-written SQL. (consumer feedback #6)
+- **Server — `GET /version`**: returns `{ name, version, commit, buildTime }`, baked
+  into the image at build time (`ATOMO_VERSION`/`ATOMO_GIT_SHA`/`ATOMO_BUILD_TIME` via
+  Docker build args), so a consumer can verify *which* build is running without
+  inferring from timestamps. (consumer feedback #4)
+
+### Fixed
+- **Auth — `/auth/me` (and `/auth/logout`) 401'd on a valid login token.** Those
+  routes read an `AuthUser` from request extensions but were nested without the auth
+  middleware that injects it, so they returned 401 unconditionally. Now guarded with
+  `auth_middleware`; a token from `/auth/login` is accepted. (consumer feedback #3)
+- **Schema — models silently lacked `created_at`/`updated_at`.** `generate_migrations`
+  auto-added `deleted_at`/`tenant_id` but not the timestamps, so a model that declared
+  only `updatedAt` got no `created_at` column and the admin list view (orders by
+  `created_at`) 500'd at query time. Now every model auto-provisions both timestamps
+  (`TIMESTAMPTZ NOT NULL DEFAULT NOW()`), **and** the list sort is tolerant — an
+  `orderBy` on a column a model lacks is dropped instead of erroring. (consumer feedback #2)
+
+### Changed
+- **Server — fail loud on silent half-registration.** A model with no `id` field gets
+  its table created but is **not** registered (invisible to `/meta/schema`, the admin
+  UI, GraphQL by-id lookups, the projector) — previously with zero warning. atomo now
+  emits a boot `WARN` naming the model and explaining that `id` is the primary key (a
+  declared `primaryKey` other than `id` is not honored). Enum/Block pseudo-models are
+  excluded. (consumer feedback #1)
+- **Docs**: added the [Custom Routes Phase 3 design](docs/guide/advanced/custom-routes-phase3-design.md)
+  — synchronous transactional DB in route handlers (the primitive that lets a billing
+  sidecar collapse into atomo); recommends a declarative atomic-statement batch run in
+  one host-owned transaction. (consumer feedback #5)
+
 ## [0.2.1] - 2026-06-05
 
 > Build/docs patch — no behavior change. Headline: the `atomo-server` image is

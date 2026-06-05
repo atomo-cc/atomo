@@ -145,4 +145,9 @@ guarded `ALTER TABLE … ADD CONSTRAINT chk_… CHECK (…)` (wrapped in a
   pass-through SQL (more power, less portability/safety)?
 - **Conflicting existing data** on first apply: fail the migration with the
   offending rows, or apply `NOT VALID` then validate?
-- **Partial / conditional indexes and constraints** — v1 or later?
+- ✅ **Partial / conditional indexes** — **shipped**: `// @@unique([col]) WHERE
+  <predicate>` and `// @@index([col]) WHERE <predicate>` emit
+  `CREATE [UNIQUE] INDEX ... WHERE <predicate>`. The predicate is raw SQL over
+  column names (snake_case, like `@@check`), e.g.
+  `// @@unique([storeAccountId]) WHERE store_account_id IS NOT NULL` for a nullable
+  anti-abuse anchor where NULLs must not collide.

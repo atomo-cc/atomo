@@ -124,11 +124,13 @@ was the seam users actually write against.
    `{method, path, auth}` → handler returning `{status, headers, body}`, mounted
    under `/ext/<plugin>`; verified principal injected. *Shipped — see "Using it"
    below.*
-3. **Transactional DB access** in the handler (begin/commit, or a transactional
-   `dbQuery` batch) — the piece that enables money/idempotency logic. Still open:
-   the JS (Javy) runtime is stdin→stdout, so its effects (`dbQuery`/`http`) are
-   **deferred** and a handler can't read-modify-write synchronously yet. This needs
-   a synchronous DB host function (WASM handler, or a blocking host call from JS).
+3. **Transactional DB access** in the handler — the piece that enables
+   money/idempotency logic. Still open: the JS (Javy) runtime is stdin→stdout, so
+   its effects (`dbQuery`/`http`) are **deferred** and a handler can't
+   read-modify-write synchronously yet. Designed in
+   **[Custom Routes Phase 3 — Synchronous Transactional DB](/guide/advanced/custom-routes-phase3-design)**
+   (recommendation: a declarative atomic-statement batch run in one host-owned
+   transaction — no Javy toolchain change).
 4. Harden: per-route auth + rate limits, request-size caps, timeouts, structured
    logs without PII; WASM handler support.
 

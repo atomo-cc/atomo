@@ -92,6 +92,7 @@ export default defineConfig({
             { text: 'Proposal: Workflow Designer', link: '/guide/advanced/workflow-designer-proposal' },
             { text: 'Proposal: Realtime Channels & Presence', link: '/guide/advanced/realtime-channels-proposal' },
             { text: 'Proposal: Custom HTTP Routes', link: '/guide/advanced/custom-routes-proposal' },
+            { text: 'Design: Custom Routes Phase 3', link: '/guide/advanced/custom-routes-phase3-design' },
             { text: 'Proposal: Schema Constraints', link: '/guide/advanced/schema-constraints-proposal' },
             { text: 'Plan: CRM Conformance Suite', link: '/guide/advanced/crm-conformance-plan' }
           ]
