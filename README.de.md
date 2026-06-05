@@ -18,6 +18,7 @@ Atomo ist eine moderne Content-Management-Plattform, die auf einer Event-Sourcin
 - 🔧 **Dual-Mode-Definition**: TypeScript-Schema + Rust-Codegenerierung
 - 🚀 **Hohe Leistung**: Rust-Backend + ein moderner Frontend-Stack
 - 🔌 **Plugin-fähige Architektur**: WASM-Plugin-System mit mehrsprachiger Erweiterungsunterstützung
+- 🧩 **Erweitern ohne Fork**: deklarierbare Schema-Constraints (`@unique` / `@@check` / partiell) + von Plugins bereitgestellte benutzerdefinierte HTTP-Routen (`/ext/<plugin>`)
 - 📊 **Echtzeit-Zusammenarbeit**: WebSocket-gesteuerte Echtzeit-Datensynchronisation
 
 ## 🚀 Schnellstart
@@ -280,6 +281,7 @@ Die detaillierte Roadmap und den aktuellen Fortschritt findest du in docs/roadma
 
 ### Phase 2: Intelligenz-Upgrade (größtenteils abgeschlossen)
 - [x] WASM-Plugin-System (Sandbox, Berechtigungen, Lifecycle-Hooks) + JS-Skript-Plugins (Javy)
+- [x] Erweiterbarkeit ohne Fork: deklarierbare Schema-Constraints (`@unique`/`@index`/`@@check`, inkl. partiell mit `WHERE`) + von Plugins bereitgestellte benutzerdefinierte HTTP-Routen (`/ext/<plugin>`)
 - [x] CQRS-Read-Projektionen (eventgesteuerte materialisierte Views; Löschungen/numerische Korrekturen siehe B2)
 - [x] Read-Cache (TTL + Event-Invalidierung)
 - [x] Datei-Upload/-Speicherung (`File`-Feld, multipart, Content-Type-Validierung + Magic-Byte-Sniffing, event-sourced; lokales Backend ✅, S3-Backend hinter dem `storage-s3`-Feature; siehe docs/guide/advanced/upload-storage-plan)

@@ -18,6 +18,7 @@ Atomo is a modern content management platform built on an event-sourcing archite
 - 🔧 **Dual-Mode Definition**: TypeScript schema + Rust code generation
 - 🚀 **High Performance**: Rust backend + a modern frontend stack
 - 🔌 **Pluggable Architecture**: WASM plugin system with multi-language extension support
+- 🧩 **Extend Without Forking**: declarable schema constraints (`@unique` / `@@check` / partial) + plugin-served custom HTTP routes (`/ext/<plugin>`)
 - 📊 **Realtime Collaboration**: WebSocket-driven realtime data sync
 
 ## 🚀 Quick Start
@@ -280,6 +281,7 @@ For the detailed roadmap and current progress see docs/roadmap.md; for the platf
 
 ### Phase 2: Intelligence Upgrade (mostly done)
 - [x] WASM plugin system (sandbox, permissions, lifecycle hooks) + JS script plugins (Javy)
+- [x] Extend-without-forking seams: declarable schema constraints (`@unique`/`@index`/`@@check`, incl. partial `WHERE`) + plugin-served custom HTTP routes (`/ext/<plugin>`)
 - [x] CQRS read projections (event-driven materialized views; deletes/numeric corrections see B2)
 - [x] Read cache (TTL + event invalidation)
 - [x] File upload/storage (`File` field, multipart, content-type validation + magic-byte sniffing, event-sourced; local backend ✅, S3 backend behind the `storage-s3` feature; see docs/guide/advanced/upload-storage-plan)

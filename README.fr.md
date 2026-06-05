@@ -18,6 +18,7 @@ Atomo est une plateforme moderne de gestion de contenu bâtie sur une architectu
 - 🔧 **Définition à double mode** : Schéma TypeScript + génération de code Rust
 - 🚀 **Hautes performances** : Backend Rust + une stack frontend moderne
 - 🔌 **Architecture à plugins** : Système de plugins WASM avec prise en charge d'extensions multilangages
+- 🧩 **Étendre sans forker** : contraintes de schéma déclaratives (`@unique` / `@@check` / partielles) + routes HTTP personnalisées servies par des plugins (`/ext/<plugin>`)
 - 📊 **Collaboration en temps réel** : Synchronisation des données en temps réel pilotée par WebSocket
 
 ## 🚀 Démarrage rapide
@@ -280,6 +281,7 @@ Pour la feuille de route détaillée et l'avancement actuel, voir docs/roadmap.m
 
 ### Phase 2 : Montée en intelligence (en grande partie terminée)
 - [x] Système de plugins WASM (sandbox, permissions, hooks de cycle de vie) + plugins de script JS (Javy)
+- [x] Extensibilité sans fork : contraintes de schéma déclaratives (`@unique`/`@index`/`@@check`, y compris partielles avec `WHERE`) + routes HTTP personnalisées servies par des plugins (`/ext/<plugin>`)
 - [x] Projections de lecture CQRS (vues matérialisées pilotées par événements ; suppressions/corrections numériques voir B2)
 - [x] Cache de lecture (TTL + invalidation par événement)
 - [x] Téléversement/stockage de fichiers (champ `File`, multipart, validation du type de contenu + reniflage des magic bytes, event-sourced ; backend local ✅, backend S3 derrière la feature `storage-s3` ; voir docs/guide/advanced/upload-storage-plan)

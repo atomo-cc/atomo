@@ -18,6 +18,7 @@ Atomo 是一个现代化的内容管理平台，基于事件溯源架构设计�
 - 🔧 **双模式定义**: TypeScript Schema + Rust 代码生成
 - 🚀 **高性能**: Rust 后端 + 现代前端技术栈
 - 🔌 **插件化架构**: WASM 插件系统，支持多语言扩展
+- 🧩 **无需 fork 的扩展**: 可声明的 schema 约束（`@unique` / `@@check` / 部分索引）+ 插件提供的自定义 HTTP 路由（`/ext/<plugin>`）
 - 📊 **实时协作**: WebSocket 驱动的实时数据同步
 
 ## 🚀 快速开始
@@ -280,6 +281,7 @@ pub fn process_content(content: &str) -> String {
 
 ### Phase 2: 智能化升级 (大部分完成)
 - [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子) + JS 脚本插件 (Javy)
+- [x] 无需 fork 的扩展能力：可声明的 schema 约束（`@unique`/`@index`/`@@check`，含带 `WHERE` 的部分索引）+ 插件提供的自定义 HTTP 路由（`/ext/<plugin>`）
 - [x] CQRS 读投影 (事件驱动物化视图；删除/数值修正见 B2)
 - [x] 读缓存 (TTL + 事件失效)
 - [x] 文件上传/存储 (`File` 字段, multipart, 内容类型校验+魔术字节嗅探, 事件溯源; 本地后端✅, S3 后端在 `storage-s3` feature 后; 详见 docs/guide/advanced/upload-storage-plan)
