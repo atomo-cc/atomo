@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-06
+
+> Headline: **transactional custom routes (phase 3)** — the synchronous atomic
+> read-modify-write primitive that lets billing/idempotency logic live in a plugin
+> instead of a sidecar. No breaking changes. `:latest` + `:v0.2.4` are built from this tag.
+
 ### Added
 - **Custom routes — transactional DB (phase 3).** A plugin route handler can now
   return a `transaction` array of `{ sql, params, expect }` statements that the server
