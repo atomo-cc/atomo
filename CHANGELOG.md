@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documents that `fulfill_db_request` is injection-safe as written (validated
   identifier + clamped limit), so the previously-flagged `format!` needs no change.
 
+### Tests
+- **End-to-end transactional-route test.** A real **Javy-compiled** plugin fixture
+  (`tests/fixtures/route-billing`, source `plugin.js` + `plugin.wasm`, built with
+  Javy v8.1.1) serves `POST /ext/billing/debit`; the test drives the full HTTP path
+  (router → JS plugin → `transaction`) and asserts the atomic debit **commits** when
+  sufficient (10→6) and **rolls back with 402** when not. Covers the route layer the
+  `run_transaction` unit test couldn't reach.
+
 ## [0.2.4] - 2026-06-06
 
 > Headline: **transactional custom routes (phase 3)** — the synchronous atomic
