@@ -13,6 +13,32 @@ use crate::registry::{DesiredState, Project};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// What a reconcile pass should do for a project, given desired vs observed state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconcileAction {
+    /// Already converged — do nothing.
+    Noop,
+    /// Bring the instance up (also used to restart a Failed instance).
+    Start,
+    /// Bring the instance down.
+    Stop,
+}
+
+/// Pure convergence decision: `desired` vs `observed` → action. Extracted so the full
+/// matrix is unit-testable without a driver, registry, or network.
+pub fn decide(desired: DesiredState, observed: InstanceState) -> ReconcileAction {
+    use DesiredState::{Running as WantUp, Stopped as WantDown};
+    use InstanceState::{Failed, Running, Stopped, Unknown};
+    match (desired, observed) {
+        (WantUp, Running) => ReconcileAction::Noop,
+        // Stopped / Failed / Unknown while we want it up → start (start also restarts).
+        (WantUp, Stopped | Failed | Unknown) => ReconcileAction::Start,
+        // Running / Failed while we want it down → stop.
+        (WantDown, Running | Failed) => ReconcileAction::Stop,
+        (WantDown, Stopped | Unknown) => ReconcileAction::Noop,
+    }
+}
+
 pub struct Reconciler {
     pub provisioner: Arc<Provisioner>,
 }
@@ -39,26 +65,16 @@ impl Reconciler {
     /// Converge a single project's running instance to its `desired_state`.
     async fn reconcile_one(&self, project: &Project) -> Result<()> {
         let observed = self.provisioner.driver.state(project).await?;
-
-        match project.desired_state {
-            DesiredState::Running => match observed {
-                InstanceState::Running => { /* already converged */ }
-                InstanceState::Failed => {
-                    tracing::info!(project = %project.id, "instance failed; restarting");
-                    self.provisioner.start(&project.id).await?;
-                }
-                InstanceState::Stopped | InstanceState::Unknown => {
-                    tracing::info!(project = %project.id, ?observed, "starting instance to match desired=running");
-                    self.provisioner.start(&project.id).await?;
-                }
-            },
-            DesiredState::Stopped => match observed {
-                InstanceState::Running | InstanceState::Failed => {
-                    tracing::info!(project = %project.id, ?observed, "stopping instance to match desired=stopped");
-                    self.provisioner.stop(&project.id).await?;
-                }
-                InstanceState::Stopped | InstanceState::Unknown => { /* already converged */ }
-            },
+        match decide(project.desired_state, observed) {
+            ReconcileAction::Start => {
+                tracing::info!(project = %project.id, ?observed, "starting instance to match desired=running");
+                self.provisioner.start(&project.id).await?;
+            }
+            ReconcileAction::Stop => {
+                tracing::info!(project = %project.id, ?observed, "stopping instance to match desired=stopped");
+                self.provisioner.stop(&project.id).await?;
+            }
+            ReconcileAction::Noop => {}
         }
         Ok(())
     }
@@ -125,4 +141,33 @@ async fn tcp_reachable(upstream: &str) -> bool {
         tokio::time::timeout(timeout, tokio::net::TcpStream::connect(target)).await,
         Ok(Ok(_))
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::driver::InstanceState as I;
+    use crate::registry::DesiredState as D;
+
+    #[test]
+    fn convergence_matrix_is_exhaustive_and_correct() {
+        // desired Running: only Running is converged; everything else → Start.
+        assert_eq!(decide(D::Running, I::Running), ReconcileAction::Noop);
+        assert_eq!(decide(D::Running, I::Stopped), ReconcileAction::Start);
+        assert_eq!(decide(D::Running, I::Failed), ReconcileAction::Start); // restart
+        assert_eq!(decide(D::Running, I::Unknown), ReconcileAction::Start);
+
+        // desired Stopped: Running/Failed → Stop; Stopped/Unknown → converged.
+        assert_eq!(decide(D::Stopped, I::Running), ReconcileAction::Stop);
+        assert_eq!(decide(D::Stopped, I::Failed), ReconcileAction::Stop);
+        assert_eq!(decide(D::Stopped, I::Stopped), ReconcileAction::Noop);
+        assert_eq!(decide(D::Stopped, I::Unknown), ReconcileAction::Noop);
+    }
+
+    #[test]
+    fn tcp_unreachable_for_garbage_upstream() {
+        // A clearly-dead port resolves quickly to unreachable (sanity for the probe).
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        assert!(!rt.block_on(tcp_reachable("127.0.0.1:1"))); // port 1: nothing listens
+    }
 }

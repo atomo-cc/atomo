@@ -162,3 +162,68 @@ impl CaddyGateway {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::{DesiredState, ProjectStatus, SchemaRef};
+
+    fn proj(id: &str, hostname: Option<&str>, upstream: Option<&str>) -> Project {
+        let now = chrono::Utc::now();
+        Project {
+            id: id.to_string(),
+            display_name: id.to_string(),
+            hostname: hostname.map(String::from),
+            aliases: vec![],
+            database_url_ref: "/atomo/x/DATABASE_URL".into(),
+            schema_ref: SchemaRef::Volume {
+                path: "schema.ts".into(),
+            },
+            schema_version: None,
+            upstream: upstream.map(String::from),
+            env: serde_json::json!({}),
+            status: ProjectStatus::Running,
+            desired_state: DesiredState::Running,
+            last_health: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn render_routes_each_running_project_and_skips_those_without_upstream() {
+        let gw = CaddyGateway::new("/tmp/caddy.json");
+        let projects = vec![
+            proj("a", Some("a.example.com"), Some("127.0.0.1:4001")),
+            proj("b", Some("b.example.com"), None), // no upstream → skipped
+        ];
+        let cfg: serde_json::Value =
+            serde_json::from_str(&gw.render(&projects).unwrap()).unwrap();
+        let routes = cfg["apps"]["http"]["servers"]["srv0"]["routes"]
+            .as_array()
+            .expect("routes array");
+
+        let json = serde_json::to_string(&cfg).unwrap();
+        // Project a: hostname route + upstream + X-Atomo-Project header fallback.
+        assert!(json.contains("a.example.com"), "hostname route for a");
+        assert!(json.contains("127.0.0.1:4001"), "upstream for a");
+        assert!(json.contains("X-Atomo-Project"), "header fallback matcher");
+        // Project b has no upstream → it must not appear at all.
+        assert!(!json.contains("b.example.com"), "b has no upstream → skipped");
+        // a contributes a host route + a header route (2); b contributes none.
+        assert_eq!(routes.len(), 2, "only project a's two routes");
+    }
+
+    #[test]
+    fn render_is_valid_json_for_empty_fleet() {
+        let gw = CaddyGateway::new("/tmp/caddy.json");
+        let cfg: serde_json::Value = serde_json::from_str(&gw.render(&[]).unwrap()).unwrap();
+        assert_eq!(
+            cfg["apps"]["http"]["servers"]["srv0"]["routes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+}

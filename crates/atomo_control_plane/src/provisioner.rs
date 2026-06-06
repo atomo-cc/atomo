@@ -444,3 +444,78 @@ impl Provisioner {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::{DesiredState, ProjectStatus};
+
+    fn proj(id: &str, schema_ref: SchemaRef) -> Project {
+        let now = chrono::Utc::now();
+        Project {
+            id: id.to_string(),
+            display_name: id.to_string(),
+            hostname: None,
+            aliases: vec![],
+            database_url_ref: "/atomo/x/DATABASE_URL".into(),
+            schema_ref,
+            schema_version: None,
+            upstream: None,
+            env: serde_json::json!({}),
+            status: ProjectStatus::Provisioning,
+            desired_state: DesiredState::Running,
+            last_health: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn database_name_sanitizes_hyphens() {
+        assert_eq!(Provisioner::database_name("a-b-c"), "atomo_a_b_c");
+        assert_eq!(Provisioner::database_name("plain"), "atomo_plain");
+    }
+
+    #[test]
+    fn default_port_is_deterministic() {
+        assert_eq!(
+            Provisioner::default_port("alpha"),
+            Provisioner::default_port("alpha")
+        );
+        // Non-zero and offset stays within the 0..1000 window above the base.
+        let base: u16 = std::env::var("ATOMO_PORT_BASE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4000);
+        let p = Provisioner::default_port("alpha");
+        assert!(p >= base && p < base + 1000, "port {p} within [{base}, {})", base + 1000);
+    }
+
+    #[test]
+    fn materialized_schema_path_volume_is_used_as_is() {
+        let p = proj(
+            "v1",
+            SchemaRef::Volume {
+                path: "some/dir/schema.ts".into(),
+            },
+        );
+        let path = Provisioner::materialized_schema_path(&p);
+        assert_eq!(path, std::path::PathBuf::from("some/dir/schema.ts"));
+    }
+
+    #[test]
+    fn materialized_schema_path_git_lands_in_project_dir() {
+        let p = proj(
+            "g1",
+            SchemaRef::Git {
+                repo: "git@example.com:org/schemas.git".into(),
+                path: "projects/g1/schema.ts".into(),
+                git_ref: "abc123".into(),
+            },
+        );
+        let s = Provisioner::materialized_schema_path(&p)
+            .to_string_lossy()
+            .replace('\\', "/");
+        assert!(s.ends_with("g1/schema.ts"), "git schema lands as <id>/schema.ts: {s}");
+    }
+}
