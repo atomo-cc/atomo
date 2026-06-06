@@ -47,6 +47,7 @@ fn test_schema() -> atomo_schema::Schema {
             validation: std::collections::HashMap::new(),
             table_name: None,
             relationships: std::collections::HashMap::new(),
+            constraints: Vec::new(),
         },
     );
     atomo_schema::Schema { models }
