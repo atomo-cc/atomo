@@ -12,7 +12,9 @@ const TABLE: &str = "rls_test_widgets";
 
 async fn names_visible_to(pool: &sqlx::PgPool, tenant: Option<&str>) -> Vec<String> {
     let mut tx = pool.begin().await.unwrap();
-    atomo_server::rls::bind_tenant(&mut tx, tenant).await.unwrap();
+    atomo_server::rls::bind_tenant(&mut tx, tenant)
+        .await
+        .unwrap();
     let rows = sqlx::query(&format!("SELECT name FROM {TABLE} ORDER BY name"))
         .fetch_all(&mut *tx)
         .await

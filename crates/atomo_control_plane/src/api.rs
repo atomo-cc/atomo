@@ -159,9 +159,7 @@ async fn healthz() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({ "status": "ok" })))
 }
 
-async fn list_projects(
-    State(p): State<Arc<Provisioner>>,
-) -> ApiResult<Json<Vec<Project>>> {
+async fn list_projects(State(p): State<Arc<Provisioner>>) -> ApiResult<Json<Vec<Project>>> {
     let projects = p.registry.list().await?;
     Ok(Json(projects))
 }
@@ -192,7 +190,10 @@ async fn start_project(
     p.start(&id).await?;
     Ok((
         StatusCode::ACCEPTED,
-        Json(Accepted { id, action: "start" }),
+        Json(Accepted {
+            id,
+            action: "start",
+        }),
     ))
 }
 
@@ -201,10 +202,7 @@ async fn stop_project(
     Path(id): Path<String>,
 ) -> ApiResult<(StatusCode, Json<Accepted>)> {
     p.stop(&id).await?;
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(Accepted { id, action: "stop" }),
-    ))
+    Ok((StatusCode::ACCEPTED, Json(Accepted { id, action: "stop" })))
 }
 
 async fn schema_update(
@@ -242,7 +240,5 @@ async fn project_health(
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let project = p.registry.get(&id).await?;
-    Ok(Json(
-        project.last_health.unwrap_or(serde_json::Value::Null),
-    ))
+    Ok(Json(project.last_health.unwrap_or(serde_json::Value::Null)))
 }

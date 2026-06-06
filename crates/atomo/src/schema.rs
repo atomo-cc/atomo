@@ -92,8 +92,11 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         // declares created_at/updated_at already got those columns above (with DEFAULT
         // NOW()). Previously a model that declared only `updatedAt` silently lacked
         // created_at and 500'd the list view at query time (consumer feedback #2).
-        let declared: std::collections::HashSet<String> =
-            model.fields.values().map(|f| to_snake_case(&f.name)).collect();
+        let declared: std::collections::HashSet<String> = model
+            .fields
+            .values()
+            .map(|f| to_snake_case(&f.name))
+            .collect();
         if !declared.contains("created_at") {
             columns.push("  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
         }
@@ -419,10 +422,7 @@ mod tests {
         ledger.constraints = vec![
             ModelConstraint::Unique(vec!["accountId".into(), "idempotencyKey".into()]),
             ModelConstraint::Check("amount <> 0".into()),
-            ModelConstraint::UniqueWhere(
-                vec!["accountId".into()],
-                "account_id IS NOT NULL".into(),
-            ),
+            ModelConstraint::UniqueWhere(vec!["accountId".into()], "account_id IS NOT NULL".into()),
         ];
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);

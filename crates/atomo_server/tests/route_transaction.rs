@@ -23,7 +23,10 @@ async fn balance(pool: &sqlx::PgPool) -> i64 {
 async fn transactional_route_debits_atomically_over_http() {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    sqlx::query("DROP TABLE IF EXISTS accounts").execute(&pool).await.unwrap();
+    sqlx::query("DROP TABLE IF EXISTS accounts")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("CREATE TABLE accounts (user_id TEXT PRIMARY KEY, balance BIGINT NOT NULL)")
         .execute(&pool)
         .await
@@ -49,10 +52,16 @@ async fn transactional_route_debits_atomically_over_http() {
         .method("POST")
         .uri("/ext/billing/debit")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"userId":"u1","cost":4,"idempotencyKey":"k1"}"#))
+        .body(Body::from(
+            r#"{"userId":"u1","cost":4,"idempotencyKey":"k1"}"#,
+        ))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "sufficient debit should be 200");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "sufficient debit should be 200"
+    );
     assert_eq!(balance(&pool).await, 6, "sufficient debit should commit");
 
     // Insufficient debit → 402 (the handler's elseStatus); balance unchanged (rolled back).
@@ -60,7 +69,9 @@ async fn transactional_route_debits_atomically_over_http() {
         .method("POST")
         .uri("/ext/billing/debit")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"userId":"u1","cost":100,"idempotencyKey":"k2"}"#))
+        .body(Body::from(
+            r#"{"userId":"u1","cost":100,"idempotencyKey":"k2"}"#,
+        ))
         .unwrap();
     let resp2 = app.oneshot(req2).await.unwrap();
     assert_eq!(
@@ -70,5 +81,8 @@ async fn transactional_route_debits_atomically_over_http() {
     );
     assert_eq!(balance(&pool).await, 6, "insufficient debit must roll back");
 
-    sqlx::query("DROP TABLE IF EXISTS accounts").execute(&pool).await.unwrap();
+    sqlx::query("DROP TABLE IF EXISTS accounts")
+        .execute(&pool)
+        .await
+        .unwrap();
 }

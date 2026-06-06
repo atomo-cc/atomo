@@ -26,9 +26,9 @@ pub mod plugins;
 pub mod projector_routes;
 pub mod rate_limit;
 pub mod realtime;
-pub mod rls;
 pub mod registry;
 pub mod registry_routes;
+pub mod rls;
 pub mod schema_metadata;
 pub mod server;
 pub mod storage;
@@ -150,7 +150,10 @@ pub async fn seed_admin(auth: &crate::auth::HttpAuthService) -> anyhow::Result<(
                 .execute(pool)
                 .await?;
             tracing::info!(%email, "ADMIN_RESET_PASSWORD set — reset the existing admin's password from ADMIN_PASSWORD");
-        } else if !auth.verify_password(&password, &current_hash).unwrap_or(false) {
+        } else if !auth
+            .verify_password(&password, &current_hash)
+            .unwrap_or(false)
+        {
             tracing::warn!(
                 %email,
                 "admin already exists and ADMIN_PASSWORD differs from the seeded password — it is \

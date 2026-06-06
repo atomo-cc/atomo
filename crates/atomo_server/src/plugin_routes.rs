@@ -134,7 +134,10 @@ async fn dispatch(
         match mgr.run_route(&plugin, &request_json) {
             Ok(o) => o,
             Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, format!("plugin error: {e}"))
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("plugin error: {e}"),
+                )
                     .into_response()
             }
         }
@@ -169,7 +172,7 @@ async fn dispatch(
     // effects (emit/dbQuery/http), permission-gated. Previously these were silently
     // dropped on the route path.
     if !output.effects.is_empty() {
-        let mut mgr = manager.lock().await;
+        let mgr = manager.lock().await;
         if let Err(e) = mgr
             .fulfill_route_effects(&plugin, &output.effects, &pool, &http)
             .await
@@ -197,7 +200,10 @@ async fn run_transaction(
             None => continue,
         };
         let empty: Vec<Value> = Vec::new();
-        let params = stmt.get("params").and_then(|p| p.as_array()).unwrap_or(&empty);
+        let params = stmt
+            .get("params")
+            .and_then(|p| p.as_array())
+            .unwrap_or(&empty);
         let mut q = sqlx::query(sql);
         for p in params {
             q = bind_value(q, p);
@@ -289,12 +295,7 @@ fn build_response(response_json: &str) -> Response {
         .and_then(|c| c.as_str())
         .unwrap_or("application/json")
         .to_string();
-    (
-        status,
-        [(header::CONTENT_TYPE, content_type)],
-        body,
-    )
-        .into_response()
+    (status, [(header::CONTENT_TYPE, content_type)], body).into_response()
 }
 
 fn header_map_to_json(headers: &HeaderMap) -> Value {
@@ -327,11 +328,18 @@ mod tests {
     async fn run_transaction_atomic_debit_and_rollback() {
         let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
         let pool = sqlx::PgPool::connect(&url).await.unwrap();
-        sqlx::query("DROP TABLE IF EXISTS bal_test").execute(&pool).await.unwrap();
+        sqlx::query("DROP TABLE IF EXISTS bal_test")
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("CREATE TABLE bal_test (user_id TEXT PRIMARY KEY, balance BIGINT NOT NULL)")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO bal_test (user_id, balance) VALUES ('u1', 10)")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let debit = |cost: i64| {
             vec![json!({
@@ -345,7 +353,9 @@ mod tests {
         let r = run_transaction(&pool, &debit(4)).await.unwrap();
         assert!(r.is_none(), "sufficient debit should commit, got {:?}", r);
         let (bal,): (i64,) = sqlx::query_as("SELECT balance FROM bal_test WHERE user_id='u1'")
-            .fetch_one(&pool).await.unwrap();
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(bal, 6);
 
         // Insufficient: 0 rows affected → rollback + 402 else-response; balance unchanged.
@@ -358,10 +368,18 @@ mod tests {
             None => panic!("insufficient debit should return the else-response"),
         }
         let (bal2,): (i64,) = sqlx::query_as("SELECT balance FROM bal_test WHERE user_id='u1'")
-            .fetch_one(&pool).await.unwrap();
-        assert_eq!(bal2, 6, "balance must be unchanged after a rolled-back debit");
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            bal2, 6,
+            "balance must be unchanged after a rolled-back debit"
+        );
 
-        sqlx::query("DROP TABLE IF EXISTS bal_test").execute(&pool).await.unwrap();
+        sqlx::query("DROP TABLE IF EXISTS bal_test")
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -415,8 +433,14 @@ mod tests {
     #[test]
     fn header_map_to_json_collects_string_headers() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
         let json = header_map_to_json(&headers);
-        assert_eq!(json.get("content-type").and_then(|v| v.as_str()), Some("application/json"));
+        assert_eq!(
+            json.get("content-type").and_then(|v| v.as_str()),
+            Some("application/json")
+        );
     }
 }

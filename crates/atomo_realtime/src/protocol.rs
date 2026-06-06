@@ -127,15 +127,25 @@ impl<'de> Deserialize<'de> for ClientMsg {
             p.ok_or_else(|| D::Error::custom(format!("{op} frame requires a `payload`")))
         };
         Ok(match wire.op.as_str() {
-            "subscribe" => ClientMsg::Subscribe { channel: wire.channel },
-            "unsubscribe" => ClientMsg::Unsubscribe { channel: wire.channel },
-            "presence" => ClientMsg::Presence { channel: wire.channel },
+            "subscribe" => ClientMsg::Subscribe {
+                channel: wire.channel,
+            },
+            "unsubscribe" => ClientMsg::Unsubscribe {
+                channel: wire.channel,
+            },
+            "presence" => ClientMsg::Presence {
+                channel: wire.channel,
+            },
             "publish" => ClientMsg::Publish {
                 channel: wire.channel,
                 payload: need(wire.payload, "publish")?,
             },
-            "session_join" => ClientMsg::SessionJoin { session: wire.session },
-            "session_leave" => ClientMsg::SessionLeave { session: wire.session },
+            "session_join" => ClientMsg::SessionJoin {
+                session: wire.session,
+            },
+            "session_leave" => ClientMsg::SessionLeave {
+                session: wire.session,
+            },
             "to_coordinator" => ClientMsg::ToCoordinator {
                 session: wire.session,
                 payload: need(wire.payload, "to_coordinator")?,
@@ -242,9 +252,10 @@ mod tests {
 
     #[test]
     fn publish_payload_stays_byte_for_byte_opaque() {
-        let msg: ClientMsg =
-            serde_json::from_str(r#"{"op":"publish","channel":"c","payload":{"x":[1,2],"s":"hi"}}"#)
-                .unwrap();
+        let msg: ClientMsg = serde_json::from_str(
+            r#"{"op":"publish","channel":"c","payload":{"x":[1,2],"s":"hi"}}"#,
+        )
+        .unwrap();
         match msg {
             ClientMsg::Publish { channel, payload } => {
                 assert_eq!(channel, "c");
@@ -262,19 +273,23 @@ mod tests {
 
     #[test]
     fn publish_without_payload_is_rejected() {
-        let err = serde_json::from_str::<ClientMsg>(r#"{"op":"publish","channel":"c"}"#).unwrap_err();
+        let err =
+            serde_json::from_str::<ClientMsg>(r#"{"op":"publish","channel":"c"}"#).unwrap_err();
         assert!(err.to_string().contains("payload"), "got: {err}");
     }
 
     #[test]
     fn message_serializes_with_type_tag_and_opaque_payload() {
-        let payload: Payload = serde_json::from_str::<Box<RawValue>>(r#"{"k":1}"#).unwrap().into();
+        let payload: Payload = serde_json::from_str::<Box<RawValue>>(r#"{"k":1}"#)
+            .unwrap()
+            .into();
         let msg = ServerMsg::Message {
             channel: "room".into(),
             from: Some("alice".into()),
             payload,
         };
-        let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
         assert_eq!(v["type"], "message");
         assert_eq!(v["channel"], "room");
         assert_eq!(v["from"], "alice");
@@ -283,7 +298,9 @@ mod tests {
 
     #[test]
     fn message_omits_from_when_absent() {
-        let payload: Payload = serde_json::from_str::<Box<RawValue>>("true").unwrap().into();
+        let payload: Payload = serde_json::from_str::<Box<RawValue>>("true")
+            .unwrap()
+            .into();
         let msg = ServerMsg::Message {
             channel: "room".into(),
             from: None,
@@ -299,7 +316,8 @@ mod tests {
             channel: "room".into(),
             members: vec!["a".into(), "b".into()],
         };
-        let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
         assert_eq!(v["type"], "presence");
         assert_eq!(v["members"], serde_json::json!(["a", "b"]));
     }

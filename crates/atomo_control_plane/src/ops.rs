@@ -59,7 +59,13 @@ impl BackupDest {
 fn artifact_name(project_id: &str, at: chrono::DateTime<chrono::Utc>) -> String {
     let safe: String = project_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     format!("atomo-{safe}-{}.dump", at.format("%Y%m%dT%H%M%SZ"))
 }
@@ -147,7 +153,12 @@ async fn run_pg_dump(database_url: &str, out_path: &str) -> Result<()> {
 /// True when an env var holds a truthy value (`1`/`true`/`yes`/`on`, case-insensitive).
 fn env_truthy(key: &str) -> bool {
     std::env::var(key)
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -268,7 +279,10 @@ mod tests {
 
     #[test]
     fn artifact_name_shape() {
-        assert_eq!(artifact_name("blog", ts()), "atomo-blog-20260606T130509Z.dump");
+        assert_eq!(
+            artifact_name("blog", ts()),
+            "atomo-blog-20260606T130509Z.dump"
+        );
     }
 
     #[test]
@@ -279,7 +293,10 @@ mod tests {
             "atomo-a_b__c-20260606T130509Z.dump"
         );
         let n = artifact_name("../etc", ts());
-        assert!(!n.contains('/'), "name must not contain a path separator: {n}");
+        assert!(
+            !n.contains('/'),
+            "name must not contain a path separator: {n}"
+        );
         assert!(!n.contains('.') || n.ends_with(".dump"));
     }
 
@@ -301,7 +318,10 @@ mod tests {
         std::env::remove_var("ATOMO_BACKUP_DIR");
 
         // default
-        assert_eq!(BackupDest::from_env(), BackupDest::LocalDir("./backups".into()));
+        assert_eq!(
+            BackupDest::from_env(),
+            BackupDest::LocalDir("./backups".into())
+        );
     }
 
     #[test]
@@ -316,7 +336,10 @@ mod tests {
 
     #[tokio::test]
     async fn probe_unconfigured_is_marked_not_errored() {
-        assert_eq!(probe_upstream(None, Duration::from_millis(50)).await, "unconfigured");
+        assert_eq!(
+            probe_upstream(None, Duration::from_millis(50)).await,
+            "unconfigured"
+        );
     }
 
     #[tokio::test]
@@ -328,7 +351,9 @@ mod tests {
             hostname: None,
             aliases: vec![],
             database_url_ref: "env:NOPE".into(),
-            schema_ref: crate::registry::SchemaRef::Volume { path: "schema.ts".into() },
+            schema_ref: crate::registry::SchemaRef::Volume {
+                path: "schema.ts".into(),
+            },
             schema_version: None,
             upstream: Some("127.0.0.1:1".into()), // almost certainly closed
             env: serde_json::json!({}),

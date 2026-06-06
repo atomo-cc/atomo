@@ -43,7 +43,10 @@ tokio::task_local! {
 /// generated RLS policies resolve to this tenant. Safe no-op when RLS is off or
 /// `tenant` is `None` (the scope is simply never read). `SET LOCAL` is
 /// transaction-scoped, so it is safe under PgBouncer transaction pooling.
-pub async fn with_tenant_scope<F: std::future::Future>(tenant: Option<String>, fut: F) -> F::Output {
+pub async fn with_tenant_scope<F: std::future::Future>(
+    tenant: Option<String>,
+    fut: F,
+) -> F::Output {
     TENANT_SCOPE.scope(tenant, fut).await
 }
 
@@ -119,7 +122,11 @@ impl AtomoClient {
         Ok(sqlx::query_with(sql, args).fetch_all(&self.pool).await?)
     }
 
-    async fn fetch_one_scoped(&self, sql: &str, args: PgArguments) -> Result<sqlx::postgres::PgRow> {
+    async fn fetch_one_scoped(
+        &self,
+        sql: &str,
+        args: PgArguments,
+    ) -> Result<sqlx::postgres::PgRow> {
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 let mut tx = self.pool.begin().await?;
@@ -146,7 +153,9 @@ impl AtomoClient {
                 return Ok(row);
             }
         }
-        Ok(sqlx::query_with(sql, args).fetch_optional(&self.pool).await?)
+        Ok(sqlx::query_with(sql, args)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 
     async fn execute_scoped(&self, sql: &str, args: PgArguments) -> Result<u64> {

@@ -69,7 +69,9 @@ impl DockerDriver {
             // Non-zero typically means "no such object" → not running / absent.
             return Ok(None);
         }
-        Ok(Some(String::from_utf8_lossy(&out.stdout).trim().to_string()))
+        Ok(Some(
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        ))
     }
 }
 

@@ -118,14 +118,54 @@ fn prometheus_text(s: &StatsSnapshot) -> String {
         out.push_str(&format!("# TYPE atomo_realtime_{name} {kind}\n"));
         out.push_str(&format!("atomo_realtime_{name} {value}\n"));
     };
-    metric("active_clients", "gauge", "Currently connected clients", s.active_clients);
-    metric("active_channels", "gauge", "Channels with members", s.active_channels);
-    metric("active_sessions", "gauge", "Live coordinator sessions", s.active_sessions);
-    metric("messages_published_total", "counter", "Frames accepted for fan-out", s.messages_published);
-    metric("messages_delivered_total", "counter", "Frames delivered to clients", s.messages_delivered);
-    metric("dropped_frames_total", "counter", "Frames shed to slow clients", s.dropped_frames);
-    metric("connections_opened_total", "counter", "Connections opened", s.connections_opened);
-    metric("connections_closed_total", "counter", "Connections closed", s.connections_closed);
+    metric(
+        "active_clients",
+        "gauge",
+        "Currently connected clients",
+        s.active_clients,
+    );
+    metric(
+        "active_channels",
+        "gauge",
+        "Channels with members",
+        s.active_channels,
+    );
+    metric(
+        "active_sessions",
+        "gauge",
+        "Live coordinator sessions",
+        s.active_sessions,
+    );
+    metric(
+        "messages_published_total",
+        "counter",
+        "Frames accepted for fan-out",
+        s.messages_published,
+    );
+    metric(
+        "messages_delivered_total",
+        "counter",
+        "Frames delivered to clients",
+        s.messages_delivered,
+    );
+    metric(
+        "dropped_frames_total",
+        "counter",
+        "Frames shed to slow clients",
+        s.dropped_frames,
+    );
+    metric(
+        "connections_opened_total",
+        "counter",
+        "Connections opened",
+        s.connections_opened,
+    );
+    metric(
+        "connections_closed_total",
+        "counter",
+        "Connections closed",
+        s.connections_closed,
+    );
     out
 }
 
@@ -162,7 +202,10 @@ async fn main() -> anyhow::Result<()> {
         _ => CoordinatorLeavePolicy::Reelect,
     };
     let env_u32 = |key: &str, default: u32| -> u32 {
-        std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
     };
     // Per-client join throttle (on by default for the exposed relay).
     let join_burst = env_u32("ATOMO_REALTIME_JOIN_BURST", 20);
@@ -207,7 +250,10 @@ async fn main() -> anyhow::Result<()> {
 /// Prometheus metrics (hub counters).
 async fn metrics(State(state): State<AppState>) -> Response {
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
         prometheus_text(&state.hub.stats()),
     )
         .into_response()
@@ -255,7 +301,12 @@ async fn ws_handler(
     let (principal, session) = match params.get("token") {
         Some(token) => match verify(token, &state.jwt_secret) {
             Some(claims) => (Principal::new(claims.sub, None), claims.sid),
-            None => return unauth(&state.conns, "realtime auth failed: invalid or expired token"),
+            None => {
+                return unauth(
+                    &state.conns,
+                    "realtime auth failed: invalid or expired token",
+                )
+            }
         },
         None if state.allow_anon => {
             let n = ANON_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -283,7 +334,9 @@ async fn pump(
     let mut conn = hub.connect(principal).await;
     let id = conn.id;
     if let Some(session) = session {
-        conn.handle.dispatch(ClientMsg::SessionJoin { session }).await;
+        conn.handle
+            .dispatch(ClientMsg::SessionJoin { session })
+            .await;
     }
     debug!(client_id = id, "relay connection up");
 
@@ -345,7 +398,12 @@ mod tests {
             exp,
             iat: 0,
         };
-        encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes())).unwrap()
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap()
     }
 
     #[test]

@@ -40,8 +40,7 @@ impl Provisioner {
     /// Root dir under which each project's materialized schema volume lives.
     /// Configurable via `ATOMO_SCHEMA_VOLUME_ROOT` (defaults to `./atomo-schemas`).
     fn schema_volume_root() -> String {
-        std::env::var("ATOMO_SCHEMA_VOLUME_ROOT")
-            .unwrap_or_else(|_| "./atomo-schemas".to_string())
+        std::env::var("ATOMO_SCHEMA_VOLUME_ROOT").unwrap_or_else(|_| "./atomo-schemas".to_string())
     }
 
     /// Per-project schema directory (where the git checkout / volume copy lands).
@@ -131,9 +130,17 @@ impl Provisioner {
                 }
                 // Fetch the pinned SHA and check it out (detached). Try a shallow
                 // fetch-by-sha first; fall back to a full fetch if unsupported.
-                if Self::git(&["-C", &checkout_str, "fetch", "--depth", "1", "origin", git_ref])
-                    .await
-                    .is_err()
+                if Self::git(&[
+                    "-C",
+                    &checkout_str,
+                    "fetch",
+                    "--depth",
+                    "1",
+                    "origin",
+                    git_ref,
+                ])
+                .await
+                .is_err()
                 {
                     Self::git(&["-C", &checkout_str, "fetch", "origin"]).await?;
                 }
@@ -323,7 +330,9 @@ impl Provisioner {
         let handle = self.driver.start(&project, &env).await?;
 
         project.upstream = Some(handle.upstream.clone());
-        self.registry.set_upstream(id, Some(&handle.upstream)).await?;
+        self.registry
+            .set_upstream(id, Some(&handle.upstream))
+            .await?;
         self.registry
             .update_status(id, ProjectStatus::Running)
             .await?;
@@ -381,7 +390,12 @@ impl Provisioner {
         // Persist the deployed SHA + audit it.
         self.registry.set_schema_version(id, new_sha).await?;
         self.registry
-            .record_event(id, "schema_update", None, serde_json::json!({ "ref": new_sha }))
+            .record_event(
+                id,
+                "schema_update",
+                None,
+                serde_json::json!({ "ref": new_sha }),
+            )
             .await?;
 
         let running = self.running_projects().await?;

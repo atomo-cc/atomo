@@ -85,8 +85,7 @@ pub struct EnvSecretStore;
 impl SecretStore for EnvSecretStore {
     async fn get(&self, reference: &str) -> Result<String> {
         let key = reference.trim_start_matches("env:");
-        std::env::var(key)
-            .map_err(|_| ControlPlaneError::Secret(format!("env var not set: {key}")))
+        std::env::var(key).map_err(|_| ControlPlaneError::Secret(format!("env var not set: {key}")))
     }
 
     async fn put(&self, _reference: &str, _value: &str) -> Result<String> {

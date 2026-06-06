@@ -225,12 +225,11 @@ impl ProjectRegistry {
     }
 
     pub async fn resolve_by_hostname(&self, hostname: &str) -> Result<Option<Project>> {
-        let row = sqlx::query(
-            "SELECT * FROM projects WHERE hostname = $1 OR $1 = ANY(aliases) LIMIT 1",
-        )
-        .bind(hostname)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row =
+            sqlx::query("SELECT * FROM projects WHERE hostname = $1 OR $1 = ANY(aliases) LIMIT 1")
+                .bind(hostname)
+                .fetch_optional(&self.pool)
+                .await?;
         row.as_ref().map(Self::row_to_project).transpose()
     }
 

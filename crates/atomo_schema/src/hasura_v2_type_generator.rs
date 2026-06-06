@@ -1187,6 +1187,7 @@ pub struct GenericComparisonExp {
     }
 
     /// Convert field type to Rust type
+    #[allow(clippy::only_used_in_recursion)] // pre-existing; &self kept for API symmetry
     fn convert_field_type(&self, field_type: &FieldType, optional: bool) -> String {
         let base_type = match field_type {
             FieldType::String => "String".to_string(),
@@ -1231,6 +1232,7 @@ pub struct GenericComparisonExp {
     }
 
     /// Convert field type to Rust type for input objects - use JSON for ContentBlock arrays
+    #[allow(clippy::only_used_in_recursion)] // pre-existing; &self kept for API symmetry
     fn convert_field_type_for_input(&self, field_type: &FieldType, optional: bool) -> String {
         let base_type = match field_type {
             FieldType::String => "String".to_string(),
@@ -1652,6 +1654,7 @@ pub struct {model_name}AggregateFields {{
     }
 
     /// Map Rust type to GraphQL type
+    #[allow(clippy::only_used_in_recursion)] // pre-existing; &self kept for API symmetry
     fn map_to_graphql_type(&self, rust_type: &str) -> String {
         match rust_type {
             "String" => "String".to_string(),
@@ -1674,6 +1677,7 @@ pub struct {model_name}AggregateFields {{
     }
 
     /// Map FieldType to GraphQL type for schema generation
+    #[allow(clippy::only_used_in_recursion)] // pre-existing; &self kept for API symmetry
     fn map_field_to_graphql_type(&self, field_type: &FieldType) -> String {
         match field_type {
             FieldType::String => "String".to_string(),

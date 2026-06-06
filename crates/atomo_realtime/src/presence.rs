@@ -31,12 +31,7 @@ impl Presence {
 
     /// Record that `client_id` (a given principal) joined `channel`.
     /// Returns `true` if this was a new membership (i.e. emit a `Joined`).
-    pub fn join(
-        &mut self,
-        channel: &str,
-        client_id: ClientId,
-        principal_id: &str,
-    ) -> bool {
+    pub fn join(&mut self, channel: &str, client_id: ClientId, principal_id: &str) -> bool {
         self.channels
             .entry(channel.to_string())
             .or_default()
@@ -91,7 +86,10 @@ mod tests {
     fn join_reports_only_the_first_membership_as_new() {
         let mut p = Presence::new();
         assert!(p.join("room", 1, "alice"), "first join is new");
-        assert!(!p.join("room", 1, "alice"), "re-join of same client is not new");
+        assert!(
+            !p.join("room", 1, "alice"),
+            "re-join of same client is not new"
+        );
         assert!(p.join("room", 2, "bob"), "different client is new");
     }
 
@@ -113,7 +111,10 @@ mod tests {
         p.join("room", 1, "alice");
         p.join("room", 2, "alice");
         p.join("room", 3, "bob");
-        assert_eq!(p.snapshot("room"), vec!["alice".to_string(), "bob".to_string()]);
+        assert_eq!(
+            p.snapshot("room"),
+            vec!["alice".to_string(), "bob".to_string()]
+        );
         assert!(p.snapshot("missing").is_empty());
     }
 
@@ -123,9 +124,15 @@ mod tests {
         p.join("room", 1, "alice");
         assert_eq!(p.channel_count(), 1);
 
-        assert!(p.leave("room", 1), "leaving an existing member returns true");
+        assert!(
+            p.leave("room", 1),
+            "leaving an existing member returns true"
+        );
         assert!(!p.leave("room", 1), "leaving again returns false");
-        assert!(!p.leave("ghost", 9), "leaving an unknown channel returns false");
+        assert!(
+            !p.leave("ghost", 9),
+            "leaving an unknown channel returns false"
+        );
         assert_eq!(p.channel_count(), 0, "empty channel is pruned");
     }
 

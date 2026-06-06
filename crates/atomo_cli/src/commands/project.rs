@@ -93,15 +93,17 @@ async fn build_provisioner() -> anyhow::Result<Provisioner> {
     let registry = ProjectRegistry::new(pool);
     registry.init().await?;
 
-    let image =
-        std::env::var("ATOMO_SERVER_IMAGE").unwrap_or_else(|_| "ghcr.io/atomo-cc/atomo-server:latest".to_string());
+    let image = std::env::var("ATOMO_SERVER_IMAGE")
+        .unwrap_or_else(|_| "ghcr.io/atomo-cc/atomo-server:latest".to_string());
     let driver = Arc::new(DockerDriver::new(image));
 
-    let secrets: Arc<dyn SecretStore> =
-        match std::env::var("ATOMO_SECRET_STORE").unwrap_or_default().as_str() {
-            "env" => Arc::new(EnvSecretStore),
-            _ => Arc::new(SsmSecretStore),
-        };
+    let secrets: Arc<dyn SecretStore> = match std::env::var("ATOMO_SECRET_STORE")
+        .unwrap_or_default()
+        .as_str()
+    {
+        "env" => Arc::new(EnvSecretStore),
+        _ => Arc::new(SsmSecretStore),
+    };
 
     let caddy_config =
         std::env::var("ATOMO_CADDY_CONFIG").unwrap_or_else(|_| "./caddy.json".to_string());
@@ -131,9 +133,15 @@ pub async fn project_command(cmd: ProjectCommands) -> anyhow::Result<()> {
                     anyhow::anyhow!("--schema-path is required with --schema-git")
                 })?;
                 let git_ref = schema_ref.ok_or_else(|| {
-                    anyhow::anyhow!("--schema-ref (pinned commit SHA) is required with --schema-git")
+                    anyhow::anyhow!(
+                        "--schema-ref (pinned commit SHA) is required with --schema-git"
+                    )
                 })?;
-                SchemaRef::Git { repo, path, git_ref }
+                SchemaRef::Git {
+                    repo,
+                    path,
+                    git_ref,
+                }
             } else if let Some(path) = schema_volume {
                 SchemaRef::Volume { path }
             } else {
@@ -214,7 +222,12 @@ pub async fn project_command(cmd: ProjectCommands) -> anyhow::Result<()> {
             } else {
                 ""
             };
-            println!("  {} deleted {}{}", "✓".green(), id.bright_white(), note.dimmed());
+            println!(
+                "  {} deleted {}{}",
+                "✓".green(),
+                id.bright_white(),
+                note.dimmed()
+            );
         }
     }
 

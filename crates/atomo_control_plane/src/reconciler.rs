@@ -117,7 +117,9 @@ impl Reconciler {
 /// Best-effort TCP liveness probe with a short timeout. Accepts `host:port` upstreams; a
 /// unix-socket upstream (no `:port`) is treated as not-TCP-probeable and reports unreachable.
 async fn tcp_reachable(upstream: &str) -> bool {
-    let target = upstream.trim_start_matches("http://").trim_start_matches("https://");
+    let target = upstream
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
     let timeout = Duration::from_secs(2);
     matches!(
         tokio::time::timeout(timeout, tokio::net::TcpStream::connect(target)).await,

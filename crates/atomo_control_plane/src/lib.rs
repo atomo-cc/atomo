@@ -17,23 +17,23 @@
 //! Phase 3 (multi-tenant RLS) lives in the core crates (`atomo_schema` / `atomo_server`),
 //! not here — it is independent of the control plane.
 
+pub mod driver;
 pub mod error;
 pub mod registry;
-pub mod driver;
 pub mod secrets;
 
-pub mod provisioner;
-pub mod docker;
 pub mod caddy;
+pub mod docker;
+pub mod provisioner;
 
 pub mod api;
 pub mod reconciler;
 
-pub mod ops;
 pub mod extensions;
+pub mod ops;
 
-pub use error::{ControlPlaneError, Result};
-pub use registry::{DesiredState, Project, ProjectRegistry, ProjectStatus, SchemaRef};
 pub use driver::{Driver, InstanceHandle, InstanceState};
-pub use secrets::{EnvSecretStore, SecretStore, SsmSecretStore};
+pub use error::{ControlPlaneError, Result};
 pub use provisioner::Provisioner;
+pub use registry::{DesiredState, Project, ProjectRegistry, ProjectStatus, SchemaRef};
+pub use secrets::{EnvSecretStore, SecretStore, SsmSecretStore};

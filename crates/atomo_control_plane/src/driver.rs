@@ -38,8 +38,11 @@ pub trait Driver: Send + Sync {
     fn name(&self) -> &str;
 
     /// Start (or no-op if already running) an instance for `project`.
-    async fn start(&self, project: &Project, env: &HashMap<String, String>)
-        -> Result<InstanceHandle>;
+    async fn start(
+        &self,
+        project: &Project,
+        env: &HashMap<String, String>,
+    ) -> Result<InstanceHandle>;
 
     /// Stop the instance. Idempotent.
     async fn stop(&self, project: &Project) -> Result<()>;
