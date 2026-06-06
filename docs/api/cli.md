@@ -59,6 +59,26 @@ atomo deploy [-e, --env production]
 
 See also: `package.json` scripts at repo root and in `services/<name>/package.json`.
 
+### Multi-Project Control Plane
+
+Provision and manage many isolated projects on shared infrastructure (silo per project: a
+dedicated database + `atomo-server` instance each). See the
+[Multi-Project Platform](/guide/advanced/multi-project-design) design for the full model.
+
+```bash
+atomo project create --id <slug> --name "<Display>" --hostname <host> \
+  --database-url-ref <ssm-ref> (--schema-git <repo> --schema-path <p> --schema-ref <sha> | --schema-volume <path>)
+atomo project start  <slug>
+atomo project stop   <slug>
+atomo project list
+atomo project delete <slug> [--drop-database --yes]
+```
+
+Configured via env (see `.env.example`): `ATOMO_CP_DATABASE_URL` (registry DB),
+`ATOMO_ADMIN_DATABASE_URL`, `ATOMO_SECRET_STORE` (`ssm`|`env`), `ATOMO_SERVER_IMAGE`,
+`ATOMO_SCHEMA_VOLUME_ROOT`, `ATOMO_PORT_BASE`, `ATOMO_CADDY_CONFIG`, `ATOMO_CADDY_ADMIN`.
+A control-plane HTTP API (`atomo_control_plane::api`) exposes the same lifecycle for automation.
+
 ### Seed Command
 - Runs from the service root (where `schema.ts` lives).
 - Reads `.env` in the current directory for `DATABASE_URL`.

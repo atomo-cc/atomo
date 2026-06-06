@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Multi-project control plane (`atomo_control_plane`, new crate).** Run many isolated
+  projects on shared infrastructure: **silo per project** (one database + one `atomo-server`
+  instance each) with a registry, provisioner (Docker driver), Caddy gateway, reconciler, and
+  per-project backups/health. New `atomo project create|start|stop|list|delete` CLI. Secrets via
+  AWS SSM; schema source pinned to a git commit SHA. Purely additive — the per-project server is
+  unchanged. See the [Multi-Project Platform](docs/guide/advanced/multi-project-design.md) design.
+- **Opt-in DB-enforced multi-tenant Row-Level Security** (`ATOMO_ENABLE_RLS`, default off; new
+  `ServerConfig::enable_rls`). When on, the server installs `CREATE POLICY` per model table at
+  boot and the data layer binds `atomo.tenant_id` per request (transaction-scoped `SET LOCAL`,
+  pooling-safe); the read cache is tenant-keyed. Proven against Postgres by
+  `rls_enforcement` + `rls_executor` tests. See [Multi-tenant](docs/guide/advanced/multi-tenant.md).
+
 ## [0.2.5] - 2026-06-06
 
 > Phase-3 hardening + the plugin on-ramp. No breaking changes. `:latest` + `:v0.2.5`

@@ -100,7 +100,8 @@ atomo/
 │   ├── atomo_schema/         # 📝 Schema parser
 │   ├── atomo_projectors/     # 📊 Event projectors
 │   ├── atomo_realtime/       # 📡 Ephemeral realtime channels and presence
-│   └── atomo_wasm_runtime/   # 🔌 WASM plugin runtime
+│   ├── atomo_wasm_runtime/   # 🔌 WASM plugin runtime
+│   └── atomo_control_plane/  # 🛰️  Multi-project control plane (registry, provisioner, gateway)
 ├── packages/                  # Frontend packages
 │   ├── atomo-client-sdk/     # 📚 Client SDK
 │   └── atomo-admin-ui/       # 🎛️  Admin interface
