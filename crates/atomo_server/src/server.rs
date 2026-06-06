@@ -158,6 +158,28 @@ impl AtomoServer {
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
         info!("   ✓ Platform tables ensured");
 
+        // Opt-in, DB-enforced multi-tenant Row-Level Security (defense-in-depth).
+        // Gated behind ATOMO_ENABLE_RLS (default OFF → no-op, behavior unchanged).
+        // Model tables already exist here (created in Atomo::new() before run()).
+        {
+            let enabled = crate::rls::rls_enabled();
+            if enabled {
+                let table_names: Vec<String> = self
+                    .atomo
+                    .schema()
+                    .models
+                    .values()
+                    // Real entities only: skip enum-derived pseudo-models and block sub-types.
+                    .filter(|m| {
+                        !m.fields.contains_key("_enum_type") && m.fields.contains_key("id")
+                    })
+                    .map(atomo::query::sql_builder::table_name_for)
+                    .collect();
+                crate::rls::ensure_rls_policies(self.atomo.db_pool(), &table_names, enabled).await?;
+                info!("   ✓ Row-Level Security policies ensured (ATOMO_ENABLE_RLS)");
+            }
+        }
+
         // Plugin marketplace registry (read API). Artifacts live in ./plugin-registry.
         let registry_store = std::sync::Arc::new(crate::registry::RegistryStore::new(
             self.atomo.db_pool().clone(),

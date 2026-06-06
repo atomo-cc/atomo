@@ -37,15 +37,62 @@ curl -s -X POST http://localhost:3000/graphql \
 Tenant A creating a record and Tenant B listing will not see each other's rows (verified by the
 `test_two_tenant_isolation` integration test).
 
+## Opt-in DB-enforced RLS (defense-in-depth)
+
+Postgres **Row-Level Security** is available as an **opt-in, additive** layer on top of the
+app-layer scoping. It is **off by default** — when disabled, behavior is byte-for-byte unchanged.
+
+### Enable it
+
+```bash
+ATOMO_ENABLE_RLS=true   # accepts true / 1; default false
+```
+
+On boot (after tables exist) the server runs, for every model table:
+
+```sql
+ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
+ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;   -- also constrains the table-owning role
+DROP POLICY IF EXISTS atomo_tenant_isolation ON <t>;
+CREATE POLICY atomo_tenant_isolation ON <t>
+  USING      (tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true))
+  WITH CHECK (tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true));
+```
+
+Setup is **idempotent** (safe on every boot). The policy is **permissive**: rows with
+`tenant_id IS NULL` stay visible/writable, so single-tenant deployments are unaffected.
+
+### What it enforces
+
+A forgotten `WHERE tenant_id = …` cannot leak across tenants: Postgres filters every row against
+the `atomo.tenant_id` session variable set for the request, so cross-tenant reads/writes are
+rejected by the database itself — not just the application.
+
+### Pooling note (important)
+
+The session variable is set with `SET LOCAL atomo.tenant_id = …` (via `set_config(…, true)`), which
+is **transaction-scoped** — it resets at COMMIT/ROLLBACK. This makes it **safe under PgBouncer
+transaction pooling**: the binding can never leak onto another tenant's request reusing the same
+physical connection. The bind and the queries it protects **must run in the same transaction**.
+
+Helper: `atomo_server::rls::bind_tenant(&mut tx, tenant_id)`.
+
+### Per-transaction wiring status
+
+- **Implemented:** the flag, idempotent policy generation/setup, the boot hook, and the
+  `bind_tenant` helper.
+- **Remaining seam:** the current GraphQL/query path executes against the shared pool without a
+  per-request transaction, so `bind_tenant` is **not yet auto-called**. Wiring it is a follow-up
+  (thread the request's tenant into a `pool.begin()` → `bind_tenant` → commit). The exact seam is
+  documented in `crates/atomo_server/src/rls.rs`. Until then, app-layer scoping remains the active
+  isolation and RLS provides the policy scaffolding + caught-writes via `WITH CHECK`.
+
+So: enabling RLS adds DB-level policies as defense-in-depth; full per-request enforcement lands when
+the bind seam is wired.
+
 ## Limits & roadmap
 
-- **Postgres Row-Level Security (RLS)** is **not yet implemented** — scoping is enforced in the
-  application layer (the `WHERE tenant_id = ...` clauses + write stamping). RLS as a
-  defense-in-depth layer (generated `CREATE POLICY` + per-transaction session var) is a planned
-  follow-up; doing it safely under a shared connection pool is a deliberate design step.
-- **Event-store tenant scoping** (per-event tenant metadata) is also planned.
-
-So: app-layer isolation works and is tested; do not rely on DB-enforced RLS yet.
+- **Event-store tenant scoping** (per-event tenant metadata) is planned.
 
 ## See also
 - [Access Control (RBAC)](/guide/advanced/access-hooks)

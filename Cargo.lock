@@ -373,6 +373,7 @@ dependencies = [
  "anyhow",
  "async-graphql",
  "async-graphql-axum",
+ "atomo_control_plane",
  "atomo_core",
  "atomo_schema",
  "axum",

@@ -41,3 +41,4 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "rus
 # Local dependencies
 atomo_core = { path = "../atomo_core" }
 atomo_schema = { path = "../atomo_schema" }
+atomo_control_plane = { path = "../atomo_control_plane" }

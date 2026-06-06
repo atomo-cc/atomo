@@ -26,6 +26,7 @@ pub mod plugins;
 pub mod projector_routes;
 pub mod rate_limit;
 pub mod realtime;
+pub mod rls;
 pub mod registry;
 pub mod registry_routes;
 pub mod schema_metadata;

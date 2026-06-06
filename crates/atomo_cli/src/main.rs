@@ -101,6 +101,11 @@ enum Commands {
         #[arg(short, long)]
         filter: Option<String>,
     },
+    /// Manage multi-project control-plane projects (provisioner)
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
 }
 
 #[tokio::main]
@@ -164,6 +169,9 @@ async fn main() -> anyhow::Result<()> {
             filter,
         } => {
             test_command(service_path, filter).await?;
+        }
+        Commands::Project { command } => {
+            project_command(command).await?;
         }
     }
 
