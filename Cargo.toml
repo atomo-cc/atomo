@@ -11,6 +11,7 @@ members = [
     "crates/atomo_schema",
     "crates/atomo_realtime",
     "crates/atomo_realtime_server",
+    "crates/atomo_control_plane",
 ]
 
 # Shared dependencies for all workspace members

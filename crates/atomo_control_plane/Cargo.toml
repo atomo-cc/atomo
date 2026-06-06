@@ -1,0 +1,27 @@
+[package]
+name = "atomo_control_plane"
+version = "0.1.0"
+edition = "2021"
+description = "Atomo multi-project control plane — registry, provisioner, gateway, reconciler"
+license = "AGPL-3.0-or-later"
+
+[lib]
+name = "atomo_control_plane"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
