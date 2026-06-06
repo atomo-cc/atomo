@@ -175,33 +175,31 @@ pub async fn bind_tenant(
 }
 
 // =============================================================================
-// PER-TRANSACTION WIRING SEAM (status: documented, not wired)
+// PER-TRANSACTION WIRING SEAM (status: WIRED)
 // =============================================================================
 //
-// The current query path does NOT expose a per-request transaction. GraphQL
-// resolvers (crates/atomo/src/graphql.rs) and the SQL builder
-// (crates/atomo/src/query/sql_builder.rs) execute each statement directly
-// against the shared `PgPool` (`fetch_*`/`execute(&pool)`), with no surrounding
-// `pool.begin()`. There is therefore no single seam at which to call
-// `bind_tenant` today, and forcing every resolver onto a shared transaction is
-// an invasive refactor that risks the existing (passing) multi-tenant tests.
+// The per-request binding is now wired through the `atomo` query executor:
 //
-// To complete wiring (follow-up), the minimal change is:
+//   1. `graphql_handler` (handlers.rs) wraps the whole request execution in
+//      `atomo::graphql::with_tenant_scope(tenant, schema.execute(req))`, where
+//      `tenant` is the same header value that gates `TenantCtx` (so app-layer
+//      scoping and RLS binding can never disagree).
+//   2. `with_tenant_scope` sets a task-local tenant for the request. When
+//      `ATOMO_ENABLE_RLS` is on, `AtomoClient`'s read/write methods
+//      (`find_many`/`find_unique`/`create`/`update_many`/`delete_many`/`count`/…)
+//      run each statement inside `pool.begin()` + `SET LOCAL atomo.tenant_id`
+//      (the `set_config(…, true)` form) on the same connection, then commit —
+//      so the policy resolves to this tenant. The read cache is also tenant-keyed.
+//   3. When RLS is off or no scope is active (SDK/projector/seed callers), the
+//      methods run directly on the pool — byte-for-byte the prior path.
 //
-//   1. Thread the request's tenant (already on `TenantCtx` in the GraphQL
-//      context data — see handlers.rs ~line 67/222) down to the data layer.
-//   2. In the `atomo` query executor, when RLS is on, run each request inside
-//      `let mut tx = pool.begin().await?;` then immediately
-//      `rls::bind_tenant(&mut tx, tenant).await?;` and execute the resolver's
-//      reads/writes on `&mut *tx`, committing at the end of the request.
+// Proven end-to-end against Postgres by:
+//   - `atomo_server/tests/rls_enforcement.rs` (policy + `bind_tenant` primitive), and
+//   - `atomo/tests/rls_executor.rs` (`find_many` under `with_tenant_scope`, incl. the
+//     "forgot the WHERE" case and tenant-keyed cache).
 //
-// Until then: RLS policies are CREATED and enforced (boot hook), and the
-// app-layer `WHERE tenant_id = …` scoping (handlers.rs) remains the active
-// isolation. With FORCE RLS on and NO bind, a tenant-scoped row (non-NULL
-// tenant_id) is only visible when the app-layer filter supplies it — i.e. RLS
-// here is currently "enable + policy + helper ready", and the bind is the one
-// remaining seam. `bind_tenant` is fully implemented and unit-testable so the
-// follow-up is a wiring-only change.
+// Remaining follow-ups: the GraphQL *subscription/WS* path is not yet scoped, and
+// event-store per-tenant scoping (step 4) is still planned.
 
 #[cfg(test)]
 mod tests {

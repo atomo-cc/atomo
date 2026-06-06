@@ -77,18 +77,23 @@ physical connection. The bind and the queries it protects **must run in the same
 
 Helper: `atomo_server::rls::bind_tenant(&mut tx, tenant_id)`.
 
-### Per-transaction wiring status
+### Per-transaction wiring status — **wired**
 
-- **Implemented:** the flag, idempotent policy generation/setup, the boot hook, and the
-  `bind_tenant` helper.
-- **Remaining seam:** the current GraphQL/query path executes against the shared pool without a
-  per-request transaction, so `bind_tenant` is **not yet auto-called**. Wiring it is a follow-up
-  (thread the request's tenant into a `pool.begin()` → `bind_tenant` → commit). The exact seam is
-  documented in `crates/atomo_server/src/rls.rs`. Until then, app-layer scoping remains the active
-  isolation and RLS provides the policy scaffolding + caught-writes via `WITH CHECK`.
+Per-request enforcement is now active end to end:
 
-So: enabling RLS adds DB-level policies as defense-in-depth; full per-request enforcement lands when
-the bind seam is wired.
+- **Request boundary:** `graphql_handler` wraps execution in
+  `atomo::graphql::with_tenant_scope(tenant, schema.execute(req))` — the tenant is the same
+  header value that gates `TenantCtx`, so app-layer scoping and RLS binding can never disagree.
+- **Executor:** when `ATOMO_ENABLE_RLS` is on and a scope is active, `AtomoClient`'s read/write
+  methods run each statement inside `pool.begin()` + `SET LOCAL atomo.tenant_id` on the same
+  connection, then commit. The read cache is **tenant-keyed** so a cached read can't cross tenants.
+- **Off / unscoped callers** (SDK, projectors, seeding) run directly on the pool — unchanged.
+
+Proven against Postgres by `crates/atomo_server/tests/rls_enforcement.rs` (policy + primitive) and
+`crates/atomo/tests/rls_executor.rs` (`find_many` under scope, incl. the "forgot the WHERE" case and
+the tenant-keyed cache).
+
+**Not yet scoped:** the GraphQL **subscription/WS** path, and event-store per-tenant scoping (below).
 
 ## Limits & roadmap
 

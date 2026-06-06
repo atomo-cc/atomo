@@ -26,6 +26,52 @@ pub fn scope_by_tenant(where_clauses: &[WhereClause], tenant_id: Option<&str>) -
     clauses
 }
 
+// --- RLS request-tenant scope (Phase 3 wiring) ------------------------------
+// A task-local holding the current request's tenant. Set once at the request
+// boundary via [`with_tenant_scope`]; read by the RLS-scoped execution helpers so
+// every query in that request runs in a transaction that binds `atomo.tenant_id`.
+// Non-request callers (SDK, projectors, seeding) never set it → the helpers fall
+// back to the plain pool path, unchanged.
+tokio::task_local! {
+    static TENANT_SCOPE: Option<String>;
+}
+
+/// Run `fut` with `tenant` bound as the request's RLS tenant scope.
+///
+/// When `ATOMO_ENABLE_RLS` is on, query execution within `fut` wraps each statement
+/// in a transaction that `SET LOCAL`s `atomo.tenant_id` to this value, so the
+/// generated RLS policies resolve to this tenant. Safe no-op when RLS is off or
+/// `tenant` is `None` (the scope is simply never read). `SET LOCAL` is
+/// transaction-scoped, so it is safe under PgBouncer transaction pooling.
+pub async fn with_tenant_scope<F: std::future::Future>(tenant: Option<String>, fut: F) -> F::Output {
+    TENANT_SCOPE.scope(tenant, fut).await
+}
+
+/// The current request's tenant scope, if one is active on this task.
+fn current_tenant() -> Option<String> {
+    TENANT_SCOPE.try_with(|t| t.clone()).ok().flatten()
+}
+
+/// Whether DB-enforced RLS is enabled (`ATOMO_ENABLE_RLS`). Mirrors `atomo_server::rls`.
+fn rls_enabled() -> bool {
+    std::env::var("ATOMO_ENABLE_RLS")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false)
+}
+
+/// `SET LOCAL atomo.tenant_id = <tenant>` for the current transaction, via the
+/// parameter-safe `set_config(..., is_local := true)` (no SQL-injection surface).
+async fn bind_tenant_local(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant: &str,
+) -> Result<()> {
+    sqlx::query("SELECT set_config('atomo.tenant_id', $1, true)")
+        .bind(tenant)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 /// Core Atomo client that handles all database operations
 #[derive(Clone)]
 pub struct AtomoClient {
@@ -47,6 +93,76 @@ impl AtomoClient {
     /// Get the embedding store (if AI is enabled)
     pub fn embedding_store(&self) -> Option<&crate::ai::EmbeddingStore> {
         self.embedding_store.as_deref()
+    }
+
+    // --- RLS-scoped execution (Phase 3) -------------------------------------
+    // When `ATOMO_ENABLE_RLS` is on AND a request tenant scope is active (set via
+    // `with_tenant_scope` at the request boundary), each statement runs inside its own
+    // transaction that binds `atomo.tenant_id` (SET LOCAL) so the RLS policies resolve to
+    // this tenant. When RLS is off or no scope is active, the statement runs directly on
+    // the pool — byte-for-byte the prior path (zero behavior change by default).
+
+    async fn fetch_all_scoped(
+        &self,
+        sql: &str,
+        args: PgArguments,
+    ) -> Result<Vec<sqlx::postgres::PgRow>> {
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                let mut tx = self.pool.begin().await?;
+                bind_tenant_local(&mut tx, &tid).await?;
+                let rows = sqlx::query_with(sql, args).fetch_all(&mut *tx).await?;
+                tx.commit().await?;
+                return Ok(rows);
+            }
+        }
+        Ok(sqlx::query_with(sql, args).fetch_all(&self.pool).await?)
+    }
+
+    async fn fetch_one_scoped(&self, sql: &str, args: PgArguments) -> Result<sqlx::postgres::PgRow> {
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                let mut tx = self.pool.begin().await?;
+                bind_tenant_local(&mut tx, &tid).await?;
+                let row = sqlx::query_with(sql, args).fetch_one(&mut *tx).await?;
+                tx.commit().await?;
+                return Ok(row);
+            }
+        }
+        Ok(sqlx::query_with(sql, args).fetch_one(&self.pool).await?)
+    }
+
+    async fn fetch_optional_scoped(
+        &self,
+        sql: &str,
+        args: PgArguments,
+    ) -> Result<Option<sqlx::postgres::PgRow>> {
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                let mut tx = self.pool.begin().await?;
+                bind_tenant_local(&mut tx, &tid).await?;
+                let row = sqlx::query_with(sql, args).fetch_optional(&mut *tx).await?;
+                tx.commit().await?;
+                return Ok(row);
+            }
+        }
+        Ok(sqlx::query_with(sql, args).fetch_optional(&self.pool).await?)
+    }
+
+    async fn execute_scoped(&self, sql: &str, args: PgArguments) -> Result<u64> {
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                let mut tx = self.pool.begin().await?;
+                bind_tenant_local(&mut tx, &tid).await?;
+                let r = sqlx::query_with(sql, args).execute(&mut *tx).await?;
+                tx.commit().await?;
+                return Ok(r.rows_affected());
+            }
+        }
+        Ok(sqlx::query_with(sql, args)
+            .execute(&self.pool)
+            .await?
+            .rows_affected())
     }
 
     pub async fn new(schema: &Schema) -> Result<Self> {
@@ -94,9 +210,20 @@ impl AtomoClient {
         // Include limit/offset in the key — otherwise two queries that differ ONLY in pagination
         // collide and the second returns the first's cached rows (page 2 == page 1). Bug caught
         // by the CRM dogfood (orderBy + offset).
+        // Include the active tenant scope in the cache key so a cached read can never be
+        // served across tenants when RLS is on (defense-in-depth above the DB). In the
+        // normal path the tenant is also in `where_clauses` via scope_by_tenant, but keying
+        // on it here protects the RLS-only ("forgot the WHERE") case too. None when unscoped.
         let cache_key = crate::cache::ReadCache::key(
             model_name,
-            &format!("{:?}{:?}{:?}{:?}", where_clauses, order_by, limit, offset),
+            &format!(
+                "{:?}{:?}{:?}{:?}{:?}",
+                where_clauses,
+                order_by,
+                limit,
+                offset,
+                current_tenant()
+            ),
         );
         if let Some(cached) = self.cache.get(&cache_key).await {
             if let Ok(records) = serde_json::from_value(cached) {
@@ -111,7 +238,7 @@ impl AtomoClient {
         let (sql, params) =
             SqlBuilder::select_active(model, where_clauses, order_by, limit, offset);
         let args = build_args(&params)?;
-        let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
+        let rows = self.fetch_all_scoped(&sql, args).await?;
         let mut records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
         if !include.is_empty() {
             for record in &mut records {
@@ -141,7 +268,7 @@ impl AtomoClient {
         let (sql, params) =
             SqlBuilder::select_deleted(model, where_clauses, order_by, limit, offset);
         let args = build_args(&params)?;
-        let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
+        let rows = self.fetch_all_scoped(&sql, args).await?;
         Ok(rows.iter().map(row_to_map).collect())
     }
 
@@ -165,9 +292,7 @@ impl AtomoClient {
         });
         let (sql, params) = SqlBuilder::select_one(model, &clauses);
         let args = build_args(&params)?;
-        let row = sqlx::query_with(&sql, args)
-            .fetch_optional(&self.pool)
-            .await?;
+        let row = self.fetch_optional_scoped(&sql, args).await?;
         let mut record = row.as_ref().map(row_to_map);
         if !include.is_empty() {
             if let Some(ref mut rec) = record {
@@ -220,7 +345,7 @@ impl AtomoClient {
 
         let (sql, params) = SqlBuilder::insert(model, &data);
         let args = build_args(&params)?;
-        let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
+        let row = self.fetch_one_scoped(&sql, args).await?;
         let record = row_to_map(&row);
 
         let event = ModelEvent {
@@ -287,7 +412,7 @@ impl AtomoClient {
 
         let (sql, params) = SqlBuilder::update(model, where_clauses, &data);
         let args = build_args(&params)?;
-        let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
+        let rows = self.fetch_all_scoped(&sql, args).await?;
         let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
 
         for record in &records {
@@ -346,7 +471,7 @@ impl AtomoClient {
         let args = build_args(&params)?;
         // `RETURNING id` gives us the affected rows so each Deleted event can carry its id
         // (projections/audit need it to remove the right row).
-        let rows = sqlx::query_with(&sql, args).fetch_all(&self.pool).await?;
+        let rows = self.fetch_all_scoped(&sql, args).await?;
         let count = rows.len();
 
         for row in &rows {
@@ -390,9 +515,9 @@ impl AtomoClient {
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let (sql, params) = SqlBuilder::restore(model, where_clauses);
         let args = build_args(&params)?;
-        let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
+        let affected = self.execute_scoped(&sql, args).await?;
         self.cache.invalidate_model(model_name).await;
-        Ok(result.rows_affected() as usize)
+        Ok(affected as usize)
     }
 
     /// Permanently delete records (hard delete - row is removed). Returns affected count.
@@ -408,9 +533,9 @@ impl AtomoClient {
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let (sql, params) = SqlBuilder::delete(model, where_clauses);
         let args = build_args(&params)?;
-        let result = sqlx::query_with(&sql, args).execute(&self.pool).await?;
+        let affected = self.execute_scoped(&sql, args).await?;
         self.cache.invalidate_model(model_name).await;
-        Ok(result.rows_affected() as usize)
+        Ok(affected as usize)
     }
 
     /// Count records matching where clauses
@@ -437,7 +562,7 @@ impl AtomoClient {
             )
         };
         let args = build_args(&params)?;
-        let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
+        let row = self.fetch_one_scoped(&sql, args).await?;
         Ok(row.try_get::<i64, _>("count").unwrap_or(0))
     }
 
@@ -465,7 +590,7 @@ impl AtomoClient {
             table, where_sql
         );
         let args = build_args(&params)?;
-        let row = sqlx::query_with(&sql, args).fetch_one(&self.pool).await?;
+        let row = self.fetch_one_scoped(&sql, args).await?;
         Ok(row.try_get::<i64, _>("count").unwrap_or(0))
     }
 
