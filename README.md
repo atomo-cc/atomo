@@ -21,48 +21,48 @@ Atomo Content Core is an open-source, self-hostable **event-sourced backend** fo
 - 🧩 **Extend Without Forking**: declarable schema constraints (`@unique` / `@@check` / partial) + plugin-served custom HTTP routes (`/ext/<plugin>`)
 - 📊 **Realtime Collaboration**: WebSocket-driven realtime data sync
 
+## 📍 Status
+
+Atomo is **pre-1.0 but real** — the published Docker image runs a working backend.
+
+- **Solid today:** schema-driven **GraphQL API** (CRUD, relations, pagination,
+  filtering), **auth** (Argon2id, JWT, RBAC, OAuth/OIDC), **event-sourced** writes +
+  audit, **declarable schema constraints**, **plugin-served custom HTTP routes** (incl.
+  atomic transactional routes), **WASM/JS plugins**, **realtime channels**, **file
+  storage**, and a generated **admin UI** — all self-hostable via Docker.
+- **Early / in progress:** AI + pgvector workflows (needs a pgvector env), some admin
+  panels (observability, collaboration — scaffolded, not yet wired), multi-tenant
+  PG-RLS, and the local-first SDK. See the [roadmap](docs/roadmap.md).
+
+Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.2.5`) rather than `:latest` for
+reproducibility.
+
 ## 🚀 Quick Start
 
-### Install the CLI
+### Run it with no Rust (Docker) — ~5 minutes
+
+Scaffold a project and run it against the published image — no toolchain required:
 
 ```bash
-# Install via Cargo
+npm create @atomo-cc/app my-app   # writes atomo/schema.ts + docker-compose.yml
+cd my-app
+docker compose up                 # pulls the atomo-server image and boots
+```
+
+- **GraphQL API** → http://localhost:3000/graphql
+- **Admin UI** → http://localhost:3000/admin (sign in with the seeded admin)
+- **Health** → http://localhost:3000/health
+
+Edit `atomo/schema.ts` (add a model, a field, a `// @@check(...)` constraint) and the
+server re-migrates on restart — edit-and-live in ~2s, still no Rust.
+Templates: `npm create @atomo-cc/app my-app -- --template crm|blog|ecommerce`.
+
+### Or use the CLI (Rust) — for local dev with hot reload
+
+```bash
 cargo install atomo_cli
-
-# Or download a prebuilt binary
-curl -L https://github.com/atomo-cc/atomo/releases/latest/download/atomo-linux-x86_64 -o atomo
-chmod +x atomo
-```
-
-### Create a new project
-
-```bash
-# Create a CRM app
 atomo init my-crm --template crm
-
-# Create a blog app
-atomo init my-blog --template blog
-
-# Create an e-commerce app
-atomo init my-shop --template ecommerce
-```
-
-### Develop and deploy
-
-```bash
-cd my-crm
-
-# Start the dev server (inside a service directory)
-atomo dev
-
-# Workspace mode (at the repo root or a specified service)
-atomo dev --workspace [--service-path services/<name>]
-
-# Build for production
-atomo build
-
-# Deploy to the cloud
-atomo deploy
+cd my-crm && atomo dev
 ```
 
 ## Frontend
