@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Docs — "Writing Plugins" guide**: the missing on-ramp for custom routes/plugins —
+  the `plugin.toml` format, permissions, the hook + route handler contracts, the
+  transaction batch, effects, and the Javy build path, with a billing-route example.
+
+### Fixed
+- **Custom routes — deferred effects now run on the route path.** A route handler's
+  `effects` (`emit`/`dbQuery`/`http`) were recorded but never fulfilled on the route
+  path (only the CRUD after-hook ran them). They now run, permission-gated, **after** a
+  successful `transaction` (a rolled-back batch emits nothing).
+  (`WasmPluginManager::fulfill_route_effects`.) Phase-3 design doc updated; also
+  documents that `fulfill_db_request` is injection-safe as written (validated
+  identifier + clamped limit), so the previously-flagged `format!` needs no change.
+
 ## [0.2.4] - 2026-06-06
 
 > Headline: **transactional custom routes (phase 3)** — the synchronous atomic

@@ -44,6 +44,7 @@ pub fn plugin_routes_router(
     pool: PgPool,
     routes: Vec<(String, RouteDef)>,
 ) -> Router {
+    let http = reqwest::Client::new();
     let mut router = Router::new();
     for (plugin, route) in routes {
         let path = format!("/ext/{}{}", plugin, route.path);
@@ -51,6 +52,7 @@ pub fn plugin_routes_router(
         let mgr = manager.clone();
         let auth = auth.clone();
         let pool = pool.clone();
+        let http = http.clone();
         let plugin = plugin.clone();
         let require_auth = route.auth;
         router = router.route(
@@ -59,8 +61,9 @@ pub fn plugin_routes_router(
                 let mgr = mgr.clone();
                 let auth = auth.clone();
                 let pool = pool.clone();
+                let http = http.clone();
                 let plugin = plugin.clone();
-                async move { dispatch(req, mgr, auth, pool, plugin, require_auth).await }
+                async move { dispatch(req, mgr, auth, pool, http, plugin, require_auth).await }
             }),
         );
     }
@@ -82,6 +85,7 @@ async fn dispatch(
     manager: Arc<Mutex<WasmPluginManager>>,
     auth: HttpAuthService,
     pool: PgPool,
+    http: reqwest::Client,
     plugin: String,
     require_auth: bool,
 ) -> Response {
@@ -148,7 +152,8 @@ async fn dispatch(
         match run_transaction(&pool, &output.transaction).await {
             // All statements met their expectations → fall through to the handler response.
             Ok(None) => {}
-            // An `expect` failed → the transaction rolled back; return its else-response.
+            // An `expect` failed → the transaction rolled back; return its else-response
+            // WITHOUT running effects (a rolled-back debit must not emit events / call out).
             Ok(Some((status, body))) => return json_response(status, body),
             Err(e) => {
                 return (
@@ -157,6 +162,19 @@ async fn dispatch(
                 )
                     .into_response()
             }
+        }
+    }
+
+    // The transaction committed (or there was none): fulfill the handler's deferred
+    // effects (emit/dbQuery/http), permission-gated. Previously these were silently
+    // dropped on the route path.
+    if !output.effects.is_empty() {
+        let mut mgr = manager.lock().await;
+        if let Err(e) = mgr
+            .fulfill_route_effects(&plugin, &output.effects, &pool, &http)
+            .await
+        {
+            return (StatusCode::FORBIDDEN, format!("effect denied: {e}")).into_response();
         }
     }
 

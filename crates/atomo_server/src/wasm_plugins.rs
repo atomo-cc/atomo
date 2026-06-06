@@ -20,6 +20,10 @@ struct JsPlugin {
 pub struct RouteOutput {
     pub response: serde_json::Value,
     pub transaction: Vec<serde_json::Value>,
+    /// Deferred effects (`emit`/`dbQuery`/`http`) the handler returned, fulfilled by
+    /// the async dispatcher AFTER a successful `transaction` (so a rolled-back debit
+    /// emits nothing).
+    pub effects: Vec<serde_json::Value>,
     /// Whether the plugin holds `WriteDatabase` — required to run a `transaction`.
     pub can_write_db: bool,
 }
@@ -217,9 +221,15 @@ impl WasmPluginManager {
                 .and_then(|t| t.as_array())
                 .cloned()
                 .unwrap_or_default();
+            let effects = parsed
+                .get("effects")
+                .and_then(|e| e.as_array())
+                .cloned()
+                .unwrap_or_default();
             return Ok(RouteOutput {
                 response,
                 transaction,
+                effects,
                 can_write_db,
             });
         }
@@ -293,54 +303,106 @@ impl WasmPluginManager {
                 Ok(v) => v,
                 Err(_) => continue,
             };
+            if let Some(res) = self.fulfill_one_effect(&effect, pool, http).await {
+                results.push(res);
+            }
+        }
+        results
+    }
+
+    /// Fulfill ONE already-permission-checked effect (`dbQuery`/`http`/`emit`).
+    /// Returns the JSON result string, or None for an unrecognized effect.
+    async fn fulfill_one_effect(
+        &self,
+        effect: &serde_json::Value,
+        pool: &sqlx::PgPool,
+        http: &reqwest::Client,
+    ) -> Option<String> {
+        let obj = effect.as_object()?;
+        if let Some(q) = obj.get("dbQuery") {
+            Some(fulfill_db_request(&q.to_string(), pool).await)
+        } else if let Some(r) = obj.get("http") {
+            Some(fulfill_http_request(&r.to_string(), http).await)
+        } else if let Some(e) = obj.get("emit") {
+            // Publish onto the model-event stream, if a sender is set. A plugin may emit
+            // a typed event: { model, event: Created|Updated|Deleted|Custom, data }.
+            // Unspecified fields fall back to model="plugin", event=Custom, data=payload.
+            if let Some(tx) = &self.event_sender {
+                let model_name = e
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("plugin")
+                    .to_string();
+                let event_type = match e.get("event").and_then(|v| v.as_str()) {
+                    Some("Created") => atomo::events::EventType::Created,
+                    Some("Updated") => atomo::events::EventType::Updated,
+                    Some("Deleted") => atomo::events::EventType::Deleted,
+                    _ => atomo::events::EventType::Custom,
+                };
+                let payload = e.get("data").unwrap_or(e);
+                let data = match payload {
+                    serde_json::Value::Object(m) => m.clone().into_iter().collect(),
+                    other => {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("value".to_string(), other.clone());
+                        m
+                    }
+                };
+                let event = atomo::events::ModelEvent {
+                    event_type,
+                    model_name,
+                    data,
+                    previous_data: None,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    actor: None,
+                };
+                let _ = tx.send(event);
+            }
+            Some(serde_json::json!({ "emit": e }).to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Fulfill a route handler's deferred effects (after its `transaction` committed),
+    /// permission-gated exactly like the CRUD-hook path. Each effect needs the matching
+    /// grant (`emit`→WriteEvents, `dbQuery`→ReadDatabase, `http`→HttpRequests). Returns
+    /// the per-effect result strings (surfaced for logging; not fed back to the handler).
+    pub async fn fulfill_route_effects(
+        &self,
+        plugin: &str,
+        effects: &[serde_json::Value],
+        pool: &sqlx::PgPool,
+        http: &reqwest::Client,
+    ) -> Result<Vec<String>> {
+        let perms = self
+            .js_plugins
+            .get(plugin)
+            .map(|p| p.permissions.clone())
+            .unwrap_or_default();
+        let mut results = Vec::new();
+        for effect in effects {
             let obj = match effect.as_object() {
                 Some(o) => o,
                 None => continue,
             };
-            if let Some(q) = obj.get("dbQuery") {
-                results.push(fulfill_db_request(&q.to_string(), pool).await);
-            } else if let Some(r) = obj.get("http") {
-                results.push(fulfill_http_request(&r.to_string(), http).await);
-            } else if let Some(e) = obj.get("emit") {
-                // Publish onto the model-event stream, if a sender is set. A plugin may emit
-                // a typed event: { model, event: Created|Updated|Deleted|Custom, data }.
-                // Unspecified fields fall back to model="plugin", event=Custom, data=payload.
-                if let Some(tx) = &self.event_sender {
-                    let model_name = e
-                        .get("model")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("plugin")
-                        .to_string();
-                    let event_type = match e.get("event").and_then(|v| v.as_str()) {
-                        Some("Created") => atomo::events::EventType::Created,
-                        Some("Updated") => atomo::events::EventType::Updated,
-                        Some("Deleted") => atomo::events::EventType::Deleted,
-                        _ => atomo::events::EventType::Custom,
-                    };
-                    let payload = e.get("data").unwrap_or(e);
-                    let data = match payload {
-                        serde_json::Value::Object(m) => m.clone().into_iter().collect(),
-                        other => {
-                            let mut m = std::collections::HashMap::new();
-                            m.insert("value".to_string(), other.clone());
-                            m
-                        }
-                    };
-                    let event = atomo::events::ModelEvent {
-                        event_type,
-                        model_name,
-                        data,
-                        previous_data: None,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        event_id: uuid::Uuid::new_v4().to_string(),
-                        actor: None,
-                    };
-                    let _ = tx.send(event);
-                }
-                results.push(serde_json::json!({ "emit": e }).to_string());
+            let required = if obj.contains_key("emit") {
+                Permission::WriteEvents
+            } else if obj.contains_key("dbQuery") {
+                Permission::ReadDatabase
+            } else if obj.contains_key("http") {
+                Permission::HttpRequests
+            } else {
+                continue;
+            };
+            Permission::ensure(&perms, &required)
+                .map_err(|e| anyhow::anyhow!("plugin '{}' route effect: {}", plugin, e))?;
+            if let Some(res) = self.fulfill_one_effect(effect, pool, http).await {
+                results.push(res);
             }
         }
-        results
+        Ok(results)
     }
 
     /// Fulfill the DB/HTTP requests a plugin recorded during its last call.

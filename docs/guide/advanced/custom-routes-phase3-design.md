@@ -47,9 +47,11 @@ The canonical no-overdraw debit + idempotent ledger insert, expressed in the han
 - Any statement error rolls the whole batch back (500).
 
 This is **Option B** below — chosen because it works against the runtime as-is (no
-Javy toolchain change) and fully expresses the atomic debit. *Note:* `effects`
-(deferred `emit`/`dbQuery`/`http`) are **not** run on the route path — use
-`transaction` for a route's DB writes.
+Javy toolchain change) and fully expresses the atomic debit. A handler may *also*
+return deferred `effects` (`emit`/`dbQuery`/`http`); they run (permission-gated)
+**after** the `transaction` commits, so a rolled-back debit emits nothing. Use
+`transaction` for a route's atomic DB writes, `effects` for fire-and-forget
+events/outbound calls.
 
 ## The one capability
 
@@ -85,25 +87,26 @@ incompatible with mid-handler host calls:
 So "read the balance, decide, write" cannot happen inside one JS handler invocation
 as the runtime is built.
 
-### Two cross-cutting bugs to fix first (independent of the option chosen)
+### Cross-cutting items surfaced by the investigation
 
-The investigation surfaced two real gaps in the **phase-2** route path that must be
-closed before any transactional write ships:
+1. ✅ **Route effects are now fulfilled.** Previously the route path recorded effects
+   but never ran them (only the CRUD after-hook did), and no pool was wired in — so a
+   route's `emit`/`dbQuery`/`http` was silently dropped. **Fixed:** `run_route` returns
+   the effects, the dispatcher has a `PgPool` + HTTP client, and
+   `WasmPluginManager::fulfill_route_effects` runs them (permission-gated) **after** a
+   successful `transaction` — a rolled-back debit emits nothing. (`wasm_plugins.rs`,
+   `plugin_routes.rs`.)
+2. ⓘ **`fulfill_db_request` is injection-safe as written** (the investigation flagged
+   its `format!`, but on inspection it's fine): the only interpolated values are the
+   model name — validated to `[A-Za-z0-9_]` and pluralized — and a `limit` parsed as an
+   integer and clamped to `1..=100`. A table *name* can't be a bound parameter anyway,
+   and this path runs no plugin-supplied SQL. No change needed; the transactional path
+   (`run_transaction`) binds all values as `$1, $2, …`.
 
-1. **Route effects are buffered but never fulfilled.** `call_route`
-   (`wasm_plugins.rs:183-203`) calls `apply_js_effects`, which only *records* effects
-   into `js_effects`; the route path never calls `fulfill_js_effects` (only the CRUD
-   after-hook does, `wasm_hooks.rs:73`) and **no `PgPool` is wired into the route
-   dispatcher** (`plugin_routes.rs:dispatch`). So effects a route records today are
-   silently dropped. The route path needs its own pool handle regardless.
-2. **String-formatted SQL.** `fulfill_db_request` builds SQL with `format!`
-   (`wasm_plugins.rs:375`), not bound parameters. Any write path **must** use bound
-   params before shipping, or it's an injection hole.
-
-Plus a capacity concern: the app pool is the sqlx default (**max 10 connections**,
-`crates/atomo/src/client.rs:57`). A transaction held open across handler execution
-ties up a connection for that whole time, so route handlers need a **dedicated,
-capped** connection budget and a statement/lock timeout.
+A real capacity caveat remains: the app pool is the sqlx default (**max 10
+connections**). A `transaction` batch is short and host-owned (far better than holding
+a txn open across guest code), but high-concurrency billing routes should still get a
+**dedicated, capped** pool + statement/lock timeout — a follow-up before heavy load.
 
 ## Options
 
