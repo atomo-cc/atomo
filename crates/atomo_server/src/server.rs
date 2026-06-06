@@ -158,6 +158,29 @@ impl AtomoServer {
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
         info!("   ✓ Platform tables ensured");
 
+        // Opt-in, DB-enforced multi-tenant Row-Level Security (defense-in-depth).
+        // Gated behind ATOMO_ENABLE_RLS (default OFF → no-op, behavior unchanged).
+        // Model tables already exist here (created in Atomo::new() before run()).
+        {
+            // ServerConfig::enable_rls reads ATOMO_ENABLE_RLS (the same env the data layer's
+            // per-request bind reads), so the typed config and the executor never disagree.
+            let enabled = self.config.enable_rls;
+            if enabled {
+                let table_names: Vec<String> = self
+                    .atomo
+                    .schema()
+                    .models
+                    .values()
+                    // Real entities only: skip enum-derived pseudo-models and block sub-types.
+                    .filter(|m| !m.fields.contains_key("_enum_type") && m.fields.contains_key("id"))
+                    .map(atomo::query::sql_builder::table_name_for)
+                    .collect();
+                crate::rls::ensure_rls_policies(self.atomo.db_pool(), &table_names, enabled)
+                    .await?;
+                info!("   ✓ Row-Level Security policies ensured (ATOMO_ENABLE_RLS)");
+            }
+        }
+
         // Plugin marketplace registry (read API). Artifacts live in ./plugin-registry.
         let registry_store = std::sync::Arc::new(crate::registry::RegistryStore::new(
             self.atomo.db_pool().clone(),
@@ -174,8 +197,7 @@ impl AtomoServer {
             self.atomo.event_sender(),
         ));
         media_state.init().await?;
-        let media_router =
-            crate::media::media_router(media_state, auth_service.clone());
+        let media_router = crate::media::media_router(media_state, auth_service.clone());
         info!("   ✓ Media storage ready");
 
         // Audit listener: record an audit entry for every model mutation event.
@@ -278,9 +300,7 @@ impl AtomoServer {
         ));
         // Inject the plugin executor so workflow `Plugin` steps run via the WasmPluginManager.
         if let Some(mgr) = &self.plugin_manager {
-            engine.set_plugin_executor(std::sync::Arc::new(
-                WasmPluginExecutorAdapter(mgr.clone()),
-            ));
+            engine.set_plugin_executor(std::sync::Arc::new(WasmPluginExecutorAdapter(mgr.clone())));
         }
         let workflow_engine = std::sync::Arc::new(engine);
         {
@@ -415,7 +435,10 @@ impl AtomoServer {
             app = app.nest_service("/admin", serve);
             info!("   ✓ Admin UI served at /admin (dir: {})", admin_dir);
         } else {
-            info!("   • Admin UI not bundled ({}/index.html absent); /admin disabled", admin_dir);
+            info!(
+                "   • Admin UI not bundled ({}/index.html absent); /admin disabled",
+                admin_dir
+            );
         }
 
         let mut app = app
@@ -486,7 +509,10 @@ fn spawn_schema_watcher(path: String) {
             let current = schema_mtime(&path);
             match (last, current) {
                 (Some(prev), Some(now)) if now != prev => {
-                    info!("🔄 {} changed — exiting to reload (restart policy relaunches)", path);
+                    info!(
+                        "🔄 {} changed — exiting to reload (restart policy relaunches)",
+                        path
+                    );
                     std::process::exit(0);
                 }
                 _ => {}

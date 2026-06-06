@@ -534,7 +534,9 @@ fn parse_field_definition(line: &str, annotations: &str) -> Option<Field> {
     //   idempotencyKey: string // @unique
     //   accountId: string      // @index
     let has = |attrs: &[FieldAttribute], want: &FieldAttribute| {
-        attrs.iter().any(|a| std::mem::discriminant(a) == std::mem::discriminant(want))
+        attrs
+            .iter()
+            .any(|a| std::mem::discriminant(a) == std::mem::discriminant(want))
     };
     if annotations.contains("@unique") && !has(&attributes, &FieldAttribute::Unique) {
         attributes.push(FieldAttribute::Unique);
@@ -752,8 +754,14 @@ mod validation_tests {
                 })
                 .unwrap_or(false)
         };
-        assert!(has("idempotencyKey", FieldAttribute::Unique), "@unique (no semicolon)");
-        assert!(has("accountId", FieldAttribute::Index), "@index (after semicolon)");
+        assert!(
+            has("idempotencyKey", FieldAttribute::Unique),
+            "@unique (no semicolon)"
+        );
+        assert!(
+            has("accountId", FieldAttribute::Index),
+            "@index (after semicolon)"
+        );
         assert!(!has("amount", FieldAttribute::Unique) && !has("amount", FieldAttribute::Index));
     }
 
@@ -784,8 +792,12 @@ mod validation_tests {
             "composite unique missing: {:?}",
             m.constraints
         );
-        assert!(m.constraints.contains(&ModelConstraint::Index(vec!["accountId".into()])));
-        assert!(m.constraints.contains(&ModelConstraint::Check("amount <> 0".into())));
+        assert!(m
+            .constraints
+            .contains(&ModelConstraint::Index(vec!["accountId".into()])));
+        assert!(m
+            .constraints
+            .contains(&ModelConstraint::Check("amount <> 0".into())));
     }
 
     #[test]

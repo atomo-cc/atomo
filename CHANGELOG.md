@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-06
+
+> **Opt-in multi-tenant RLS + multi-project control-plane foundations.** Default single-server use
+> is unchanged. One source-level breaking change: `ServerConfig` gained an `enable_rls` field — code
+> constructing it with a struct literal must add it (or use `..Default::default()`). The control
+> plane is **foundations** (library + `atomo project` CLI), **not** yet a deployable service (no API
+> auth, no end-to-end provisioning test). `:v0.3.0` + `:latest` images are built from this tag.
+
+### Added
+- **Opt-in DB-enforced multi-tenant Row-Level Security** (`ATOMO_ENABLE_RLS`, default off). When on,
+  the server installs `CREATE POLICY` per model table at boot and the data layer binds
+  `atomo.tenant_id` per request (transaction-scoped `SET LOCAL`, pooling-safe); the read cache is
+  tenant-keyed. Proven against Postgres (`rls_enforcement`, `rls_executor`). See
+  [Multi-tenant](docs/guide/advanced/multi-tenant.md).
+- **Multi-project control-plane foundations** (`atomo_control_plane`, new crate). Silo-per-project
+  model (a dedicated database + `atomo-server` instance each) via a registry, provisioner (Docker
+  driver), Caddy gateway, and reconciler, plus an `atomo project create|start|stop|list|delete` CLI.
+  Secrets via AWS SSM; schema pinned to a git commit SHA. Purely additive — the per-project server
+  is unchanged. Library + CLI today; not yet a runnable control-plane service. See
+  [Multi-Project Platform](docs/guide/advanced/multi-project-design.md).
+
+### Changed
+- `ServerConfig` gained `enable_rls: bool` (default `false`).
+
 ## [0.2.5] - 2026-06-06
 
 > Phase-3 hardening + the plugin on-ramp. No breaking changes. `:latest` + `:v0.2.5`

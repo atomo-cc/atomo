@@ -216,9 +216,14 @@ pub async fn graphql_handler(
     // act as tenant B. Users without a binding (user_tenant=None) may still pass a header (legacy
     // / single-tenant-admin behavior). A mismatch drops the header (scoping falls back to none →
     // the request sees only unscoped/own rows, never another tenant's).
+    // The tenant we'll bind for DB-enforced RLS (when ATOMO_ENABLE_RLS is on). Only set when
+    // the header is allowed for this user — same gate as TenantCtx, so app-layer scoping and
+    // RLS binding can never disagree.
+    let mut rls_scope: Option<String> = None;
     if let Some(tid) = tenant_id {
         let allowed = authenticated && tenant_header_allowed(user_tenant.as_deref(), &tid);
         if allowed {
+            rls_scope = Some(tid.clone());
             inner = inner.data(atomo::graphql::TenantCtx(tid));
         }
     }
@@ -228,7 +233,10 @@ pub async fn graphql_handler(
         .clone()
         .unwrap_or_else(|| "anonymous".to_string());
     let start = Instant::now();
-    let resp = schema.execute(inner).await;
+    // Bind the tenant as a task-local scope for the whole request execution: when RLS is on,
+    // every query the resolvers run wraps itself in a transaction that SET LOCALs the tenant.
+    // No-op when RLS is off or no tenant is in scope.
+    let resp = atomo::graphql::with_tenant_scope(rls_scope, schema.execute(inner)).await;
     let status = if resp.errors.is_empty() {
         "ok"
     } else {

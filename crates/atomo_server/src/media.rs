@@ -96,7 +96,14 @@ impl MediaState {
             .unwrap_or_default();
         let now = chrono::Utc::now();
         // Generated key — never the client filename (path-traversal defense).
-        let key = format!("{}/{}/{}/{}{}", tenant, now.format("%Y"), now.format("%m"), id, ext);
+        let key = format!(
+            "{}/{}/{}/{}{}",
+            tenant,
+            now.format("%Y"),
+            now.format("%m"),
+            id,
+            ext
+        );
         self.storage.put(&key, bytes).await?;
         let insert = sqlx::query(
             "INSERT INTO media (id, tenant_id, filename, content_type, size, storage_key, uploaded_by)
@@ -183,17 +190,25 @@ impl MediaState {
         .fetch_all(&self.pool)
         .await?;
         for r in &rows {
-            self.storage.delete(&r.get::<String, _>("storage_key")).await.ok();
+            self.storage
+                .delete(&r.get::<String, _>("storage_key"))
+                .await
+                .ok();
         }
-        let res =
-            sqlx::query("DELETE FROM media WHERE deleted_at IS NOT NULL AND deleted_at < $1")
-                .bind(cutoff)
-                .execute(&self.pool)
-                .await?;
+        let res = sqlx::query("DELETE FROM media WHERE deleted_at IS NOT NULL AND deleted_at < $1")
+            .bind(cutoff)
+            .execute(&self.pool)
+            .await?;
         Ok(res.rows_affected())
     }
 
-    fn emit(&self, event_type: EventType, id: &str, actor: &str, extra: HashMap<String, serde_json::Value>) {
+    fn emit(
+        &self,
+        event_type: EventType,
+        id: &str,
+        actor: &str,
+        extra: HashMap<String, serde_json::Value>,
+    ) {
         let mut data = extra;
         data.insert("id".to_string(), json!(id));
         let _ = self.sender.send(ModelEvent {
@@ -254,7 +269,10 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
         // Hard backstop with headroom for multipart framing; the precise per-file limit is the
         // in-handler `bytes.len() > max_size` check, which returns a clean 413.
         .layer(DefaultBodyLimit::max(max.saturating_add(1024 * 1024)))
-        .route_layer(middleware::from_fn_with_state(auth, optional_auth_middleware))
+        .route_layer(middleware::from_fn_with_state(
+            auth,
+            optional_auth_middleware,
+        ))
         .with_state(state)
 }
 
@@ -284,14 +302,28 @@ async fn upload(
         return (StatusCode::PAYLOAD_TOO_LARGE, "file too large").into_response();
     }
     if !content_type_allowed(&content_type) {
-        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "content-type not allowed").into_response();
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "content-type not allowed",
+        )
+            .into_response();
     }
     if !content_matches(&content_type, bytes.as_ref()) {
-        return (StatusCode::UNSUPPORTED_MEDIA_TYPE, "content does not match declared type").into_response();
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "content does not match declared type",
+        )
+            .into_response();
     }
 
     match state
-        .store_upload(&filename, &content_type, bytes.as_ref(), &user.id, user.tenant_id.as_deref())
+        .store_upload(
+            &filename,
+            &content_type,
+            bytes.as_ref(),
+            &user.id,
+            user.tenant_id.as_deref(),
+        )
         .await
     {
         Ok(id) => (
@@ -324,7 +356,10 @@ async fn gc(
         .get("older_than_secs")
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(7 * 24 * 3600); // default: 7-day retention
-    match state.purge_deleted(std::time::Duration::from_secs(secs)).await {
+    match state
+        .purge_deleted(std::time::Duration::from_secs(secs))
+        .await
+    {
         Ok(n) => (StatusCode::OK, Json(json!({ "purged": n }))).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

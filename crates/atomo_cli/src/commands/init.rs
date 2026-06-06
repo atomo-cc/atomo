@@ -161,7 +161,10 @@ volumes:
     println!();
     println!("Next steps:");
     println!("  cd {}", name.bright_cyan());
-    println!("  {}            # API :3000 + Admin UI :3000/admin — no Rust", "docker compose up".bright_cyan());
+    println!(
+        "  {}            # API :3000 + Admin UI :3000/admin — no Rust",
+        "docker compose up".bright_cyan()
+    );
     println!();
     println!("  …or develop with the CLI (needs Rust):");
     println!("  npm install && npm run atomo:generate && npm run dev");

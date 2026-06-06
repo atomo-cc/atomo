@@ -115,7 +115,14 @@ impl StorageBackend for S3Storage {
     }
 
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        match self.client.get_object().bucket(&self.bucket).key(key).send().await {
+        match self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+        {
             Ok(out) => {
                 let data = out.body.collect().await?.into_bytes().to_vec();
                 Ok(Some(data))
@@ -158,7 +165,10 @@ mod tests {
         let store = LocalStorage::new(&dir);
         let key = "t/2026/06/abc.bin";
         store.put(key, b"hello").await.unwrap();
-        assert_eq!(store.get(key).await.unwrap().as_deref(), Some(&b"hello"[..]));
+        assert_eq!(
+            store.get(key).await.unwrap().as_deref(),
+            Some(&b"hello"[..])
+        );
         store.delete(key).await.unwrap();
         assert!(store.get(key).await.unwrap().is_none());
         tokio::fs::remove_dir_all(&dir).await.ok();

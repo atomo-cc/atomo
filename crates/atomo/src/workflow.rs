@@ -119,8 +119,12 @@ pub trait MutationExecutor: Send + Sync {
 pub trait PluginExecutor: Send + Sync {
     /// Call `function` on `plugin_name`, passing the workflow context as JSON; returns the output
     /// (or None if the plugin returned nothing/identity).
-    async fn execute(&self, plugin_name: &str, function: &str, context_json: &str)
-        -> Result<Option<String>>;
+    async fn execute(
+        &self,
+        plugin_name: &str,
+        function: &str,
+        context_json: &str,
+    ) -> Result<Option<String>>;
 }
 
 impl Default for WorkflowEngine {
@@ -464,20 +468,21 @@ async fn execute_step(
         StepAction::Plugin {
             plugin_name,
             function,
-        } => {
-            match plugin_executor {
-                Some(exec) => {
-                    let ctx_json = serde_json::to_string(&*context).unwrap_or_default();
-                    let output = exec.execute(plugin_name, function, &ctx_json).await?;
-                    if let Some(out) = output {
-                        context.insert("plugin_output".to_string(), serde_json::from_str(&out).unwrap_or(Value::String(out)));
-                    }
+        } => match plugin_executor {
+            Some(exec) => {
+                let ctx_json = serde_json::to_string(&*context).unwrap_or_default();
+                let output = exec.execute(plugin_name, function, &ctx_json).await?;
+                if let Some(out) = output {
+                    context.insert(
+                        "plugin_output".to_string(),
+                        serde_json::from_str(&out).unwrap_or(Value::String(out)),
+                    );
                 }
-                None => anyhow::bail!(
-                    "workflow Plugin step: no executor configured (server must inject one)"
-                ),
             }
-        }
+            None => anyhow::bail!(
+                "workflow Plugin step: no executor configured (server must inject one)"
+            ),
+        },
     }
     Ok(())
 }
@@ -736,7 +741,12 @@ mod tests {
             }],
         });
         let exec = engine.execute("plugin_wf", HashMap::new()).await.unwrap();
-        assert_eq!(exec.status, ExecutionStatus::Completed, "errors: {:?}", exec.errors);
+        assert_eq!(
+            exec.status,
+            ExecutionStatus::Completed,
+            "errors: {:?}",
+            exec.errors
+        );
         assert!(hit.load(Ordering::SeqCst), "plugin executor must have run");
         assert_eq!(
             exec.context.get("plugin_output"),

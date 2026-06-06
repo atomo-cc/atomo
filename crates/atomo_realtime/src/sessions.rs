@@ -146,7 +146,12 @@ impl Sessions {
             if session.members.is_empty() {
                 (member, CoordinatorChange::None, Vec::new(), Post::Remove)
             } else if !was_coordinator {
-                (member, CoordinatorChange::None, session.roster(), Post::Keep)
+                (
+                    member,
+                    CoordinatorChange::None,
+                    session.roster(),
+                    Post::Keep,
+                )
             } else {
                 match policy {
                     CoordinatorLeavePolicy::Reelect => {
@@ -160,9 +165,12 @@ impl Sessions {
                             Post::Keep,
                         )
                     }
-                    CoordinatorLeavePolicy::Close => {
-                        (member, CoordinatorChange::Closed, session.roster(), Post::Remove)
-                    }
+                    CoordinatorLeavePolicy::Close => (
+                        member,
+                        CoordinatorChange::Closed,
+                        session.roster(),
+                        Post::Remove,
+                    ),
                 }
             }
         };
@@ -183,7 +191,9 @@ impl Sessions {
     }
 
     pub fn is_coordinator(&self, name: &str, client_id: ClientId) -> bool {
-        self.map.get(name).is_some_and(|s| s.coordinator == client_id)
+        self.map
+            .get(name)
+            .is_some_and(|s| s.coordinator == client_id)
     }
 
     pub fn member(&self, name: &str, client_id: ClientId) -> Option<&SessionMember> {
@@ -255,7 +265,13 @@ mod tests {
         let out = s.leave("m", 1, CoordinatorLeavePolicy::Close).unwrap();
         assert_eq!(out.change, CoordinatorChange::Closed);
         assert!(out.removed);
-        assert_eq!(out.remaining.iter().map(|m| m.client_id).collect::<Vec<_>>(), vec![2]);
+        assert_eq!(
+            out.remaining
+                .iter()
+                .map(|m| m.client_id)
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
         assert_eq!(s.count(), 0);
     }
 
@@ -273,6 +289,8 @@ mod tests {
         let mut s = Sessions::new();
         s.join("m", 1, "alice");
         assert!(s.leave("m", 99, CoordinatorLeavePolicy::Reelect).is_none());
-        assert!(s.leave("ghost", 1, CoordinatorLeavePolicy::Reelect).is_none());
+        assert!(s
+            .leave("ghost", 1, CoordinatorLeavePolicy::Reelect)
+            .is_none());
     }
 }

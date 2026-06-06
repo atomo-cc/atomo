@@ -184,8 +184,14 @@ impl ClientHandle {
     /// Apply one parsed client frame.
     pub async fn dispatch(&self, msg: ClientMsg) {
         let cmd = match msg {
-            ClientMsg::Subscribe { channel } => Command::Subscribe { id: self.id, channel },
-            ClientMsg::Unsubscribe { channel } => Command::Unsubscribe { id: self.id, channel },
+            ClientMsg::Subscribe { channel } => Command::Subscribe {
+                id: self.id,
+                channel,
+            },
+            ClientMsg::Unsubscribe { channel } => Command::Unsubscribe {
+                id: self.id,
+                channel,
+            },
             ClientMsg::Publish { channel, payload } => Command::Publish {
                 id: self.id,
                 channel,
@@ -193,9 +199,18 @@ impl ClientHandle {
                 // make them cheap to share across the fan-out.
                 payload: Payload::from(payload),
             },
-            ClientMsg::Presence { channel } => Command::Presence { id: self.id, channel },
-            ClientMsg::SessionJoin { session } => Command::SessionJoin { id: self.id, session },
-            ClientMsg::SessionLeave { session } => Command::SessionLeave { id: self.id, session },
+            ClientMsg::Presence { channel } => Command::Presence {
+                id: self.id,
+                channel,
+            },
+            ClientMsg::SessionJoin { session } => Command::SessionJoin {
+                id: self.id,
+                session,
+            },
+            ClientMsg::SessionLeave { session } => Command::SessionLeave {
+                id: self.id,
+                session,
+            },
             ClientMsg::ToCoordinator { session, payload } => Command::ToCoordinator {
                 id: self.id,
                 session,
@@ -255,16 +270,24 @@ impl Worker {
                 Command::Connect { id, principal, out } => self.on_connect(id, principal, out),
                 Command::Subscribe { id, channel } => self.on_subscribe(id, channel),
                 Command::Unsubscribe { id, channel } => self.on_unsubscribe(id, channel),
-                Command::Publish { id, channel, payload } => self.on_publish(id, channel, payload),
+                Command::Publish {
+                    id,
+                    channel,
+                    payload,
+                } => self.on_publish(id, channel, payload),
                 Command::Presence { id, channel } => self.on_presence(id, channel),
                 Command::SessionJoin { id, session } => self.on_session_join(id, session),
                 Command::SessionLeave { id, session } => self.leave_session(id, &session),
-                Command::ToCoordinator { id, session, payload } => {
-                    self.on_to_coordinator(id, session, payload)
-                }
-                Command::ToMembers { id, session, payload } => {
-                    self.on_to_members(id, session, payload)
-                }
+                Command::ToCoordinator {
+                    id,
+                    session,
+                    payload,
+                } => self.on_to_coordinator(id, session, payload),
+                Command::ToMembers {
+                    id,
+                    session,
+                    payload,
+                } => self.on_to_members(id, session, payload),
                 Command::Disconnect { id } => self.on_disconnect(id),
             }
         }
@@ -284,7 +307,9 @@ impl Worker {
                 join_limiter,
             },
         );
-        self.stats.connections_opened.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .connections_opened
+            .fetch_add(1, Ordering::Relaxed);
         self.stats
             .active_clients
             .store(self.clients.len() as u64, Ordering::Relaxed);
@@ -355,7 +380,9 @@ impl Worker {
     }
 
     fn on_publish(&mut self, id: ClientId, channel: ChannelName, payload: Payload) {
-        self.stats.messages_published.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .messages_published
+            .fetch_add(1, Ordering::Relaxed);
         let from = self.clients.get(&id).map(|c| c.principal.id.clone());
         // Fan out to every subscriber except the publisher (no self-echo).
         for target in self.presence.subscribers(&channel) {
@@ -402,7 +429,9 @@ impl Worker {
         for session in cs.sessions {
             self.leave_session(id, &session);
         }
-        self.stats.connections_closed.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .connections_closed
+            .fetch_add(1, Ordering::Relaxed);
         self.stats
             .active_clients
             .store(self.clients.len() as u64, Ordering::Relaxed);
@@ -444,7 +473,9 @@ impl Worker {
         };
         match client::try_deliver(&cs.out, msg) {
             Delivery::Sent => {
-                self.stats.messages_delivered.fetch_add(1, Ordering::Relaxed);
+                self.stats
+                    .messages_delivered
+                    .fetch_add(1, Ordering::Relaxed);
             }
             Delivery::Dropped => {
                 self.stats.dropped_frames.fetch_add(1, Ordering::Relaxed);
@@ -573,7 +604,9 @@ impl Worker {
         let Some(coordinator) = self.sessions.coordinator(&session) else {
             return;
         };
-        self.stats.messages_published.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .messages_published
+            .fetch_add(1, Ordering::Relaxed);
         self.deliver(
             coordinator,
             ServerMsg::FromMember {
@@ -596,7 +629,9 @@ impl Worker {
             );
             return;
         }
-        self.stats.messages_published.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .messages_published
+            .fetch_add(1, Ordering::Relaxed);
         let targets: Vec<ClientId> = self
             .sessions
             .roster(&session)

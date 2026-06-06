@@ -15,6 +15,10 @@ pub struct ServerConfig {
     pub enable_subscriptions: bool,
     /// Mount the ephemeral realtime tier (`/realtime/ws`, `/realtime/health`).
     pub enable_realtime: bool,
+    /// Opt-in DB-enforced multi-tenant Row-Level Security (`ATOMO_ENABLE_RLS`). Default off;
+    /// when on, the server installs `CREATE POLICY` per model table at boot and the data layer
+    /// binds `atomo.tenant_id` per request. See `docs/guide/advanced/multi-tenant.md`.
+    pub enable_rls: bool,
 }
 
 impl Default for ServerConfig {
@@ -29,6 +33,7 @@ impl Default for ServerConfig {
             enable_ai: false,
             enable_subscriptions: true,
             enable_realtime: true,
+            enable_rls: false,
         }
     }
 }
@@ -63,6 +68,9 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
                 .unwrap_or(true),
+            enable_rls: std::env::var("ATOMO_ENABLE_RLS")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
         }
     }
 }

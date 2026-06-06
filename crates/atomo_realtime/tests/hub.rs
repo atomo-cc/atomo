@@ -28,10 +28,19 @@ async fn publish_fans_out_to_other_subscribers_not_self() {
     let mut bob = hub.connect(Principal::new("bob", None)).await;
 
     // Both join "room". Each gets its own presence snapshot back first.
-    alice.handle.dispatch(ClientMsg::Subscribe { channel: "room".into() }).await;
+    alice
+        .handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: "room".into(),
+        })
+        .await;
     assert!(matches!(next(&mut alice).await, ServerMsg::Presence { .. }));
 
-    bob.handle.dispatch(ClientMsg::Subscribe { channel: "room".into() }).await;
+    bob.handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: "room".into(),
+        })
+        .await;
     assert!(matches!(next(&mut bob).await, ServerMsg::Presence { .. }));
     // Alice learns Bob joined.
     match next(&mut alice).await {
@@ -51,7 +60,11 @@ async fn publish_fans_out_to_other_subscribers_not_self() {
     alice.handle.dispatch(frame).await;
 
     match next(&mut bob).await {
-        ServerMsg::Message { channel, from, payload } => {
+        ServerMsg::Message {
+            channel,
+            from,
+            payload,
+        } => {
             assert_eq!(channel, "room");
             assert_eq!(from.as_deref(), Some("alice"));
             assert_eq!(payload.get(), r#"{"typing":true}"#);
@@ -67,14 +80,28 @@ async fn presence_snapshot_lists_members_and_disconnect_emits_left() {
     let mut alice = hub.connect(Principal::new("alice", None)).await;
     let mut bob = hub.connect(Principal::new("bob", None)).await;
 
-    alice.handle.dispatch(ClientMsg::Subscribe { channel: "deal:1".into() }).await;
+    alice
+        .handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: "deal:1".into(),
+        })
+        .await;
     let _ = next(&mut alice).await; // own presence snapshot
-    bob.handle.dispatch(ClientMsg::Subscribe { channel: "deal:1".into() }).await;
+    bob.handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: "deal:1".into(),
+        })
+        .await;
     let _ = next(&mut bob).await; // own presence snapshot
     let _ = next(&mut alice).await; // Joined bob
 
     // Explicit presence query returns both members, sorted.
-    alice.handle.dispatch(ClientMsg::Presence { channel: "deal:1".into() }).await;
+    alice
+        .handle
+        .dispatch(ClientMsg::Presence {
+            channel: "deal:1".into(),
+        })
+        .await;
     match next(&mut alice).await {
         ServerMsg::Presence { channel, members } => {
             assert_eq!(channel, "deal:1");
@@ -100,14 +127,23 @@ async fn payload_helper_round_trips_opaque_json() {
     let mut a = hub.connect(Principal::anonymous("anon-a")).await;
     let mut b = hub.connect(Principal::anonymous("anon-b")).await;
     for c in [&a, &b] {
-        c.handle.dispatch(ClientMsg::Subscribe { channel: "c".into() }).await;
+        c.handle
+            .dispatch(ClientMsg::Subscribe {
+                channel: "c".into(),
+            })
+            .await;
     }
     let _ = next(&mut a).await;
     let _ = next(&mut b).await;
     let _ = next(&mut a).await; // joined b
 
     let payload = payload_from_str(r#"[1,2,3]"#).unwrap();
-    a.handle.dispatch(ClientMsg::Publish { channel: "c".into(), payload: serde_json::from_str(r#"[1,2,3]"#).unwrap() }).await;
+    a.handle
+        .dispatch(ClientMsg::Publish {
+            channel: "c".into(),
+            payload: serde_json::from_str(r#"[1,2,3]"#).unwrap(),
+        })
+        .await;
     match next(&mut b).await {
         ServerMsg::Message { payload, .. } => assert_eq!(payload.get(), "[1,2,3]"),
         other => panic!("expected Message, got {other:?}"),
@@ -125,10 +161,21 @@ async fn join_rate_limit_denies_bursts_with_an_error() {
     });
     let mut a = hub.connect(Principal::anonymous("anon")).await;
 
-    a.handle.dispatch(ClientMsg::Subscribe { channel: "c1".into() }).await;
-    assert!(matches!(next(&mut a).await, ServerMsg::Presence { .. }), "first join allowed");
+    a.handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: "c1".into(),
+        })
+        .await;
+    assert!(
+        matches!(next(&mut a).await, ServerMsg::Presence { .. }),
+        "first join allowed"
+    );
 
-    a.handle.dispatch(ClientMsg::Subscribe { channel: "c2".into() }).await;
+    a.handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: "c2".into(),
+        })
+        .await;
     match next(&mut a).await {
         ServerMsg::Error { message } => assert!(message.contains("rate limit"), "got: {message}"),
         other => panic!("expected rate-limit Error, got {other:?}"),

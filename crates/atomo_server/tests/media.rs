@@ -13,7 +13,11 @@ async fn upload_read_delete_roundtrip_and_events() {
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let dir = std::env::temp_dir().join(format!("atomo-media-it-{}", uuid::Uuid::new_v4()));
     let (tx, mut rx) = tokio::sync::broadcast::channel(16);
-    let state = Arc::new(MediaState::new(pool.clone(), Arc::new(LocalStorage::new(&dir)), tx));
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
     state.init().await.unwrap();
 
     // upload
@@ -39,8 +43,20 @@ async fn upload_read_delete_roundtrip_and_events() {
     assert!(!state.soft_delete(&id, "user-1").await.unwrap()); // idempotent
 
     // GC purges the soft-deleted row; second pass is a no-op
-    assert!(state.purge_deleted(std::time::Duration::ZERO).await.unwrap() >= 1);
-    assert_eq!(state.purge_deleted(std::time::Duration::ZERO).await.unwrap(), 0);
+    assert!(
+        state
+            .purge_deleted(std::time::Duration::ZERO)
+            .await
+            .unwrap()
+            >= 1
+    );
+    assert_eq!(
+        state
+            .purge_deleted(std::time::Duration::ZERO)
+            .await
+            .unwrap(),
+        0
+    );
 
     tokio::fs::remove_dir_all(&dir).await.ok();
 }

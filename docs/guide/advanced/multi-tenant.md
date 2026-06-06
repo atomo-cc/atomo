@@ -37,15 +37,67 @@ curl -s -X POST http://localhost:3000/graphql \
 Tenant A creating a record and Tenant B listing will not see each other's rows (verified by the
 `test_two_tenant_isolation` integration test).
 
+## Opt-in DB-enforced RLS (defense-in-depth)
+
+Postgres **Row-Level Security** is available as an **opt-in, additive** layer on top of the
+app-layer scoping. It is **off by default** — when disabled, behavior is byte-for-byte unchanged.
+
+### Enable it
+
+```bash
+ATOMO_ENABLE_RLS=true   # accepts true / 1; default false
+```
+
+On boot (after tables exist) the server runs, for every model table:
+
+```sql
+ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
+ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;   -- also constrains the table-owning role
+DROP POLICY IF EXISTS atomo_tenant_isolation ON <t>;
+CREATE POLICY atomo_tenant_isolation ON <t>
+  USING      (tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true))
+  WITH CHECK (tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true));
+```
+
+Setup is **idempotent** (safe on every boot). The policy is **permissive**: rows with
+`tenant_id IS NULL` stay visible/writable, so single-tenant deployments are unaffected.
+
+### What it enforces
+
+A forgotten `WHERE tenant_id = …` cannot leak across tenants: Postgres filters every row against
+the `atomo.tenant_id` session variable set for the request, so cross-tenant reads/writes are
+rejected by the database itself — not just the application.
+
+### Pooling note (important)
+
+The session variable is set with `SET LOCAL atomo.tenant_id = …` (via `set_config(…, true)`), which
+is **transaction-scoped** — it resets at COMMIT/ROLLBACK. This makes it **safe under PgBouncer
+transaction pooling**: the binding can never leak onto another tenant's request reusing the same
+physical connection. The bind and the queries it protects **must run in the same transaction**.
+
+Helper: `atomo_server::rls::bind_tenant(&mut tx, tenant_id)`.
+
+### Per-transaction wiring status — **wired**
+
+Per-request enforcement is now active end to end:
+
+- **Request boundary:** `graphql_handler` wraps execution in
+  `atomo::graphql::with_tenant_scope(tenant, schema.execute(req))` — the tenant is the same
+  header value that gates `TenantCtx`, so app-layer scoping and RLS binding can never disagree.
+- **Executor:** when `ATOMO_ENABLE_RLS` is on and a scope is active, `AtomoClient`'s read/write
+  methods run each statement inside `pool.begin()` + `SET LOCAL atomo.tenant_id` on the same
+  connection, then commit. The read cache is **tenant-keyed** so a cached read can't cross tenants.
+- **Off / unscoped callers** (SDK, projectors, seeding) run directly on the pool — unchanged.
+
+Proven against Postgres by `crates/atomo_server/tests/rls_enforcement.rs` (policy + primitive) and
+`crates/atomo/tests/rls_executor.rs` (`find_many` under scope, incl. the "forgot the WHERE" case and
+the tenant-keyed cache).
+
+**Not yet scoped:** the GraphQL **subscription/WS** path, and event-store per-tenant scoping (below).
+
 ## Limits & roadmap
 
-- **Postgres Row-Level Security (RLS)** is **not yet implemented** — scoping is enforced in the
-  application layer (the `WHERE tenant_id = ...` clauses + write stamping). RLS as a
-  defense-in-depth layer (generated `CREATE POLICY` + per-transaction session var) is a planned
-  follow-up; doing it safely under a shared connection pool is a deliberate design step.
-- **Event-store tenant scoping** (per-event tenant metadata) is also planned.
-
-So: app-layer isolation works and is tested; do not rely on DB-enforced RLS yet.
+- **Event-store tenant scoping** (per-event tenant metadata) is planned.
 
 ## See also
 - [Access Control (RBAC)](/guide/advanced/access-hooks)

@@ -29,6 +29,10 @@ pub struct UserIdCtx(pub String);
 /// Tenant context for multi-tenant isolation
 pub struct TenantCtx(pub String);
 
+/// Re-export: set the request's RLS tenant scope around request execution.
+/// Wrap `schema.execute(req)` in this so RLS-enabled queries bind `atomo.tenant_id`.
+pub use crate::client::with_tenant_scope;
+
 fn check_access(
     schema: &Schema,
     model_name: &str,

@@ -13,7 +13,10 @@ async fn s3_put_get_delete_roundtrip() {
     let store = S3Storage::from_env().await;
     let key = format!("test/{}.bin", uuid::Uuid::new_v4());
     store.put(&key, b"S3DATA").await.unwrap();
-    assert_eq!(store.get(&key).await.unwrap().as_deref(), Some(&b"S3DATA"[..]));
+    assert_eq!(
+        store.get(&key).await.unwrap().as_deref(),
+        Some(&b"S3DATA"[..])
+    );
     store.delete(&key).await.unwrap();
     assert!(store.get(&key).await.unwrap().is_none());
 }

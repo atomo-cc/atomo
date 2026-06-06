@@ -21,7 +21,11 @@ async fn connect() -> sqlx::PgPool {
     pool
 }
 
-async fn seed_user_token(pool: &sqlx::PgPool, auth: &HttpAuthService, tenant: Option<&str>) -> String {
+async fn seed_user_token(
+    pool: &sqlx::PgPool,
+    auth: &HttpAuthService,
+    tenant: Option<&str>,
+) -> String {
     let id = atomo_core::types::EntityId::new().to_string();
     let email = format!("u-{}@test.dev", id);
     sqlx::query(
@@ -48,7 +52,10 @@ fn multipart(filename: &str, content_type: &str, data: &[u8]) -> (String, Body) 
     );
     buf.extend_from_slice(data);
     buf.extend_from_slice(format!("\r\n--{b}--\r\n").as_bytes());
-    (format!("multipart/form-data; boundary={b}"), Body::from(buf))
+    (
+        format!("multipart/form-data; boundary={b}"),
+        Body::from(buf),
+    )
 }
 
 fn upload_req(token: Option<&str>, content_type: &str, data: &[u8]) -> Request<Body> {
@@ -71,7 +78,11 @@ async fn media_http_full_lifecycle_and_security() {
     let token = seed_user_token(&pool, &auth, None).await;
     let dir = std::env::temp_dir().join(format!("atomo-media-http-{}", uuid::Uuid::new_v4()));
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    let state = Arc::new(MediaState::new(pool.clone(), Arc::new(LocalStorage::new(&dir)), tx));
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
     state.init().await.unwrap();
     let app = media_router(state, auth);
 
@@ -89,7 +100,11 @@ async fn media_http_full_lifecycle_and_security() {
         .oneshot(upload_req(Some(&token), "text/html", b"<script>"))
         .await
         .unwrap();
-    assert_eq!(r.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE, "html blocked");
+    assert_eq!(
+        r.status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "html blocked"
+    );
 
     // 2b. declared image/png but bytes aren't a PNG -> 415 (magic-byte sniff)
     let r = app
@@ -97,7 +112,11 @@ async fn media_http_full_lifecycle_and_security() {
         .oneshot(upload_req(Some(&token), "image/png", b"not-a-real-png"))
         .await
         .unwrap();
-    assert_eq!(r.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE, "content/type mismatch blocked");
+    assert_eq!(
+        r.status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "content/type mismatch blocked"
+    );
 
     // 3. valid upload -> 200 {id,url}
     let r = app
@@ -106,7 +125,9 @@ async fn media_http_full_lifecycle_and_security() {
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(r.into_body(), 1_000_000).await.unwrap();
+    let bytes = axum::body::to_bytes(r.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let id = json["id"].as_str().unwrap().to_string();
     assert_eq!(json["contentType"], "image/png");
@@ -114,19 +135,35 @@ async fn media_http_full_lifecycle_and_security() {
     // 4. serve (public) -> 200 with content-type + nosniff + correct bytes
     let r = app
         .clone()
-        .oneshot(Request::builder().uri(format!("/media/{id}")).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/media/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
     assert_eq!(r.headers().get("content-type").unwrap(), "image/png");
-    assert_eq!(r.headers().get("x-content-type-options").unwrap(), "nosniff");
-    let served = axum::body::to_bytes(r.into_body(), 1_000_000).await.unwrap();
+    assert_eq!(
+        r.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
+    let served = axum::body::to_bytes(r.into_body(), 1_000_000)
+        .await
+        .unwrap();
     assert_eq!(served.as_ref(), PNG);
 
     // 5. delete without auth -> 401
     let r = app
         .clone()
-        .oneshot(Request::builder().method("DELETE").uri(format!("/media/{id}")).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/media/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "delete requires auth");
@@ -147,15 +184,29 @@ async fn media_http_full_lifecycle_and_security() {
     assert_eq!(r.status(), StatusCode::NO_CONTENT);
     let r = app
         .clone()
-        .oneshot(Request::builder().uri(format!("/media/{id}")).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/media/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(r.status(), StatusCode::NOT_FOUND, "deleted media not served");
+    assert_eq!(
+        r.status(),
+        StatusCode::NOT_FOUND,
+        "deleted media not served"
+    );
 
     // 7. unknown id -> 404
     let r = app
         .clone()
-        .oneshot(Request::builder().uri("/media/does-not-exist").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/media/does-not-exist")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::NOT_FOUND);
@@ -163,7 +214,13 @@ async fn media_http_full_lifecycle_and_security() {
     // 8. GC endpoint: requires auth + admin; returns a purge count
     let r = app
         .clone()
-        .oneshot(Request::builder().method("POST").uri("/media/gc").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/media/gc")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "gc requires auth");
@@ -192,13 +249,21 @@ async fn media_http_rejects_oversized_body() {
     let dir = std::env::temp_dir().join(format!("atomo-media-sz-{}", uuid::Uuid::new_v4()));
     std::env::set_var("STORAGE_MAX_FILE_SIZE", "8"); // tiny cap -> any multipart body exceeds
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    let state = Arc::new(MediaState::new(pool.clone(), Arc::new(LocalStorage::new(&dir)), tx));
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
     state.init().await.unwrap();
     let app = media_router(state, auth);
     std::env::remove_var("STORAGE_MAX_FILE_SIZE");
 
     let r = app
-        .oneshot(upload_req(Some(&token), "image/png", b"way-too-large-payload"))
+        .oneshot(upload_req(
+            Some(&token),
+            "image/png",
+            b"way-too-large-payload",
+        ))
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::PAYLOAD_TOO_LARGE);
@@ -215,7 +280,11 @@ async fn media_http_private_reads_are_tenant_scoped() {
     let dir = std::env::temp_dir().join(format!("atomo-media-priv-{}", uuid::Uuid::new_v4()));
     std::env::set_var("STORAGE_PRIVATE_READS", "true");
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    let state = Arc::new(MediaState::new(pool.clone(), Arc::new(LocalStorage::new(&dir)), tx));
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
     state.init().await.unwrap();
     let app = media_router(state, auth);
     std::env::remove_var("STORAGE_PRIVATE_READS");
@@ -227,7 +296,9 @@ async fn media_http_private_reads_are_tenant_scoped() {
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(r.into_body(), 1_000_000).await.unwrap();
+    let bytes = axum::body::to_bytes(r.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let id = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["id"]
         .as_str()
         .unwrap()
@@ -242,9 +313,18 @@ async fn media_http_private_reads_are_tenant_scoped() {
     };
 
     // no token -> 401; wrong tenant -> 403; owning tenant -> 200
-    assert_eq!(app.clone().oneshot(get(None)).await.unwrap().status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(app.clone().oneshot(get(Some(&t2))).await.unwrap().status(), StatusCode::FORBIDDEN);
-    assert_eq!(app.oneshot(get(Some(&t1))).await.unwrap().status(), StatusCode::OK);
+    assert_eq!(
+        app.clone().oneshot(get(None)).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.clone().oneshot(get(Some(&t2))).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.oneshot(get(Some(&t1))).await.unwrap().status(),
+        StatusCode::OK
+    );
 
     tokio::fs::remove_dir_all(&dir).await.ok();
 }

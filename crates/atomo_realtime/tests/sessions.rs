@@ -24,7 +24,9 @@ fn payload(json: &str) -> Box<serde_json::value::RawValue> {
 
 async fn join(conn: &Connection, session: &str) {
     conn.handle
-        .dispatch(ClientMsg::SessionJoin { session: session.into() })
+        .dispatch(ClientMsg::SessionJoin {
+            session: session.into(),
+        })
         .await;
 }
 
@@ -36,7 +38,12 @@ async fn join_assigns_slots_and_announces_members() {
 
     join(&alice, "match").await;
     match next(&mut alice).await {
-        ServerMsg::SessionStart { slot, coordinator, members, .. } => {
+        ServerMsg::SessionStart {
+            slot,
+            coordinator,
+            members,
+            ..
+        } => {
             assert_eq!(slot, 0);
             assert!(coordinator, "first joiner is the coordinator");
             assert_eq!(members.len(), 1);
@@ -46,7 +53,12 @@ async fn join_assigns_slots_and_announces_members() {
 
     join(&bob, "match").await;
     match next(&mut bob).await {
-        ServerMsg::SessionStart { slot, coordinator, members, .. } => {
+        ServerMsg::SessionStart {
+            slot,
+            coordinator,
+            members,
+            ..
+        } => {
             assert_eq!(slot, 1);
             assert!(!coordinator);
             assert_eq!(members.len(), 2);
@@ -76,10 +88,18 @@ async fn directional_relay_to_and_from_coordinator() {
 
     // Member → coordinator: bob's input reaches alice (host), not bob.
     bob.handle
-        .dispatch(ClientMsg::ToCoordinator { session: "m".into(), payload: payload(r#"{"thrust":1}"#) })
+        .dispatch(ClientMsg::ToCoordinator {
+            session: "m".into(),
+            payload: payload(r#"{"thrust":1}"#),
+        })
         .await;
     match next(&mut alice).await {
-        ServerMsg::FromMember { from, slot, payload, .. } => {
+        ServerMsg::FromMember {
+            from,
+            slot,
+            payload,
+            ..
+        } => {
             assert_eq!(from, "bob");
             assert_eq!(slot, 1);
             assert_eq!(payload.get(), r#"{"thrust":1}"#);
@@ -91,7 +111,10 @@ async fn directional_relay_to_and_from_coordinator() {
     // Coordinator → members: alice's snapshot reaches bob, not alice.
     alice
         .handle
-        .dispatch(ClientMsg::ToMembers { session: "m".into(), payload: payload(r#"[1,2,3]"#) })
+        .dispatch(ClientMsg::ToMembers {
+            session: "m".into(),
+            payload: payload(r#"[1,2,3]"#),
+        })
         .await;
     match next(&mut bob).await {
         ServerMsg::FromCoordinator { payload, .. } => assert_eq!(payload.get(), r#"[1,2,3]"#),
@@ -112,7 +135,10 @@ async fn to_members_from_non_coordinator_is_rejected() {
     let _ = next(&mut alice).await;
 
     bob.handle
-        .dispatch(ClientMsg::ToMembers { session: "m".into(), payload: payload("true") })
+        .dispatch(ClientMsg::ToMembers {
+            session: "m".into(),
+            payload: payload("true"),
+        })
         .await;
     match next(&mut bob).await {
         ServerMsg::Error { message } => assert!(message.contains("coordinator"), "got: {message}"),

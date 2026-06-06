@@ -12,6 +12,10 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
   ephemeral, high-frequency tier (channels, presence, fan-out); `atomo_server`
   mounts its WebSocket transport at `/realtime/ws`. It never touches the event
   store — only durable *outcomes* flow back through the normal command path.
+- Control plane: `atomo_control_plane` runs many isolated projects on shared
+  infrastructure — a per-project database + `atomo-server` instance, managed by a
+  registry, provisioner, and gateway. Purely additive: it sits *in front of*
+  unmodified servers. See [Multi-Project Platform](/guide/advanced/multi-project-design).
 
 Pillars (from Atomo About & Paper):
 - River of Events: all changes are immutable events (audit/time travel).

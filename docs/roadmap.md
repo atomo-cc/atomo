@@ -24,7 +24,8 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Real-time (ephemeral): ✅ `atomo_realtime` hub — channels, presence & fan-out over `/realtime/ws` (Phase 2); never event-sourced. CRM dogfood (live Kanban/presence) + coordinator sessions + rate-limit/metrics hardening still TODO
 - Event sourcing: ✅ event_log persistence, replay, entity history (conformance-tested C3), CQRS projections (corruption fixed in B2; rebuild-replay still TODO)
 - AI: 🟡 pgvector EmbeddingStore with similarity search — code exists, not yet conformance-tested (needs pgvector infra; runs in CI not locally)
-- Multi-tenant: 🟡 `tenant_id` column generated + read/write scoping (S3+D1); subscription tenant-filter, per-user binding, and PG-RLS still TODO
+- Multi-tenant: 🟢 `tenant_id` column generated + read/write scoping (S3+D1), subscription tenant-filter, per-user binding; **opt-in DB-enforced RLS** (`ATOMO_ENABLE_RLS`) wired through the query executor + Postgres-tested (`rls_enforcement`, `rls_executor`). Subscription/WS-path RLS + event-store tenant scoping still TODO
+- Multi-project platform: 🟡 `atomo_control_plane` — silo-per-project (own DB + `atomo-server` instance) via registry / provisioner (Docker driver) / Caddy gateway / reconciler + `atomo project` CLI; compiles, RLS axis Postgres-tested. Provisioner/gateway/API integration tests + control-plane auth still TODO. See `/guide/advanced/multi-project-design`
 - Workflow engine: 🟢 triggers/conditions/retry + YAML loading + HTTP steps + **Mutation steps (GraphQL) and Plugin steps (WASM/JS)** wired via executor seams injected at server boot; advanced JS-authored workflows still TODO
 - Caching: ✅ read cache with TTL and event-driven invalidation (conformance-tested C4; pagination cache-key bug fixed C2)
 - Rate limiting: ✅ per-IP token bucket middleware
