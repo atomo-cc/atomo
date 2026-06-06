@@ -141,6 +141,9 @@ impl ProjectRegistry {
         .execute(&self.pool)
         .await?;
 
+        // Note: each statement runs on its own — sqlx prepares queries, and a prepared
+        // statement cannot carry multiple commands ("cannot insert multiple commands into a
+        // prepared statement"). So the table and its index are separate execute() calls.
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS project_events (
@@ -150,9 +153,14 @@ impl ProjectRegistry {
                 actor       TEXT,
                 detail      JSONB,
                 at          TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-            CREATE INDEX IF NOT EXISTS idx_project_events_project ON project_events(project_id);
+            )
             "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_project_events_project ON project_events(project_id)",
         )
         .execute(&self.pool)
         .await?;
