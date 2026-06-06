@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-06-06
+
+> Phase-3 hardening + the plugin on-ramp. No breaking changes. `:latest` + `:v0.2.5`
+> are built from this tag.
+
 ### Added
 - **Docs — "Writing Plugins" guide**: the missing on-ramp for custom routes/plugins —
   the `plugin.toml` format, permissions, the hook + route handler contracts, the
