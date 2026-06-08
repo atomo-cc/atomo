@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-08
+
+> **External workers + blob storage.** Atomo can now own side-effect-heavy workloads (external API
+> orchestration, browser automation, media pipelines) via trusted out-of-process **workers** that
+> pull durable, event-sourced **jobs** — without weakening the plugin sandbox. Plus first-class
+> **blob** handling (Range streaming, checksum + dedup, presigned S3 upload). All additive: default
+> single-server use is unchanged and there are **no breaking changes** (new `jobs`/`worker_tokens`
+> tables and the `media.checksum`/`sessions.is_revoked` columns self-create/heal on boot). Jobs can
+> be enqueued from REST, GraphQL, a workflow step, a plugin, or Rust; workers use the
+> `@atomo-cc/worker-sdk` (not yet npm-published). Note: the optional `storage-s3` feature now
+> requires **rustc ≥ 1.91** (latest aws-sdk MSRV). `:v0.4.0` + `:latest` images are built from this tag.
+
 ### Added
 - **Durable job queue + external-worker lease API** (`atomo_server::jobs` + `/jobs`) — the brain
   side of the external-worker model. Event-sourced jobs (`Job` model events for the lifecycle) with

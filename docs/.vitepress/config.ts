@@ -34,7 +34,7 @@ export default defineConfig({
         { text: '路线图', link: '/zh/roadmap' }
       ]},
       {
-        text: 'v0.1.0',
+        text: 'v0.4.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Roadmap', link: '/roadmap' }
