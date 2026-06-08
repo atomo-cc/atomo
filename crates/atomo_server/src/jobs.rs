@@ -397,9 +397,141 @@ impl JobStore {
     }
 }
 
+/// A verified worker principal. `queues` is its capability set: which queues it may lease from
+/// (`["*"]` = any). A worker is trusted *relative to the sandbox* but still least-privilege —
+/// the token scopes what it can pull.
+#[derive(Debug, Clone)]
+pub struct WorkerIdentity {
+    pub id: String,
+    pub name: String,
+    pub queues: Vec<String>,
+}
+
+impl WorkerIdentity {
+    /// Whether this worker may lease from `queue`.
+    pub fn may_lease(&self, queue: &str) -> bool {
+        self.queues.iter().any(|q| q == "*" || q == queue)
+    }
+}
+
+/// Issues and verifies **worker tokens** — a credential class distinct from user JWTs. The
+/// plaintext token is shown once at mint; only its SHA-256 is stored, so a DB read can't recover a
+/// usable token. Verification is a single indexed lookup by hash.
+pub struct WorkerTokenStore {
+    pool: PgPool,
+}
+
+impl WorkerTokenStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn init(&self) -> Result<()> {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS worker_tokens (
+                id           TEXT PRIMARY KEY,
+                name         TEXT NOT NULL,
+                token_sha256 TEXT NOT NULL UNIQUE,
+                queues       TEXT[] NOT NULL DEFAULT '{}',
+                is_revoked   BOOLEAN NOT NULL DEFAULT false,
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Mint a new worker token scoped to `queues` (use `["*"]` for any). Returns
+    /// `(id, plaintext_token)` — the plaintext is **not recoverable later**, only its hash is stored.
+    pub async fn mint(&self, name: &str, queues: &[String]) -> Result<(String, String)> {
+        let id = uuid::Uuid::new_v4().to_string();
+        // High-entropy secret (~244 bits across two v4 UUIDs); prefix marks it as a worker token.
+        let token = format!(
+            "wkr_{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        );
+        sqlx::query(
+            "INSERT INTO worker_tokens (id, name, token_sha256, queues) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(sha256_hex(&token))
+        .bind(queues)
+        .execute(&self.pool)
+        .await?;
+        Ok((id, token))
+    }
+
+    /// Verify a presented token; returns the worker identity (with its allowed queues) or None.
+    pub async fn verify(&self, token: &str) -> Result<Option<WorkerIdentity>> {
+        let row = sqlx::query(
+            "SELECT id, name, queues FROM worker_tokens
+             WHERE token_sha256 = $1 AND is_revoked = false",
+        )
+        .bind(sha256_hex(token))
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| WorkerIdentity {
+            id: r.get("id"),
+            name: r.get("name"),
+            queues: r.get("queues"),
+        }))
+    }
+
+    /// Revoke a token by id. Returns whether a live token was revoked.
+    pub async fn revoke(&self, id: &str) -> Result<bool> {
+        let res = sqlx::query(
+            "UPDATE worker_tokens SET is_revoked = true WHERE id = $1 AND is_revoked = false",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected() > 0)
+    }
+}
+
+/// Lowercase hex SHA-256 of `s` (used to store/look up worker tokens without keeping the plaintext).
+fn sha256_hex(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(s.as_bytes());
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{backoff_secs, decide_on_fail, FailOutcome};
+    use super::{backoff_secs, decide_on_fail, sha256_hex, FailOutcome, WorkerIdentity};
+
+    #[test]
+    fn worker_capability_scoping() {
+        let w = WorkerIdentity {
+            id: "1".into(),
+            name: "media".into(),
+            queues: vec!["media-gen".into()],
+        };
+        assert!(w.may_lease("media-gen"));
+        assert!(!w.may_lease("billing"));
+        let star = WorkerIdentity {
+            id: "2".into(),
+            name: "any".into(),
+            queues: vec!["*".into()],
+        };
+        assert!(star.may_lease("anything"));
+    }
+
+    #[test]
+    fn sha256_hex_is_stable_64_hex() {
+        let h = sha256_hex("wkr_abc");
+        assert_eq!(h.len(), 64);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(h, sha256_hex("wkr_abc"));
+        assert_ne!(h, sha256_hex("wkr_abd"));
+    }
 
     #[test]
     fn backoff_is_exponential_and_capped() {

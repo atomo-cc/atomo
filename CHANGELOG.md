@@ -8,13 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Durable job queue + lease engine** (`atomo_server::jobs::JobStore`) — the brain side of the
-  external-worker model. Event-sourced jobs (`Job` model events for the lifecycle) with idempotent
-  enqueue (`(queue, idempotency_key)`), atomic `SELECT … FOR UPDATE SKIP LOCKED` leasing with
-  per-job lease tokens, heartbeat/complete/fail, visibility-timeout reclaim (at-least-once,
-  crash-safe), and a retry/backoff/dead-letter policy. Proven against Postgres (`jobs_store`:
-  lifecycle, idempotency, concurrent disjoint dispatch, reclaim, retry→dead). This is the lease
-  engine only; the HTTP lease API, worker-token auth, and worker SDK are the next slice. See
+- **Durable job queue + external-worker lease API** (`atomo_server::jobs` + `/jobs`) — the brain
+  side of the external-worker model. Event-sourced jobs (`Job` model events for the lifecycle) with
+  idempotent enqueue (`(queue, idempotency_key)`), atomic `SELECT … FOR UPDATE SKIP LOCKED` leasing
+  with per-job lease tokens, heartbeat/complete/fail, visibility-timeout reclaim (at-least-once,
+  crash-safe — a background sweep runs every `ATOMO_JOB_RECLAIM_INTERVAL` seconds), and a
+  retry/backoff/dead-letter policy. Exposed over HTTP for trusted out-of-process workers:
+  `POST /jobs/lease|{id}/heartbeat|{id}/complete|{id}/fail`, authenticated by a **worker token**
+  (`X-Worker-Token`) — a credential class distinct from user JWTs, stored only as a SHA-256 and
+  **capability-scoped to specific queues**. Admins mint tokens via `POST /jobs/workers` (Admin
+  role). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint
+  dispatch, reclaim, retry→dead; `jobs_http`: end-to-end lease/complete + 401/403 enforcement). The
+  worker SDK and app-side enqueue seams (GraphQL/workflow/plugin) are the next slice. See
   [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
 - **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
   single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable

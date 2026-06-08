@@ -200,6 +200,46 @@ impl AtomoServer {
         let media_router = crate::media::media_router(media_state, auth_service.clone());
         info!("   ✓ Media storage ready");
 
+        // Durable job queue + worker-token auth (external-worker lease API under /jobs).
+        let job_store = std::sync::Arc::new(crate::jobs::JobStore::new(
+            self.atomo.db_pool().clone(),
+            self.atomo.event_sender(),
+        ));
+        job_store.init().await?;
+        let worker_tokens = std::sync::Arc::new(crate::jobs::WorkerTokenStore::new(
+            self.atomo.db_pool().clone(),
+        ));
+        worker_tokens.init().await?;
+        let jobs_router = crate::job_routes::jobs_router(
+            job_store.clone(),
+            worker_tokens.clone(),
+            auth_service.clone(),
+        );
+        // Crash recovery: periodically return expired leases (dead/stalled workers) to the queue.
+        {
+            let store = job_store.clone();
+            let interval_secs: u64 = std::env::var("ATOMO_JOB_RECLAIM_INTERVAL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|&n| n >= 1)
+                .unwrap_or(30);
+            tokio::spawn(async move {
+                let mut ticker =
+                    tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+                loop {
+                    ticker.tick().await;
+                    match store.reclaim_expired().await {
+                        Ok(n) if n > 0 => {
+                            tracing::info!(reclaimed = n, "reclaimed expired job leases")
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::warn!(error = %e, "job lease reclaim failed"),
+                    }
+                }
+            });
+        }
+        info!("   ✓ Job queue ready (lease API at /jobs)");
+
         // Audit listener: record an audit entry for every model mutation event.
         {
             let audit = audit_service.clone();
@@ -412,7 +452,8 @@ impl AtomoServer {
             .merge(crate::registry_routes::registry_router(
                 registry_store.clone(),
             ))
-            .merge(media_router);
+            .merge(media_router)
+            .merge(jobs_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }

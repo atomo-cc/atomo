@@ -434,16 +434,20 @@ per media app remains the rational default.
 - **Remaining:** content checksum column (strong content-addressed ETag), optional `namespace`.
 - **Deliverable:** media upload/serve/stream on a single host — already useful today.
 
-### Phase 2 — Durable jobs + lease engine
-- **Done — lease engine** (`atomo_server::jobs::JobStore`): event-sourced job lifecycle (`Job`
-  events) + `jobs` working-set table; idempotent enqueue; `lease`/`heartbeat`/`complete`/`fail` with
+### Phase 2 — Durable jobs + lease API ✅ (done)
+- **Lease engine** (`atomo_server::jobs::JobStore`): event-sourced job lifecycle (`Job` events) +
+  `jobs` working-set table; idempotent enqueue; `lease`/`heartbeat`/`complete`/`fail` with
   `SELECT … FOR UPDATE SKIP LOCKED` dispatch, per-job lease tokens, visibility-timeout reclaim
-  (at-least-once, crash-safe), and a retry/backoff/dead-letter policy. Postgres-tested (`jobs_store`)
-  + pure-logic unit tests.
-- **Remaining — exposure:** the HTTP lease API (`/jobs/lease|heartbeat|complete|fail`) and
-  worker-token auth + capability scoping (so a worker is a network principal, not just a library).
-- **Deliverable (partial):** the correctness-critical core is in; an external program can pull/
-  complete once the HTTP+token layer lands.
+  (at-least-once, crash-safe; a boot-time background sweep reclaims on `ATOMO_JOB_RECLAIM_INTERVAL`),
+  and a retry/backoff/dead-letter policy.
+- **HTTP lease API** (`job_routes::jobs_router`, mounted at `/jobs`): `POST /jobs/lease`,
+  `POST /jobs/{id}/heartbeat|complete|fail` for the worker pull side; `POST /jobs/workers` (Admin)
+  mints tokens.
+- **Worker-token auth** (`WorkerTokenStore`): an `X-Worker-Token` credential class distinct from
+  user JWTs, stored only as SHA-256, **capability-scoped to queues** (`WorkerIdentity::may_lease`) —
+  trusted-vs-sandbox but least-privilege.
+- **Tested:** pure-logic unit tests + Postgres `jobs_store` (lifecycle/idempotency/concurrency/
+  reclaim/retry) and `jobs_http` (end-to-end lease/complete + 401/403 enforcement).
 
 ### Phase 3 — Worker SDK + enqueue seams
 - TS worker SDK (lease/heartbeat/ack/retry built in) + Rust worker crate.
