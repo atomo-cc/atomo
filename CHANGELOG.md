@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows `SKIP LOCKED` scaling), and the **plugin hook tax** (a JS/Javy `before_create` through the
   real hook path — the per-operation cost for migrators evaluating custom logic in the sandbox), plus
   the release binary footprint. Honest scope (engine-level, excludes HTTP/GraphQL).
+- **Full-stack HTTP throughput comparison** (`bench/http/`). Atomo's axum server vs Fastify under
+  `k6` (50 VUs), bare endpoint, co-located. Finding: Atomo is **not** faster at the HTTP layer —
+  Fastify ~43 k req/s, Atomo ~30 k lean / ~17 k with full default middleware (tracing, security
+  headers, CORS, rate limit, request-id). So "3–5× faster than Node" is unsupported at the HTTP layer
+  too. **Actionable:** default per-request `INFO` logging costs ~45% of throughput — set
+  `RUST_LOG=warn` for high-throughput deployments. (A single-IP flood also trips the rate limiter;
+  raise `RATE_LIMIT_RPS` when benchmarking.)
 - **Co-located Node head-to-head** (`bench/node-baseline.mjs`). Atomo and a `node-postgres` baseline
   run on the same host as Postgres (no network hop) over the same DB. Finding, recorded honestly:
   Atomo is **~2× slower than raw `node-postgres` on data-layer writes** (it does event sourcing +

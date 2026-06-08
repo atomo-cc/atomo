@@ -10,9 +10,11 @@ operations **in-process** — the data layer, the durable job lease engine, and 
 and deliberately **exclude** HTTP framing, the network, and GraphQL resolution. They answer *"what
 does each core operation cost?"*, not *"requests/sec through the full stack."*
 
-It also includes a **co-located head-to-head vs `node-postgres`** for the comparable raw DB
-operations (see Results). It is **not** (yet) a full-stack HTTP load test — the roadmap's "3–5× faster
-than Node" line remains a **target**, and these numbers do not support it on the data-layer path.
+It also includes a **co-located head-to-head vs Node** — both at the data layer (`node-postgres`) and
+at the **HTTP request layer** (Atomo's axum server vs Fastify under `k6`). Bottom line up front: the
+roadmap's "3–5× faster than Node" line is **not supported on either layer** — Atomo is comparable-to-
+slower on raw throughput because it does more out of the box. It stays a **target**. Atomo's edge is
+footprint, hot-cache reads, and built-in capabilities, not raw speed (see Results).
 
 ## Running it
 
@@ -54,6 +56,7 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **job lease: 1 worker** | `JobStore::lease` throughput draining a queue (cap 50/call) |
 | **job lease: 8 workers** | concurrent `SELECT … FOR UPDATE SKIP LOCKED` dispatch — shows lock-free scaling |
 | **plugin hook tax: JS/Javy** | a `before_create` hook through `WasmHookRunner` (the real CRUD-hook path): the per-operation cost of crossing into the **JS (Javy/QuickJS)** sandbox + JSON marshalling |
+| **HTTP request throughput** | a bare endpoint under `k6` concurrency — Atomo's axum server vs Fastify; isolates the request runtime (see Full-stack HTTP below) |
 
 ## Results
 
@@ -112,6 +115,41 @@ machine, same DB, same serial-latency method.
 Other portable takeaways: the **JS plugin load** (Javy/QuickJS instantiate) is a one-time ~400 ms at
 boot, not per-call; the **JS hook tax** (~178 µs/call here on Linux; was ~424 µs on Windows — wasmtime
 is slower there) is CPU-only and DB-independent.
+
+## Full-stack HTTP: request throughput
+
+The numbers above are in-process. This measures the **HTTP request runtime under concurrency** —
+Atomo's axum/tokio server vs a fast Node framework — on a bare endpoint (small JSON, **no DB**), so it
+isolates request handling (the layer the data-layer bench excludes). Both co-located; **k6**, 50 VUs,
+15 s. Atomo `/version` vs Fastify `/health`.
+
+| Server | req/sec | p95 | max |
+| --- | --: | --: | --: |
+| Node **Fastify** (bare routing) | 43 210 | 2.0 ms | 195 ms |
+| Atomo **lean** (`RUST_LOG=warn`, security headers off) | 30 169 | 2.3 ms | 9 ms |
+| Atomo **default** (full production middleware) | 16 996 | 3.7 ms | 15 ms |
+
+### Honest conclusions
+
+- **Atomo is *not* faster than a fast Node framework at the HTTP layer** — comparable when lean,
+  ~2.5× slower by default. So **"3–5× faster than Node" is not supported at the HTTP layer either**
+  (nor the data layer). Across everything measured, Atomo's value is **not raw speed.**
+- **Atomo does more per request out of the box.** Its default path runs tracing/logging, security
+  headers, CORS, a rate-limit token bucket, and request-id propagation; the bare Fastify does routing
+  only. A Fastify with equivalent middleware would close the gap — the honest framing is
+  *batteries-included request path vs bare router*.
+- **Actionable tuning:** the default→lean jump (17 k → 30 k req/s) is **mostly per-request `INFO`
+  logging** — set `RUST_LOG=warn` (ship logs as `LOG_FORMAT=json` to a collector) for high-throughput
+  deployments. A big, free win, and the clearest practical takeaway here.
+- A single-IP flood also trips Atomo's **rate limiter** (fast 429s — real protection, a load-test
+  artifact); raise `RATE_LIMIT_RPS` when benchmarking, as we did.
+
+> **Follow-up:** this is bare-endpoint throughput (no DB). DB-bound endpoints are comparable for both
+> (see the data layer); a full *authenticated CRUD under load* comparison needs JWT plumbing on both
+> sides to stay fair (Atomo gates reads behind auth by default) — not yet done.
+
+Harness: `bench/http/` (`schema.ts`, `node-server.mjs`, `load.js`, `seed.sql`) — boot each server
+co-located, then `k6 run` against it.
 
 ## Reading the plugin hook tax (for migrators)
 
