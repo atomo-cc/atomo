@@ -526,6 +526,36 @@ impl WorkerTokenStore {
         .await?;
         Ok(res.rows_affected() > 0)
     }
+
+    /// List all worker tokens (metadata only — never the secret/hash), newest first.
+    pub async fn list(&self) -> Result<Vec<WorkerTokenInfo>> {
+        let rows = sqlx::query(
+            "SELECT id, name, queues, is_revoked, created_at
+             FROM worker_tokens ORDER BY created_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| WorkerTokenInfo {
+                id: r.get("id"),
+                name: r.get("name"),
+                queues: r.get("queues"),
+                is_revoked: r.get("is_revoked"),
+                created_at: r.get("created_at"),
+            })
+            .collect())
+    }
+}
+
+/// Public metadata for a worker token (no secret material) — for the admin list view.
+#[derive(Debug, Clone)]
+pub struct WorkerTokenInfo {
+    pub id: String,
+    pub name: String,
+    pub queues: Vec<String>,
+    pub is_revoked: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Lowercase hex SHA-256 of `s` (used to store/look up worker tokens without keeping the plaintext).

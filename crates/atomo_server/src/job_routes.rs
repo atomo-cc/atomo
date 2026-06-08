@@ -16,7 +16,7 @@ use axum::{
     http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Json, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Extension, Router,
 };
 use serde::Deserialize;
@@ -282,12 +282,8 @@ async fn mint_worker(
     user: Option<Extension<AuthUser>>,
     Json(req): Json<MintReq>,
 ) -> Response {
-    let user = match user {
-        Some(Extension(u)) => u,
-        None => return StatusCode::UNAUTHORIZED.into_response(),
-    };
-    if !matches!(user.role, UserRole::Admin) {
-        return StatusCode::FORBIDDEN.into_response();
+    if let Some(resp) = require_admin(user) {
+        return resp;
     }
     match workers.mint(&req.name, &req.queues).await {
         // The plaintext token is returned ONCE — it is not recoverable later.
@@ -300,10 +296,62 @@ async fn mint_worker(
     }
 }
 
+/// `Some(error_response)` if the caller is not an authenticated Admin, else `None`.
+fn require_admin(user: Option<Extension<AuthUser>>) -> Option<Response> {
+    match user {
+        Some(u) if matches!(u.role, UserRole::Admin) => None,
+        Some(_) => Some(StatusCode::FORBIDDEN.into_response()),
+        None => Some(StatusCode::UNAUTHORIZED.into_response()),
+    }
+}
+
+async fn list_workers(
+    State(workers): State<Arc<WorkerTokenStore>>,
+    user: Option<Extension<AuthUser>>,
+) -> Response {
+    if let Some(resp) = require_admin(user) {
+        return resp;
+    }
+    match workers.list().await {
+        Ok(tokens) => {
+            // Metadata only — never the token/hash.
+            let arr: Vec<Value> = tokens
+                .iter()
+                .map(|t| {
+                    json!({
+                        "id": t.id,
+                        "name": t.name,
+                        "queues": t.queues,
+                        "isRevoked": t.is_revoked,
+                        "createdAt": t.created_at.to_rfc3339(),
+                    })
+                })
+                .collect();
+            Json(json!({ "workers": arr })).into_response()
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn revoke_worker(
+    State(workers): State<Arc<WorkerTokenStore>>,
+    user: Option<Extension<AuthUser>>,
+    Path(id): Path<String>,
+) -> Response {
+    if let Some(resp) = require_admin(user) {
+        return resp;
+    }
+    match workers.revoke(&id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(), // unknown or already revoked
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 /// `/jobs/*`: three trust planes merged —
 /// - worker-token pull routes (`lease`/`heartbeat`/`complete`/`fail`),
-/// - user-authed app-side `enqueue` (`POST /jobs`),
-/// - admin-authed worker-token mint (`POST /jobs/workers`).
+/// - user-authed app-side `enqueue` (`POST /jobs`) + status poll (`GET /jobs/{id}`),
+/// - admin-authed worker-token lifecycle (`POST`/`GET /jobs/workers`, `DELETE /jobs/workers/{id}`).
 pub fn jobs_router(
     jobs: Arc<JobStore>,
     workers: Arc<WorkerTokenStore>,
@@ -330,9 +378,10 @@ pub fn jobs_router(
         ))
         .with_state(jobs);
 
-    // Token minting: Admin only (checked in the handler).
+    // Worker-token lifecycle: Admin only (checked in the handlers).
     let admin_routes = Router::new()
-        .route("/jobs/workers", post(mint_worker))
+        .route("/jobs/workers", post(mint_worker).get(list_workers))
+        .route("/jobs/workers/{id}", delete(revoke_worker))
         .route_layer(middleware::from_fn_with_state(
             auth,
             optional_auth_middleware,

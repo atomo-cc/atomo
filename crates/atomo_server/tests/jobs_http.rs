@@ -357,3 +357,137 @@ async fn jobs_http_enqueue_validation_idempotency_and_fail_outcomes() {
         .unwrap();
     assert_eq!(r.status(), StatusCode::CONFLICT);
 }
+
+#[tokio::test]
+#[ignore]
+async fn jobs_http_worker_token_list_and_revoke() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let admin = seed_admin_token(&pool, &auth).await;
+    let viewer = seed_token(&pool, &auth, "viewer").await;
+
+    let (tx, _rx) = tokio::sync::broadcast::channel(64);
+    let jobs = Arc::new(JobStore::new(pool.clone(), tx));
+    jobs.init().await.unwrap();
+    let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
+    workers.init().await.unwrap();
+    let app = jobs_router(jobs, workers, auth);
+    let queue = format!("q-{}", uuid::Uuid::new_v4());
+
+    let admin_hdr = [("authorization", format!("Bearer {admin}"))];
+    let admin_h: Vec<(&str, &str)> = admin_hdr.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
+    // Mint a token.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs/workers",
+            &admin_h,
+            json!({"name": "w", "queues": [queue]}),
+        ))
+        .await
+        .unwrap();
+    let minted = json_body(r).await;
+    let token = minted["token"].as_str().unwrap().to_string();
+    let token_id = minted["id"].as_str().unwrap().to_string();
+
+    // List requires admin; a non-admin → 403.
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/jobs/workers")
+                .header("authorization", format!("Bearer {viewer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+
+    // Admin list shows the token (metadata only, not revoked, no secret).
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/jobs/workers")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let listed = json_body(r).await;
+    let mine = listed["workers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["id"] == token_id)
+        .expect("token appears in the list");
+    assert_eq!(mine["isRevoked"], false);
+    assert!(mine.get("token").is_none() && mine.get("tokenSha256").is_none());
+
+    // The token works before revocation (leasing its queue is allowed → 200).
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs/lease",
+            &[("x-worker-token", &token)],
+            json!({"queues": [queue]}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+
+    // Revoke (admin). A non-admin → 403; revoking twice → 404.
+    let revoke = |hdr: Option<&str>| {
+        let mut b = Request::builder()
+            .method("DELETE")
+            .uri(format!("/jobs/workers/{token_id}"));
+        if let Some(h) = hdr {
+            b = b.header("authorization", format!("Bearer {h}"));
+        }
+        b.body(Body::empty()).unwrap()
+    };
+    assert_eq!(
+        app.clone()
+            .oneshot(revoke(Some(&viewer)))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(revoke(Some(&admin)))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(revoke(Some(&admin)))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::NOT_FOUND,
+        "revoking an already-revoked token is 404"
+    );
+
+    // The revoked token can no longer lease → 401.
+    let r = app
+        .oneshot(post(
+            "/jobs/lease",
+            &[("x-worker-token", &token)],
+            json!({"queues": [queue]}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        StatusCode::UNAUTHORIZED,
+        "revoked token rejected"
+    );
+}

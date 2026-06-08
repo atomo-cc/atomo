@@ -18,10 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`X-Worker-Token`) — a credential class distinct from user JWTs, stored only as a SHA-256 and
   **capability-scoped to specific queues**. Apps enqueue work with `POST /jobs` (any authenticated
   user; the job is stamped with the caller's tenant) and poll it with `GET /jobs/{id}` (status +
-  result, tenant-scoped). Admins mint tokens via `POST /jobs/workers` (Admin role). Proven against
-  Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint dispatch, reclaim, retry→dead,
-  worker-token mint/verify/revoke; `jobs_http`: enqueue→lease→complete + status poll + validation +
-  401/403/409 enforcement). Documented in [Durable Jobs & External
+  result, tenant-scoped). Admins manage worker tokens via `POST /jobs/workers` (mint),
+  `GET /jobs/workers` (list, metadata only), and `DELETE /jobs/workers/{id}` (revoke → the token's
+  requests immediately 401). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent
+  disjoint dispatch, reclaim, retry→dead, worker-token mint/verify/revoke; `jobs_http`:
+  enqueue→lease→complete + status poll + validation + token list/revoke + 401/403/409 enforcement). Documented in [Durable Jobs & External
   Workers](docs/guide/advanced/jobs-and-workers.md) + [Jobs API](docs/api/jobs.md). Remaining enqueue
   seams (GraphQL mutation / plugin effect) are the next slice; the workflow `Job` step already
   enqueues. See [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).

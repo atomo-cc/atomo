@@ -20,6 +20,8 @@ POST   /jobs/{id}/fail        # report a failed attempt
 
 # Admin plane (user JWT, Admin role)
 POST   /jobs/workers          # mint a worker token
+GET    /jobs/workers          # list worker tokens (metadata only)
+DELETE /jobs/workers/{id}     # revoke a worker token
 ```
 
 ## App plane
@@ -109,6 +111,20 @@ Requires the **Admin** role. The plaintext token is returned **once** (only its 
 ```
 
 `401` without auth; `403` for a non-admin user.
+
+### `GET /jobs/workers` — list tokens
+
+Admin only. Returns metadata only — never the token or its hash.
+
+```json
+// 200
+{ "workers": [ { "id", "name", "queues": ["media-gen"], "isRevoked": false, "createdAt": "…" } ] }
+```
+
+### `DELETE /jobs/workers/{id}` — revoke a token
+
+Admin only. `204` on success; `404` if the id is unknown or already revoked. A revoked token's
+worker-plane requests immediately become `401`.
 
 ## Configuration
 

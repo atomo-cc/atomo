@@ -44,7 +44,9 @@ curl -X POST http://localhost:3000/jobs/workers \
 ```
 
 The token can only lease the queues it was minted for (`["*"]` allows any). Store it as a secret for
-the worker; only its SHA-256 is kept server-side.
+the worker; only its SHA-256 is kept server-side. Admins can `GET /jobs/workers` to list tokens
+(metadata only) and `DELETE /jobs/workers/{id}` to revoke one — a revoked token's requests
+immediately become `401`.
 
 ## 2. Enqueue work
 
