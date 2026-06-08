@@ -78,6 +78,8 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | data layer: **create_many** (per row, batch 100) | **77** | 76 | 107 | 107 | **13 006** |
 | data layer: update_many (1 row by id, single txn) | 3709 | 3607 | 4645 | 6835 | 270 |
 | data layer: delete_many (1 row by id, single txn) | 3786 | 3617 | 5260 | 7165 | 264 |
+| data layer: **update_many** (per row, ~500 matched) | **36** | 34 | 37 | 37 | **28 028** |
+| data layer: **delete_many** (per row, ~500 matched) | **33** | 32 | 37 | 37 | **30 114** |
 | data layer: find_many (limit 20, cache hit) | 14.4 | 12 | 24 | 30 | 69 462 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
@@ -95,6 +97,12 @@ band — each is **one transaction = one `fsync`** (the write + its events commi
 is dominated by Postgres commit durability, not Atomo; relax it with co-located storage,
 `synchronous_commit`, or batching (`create_many`). (Each was ~2× this before its event write was
 folded into the same transaction.)
+
+**Bulk `update_many` / `delete_many`:** a single call matching ~500 rows costs **~33–36 µs per row**
+(≈28–30 k rows/sec) — **~110× cheaper per row** than a one-row call, because it's **one `UPDATE`**
+for all matched rows (the SET/WHERE params don't scale with the match count) plus one chunked event
+INSERT, all in one transaction. The event inserts are chunked under Postgres' bind-param limit, so
+bulk operations are safe at any size (a 11 000-row batch is a regression test).
 
 ## Head-to-head: Atomo vs Node (node-postgres), co-located
 
