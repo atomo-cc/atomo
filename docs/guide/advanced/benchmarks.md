@@ -54,7 +54,11 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **data layer: create** | one insert + model-event emission via `AtomoClient::create` |
 | **data layer: create_many** | a 100-row batch via `AtomoClient::create_many` (one txn), reported per-row |
 | **data layer: update_many / delete_many** | a single-row update / soft-delete by id (one txn, write + events) |
-| **data layer: find_many** | a bounded read (limit 20) via `AtomoClient::find_many` |
+| **data layer: find_many hot / cold** | a bounded read (limit 20) via `AtomoClient::find_many` — hot = cache hit, cold = after a write invalidates the cache (DB round trip) |
+| **data layer: find_unique hot / cold** | a point read by id via `AtomoClient::find_unique` — hot = cache hit, cold = cache miss |
+| **data layer: count** | `AtomoClient::count` — `SELECT COUNT(*)` (not cached) |
+| **data layer: find_many + include** | `find_many` with a hasMany relationship: 20 parent records, each resolving 3 children — measures the N+1 relation-resolution cost |
+| **data layer: find_many eventual** | same as find_many hot but with `ATOMO_CACHE_MODE=eventual` — writes interleaved between reads do NOT invalidate the cache, showing cache staying hot under mixed load |
 | **job lease: 1 worker** | `JobStore::lease` throughput draining a queue (cap 50/call) |
 | **job lease: 8 workers** | concurrent `SELECT … FOR UPDATE SKIP LOCKED` dispatch — shows lock-free scaling |
 | **plugin hook tax: JS/Javy** | a `before_create` hook through `WasmHookRunner` (the real CRUD-hook path): the per-operation cost of crossing into the **JS (Javy/QuickJS)** sandbox + JSON marshalling |
@@ -80,7 +84,13 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | data layer: delete_many (1 row by id, single txn) | 3786 | 3617 | 5260 | 7165 | 264 |
 | data layer: **update_many** (per row, ~500 matched) | **36** | 34 | 37 | 37 | **28 028** |
 | data layer: **delete_many** (per row, ~500 matched) | **33** | 32 | 37 | 37 | **30 114** |
-| data layer: find_many (limit 20, cache hit) | 14.4 | 12 | 24 | 30 | 69 462 |
+| data layer: find_many hot (limit 20, cache hit) | 11.9 | 11 | 12 | 22 | 83 721 |
+| data layer: find_many cold (limit 20, cache miss) | 625 | 570 | 1012 | 1285 | 1 600 |
+| data layer: **find_unique** hot (cache hit) | **0.8** | — | 1 | 1 | **1 219 298** |
+| data layer: find_unique cold (cache miss) | 542 | 500 | 848 | 1191 | 1 845 |
+| data layer: count (`SELECT COUNT(*)`) | 934 | 874 | 1357 | 1795 | 1 071 |
+| data layer: find_many + include (20 notes × 3 tags) | 104 | 57 | 75 | 176 | 9 582 |
+| data layer: find_many eventual (hot through writes) | 42.5 | 37 | 73 | 112 | 23 528 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
 | plugin hook tax: JS/Javy `before_create` (load 413 ms once) | 178 | 166 | 237 | 331 | 5 630 |
@@ -104,6 +114,21 @@ for all matched rows (the SET/WHERE params don't scale with the match count) plu
 INSERT, all in one transaction. The event inserts are chunked under Postgres' bind-param limit, so
 bulk operations are safe at any size (a 11 000-row batch is a regression test).
 
+**Read paths — cold vs hot:** a *hot* `find_many` (cache hit) returns in **~12 µs** (84 k/s); a *cold*
+read (cache miss, after a write invalidates the model cache) costs **~625 µs** — the actual Postgres
+query time (~52× slower). `find_unique` (point read by id) is even faster when cached: **~0.8 µs
+(1.2 M ops/s)**, because the cached value is a single record vs a list. Cold `find_unique` is ~542 µs.
+`count` (`SELECT COUNT(*)`) is uncached and costs ~934 µs per call.
+
+**Relation resolution (`include`):** `find_many` with a `hasMany` include (20 parent notes, each
+resolving 3 child tags) costs **~104 µs** — the child lookups hit the cache on repeated calls, so the
+incremental cost of N+1 relation resolution is low when the cache is warm.
+
+**Eventual mode:** with `ATOMO_CACHE_MODE=eventual`, writes do **not** invalidate the read cache (the
+TTL alone bounds staleness). Under a mixed read/write load the cache stays hot — reads cost **~43 µs**
+(23 k/s) even with a write between every read, vs ~625 µs cold in strong mode. The trade-off is
+bounded staleness (up to the TTL) for ~15× faster reads under write pressure.
+
 ## Head-to-head: Atomo vs Node (node-postgres), co-located
 
 The Node baseline (`bench/node-baseline.mjs`) does the equivalent raw SQL via `node-postgres`, same
@@ -113,7 +138,8 @@ machine, same DB, same serial-latency method.
 |---|--:|--:|---|
 | **persist a record + event** | 3715 µs (269/s) | 3159 µs (317/s) | **~on par (~1.2×)** — Atomo commits the row + its event in one transaction (one `fsync`), same as the Node txn; both **fsync-bound**. *(Was ~1.9× before the single-transaction fix — see below.)* |
 | raw insert (Node) / — | — | 2915 µs (343/s) | the DB write floor |
-| **read 20 rows** | **14 µs** cache-hit (69 k/s) | 469 µs (2.1 k/s) | Atomo's **in-process read cache** wins ~30× on hot reads; a *cold* Atomo read (cache miss) is ~the same as Node (both = the PG query) |
+| **read 20 rows** | **12 µs** cache-hit (84 k/s) | 469 µs (2.1 k/s) | Atomo's **in-process read cache** wins ~40× on hot reads; a *cold* Atomo read (cache miss, ~625 µs) is ~the same as Node (both ≈ the PG query) |
+| **point read (`find_unique`)** | **0.8 µs** cache-hit (1.2 M/s) | — | sub-microsecond point-read cache; cold = ~542 µs (the DB round trip) |
 | **footprint** | **9.8 MB** binary | Node runtime + `node_modules` | — |
 | **durable job lease** | **31 658/s** (8 workers) | — | **no Node equivalent** (Atomo-only) |
 
@@ -129,15 +155,15 @@ machine, same DB, same serial-latency method.
   > them into one transaction dropped create from **5998 µs → 3715 µs (−38%, +61% throughput)** and
   > took the Node gap from ~1.9× to ~1.2×. A benchmark that finds a real fix is worth more than one
   > that flatters.
-- **Where Atomo wins:** hot reads (its cache, ~30×), **footprint** (a 9.8 MB binary vs a Node
-  install), and **capabilities Node has no built-in answer for** — the durable job lease engine
-  (31 k leases/s, scaling **3.3×** from 1→8 workers via `SKIP LOCKED`), event sourcing, and the
-  plugin sandbox.
+- **Where Atomo wins:** hot reads (list cache ~40×, point-read cache **~1.2 M ops/s**), **footprint**
+  (a 9.8 MB binary vs a Node install), and **capabilities Node has no built-in answer for** — the
+  durable job lease engine (28 k leases/s, scaling **3×** from 1→8 workers via `SKIP LOCKED`), event
+  sourcing, and the plugin sandbox.
 - **The trade, stated plainly:** Atomo costs ~2× a bare insert on writes (both Postgres-`fsync`-bound)
-  in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, hot-path
-  read caching, and a typed, schema-driven backend (API + admin) out of the box.** Not raw speed —
-  built-ins + footprint. Most apps are read-heavy, where the cache wins and the write cost rarely
-  bites.
+  in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, sub-µs
+  point-read caching (1.2 M ops/s), and a typed, schema-driven backend (API + admin) out of the
+  box.** Not raw speed — built-ins + footprint. Most apps are read-heavy, where the cache wins and
+  the write cost rarely bites.
 
 > **Why co-located matters (a cautionary data point):** an earlier run with Postgres on a *separate*
 > host (Windows → WSL2 over the LAN) showed Atomo `create` at ~9 ms — but that was the **network

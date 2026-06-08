@@ -281,13 +281,23 @@ impl AtomoClient {
         Ok(rows.iter().map(row_to_map).collect())
     }
 
-    /// Find a unique record
+    /// Find a unique record. Cached (point read) under the same per-model key space as `find_many`,
+    /// so a write to the model invalidates it in `strong` mode (and the TTL bounds it in `eventual`).
     pub async fn find_unique(
         &self,
         model_name: &str,
         where_clauses: &[WhereClause],
         include: &[String],
     ) -> Result<Option<HashMap<String, Value>>> {
+        let cache_key = crate::cache::ReadCache::key(
+            model_name,
+            &format!("unique:{:?}{:?}{:?}", where_clauses, include, current_tenant()),
+        );
+        if let Some(cached) = self.cache.get(&cache_key).await {
+            if let Ok(record) = serde_json::from_value(cached) {
+                return Ok(record);
+            }
+        }
         let model = self
             .schema
             .models
@@ -308,6 +318,9 @@ impl AtomoClient {
                 self.resolve_includes(model_name, rec, include).await?;
             }
         }
+        self.cache
+            .set(&cache_key, serde_json::to_value(&record)?)
+            .await;
         Ok(record)
     }
 
