@@ -6,41 +6,20 @@ use std::fs;
 
 /// Advanced TypeScript Schema Parser
 ///
-/// This parser implements the "Dual-Mode Schema" concept where TypeScript
-/// interfaces serve as the single source of truth for both frontend and backend.
-///
-/// Key features:
-/// - Comprehensive TypeScript interface parsing
-/// - Support for unions, enums, generics, and complex types
-/// - Automatic field attribute inference
-/// - Relationship detection and mapping
-/// - Validation and error reporting
+/// Implements the "Dual-Mode Schema" concept where TypeScript interfaces serve
+/// as the single source of truth. Parses models, events, and actions from the
+/// schema DSL into a unified `Schema` struct.
 pub struct SchemaParser;
 
 impl SchemaParser {
-    /// Parse a TypeScript schema file and extract complete model definitions
     pub fn parse_file(file_path: &str) -> Result<Schema> {
-        // Read the TypeScript schema file
         let content = fs::read_to_string(file_path)
             .map_err(|e| anyhow::anyhow!("Failed to read schema file '{}': {}", file_path, e))?;
 
-        // Use the advanced TypeScript parser
         let parser = TypeScriptParser::new();
-        let models = parser.parse(&content)?;
-
-        // Convert Vec<Model> to HashMap for Schema
-        let mut schema_models = HashMap::new();
-        for model in models {
-            schema_models.insert(model.name.clone(), model);
-        }
-
-        // Validate the parsed schema
-        Self::validate_schema(&schema_models)?;
-
-        Ok(Schema {
-            models: schema_models,
-            actions: HashMap::new(),
-        })
+        let schema = parser.parse_schema(&content)?;
+        Self::validate_schema(&schema.models)?;
+        Ok(schema)
     }
 
     /// Validate the parsed schema for consistency and completeness
