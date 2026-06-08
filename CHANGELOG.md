@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Bulk writes no longer hit Postgres' bind-param limit.** The batch event write
+  (`EventStore::persist_many_in`, used by `create_many` / `update_many` / `delete_many`) built a
+  single multi-row INSERT with 6 params/event, so a bulk op affecting **> ~10,922 rows** exceeded the
+  65,535-param ceiling and errored. It now **chunks** the event inserts (one statement per ≤5,000
+  events, all in the same transaction), so bulk operations are safe at any size. Covered by an
+  11,000-row regression test.
+
 ### Changed
 - **`update_many` / `delete_many` commit their write + events in one transaction (perf + atomicity).**
   Both previously ran the `UPDATE` and then `persist`ed each event as a *separate* autocommit

@@ -66,49 +66,53 @@ impl EventStore {
         Ok(())
     }
 
-    /// Persist many events in a single **multi-row** INSERT on a caller-supplied executor (the
-    /// batch's transaction) — one statement instead of N. Used by `create_many`.
-    pub async fn persist_many_in<'e, E>(&self, executor: E, events: &[ModelEvent]) -> Result<()>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        if events.is_empty() {
-            return Ok(());
+    /// Persist many events on a caller-supplied connection (the batch's transaction) using
+    /// **multi-row INSERTs, chunked** to stay under Postgres' 65535 bind-param ceiling — one
+    /// statement per chunk instead of one per event. Used by the bulk write paths (`create_many`,
+    /// `update_many`, `delete_many`), so a bulk op affecting tens of thousands of rows is safe.
+    pub async fn persist_many_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        events: &[ModelEvent],
+    ) -> Result<()> {
+        // 6 bind params per event; 5000 → 30 000 params/chunk, comfortably under the 65535 limit.
+        const CHUNK: usize = 5000;
+        for chunk in events.chunks(CHUNK) {
+            let tuples: Vec<String> = (0..chunk.len())
+                .map(|i| {
+                    let b = i * 6;
+                    format!(
+                        "(${},${},${},${},${},${})",
+                        b + 1,
+                        b + 2,
+                        b + 3,
+                        b + 4,
+                        b + 5,
+                        b + 6
+                    )
+                })
+                .collect();
+            let sql = format!(
+                "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, timestamp) \
+                 VALUES {} ON CONFLICT (event_id) DO NOTHING",
+                tuples.join(", ")
+            );
+            let mut q = sqlx::query(&sql);
+            for e in chunk {
+                q = q
+                    .bind(e.event_id.clone())
+                    .bind(format!("{:?}", e.event_type))
+                    .bind(e.model_name.clone())
+                    .bind(serde_json::to_value(&e.data)?)
+                    .bind(
+                        e.previous_data
+                            .as_ref()
+                            .and_then(|d| serde_json::to_value(d).ok()),
+                    )
+                    .bind(e.timestamp.clone());
+            }
+            q.execute(&mut *conn).await?;
         }
-        let tuples: Vec<String> = (0..events.len())
-            .map(|i| {
-                let b = i * 6;
-                format!(
-                    "(${},${},${},${},${},${})",
-                    b + 1,
-                    b + 2,
-                    b + 3,
-                    b + 4,
-                    b + 5,
-                    b + 6
-                )
-            })
-            .collect();
-        let sql = format!(
-            "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, timestamp) \
-             VALUES {} ON CONFLICT (event_id) DO NOTHING",
-            tuples.join(", ")
-        );
-        let mut q = sqlx::query(&sql);
-        for e in events {
-            q = q
-                .bind(e.event_id.clone())
-                .bind(format!("{:?}", e.event_type))
-                .bind(e.model_name.clone())
-                .bind(serde_json::to_value(&e.data)?)
-                .bind(
-                    e.previous_data
-                        .as_ref()
-                        .and_then(|d| serde_json::to_value(d).ok()),
-                )
-                .bind(e.timestamp.clone());
-        }
-        q.execute(executor).await?;
         Ok(())
     }
 
