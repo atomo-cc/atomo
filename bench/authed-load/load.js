@@ -65,6 +65,25 @@ export function setup() {
   }
 
   const token = res.json("token");
+
+  // Seed 200 rows so reads have data from the start
+  const SEED = parseInt(__ENV.SEED || "200", 10);
+  const hdrs = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+  console.log(`Seeding ${SEED} rows...`);
+  for (let i = 0; i < SEED; i++) {
+    http.post(
+      `${BASE}/graphql`,
+      JSON.stringify({
+        query: `mutation { create(model: "BenchNote", data: { title: "seed-${i}", body: "seed body ${i}" }) }`,
+      }),
+      { headers: hdrs }
+    );
+  }
+  console.log("Seed complete.");
+
   return { token };
 }
 
