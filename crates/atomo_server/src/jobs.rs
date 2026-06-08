@@ -434,9 +434,14 @@ impl JobStore {
     }
 }
 
-/// A verified worker principal. `queues` is its capability set: which queues it may lease from
-/// (`["*"]` = any). A worker is trusted *relative to the sandbox* but still least-privilege —
-/// the token scopes what it can pull.
+/// A verified worker principal. Capabilities use a hierarchical scheme:
+///
+/// - `crud:*` — full CRUD on all models
+/// - `crud:Post` — all operations on Post
+/// - `crud:Post:read` — only read on Post
+/// - `crud:Post:read,update` — read + update on Post
+/// - `action:*` — may handle any action
+/// - `action:processPost` — may handle only processPost
 #[derive(Debug, Clone)]
 pub struct WorkerIdentity {
     pub id: String,
@@ -451,10 +456,41 @@ impl WorkerIdentity {
         self.queues.iter().any(|q| q == "*" || q == queue)
     }
 
-    /// Whether this worker may perform a CRUD operation on `model`.
-    /// Phase 1: `crud:*` grants all; model-scoped caps (e.g. `crud:Post:create`) are future.
-    pub fn may_crud(&self, _model: &str, _op: &str) -> bool {
-        self.capabilities.iter().any(|c| c == "crud:*")
+    /// Whether this worker may perform `op` (create/read/update/delete) on `model`.
+    ///
+    /// Matches against capabilities in order of specificity:
+    /// `crud:*` > `crud:Model` > `crud:Model:op` > `crud:Model:op1,op2`
+    pub fn may_crud(&self, model: &str, op: &str) -> bool {
+        self.capabilities.iter().any(|c| {
+            if c == "crud:*" {
+                return true;
+            }
+            let parts: Vec<&str> = c.splitn(3, ':').collect();
+            if parts.first() != Some(&"crud") {
+                return false;
+            }
+            match parts.len() {
+                2 => parts[1] == model,
+                3 => {
+                    parts[1] == model
+                        && parts[2].split(',').any(|o| o.eq_ignore_ascii_case(op))
+                }
+                _ => false,
+            }
+        })
+    }
+
+    /// Whether this worker may handle a specific action kind.
+    ///
+    /// Matches: `action:*` or `action:processPost`.
+    pub fn may_action(&self, action: &str) -> bool {
+        self.capabilities.iter().any(|c| {
+            if c == "action:*" {
+                return true;
+            }
+            let parts: Vec<&str> = c.splitn(2, ':').collect();
+            parts.first() == Some(&"action") && parts.get(1) == Some(&action)
+        })
     }
 }
 
@@ -597,26 +633,110 @@ fn sha256_hex(s: &str) -> String {
 mod tests {
     use super::{backoff_secs, decide_on_fail, sha256_hex, FailOutcome, WorkerIdentity};
 
+    fn w(caps: &[&str]) -> WorkerIdentity {
+        WorkerIdentity {
+            id: "1".into(),
+            name: "test".into(),
+            queues: vec!["*".into()],
+            capabilities: caps.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
     #[test]
-    fn worker_capability_scoping() {
-        let w = WorkerIdentity {
+    fn crud_star_grants_all() {
+        let worker = w(&["crud:*"]);
+        assert!(worker.may_crud("Post", "create"));
+        assert!(worker.may_crud("User", "delete"));
+        assert!(worker.may_crud("Any", "read"));
+    }
+
+    #[test]
+    fn crud_model_grants_all_ops_on_that_model() {
+        let worker = w(&["crud:Post"]);
+        assert!(worker.may_crud("Post", "create"));
+        assert!(worker.may_crud("Post", "read"));
+        assert!(worker.may_crud("Post", "update"));
+        assert!(worker.may_crud("Post", "delete"));
+        assert!(!worker.may_crud("User", "read"), "different model denied");
+    }
+
+    #[test]
+    fn crud_model_op_grants_single_operation() {
+        let worker = w(&["crud:Post:read"]);
+        assert!(worker.may_crud("Post", "read"));
+        assert!(!worker.may_crud("Post", "create"), "other op denied");
+        assert!(!worker.may_crud("Post", "update"), "other op denied");
+        assert!(!worker.may_crud("User", "read"), "different model denied");
+    }
+
+    #[test]
+    fn crud_model_multi_op_grants_listed_operations() {
+        let worker = w(&["crud:Post:read,update"]);
+        assert!(worker.may_crud("Post", "read"));
+        assert!(worker.may_crud("Post", "update"));
+        assert!(!worker.may_crud("Post", "create"), "unlisted op denied");
+        assert!(!worker.may_crud("Post", "delete"), "unlisted op denied");
+    }
+
+    #[test]
+    fn multiple_caps_combine() {
+        let worker = w(&["crud:Post:read", "crud:User", "crud:Comment:create,delete"]);
+        assert!(worker.may_crud("Post", "read"));
+        assert!(!worker.may_crud("Post", "update"));
+        assert!(worker.may_crud("User", "create"));
+        assert!(worker.may_crud("User", "delete"));
+        assert!(worker.may_crud("Comment", "create"));
+        assert!(worker.may_crud("Comment", "delete"));
+        assert!(!worker.may_crud("Comment", "read"));
+    }
+
+    #[test]
+    fn empty_caps_deny_all() {
+        let worker = w(&[]);
+        assert!(!worker.may_crud("Post", "create"));
+        assert!(!worker.may_action("processPost"));
+    }
+
+    #[test]
+    fn action_star_grants_all_actions() {
+        let worker = w(&["action:*"]);
+        assert!(worker.may_action("processPost"));
+        assert!(worker.may_action("onStatusChange"));
+        assert!(worker.may_action("anything"));
+    }
+
+    #[test]
+    fn action_specific_grants_single_action() {
+        let worker = w(&["action:processPost"]);
+        assert!(worker.may_action("processPost"));
+        assert!(!worker.may_action("onStatusChange"));
+    }
+
+    #[test]
+    fn unrelated_cap_does_not_grant_crud_or_action() {
+        let worker = w(&["audit:read", "action:processPost"]);
+        assert!(!worker.may_crud("Post", "create"));
+        assert!(worker.may_action("processPost"));
+        assert!(!worker.may_action("onStatusChange"));
+    }
+
+    #[test]
+    fn queue_scoping() {
+        let worker = WorkerIdentity {
             id: "1".into(),
             name: "media".into(),
             queues: vec!["media-gen".into()],
             capabilities: vec![],
         };
-        assert!(w.may_lease("media-gen"));
-        assert!(!w.may_lease("billing"));
-        assert!(!w.may_crud("Post", "create"));
+        assert!(worker.may_lease("media-gen"));
+        assert!(!worker.may_lease("billing"));
         let star = WorkerIdentity {
             id: "2".into(),
             name: "any".into(),
             queues: vec!["*".into()],
-            capabilities: vec!["crud:*".into()],
+            capabilities: vec![],
         };
         assert!(star.may_lease("anything"));
-        assert!(star.may_crud("Post", "create"));
-        assert!(star.may_crud("User", "delete"));
     }
 
     #[test]

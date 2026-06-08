@@ -424,6 +424,21 @@ mod tests {
     }
 
     #[test]
+    fn capability_gate_model_scoped() {
+        let w = WorkerIdentity {
+            id: "1".into(),
+            name: "w".into(),
+            queues: vec![],
+            capabilities: vec!["crud:Post:read,update".into()],
+        };
+        assert!(w.may_crud("Post", "read"));
+        assert!(w.may_crud("Post", "update"));
+        assert!(!w.may_crud("Post", "create"), "unlisted op");
+        assert!(!w.may_crud("Post", "delete"), "unlisted op");
+        assert!(!w.may_crud("User", "read"), "different model");
+    }
+
+    #[test]
     fn model_check_rejects_unknown() {
         let schema = Schema {
             models: std::collections::HashMap::new(),
