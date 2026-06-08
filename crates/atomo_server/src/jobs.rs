@@ -78,6 +78,20 @@ pub struct LeasedJob {
     pub lease_id: String,
 }
 
+/// Read-model view of a job for app-side polling (`GET /jobs/{id}`). Carries no lease token.
+#[derive(Debug, Clone)]
+pub struct JobView {
+    pub id: String,
+    pub queue: String,
+    pub kind: String,
+    pub status: String,
+    pub attempts: i32,
+    pub max_attempts: i32,
+    pub result: Option<Value>,
+    pub error: Option<String>,
+    pub tenant_id: Option<String>,
+}
+
 /// Durable job store over Postgres. The `jobs` table is the queue working set; lifecycle
 /// transitions are also emitted as `Job` model events (audit/history/projections), so the job log
 /// is event-sourced like everything else in Atomo.
@@ -380,6 +394,28 @@ impl JobStore {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.map(|r| r.get::<String, _>("status")))
+    }
+
+    /// Full read-model view of a job (for app-side polling), or None if unknown.
+    pub async fn get(&self, id: &str) -> Result<Option<JobView>> {
+        let row = sqlx::query(
+            "SELECT id, queue, kind, status, attempts, max_attempts, result, error, tenant_id
+             FROM jobs WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| JobView {
+            id: r.get("id"),
+            queue: r.get("queue"),
+            kind: r.get("kind"),
+            status: r.get("status"),
+            attempts: r.get("attempts"),
+            max_attempts: r.get("max_attempts"),
+            result: r.get::<Option<Value>, _>("result"),
+            error: r.get::<Option<String>, _>("error"),
+            tenant_id: r.get::<Option<String>, _>("tenant_id"),
+        }))
     }
 
     fn emit(&self, event_type: EventType, id: &str, extra: HashMap<String, Value>) {

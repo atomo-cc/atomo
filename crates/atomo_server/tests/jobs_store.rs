@@ -4,17 +4,48 @@
 //! stale-lease rejection, SKIP LOCKED concurrent dispatch, visibility-timeout reclaim, and the
 //! retry→dead-letter policy.
 
-use atomo_server::jobs::{FailOutcome, JobStore};
+use atomo_server::jobs::{FailOutcome, JobStore, WorkerTokenStore};
 use serde_json::json;
 use std::sync::Arc;
 
-async fn store() -> JobStore {
+async fn pool() -> sqlx::PgPool {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required");
-    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::PgPool::connect(&url).await.unwrap()
+}
+
+async fn store() -> JobStore {
     let (tx, _rx) = tokio::sync::broadcast::channel(64);
-    let s = JobStore::new(pool, tx);
+    let s = JobStore::new(pool().await, tx);
     s.init().await.unwrap();
     s
+}
+
+#[tokio::test]
+#[ignore]
+async fn worker_token_mint_verify_revoke() {
+    let s = WorkerTokenStore::new(pool().await);
+    s.init().await.unwrap();
+    let queue = format!("media-{}", uuid::Uuid::new_v4());
+
+    let (id, token) = s
+        .mint("media-worker", std::slice::from_ref(&queue))
+        .await
+        .unwrap();
+    assert!(token.starts_with("wkr_"));
+
+    // A valid token verifies to an identity scoped to the minted queue.
+    let who = s.verify(&token).await.unwrap().expect("token verifies");
+    assert_eq!(who.id, id);
+    assert!(who.may_lease(&queue));
+    assert!(!who.may_lease("other-queue"));
+
+    // A bogus token does not verify.
+    assert!(s.verify("wkr_nope").await.unwrap().is_none());
+
+    // After revoke, the token no longer verifies; revoking again is a no-op.
+    assert!(s.revoke(&id).await.unwrap());
+    assert!(s.verify(&token).await.unwrap().is_none());
+    assert!(!s.revoke(&id).await.unwrap());
 }
 
 #[tokio::test]

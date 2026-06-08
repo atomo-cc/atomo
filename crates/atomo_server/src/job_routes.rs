@@ -3,8 +3,9 @@
 //! Three trust planes share the `/jobs` prefix:
 //! - **Worker plane** (`X-Worker-Token`): `lease` / `{id}/heartbeat` / `{id}/complete` / `{id}/fail`
 //!   — the pull side an external worker drives. The token is capability-scoped to specific queues.
-//! - **App plane** (user JWT): `POST /jobs` enqueues work; the job is stamped with the caller's
-//!   tenant. (Richer enqueue seams — GraphQL mutation, workflow step, plugin effect — can follow.)
+//! - **App plane** (user JWT): `POST /jobs` enqueues work (stamped with the caller's tenant);
+//!   `GET /jobs/{id}` polls a job's status/result (tenant-scoped). (Richer enqueue seams — GraphQL
+//!   mutation, plugin effect — can follow; the workflow `Job` step already enqueues.)
 //! - **Admin plane** (user JWT, Admin role): `POST /jobs/workers` mints worker tokens.
 
 use crate::auth::{optional_auth_middleware, AuthUser, HttpAuthService};
@@ -15,7 +16,7 @@ use axum::{
     http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Json, Response},
-    routing::post,
+    routing::{get, post},
     Extension, Router,
 };
 use serde::Deserialize;
@@ -234,6 +235,41 @@ async fn enqueue(
     }
 }
 
+/// App-side status poll. Returns the job's current state + result. A tenant-bound user cannot read
+/// another tenant's job (treated as not found).
+async fn get_job(
+    State(jobs): State<Arc<JobStore>>,
+    user: Option<Extension<AuthUser>>,
+    Path(id): Path<String>,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    match jobs.get(&id).await {
+        Ok(Some(v)) => {
+            if let Some(t) = &v.tenant_id {
+                if user.tenant_id.as_deref() != Some(t.as_str()) {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+            }
+            Json(json!({
+                "id": v.id,
+                "queue": v.queue,
+                "kind": v.kind,
+                "status": v.status,
+                "attempts": v.attempts,
+                "maxAttempts": v.max_attempts,
+                "result": v.result,
+                "error": v.error,
+            }))
+            .into_response()
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 #[derive(Deserialize)]
 struct MintReq {
     name: String,
@@ -284,9 +320,10 @@ pub fn jobs_router(
         ))
         .with_state(jobs.clone());
 
-    // App-side enqueue: any authenticated user.
-    let enqueue_route = Router::new()
+    // App-side enqueue + status poll: any authenticated user.
+    let app_routes = Router::new()
         .route("/jobs", post(enqueue))
+        .route("/jobs/{id}", get(get_job))
         .route_layer(middleware::from_fn_with_state(
             auth.clone(),
             optional_auth_middleware,
@@ -302,5 +339,5 @@ pub fn jobs_router(
         ))
         .with_state(workers);
 
-    worker_routes.merge(enqueue_route).merge(admin_routes)
+    worker_routes.merge(app_routes).merge(admin_routes)
 }

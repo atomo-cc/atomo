@@ -19,19 +19,24 @@ async fn connect() -> sqlx::PgPool {
     pool
 }
 
-async fn seed_admin_token(pool: &sqlx::PgPool, auth: &HttpAuthService) -> String {
+async fn seed_token(pool: &sqlx::PgPool, auth: &HttpAuthService, role: &str) -> String {
     let id = atomo_core::types::EntityId::new().to_string();
-    let email = format!("admin-{id}@test.dev");
+    let email = format!("{role}-{id}@test.dev");
     sqlx::query(
         "INSERT INTO users (id,email,password_hash,first_name,last_name,role,is_active)
-         VALUES ($1,$2,'x','A','D','admin',true)",
+         VALUES ($1,$2,'x','U','R',$3,true)",
     )
     .bind(&id)
     .bind(&email)
+    .bind(role)
     .execute(pool)
     .await
     .unwrap();
-    auth.issue_tokens(&id, &email, "admin").await.unwrap().0
+    auth.issue_tokens(&id, &email, role).await.unwrap().0
+}
+
+async fn seed_admin_token(pool: &sqlx::PgPool, auth: &HttpAuthService) -> String {
+    seed_token(pool, auth, "admin").await
 }
 
 fn post(uri: &str, headers: &[(&str, &str)], body: Value) -> Request<Body> {
@@ -195,6 +200,27 @@ async fn jobs_http_lease_lifecycle_and_auth() {
         Some("succeeded")
     );
 
+    // App polls the job over HTTP and sees the terminal state + result.
+    let get_job = |token: Option<&str>| {
+        let mut b = Request::builder()
+            .method("GET")
+            .uri(format!("/jobs/{job_id}"));
+        if let Some(t) = token {
+            b = b.header("authorization", format!("Bearer {t}"));
+        }
+        b.body(Body::empty()).unwrap()
+    };
+    let r = app.clone().oneshot(get_job(Some(&admin))).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let view = json_body(r).await;
+    assert_eq!(view["status"], "succeeded");
+    assert_eq!(view["result"]["assetId"], "abc");
+    // Status poll needs auth.
+    assert_eq!(
+        app.clone().oneshot(get_job(None)).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+
     let r = app
         .oneshot(post(
             &format!("/jobs/{job_id}/complete"),
@@ -208,4 +234,126 @@ async fn jobs_http_lease_lifecycle_and_auth() {
         StatusCode::CONFLICT,
         "stale complete is rejected"
     );
+}
+
+#[tokio::test]
+#[ignore]
+async fn jobs_http_enqueue_validation_idempotency_and_fail_outcomes() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let admin = seed_admin_token(&pool, &auth).await;
+    let viewer = seed_token(&pool, &auth, "viewer").await;
+
+    let (tx, _rx) = tokio::sync::broadcast::channel(64);
+    let jobs = Arc::new(JobStore::new(pool.clone(), tx));
+    jobs.init().await.unwrap();
+    let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
+    workers.init().await.unwrap();
+    let app = jobs_router(jobs.clone(), workers.clone(), auth);
+    let queue = format!("q-{}", uuid::Uuid::new_v4());
+
+    // A non-admin user cannot mint worker tokens.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs/workers",
+            &[("authorization", &format!("Bearer {viewer}"))],
+            json!({"name": "x", "queues": [queue]}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN, "mint is admin-only");
+
+    // Enqueue validation: an empty kind → 400 (the handler rejects blank queue/kind).
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs",
+            &[("authorization", &format!("Bearer {admin}"))],
+            json!({"queue": queue, "kind": ""}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::BAD_REQUEST);
+
+    // Idempotent enqueue: same key → same id.
+    let enq = |key: &str| {
+        post(
+            "/jobs",
+            &[("authorization", &format!("Bearer {admin}"))],
+            json!({"queue": queue, "kind": "k", "idempotencyKey": key}),
+        )
+    };
+    let r1 = app.clone().oneshot(enq("dupe")).await.unwrap();
+    assert_eq!(r1.status(), StatusCode::CREATED);
+    let id1 = json_body(r1).await["id"].as_str().unwrap().to_string();
+    let r2 = app.clone().oneshot(enq("dupe")).await.unwrap();
+    let id2 = json_body(r2).await["id"].as_str().unwrap().to_string();
+    assert_eq!(id1, id2, "same idempotency key returns the same job");
+
+    // Mint a worker token and lease the job to exercise the fail outcomes.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs/workers",
+            &[("authorization", &format!("Bearer {admin}"))],
+            json!({"name": "w", "queues": [queue]}),
+        ))
+        .await
+        .unwrap();
+    let token = json_body(r).await["token"].as_str().unwrap().to_string();
+
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs/lease",
+            &[("x-worker-token", &token)],
+            json!({"queues": [queue]}),
+        ))
+        .await
+        .unwrap();
+    let arr = json_body(r).await;
+    let job = &arr["jobs"][0];
+    let job_id = job["id"].as_str().unwrap().to_string();
+    let lease_id = job["leaseId"].as_str().unwrap().to_string();
+
+    // Heartbeat with a bogus lease → 409.
+    let r = app
+        .clone()
+        .oneshot(post(
+            &format!("/jobs/{job_id}/heartbeat"),
+            &[("x-worker-token", &token)],
+            json!({"leaseId": "nope"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
+
+    // Fail (retryable) → 200 { outcome: "retry" }; the job returns to the queue.
+    let r = app
+        .clone()
+        .oneshot(post(
+            &format!("/jobs/{job_id}/fail"),
+            &[("x-worker-token", &token)],
+            json!({"leaseId": lease_id, "error": "boom", "retryable": true}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(json_body(r).await["outcome"], "retry");
+    assert_eq!(
+        jobs.status(&job_id).await.unwrap().as_deref(),
+        Some("queued")
+    );
+
+    // Failing again with the now-stale lease → 409 (no-op).
+    let r = app
+        .oneshot(post(
+            &format!("/jobs/{job_id}/fail"),
+            &[("x-worker-token", &token)],
+            json!({"leaseId": lease_id, "error": "again", "retryable": true}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
 }

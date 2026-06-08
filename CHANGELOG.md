@@ -17,11 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /jobs/lease|{id}/heartbeat|{id}/complete|{id}/fail`, authenticated by a **worker token**
   (`X-Worker-Token`) — a credential class distinct from user JWTs, stored only as a SHA-256 and
   **capability-scoped to specific queues**. Apps enqueue work with `POST /jobs` (any authenticated
-  user; the job is stamped with the caller's tenant). Admins mint tokens via `POST /jobs/workers`
-  (Admin role). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint
-  dispatch, reclaim, retry→dead; `jobs_http`: end-to-end enqueue→lease→complete + 401/403/409
-  enforcement). Richer enqueue seams (GraphQL mutation / workflow step / plugin effect) are the next
-  slice. See [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
+  user; the job is stamped with the caller's tenant) and poll it with `GET /jobs/{id}` (status +
+  result, tenant-scoped). Admins mint tokens via `POST /jobs/workers` (Admin role). Proven against
+  Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint dispatch, reclaim, retry→dead,
+  worker-token mint/verify/revoke; `jobs_http`: enqueue→lease→complete + status poll + validation +
+  401/403/409 enforcement). Documented in [Durable Jobs & External
+  Workers](docs/guide/advanced/jobs-and-workers.md) + [Jobs API](docs/api/jobs.md). Remaining enqueue
+  seams (GraphQL mutation / plugin effect) are the next slice; the workflow `Job` step already
+  enqueues. See [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
 - **TypeScript worker SDK** (`@atomo-cc/worker-sdk`, `packages/atomo-worker-sdk`). Write a handler
   per job `kind`; the SDK owns the `lease → heartbeat → complete/fail` loop, concurrency, and
   auto-heartbeat, so worker code only does the actual work (provider APIs, browser automation, media
