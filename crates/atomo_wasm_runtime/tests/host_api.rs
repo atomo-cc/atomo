@@ -31,6 +31,7 @@ fn manifest(perms: Vec<Permission>) -> PluginManifest {
         permissions: perms,
         runtime: atomo_wasm_runtime::PluginRuntime::Wasm,
         routes: vec![],
+        hooks: vec![],
     }
 }
 

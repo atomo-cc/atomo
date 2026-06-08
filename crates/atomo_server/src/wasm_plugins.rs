@@ -40,7 +40,37 @@ pub struct WasmPluginManager {
     event_sender: Option<tokio::sync::broadcast::Sender<atomo::events::ModelEvent>>,
     /// Plugin-declared HTTP routes: plugin name -> its routes (mounted by atomo-server).
     routes: HashMap<String, Vec<RouteDef>>,
+    /// Per-plugin declared hooks (manifest `hooks`). A plugin absent here declared none → treated
+    /// as "implements every hook" (legacy: invoked for all). Lets the runner skip plugins that
+    /// explicitly don't implement a given hook.
+    declared_hooks: HashMap<String, Vec<String>>,
     plugin_dir: PathBuf,
+}
+
+/// Does a plugin with these manifest-declared hooks handle `hook`? Undeclared (`None`) = legacy
+/// "implements every hook" (run it); declared = only the listed hooks.
+fn plugin_handles_hook(declared: Option<&Vec<String>>, hook: &str) -> bool {
+    match declared {
+        Some(hooks) => hooks.iter().any(|h| h == hook),
+        None => true,
+    }
+}
+
+#[cfg(test)]
+mod hook_dispatch_tests {
+    use super::plugin_handles_hook;
+
+    #[test]
+    fn declared_hooks_gate_dispatch() {
+        let declared = vec!["before_create".to_string(), "after_update".to_string()];
+        assert!(plugin_handles_hook(Some(&declared), "before_create"));
+        assert!(plugin_handles_hook(Some(&declared), "after_update"));
+        // Declared but not listed → skipped.
+        assert!(!plugin_handles_hook(Some(&declared), "after_create"));
+        assert!(!plugin_handles_hook(Some(&declared), "before_delete"));
+        // Undeclared (legacy — also how an omitted/empty manifest `hooks` is stored) → always runs.
+        assert!(plugin_handles_hook(None, "after_create"));
+    }
 }
 
 impl WasmPluginManager {
@@ -53,6 +83,7 @@ impl WasmPluginManager {
             js_effects: Vec::new(),
             event_sender: None,
             routes: HashMap::new(),
+            declared_hooks: HashMap::new(),
             plugin_dir: plugin_dir.into(),
         })
     }
@@ -85,6 +116,10 @@ impl WasmPluginManager {
         let name = manifest.name.clone();
         if !manifest.routes.is_empty() {
             self.routes.insert(name.clone(), manifest.routes.clone());
+        }
+        if !manifest.hooks.is_empty() {
+            self.declared_hooks
+                .insert(name.clone(), manifest.hooks.clone());
         }
         match manifest.runtime {
             PluginRuntime::Js => {
@@ -175,6 +210,16 @@ impl WasmPluginManager {
             .keys()
             .chain(self.js_plugins.keys())
             .map(|s| s.as_str())
+            .collect()
+    }
+
+    /// Loaded plugins that may handle `hook`: those that declared it in their manifest, plus any
+    /// that declared no `hooks` at all (legacy — invoked for everything). A plugin that declared
+    /// *some* hooks but not this one is skipped, so the runner avoids a wasted instantiate-and-run.
+    pub fn plugins_for_hook(&self, hook: &str) -> Vec<&str> {
+        self.loaded_plugins()
+            .into_iter()
+            .filter(|p| plugin_handles_hook(self.declared_hooks.get(*p), hook))
             .collect()
     }
 

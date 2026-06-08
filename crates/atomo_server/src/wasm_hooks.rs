@@ -38,7 +38,16 @@ impl WasmHookRunner {
 impl HookRunner for WasmHookRunner {
     async fn run_before(&self, hook_name: &str, ctx: &HookContext) -> anyhow::Result<HookResult> {
         let mut mgr = self.manager.lock().await;
-        let plugins: Vec<String> = mgr.loaded_plugins().iter().map(|s| s.to_string()).collect();
+        let plugins: Vec<String> = mgr
+            .plugins_for_hook(hook_name)
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // No loaded plugin implements this hook — skip the JSON marshalling and the per-plugin
+        // instantiate-and-run entirely.
+        if plugins.is_empty() {
+            return Ok(HookResult::Continue(ctx.data.clone()));
+        }
         let json = serde_json::to_string(&ctx.data)?;
         let mut data = ctx.data.clone();
 
@@ -61,7 +70,15 @@ impl HookRunner for WasmHookRunner {
 
     async fn run_after(&self, hook_name: &str, ctx: &HookContext) -> anyhow::Result<()> {
         let mut mgr = self.manager.lock().await;
-        let plugins: Vec<String> = mgr.loaded_plugins().iter().map(|s| s.to_string()).collect();
+        let plugins: Vec<String> = mgr
+            .plugins_for_hook(hook_name)
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // No plugin implements this hook → nothing to run and no effects to fulfill.
+        if plugins.is_empty() {
+            return Ok(());
+        }
         let json = serde_json::to_string(&ctx.data)?;
 
         for plugin in plugins {
