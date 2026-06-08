@@ -38,8 +38,18 @@ impl EventStore {
         Ok(())
     }
 
-    /// Persist a single event
+    /// Persist a single event (own connection / autocommit).
     pub async fn persist(&self, event: &ModelEvent) -> Result<()> {
+        self.persist_in(&self.pool, event).await
+    }
+
+    /// Persist a single event using a caller-supplied executor — e.g. the **same transaction** as
+    /// the write that produced it, so the row and its event commit together in **one** `fsync`
+    /// instead of two. Pass `&mut *tx` (a `&mut PgConnection`) to enlist in an open transaction.
+    pub async fn persist_in<'e, E>(&self, executor: E, event: &ModelEvent) -> Result<()>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         sqlx::query(
             "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, timestamp)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -51,7 +61,7 @@ impl EventStore {
         .bind(serde_json::to_value(&event.data)?)
         .bind(event.previous_data.as_ref().and_then(|d| serde_json::to_value(d).ok()))
         .bind(&event.timestamp)
-        .execute(&self.pool)
+        .execute(executor)
         .await?;
         Ok(())
     }

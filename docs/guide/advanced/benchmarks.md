@@ -72,7 +72,7 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 
 | Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
 |---|--:|--:|--:|--:|--:|
-| data layer: create (insert + event) | 5998 | 5579 | 8664 | 11619 | 167 |
+| data layer: create (insert + event, single txn) | 3715 | 3664 | 5508 | 7429 | 269 |
 | data layer: find_many (limit 20, cache hit) | 14.4 | 12 | 24 | 30 | 69 462 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
@@ -85,7 +85,7 @@ machine, same DB, same serial-latency method.
 
 | Operation | Atomo | Node (node-pg) | Read |
 |---|--:|--:|---|
-| **persist a record + event** | 5998 µs (167/s) | 3159 µs (317/s) | **Atomo ~1.9× slower** — it does more per call (event emission, hooks, validation, typed layer); both are **fsync-bound** |
+| **persist a record + event** | 3715 µs (269/s) | 3159 µs (317/s) | **~on par (~1.2×)** — Atomo commits the row + its event in one transaction (one `fsync`), same as the Node txn; both **fsync-bound**. *(Was ~1.9× before the single-transaction fix — see below.)* |
 | raw insert (Node) / — | — | 2915 µs (343/s) | the DB write floor |
 | **read 20 rows** | **14 µs** cache-hit (69 k/s) | 469 µs (2.1 k/s) | Atomo's **in-process read cache** wins ~30× on hot reads; a *cold* Atomo read (cache miss) is ~the same as Node (both = the PG query) |
 | **footprint** | **9.8 MB** binary | Node runtime + `node_modules` | — |
@@ -93,11 +93,16 @@ machine, same DB, same serial-latency method.
 
 ### Honest conclusions
 
-- **Atomo is *not* faster than `node-postgres` on raw DB writes — it's ~2× slower**, because `create`
-  does event sourcing + hooks + validation + a typed layer, and both are bounded by Postgres commit
-  `fsync`. **The roadmap's "3–5× faster than Node" is unsupported by these numbers** and stays a
-  *target* — if it holds anywhere it's on the full HTTP stack (Rust/axum vs Node/Express request
-  overhead), which we have **not** measured.
+- **Atomo's `create` is ~on par with raw `node-postgres`** for an equivalent record+event write
+  (~1.2×), now that it commits the row and its event in **one transaction** (one `fsync`). It is
+  still **not faster** — both are bounded by Postgres commit durability — so **the roadmap's "3–5×
+  faster than Node" stays a *target*** (and the HTTP-layer test below shows the same: not faster
+  there either). Atomo isn't a speed play; it's batteries + footprint.
+  > **Optimization, this is the benchmark working:** the measurement caught that `create` was doing
+  > **two** autocommit writes (the row, then `event_log`) = two `fsync`s ≈ 2× the latency. Collapsing
+  > them into one transaction dropped create from **5998 µs → 3715 µs (−38%, +61% throughput)** and
+  > took the Node gap from ~1.9× to ~1.2×. A benchmark that finds a real fix is worth more than one
+  > that flatters.
 - **Where Atomo wins:** hot reads (its cache, ~30×), **footprint** (a 9.8 MB binary vs a Node
   install), and **capabilities Node has no built-in answer for** — the durable job lease engine
   (31 k leases/s, scaling **3.3×** from 1→8 workers via `SKIP LOCKED`), event sourcing, and the

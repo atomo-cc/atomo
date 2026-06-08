@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`create` commits the row + its event in one transaction (perf + atomicity).** The data layer
+  previously wrote the record (autocommit) and then `event_log` (autocommit) as **two** separate
+  commits — two `fsync`s, ~2× the necessary write latency (surfaced by the new benchmarks). They now
+  commit together: **create latency −38% / throughput +61%** (5998 → 3715 µs co-located), bringing
+  `create` to ~on par with raw `node-postgres` for an equivalent record+event write (was ~1.9×).
+  Also a **correctness** improvement — a row can no longer be persisted without its event (the event
+  write was previously `.ok()`-swallowed). New `EventStore::persist_in(executor, event)` enlists the
+  event in a caller's transaction. Verified regression-free (data-layer + RLS create tests).
+
 ### Added
 - **Engine benchmark harness + results** (`crates/atomo_server/examples/bench.rs`,
   `docs/guide/advanced/benchmarks.md`). Reproducible, release-only, in-process micro-benchmarks for
