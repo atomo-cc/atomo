@@ -25,6 +25,13 @@ DATABASE_URL=postgres://… \
   cargo run --release -p atomo_server --example bench   # BENCH_ITERS=5000 to override (default 2000)
 ```
 
+Action overhead harness (measures incremental cost of the event-to-action pipeline):
+
+```bash
+DATABASE_URL=postgres://… \
+  cargo run --release -p atomo_server --example action_overhead   # BENCH_ITERS=500 to override
+```
+
 Node baseline (`node-postgres`, raw SQL):
 
 ```bash
@@ -85,6 +92,10 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **job lease: 1 worker** | `JobStore::lease` throughput draining a queue (cap 50/call) |
 | **job lease: 8 workers** | concurrent `SELECT … FOR UPDATE SKIP LOCKED` dispatch — shows lock-free scaling |
 | **HTTP request throughput** | a bare endpoint under `k6` concurrency — Atomo's axum server vs Fastify; isolates the request runtime (see Full-stack HTTP below) |
+| **action overhead: baseline CRUD** | `create` with no event bindings — the floor (`action_overhead` example) |
+| **action overhead: event emission** | `create` with events declared but no dispatcher — isolates event construction + broadcast cost |
+| **action overhead: dispatch + enqueue** | `create` with a live action dispatcher — measures binding match + job INSERT overhead |
+| **action overhead: worker CRUD callback** | HTTP round-trip through `/api/worker/crud/:model` via `oneshot` — measures auth + capability check + CRUD + JSON serialization |
 
 ## Results
 
