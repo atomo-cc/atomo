@@ -235,6 +235,15 @@ describe("CrudClient", () => {
     expect(parsed.origin).toBe("initPost");
   });
 
+  it("delete sends origin in the request body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ deleted: 1 })));
+    const crud = new CrudClient("http://h", "tok", fetchMock as unknown as typeof fetch);
+    await crud.delete("Post", "p1", { origin: "cleanupPost" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = JSON.parse(init.body as string);
+    expect(parsed.origin).toBe("cleanupPost");
+  });
+
   it("ctx.crud is passed to the handler by handleJob", async () => {
     const c = fakeClient();
     const actor = { actor: "user-42", tenantId: "t1", role: "admin" };

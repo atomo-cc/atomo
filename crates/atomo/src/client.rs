@@ -1311,3 +1311,31 @@ fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn action_origin_scopes_and_clears() {
+        // Outside any scope, current_origin is None.
+        assert_eq!(current_origin(), None);
+
+        // Inside with_action_origin, it returns the set value.
+        let inside = with_action_origin(Some("myAction".into()), async {
+            current_origin()
+        }).await;
+        assert_eq!(inside, Some("myAction".to_string()));
+
+        // After the scope, it's None again.
+        assert_eq!(current_origin(), None);
+    }
+
+    #[tokio::test]
+    async fn action_origin_none_scope_returns_none() {
+        let inside = with_action_origin(None, async {
+            current_origin()
+        }).await;
+        assert_eq!(inside, None);
+    }
+}

@@ -327,6 +327,29 @@ mod tests {
     }
 
     #[test]
+    fn origin_none_does_not_suppress() {
+        let schema = test_schema();
+        let ev = ModelEvent {
+            event_type: EventType::Created,
+            model_name: "Post".into(),
+            data: {
+                let mut d = HashMap::new();
+                d.insert("id".into(), json!("p1"));
+                d.insert("title".into(), json!("Hello"));
+                d
+            },
+            previous_data: None,
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            event_id: "evt-no-origin".into(),
+            actor: None,
+            origin: None,
+        };
+        let bindings = matching_bindings(&schema, &ev).unwrap();
+        assert_eq!(bindings.len(), 1, "origin=None should not suppress anything");
+        assert_eq!(bindings[0].action, "processPost");
+    }
+
+    #[test]
     fn origin_allows_different_action() {
         let schema = test_schema();
         let ev = ModelEvent {

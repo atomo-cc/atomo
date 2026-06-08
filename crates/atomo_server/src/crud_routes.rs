@@ -3,6 +3,10 @@
 //! These endpoints let external workers (authenticated via `X-Worker-Token` with the
 //! `crud:*` capability) call back into Atomo's CRUD layer with all invariants preserved:
 //! validation, RBAC (via the job's actor snapshot), event sourcing, and RLS.
+//!
+//! Mutation requests (create/update/delete) accept an optional `origin` field naming the
+//! action that triggered the call; the action dispatcher uses it to avoid re-enqueuing
+//! the originating action (loop prevention).
 
 use atomo::client::{scope_by_tenant, with_action_origin, with_tenant_scope, AtomoClient};
 use atomo::graphql::parse_where;

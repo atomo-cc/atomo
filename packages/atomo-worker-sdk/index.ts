@@ -14,6 +14,17 @@
  * Delivery is at-least-once: a job can run twice (lease expiry after the worker actually finished),
  * so handlers should be idempotent. A thrown error fails the job (server applies retry/backoff);
  * throw `NonRetryableError` to dead-letter immediately.
+ *
+ * ### CRUD with loop prevention
+ *
+ * Handlers can call back into the Atomo CRUD layer via `ctx.crud`. Pass `origin`
+ * to prevent the action dispatcher from re-enqueuing the same action:
+ *
+ * ```ts
+ * worker.on("processPost", async ({ job, crud }) => {
+ *   await crud.update("Post", job.payload.input.id, { status: "processed" }, { origin: "processPost" });
+ * });
+ * ```
  */
 
 export interface LeasedJob {
