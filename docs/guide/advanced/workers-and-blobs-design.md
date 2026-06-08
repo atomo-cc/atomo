@@ -449,10 +449,12 @@ per media app remains the rational default.
 - **Tested:** pure-logic unit tests + Postgres `jobs_store` (lifecycle/idempotency/concurrency/
   reclaim/retry) and `jobs_http` (end-to-end lease/complete + 401/403 enforcement).
 
-### Phase 3 — Worker SDK + enqueue seams
-- TS worker SDK (lease/heartbeat/ack/retry built in) + Rust worker crate.
-- Enqueue seams: GraphQL `enqueueJob` mutation, workflow `Job` step, plugin `enqueueJob` effect.
-- `JobProgress` → realtime hub fan-out (live admin/client progress).
+### Phase 3 — Worker SDK + enqueue seams (in progress)
+- **Done — REST enqueue seam:** `POST /jobs` (any authenticated user; the job is stamped with the
+  caller's tenant), so apps can put work on the queue over HTTP today (`jobs_http` covers it).
+- **Remaining:** TS worker SDK (lease/heartbeat/ack/retry built in) + Rust worker crate; richer
+  enqueue seams (GraphQL `enqueueJob` mutation, workflow `Job` step, plugin `enqueueJob` effect);
+  `JobProgress` → realtime hub fan-out (live admin/client progress).
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
 ### Phase 4 — Presigned upload + dedup (S3 backend already shipped)

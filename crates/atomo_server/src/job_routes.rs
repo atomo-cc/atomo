@@ -1,12 +1,11 @@
-//! HTTP lease API for the durable job queue + worker-token auth.
+//! HTTP API for the durable job queue + worker-token auth.
 //!
-//! Two trust planes share the `/jobs` prefix:
-//! - **Worker plane** (`X-Worker-Token`): `lease` / `heartbeat` / `complete` / `fail` — the pull
-//!   side an external worker drives. The token is capability-scoped to specific queues.
+//! Three trust planes share the `/jobs` prefix:
+//! - **Worker plane** (`X-Worker-Token`): `lease` / `{id}/heartbeat` / `{id}/complete` / `{id}/fail`
+//!   — the pull side an external worker drives. The token is capability-scoped to specific queues.
+//! - **App plane** (user JWT): `POST /jobs` enqueues work; the job is stamped with the caller's
+//!   tenant. (Richer enqueue seams — GraphQL mutation, workflow step, plugin effect — can follow.)
 //! - **Admin plane** (user JWT, Admin role): `POST /jobs/workers` mints worker tokens.
-//!
-//! Enqueueing from the app side (GraphQL mutation / workflow step / plugin effect) is a separate
-//! slice; here jobs are put on the queue via `JobStore::enqueue` directly.
 
 use crate::auth::{optional_auth_middleware, AuthUser, HttpAuthService};
 use crate::jobs::{FailOutcome, JobStore, LeasedJob, WorkerIdentity, WorkerTokenStore};
@@ -179,6 +178,62 @@ async fn fail(
     }
 }
 
+fn default_max_attempts() -> i32 {
+    5
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnqueueReq {
+    queue: String,
+    kind: String,
+    #[serde(default)]
+    payload: Value,
+    #[serde(default)]
+    idempotency_key: Option<String>,
+    #[serde(default = "default_max_attempts")]
+    max_attempts: i32,
+    #[serde(default)]
+    priority: i32,
+}
+
+/// App-side enqueue. Any authenticated user may submit work; the job is stamped with the caller's
+/// tenant (so tenant-scoped queues/RLS apply). Idempotent when `idempotencyKey` is given.
+async fn enqueue(
+    State(jobs): State<Arc<JobStore>>,
+    user: Option<Extension<AuthUser>>,
+    Json(req): Json<EnqueueReq>,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    if req.queue.is_empty() || req.kind.is_empty() {
+        return (StatusCode::BAD_REQUEST, "queue and kind are required").into_response();
+    }
+    let payload = if req.payload.is_null() {
+        json!({})
+    } else {
+        req.payload
+    };
+    let max_attempts = req.max_attempts.clamp(1, 1000);
+    match jobs
+        .enqueue(
+            &req.queue,
+            &req.kind,
+            payload,
+            req.idempotency_key.as_deref(),
+            max_attempts,
+            req.priority,
+            user.tenant_id.as_deref(),
+        )
+        .await
+    {
+        Ok(id) => (StatusCode::CREATED, Json(json!({ "id": id }))).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 #[derive(Deserialize)]
 struct MintReq {
     name: String,
@@ -209,7 +264,10 @@ async fn mint_worker(
     }
 }
 
-/// `/jobs/*`: worker-token-authed pull routes + an admin-authed token-mint route.
+/// `/jobs/*`: three trust planes merged —
+/// - worker-token pull routes (`lease`/`heartbeat`/`complete`/`fail`),
+/// - user-authed app-side `enqueue` (`POST /jobs`),
+/// - admin-authed worker-token mint (`POST /jobs/workers`).
 pub fn jobs_router(
     jobs: Arc<JobStore>,
     workers: Arc<WorkerTokenStore>,
@@ -224,8 +282,18 @@ pub fn jobs_router(
             workers.clone(),
             worker_auth_middleware,
         ))
+        .with_state(jobs.clone());
+
+    // App-side enqueue: any authenticated user.
+    let enqueue_route = Router::new()
+        .route("/jobs", post(enqueue))
+        .route_layer(middleware::from_fn_with_state(
+            auth.clone(),
+            optional_auth_middleware,
+        ))
         .with_state(jobs);
 
+    // Token minting: Admin only (checked in the handler).
     let admin_routes = Router::new()
         .route("/jobs/workers", post(mint_worker))
         .route_layer(middleware::from_fn_with_state(
@@ -234,5 +302,5 @@ pub fn jobs_router(
         ))
         .with_state(workers);
 
-    worker_routes.merge(admin_routes)
+    worker_routes.merge(enqueue_route).merge(admin_routes)
 }

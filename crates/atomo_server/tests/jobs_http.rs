@@ -124,19 +124,30 @@ async fn jobs_http_lease_lifecycle_and_auth() {
         "queue not in capability set"
     );
 
-    // Enqueue a job on the allowed queue (app-side enqueue is a library call for now).
-    let job_id = jobs
-        .enqueue(
-            &allowed,
-            "video.generate",
-            json!({"prompt": "hi"}),
-            None,
-            5,
-            0,
-            None,
-        )
+    // App-side enqueue requires an authenticated user.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs",
+            &[],
+            json!({"queue": allowed, "kind": "video.generate"}),
+        ))
         .await
         .unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "enqueue needs auth");
+
+    // Enqueue over HTTP as the admin user.
+    let r = app
+        .clone()
+        .oneshot(post(
+            "/jobs",
+            &[("authorization", &format!("Bearer {admin}"))],
+            json!({"queue": allowed, "kind": "video.generate", "payload": {"prompt": "hi"}}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::CREATED);
+    let job_id = json_body(r).await["id"].as_str().unwrap().to_string();
 
     // Worker leases it.
     let r = app

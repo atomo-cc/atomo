@@ -16,10 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry/backoff/dead-letter policy. Exposed over HTTP for trusted out-of-process workers:
   `POST /jobs/lease|{id}/heartbeat|{id}/complete|{id}/fail`, authenticated by a **worker token**
   (`X-Worker-Token`) — a credential class distinct from user JWTs, stored only as a SHA-256 and
-  **capability-scoped to specific queues**. Admins mint tokens via `POST /jobs/workers` (Admin
-  role). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint
-  dispatch, reclaim, retry→dead; `jobs_http`: end-to-end lease/complete + 401/403 enforcement). The
-  worker SDK and app-side enqueue seams (GraphQL/workflow/plugin) are the next slice. See
+  **capability-scoped to specific queues**. Apps enqueue work with `POST /jobs` (any authenticated
+  user; the job is stamped with the caller's tenant). Admins mint tokens via `POST /jobs/workers`
+  (Admin role). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint
+  dispatch, reclaim, retry→dead; `jobs_http`: end-to-end enqueue→lease→complete + 401/403/409
+  enforcement). The worker SDK and richer enqueue seams (GraphQL mutation / workflow step / plugin
+  effect) are the next slice. See
   [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
 - **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
   single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable
