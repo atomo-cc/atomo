@@ -27,9 +27,18 @@ code). The correct move is to **invert**:
 1. **External workers** — trusted, out-of-process worker programs (any language, full native
    ecosystem) that **pull durable jobs** from Atomo, do the messy I/O, and report results back as
    events. Atomo becomes the **event-sourced brain**; the mess lives where mess belongs.
-2. **Blob storage** — a first-class **asset** primitive (store bytes in a pluggable backend, serve
-   them with HTTP range requests, reference them by stable IDs) so media-producing workloads stop
-   bolting object storage on by hand.
+2. **Blob storage** — a first-class binary store. **This substantially already exists** as the
+   `media` + `storage` subsystem (pluggable `StorageBackend` with local + S3 backends, a `media`
+   metadata table, `POST/GET/DELETE /media` + GC, soft-delete, tenant scoping, event-sourced). It
+   should be *extended* for media pipelines, not rebuilt — **HTTP Range serving is now done**;
+   content checksum, presigned direct-upload, and optional dedup remain. See
+   [Upload & Storage](/guide/advanced/upload-storage-plan).
+
+> **Reality check (do not duplicate):** when this doc was first drafted it described the blob store
+> as net-new. It is not — the `media`/`storage` subsystem already provides it. The "Primitive 2"
+> sections below are kept as the *target shape*, but the work is to evolve `media`/`StorageBackend`,
+> **not** to introduce a parallel `assets` table or `BlobStore` trait. The genuinely net-new
+> capability in this design is **Primitive 1 (durable jobs + external workers)**.
 
 Both are **purely additive**. Existing single-project servers, plugins, and schemas are unaffected
 when the features are unused.
@@ -269,10 +278,16 @@ worker.on("video.generate", async (job, ctx) => {
 
 ## Primitive 2 — Blob / asset store
 
-Media-producing workloads need to store and serve binaries. Atomo is data/GraphQL-only today, so
-apps hand-roll file routes and storage. Make it first-class.
+> **Already shipped as `media`/`storage`.** Atomo is *not* data/GraphQL-only — the `media`
+> subsystem (`crates/atomo_server/src/media.rs` + `storage.rs`) already provides the pluggable
+> `StorageBackend` (local + feature-gated S3 with presigned GET), the `media` metadata table,
+> `POST/GET/DELETE /media` + GC, soft-delete, tenant scoping, and event sourcing — and now **HTTP
+> Range serving** (`206`/`Content-Range`/`416`, `Accept-Ranges`, `ETag` → conditional `304`) for
+> video/audio seeking. The model below is the *target* shape; treat it as a list of **extensions to
+> `media`** (checksum column, namespace, presigned PUT, dedup), **not** a new `assets` table. See
+> [Upload & Storage](/guide/advanced/upload-storage-plan) for the shipped delivery status.
 
-### 2.1 Model
+### 2.1 Model (target shape — extend `media`, don't replace it)
 
 ```sql
 CREATE TABLE assets (
@@ -403,18 +418,21 @@ per media app remains the rational default.
 
 ## Phased delivery plan
 
-> Each phase is independently useful. Phase 1 (blobs) ships value with no worker system at all; the
-> job system layers on top.
+> Each phase is independently useful. The **blob half is largely already shipped** as `media`/
+> `storage` (local + S3 + serving, now with Range); the genuinely new build is the **job + worker**
+> system, which layers on top.
 
 ### Phase 0 — Foundations
-- `BlobStore` trait + `Driver`-style backend selection; `assets` table + soft-delete.
-- Job event types + `jobs` projection schema; worker-token credential class in the secret model.
-- **Deliverable:** interfaces + schema merged; no behavior change when unused.
+- Blob: **already present** — `StorageBackend` trait, backend selection, `media` table + soft-delete.
+- Job: define job event types + `jobs` projection schema; worker-token credential class in the
+  secret model.
+- **Deliverable:** job interfaces + schema merged; no behavior change when unused.
 
-### Phase 1 — Blob store (local) + serving
-- `local` backend, `POST /assets` (multipart), `GET /assets/:id` with **range support**, checksum,
-  soft-delete.
-- **Deliverable:** first-class media upload/serve on a single host — useful entirely on its own.
+### Phase 1 — Blob store extensions (mostly done)
+- **Done:** `local`+`s3` backends, `POST /media` (multipart), `GET /media/{id}` with **Range**
+  support + `ETag`/conditional GET, soft-delete, GC.
+- **Remaining:** content checksum column (strong content-addressed ETag), optional `namespace`.
+- **Deliverable:** media upload/serve/stream on a single host — already useful today.
 
 ### Phase 2 — Durable jobs + lease API
 - Event-sourced job lifecycle + projection; `lease`/`heartbeat`/`complete`/`fail` with
@@ -428,9 +446,9 @@ per media app remains the rational default.
 - `JobProgress` → realtime hub fan-out (live admin/client progress).
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
-### Phase 4 — S3 backend + presigned I/O + dedup
-- `s3`/R2 backend; presigned PUT (worker → S3 direct) + presigned/302 GET; optional sha256
-  content-addressing & dedup.
+### Phase 4 — Presigned upload + dedup (S3 backend already shipped)
+- `s3`/R2 backend + presigned/302 **GET** already exist. Add presigned **PUT** (worker → S3 direct,
+  then commit metadata) + optional sha256 content-addressing & dedup.
 - **Deliverable:** large-media pipelines that never stream bytes through the server.
 
 ### Phase 5 — Operability & optional extensions (build on real need)
@@ -442,8 +460,8 @@ per media app remains the rational default.
 
 | Work | Size | Risk | Notes |
 | --- | --- | --- | --- |
-| Phase 0 (traits + schema) | S | Low | Additive; no behavior change |
-| Phase 1 (blob local + range serving) | M | Low | Standalone value; well-trodden HTTP work |
+| Phase 0 (job schema/interfaces; blob already present) | S | Low | Additive; no behavior change |
+| Phase 1 (blob extensions) | S | Low | **Mostly shipped** (Range done); only checksum/namespace remain |
 | Phase 2 (job lease engine) | M | **Med** | Correctness-critical: leasing/visibility/idempotency under concurrency + pooling — the one piece to test hard |
 | Phase 3 (SDK + enqueue seams) | M | Low–Med | Mostly assembly over existing event/workflow/realtime/SDK seams |
 | Phase 4 (S3 + presign + dedup) | M | Low–Med | Standard object-store integration |
