@@ -434,11 +434,16 @@ per media app remains the rational default.
 - **Remaining:** content checksum column (strong content-addressed ETag), optional `namespace`.
 - **Deliverable:** media upload/serve/stream on a single host — already useful today.
 
-### Phase 2 — Durable jobs + lease API
-- Event-sourced job lifecycle + projection; `lease`/`heartbeat`/`complete`/`fail` with
-  `SKIP LOCKED` dispatch, visibility-timeout recovery, idempotency, retry/backoff, dead-letter.
-- Worker-token auth + capability scoping.
-- **Deliverable:** durable jobs an external program can pull and complete; crash-safe.
+### Phase 2 — Durable jobs + lease engine
+- **Done — lease engine** (`atomo_server::jobs::JobStore`): event-sourced job lifecycle (`Job`
+  events) + `jobs` working-set table; idempotent enqueue; `lease`/`heartbeat`/`complete`/`fail` with
+  `SELECT … FOR UPDATE SKIP LOCKED` dispatch, per-job lease tokens, visibility-timeout reclaim
+  (at-least-once, crash-safe), and a retry/backoff/dead-letter policy. Postgres-tested (`jobs_store`)
+  + pure-logic unit tests.
+- **Remaining — exposure:** the HTTP lease API (`/jobs/lease|heartbeat|complete|fail`) and
+  worker-token auth + capability scoping (so a worker is a network principal, not just a library).
+- **Deliverable (partial):** the correctness-critical core is in; an external program can pull/
+  complete once the HTTP+token layer lands.
 
 ### Phase 3 — Worker SDK + enqueue seams
 - TS worker SDK (lease/heartbeat/ack/retry built in) + Rust worker crate.
