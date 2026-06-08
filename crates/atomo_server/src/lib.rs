@@ -15,6 +15,7 @@ pub mod config;
 pub mod domain;
 pub mod event_store;
 pub mod handlers;
+pub mod jobs;
 pub mod media;
 pub mod model_registry;
 pub mod models_ext;

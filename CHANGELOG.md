@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Durable job queue + lease engine** (`atomo_server::jobs::JobStore`) — the brain side of the
+  external-worker model. Event-sourced jobs (`Job` model events for the lifecycle) with idempotent
+  enqueue (`(queue, idempotency_key)`), atomic `SELECT … FOR UPDATE SKIP LOCKED` leasing with
+  per-job lease tokens, heartbeat/complete/fail, visibility-timeout reclaim (at-least-once,
+  crash-safe), and a retry/backoff/dead-letter policy. Proven against Postgres (`jobs_store`:
+  lifecycle, idempotency, concurrent disjoint dispatch, reclaim, retry→dead). This is the lease
+  engine only; the HTTP lease API, worker-token auth, and worker SDK are the next slice. See
+  [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
 - **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
   single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable
   ranges), advertises `Accept-Ranges: bytes`, and emits a strong `ETag` (the immutable media id) so
