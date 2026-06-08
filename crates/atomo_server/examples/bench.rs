@@ -240,7 +240,202 @@ async fn main() {
             .unwrap();
         t.push(s.elapsed());
     }
-    rows.push(("data layer: find_many (limit 20)".to_string(), stats(t)));
+    rows.push((
+        "data layer: find_many hot (limit 20, cache hit)".to_string(),
+        stats(t),
+    ));
+
+    // find_many cold: a write between each read invalidates the model cache (strong mode),
+    // so every read is a DB round trip — the true cold-read cost.
+    let read_iters = iters.min(500);
+    let mut t = Vec::with_capacity(read_iters);
+    for i in 0..read_iters {
+        client
+            .create("Note", &rec(&format!("cold{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+        let s = Instant::now();
+        client
+            .find_many("Note", &[], &[], Some(20), Some(0), &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: find_many cold (limit 20, cache miss)".to_string(),
+        stats(t),
+    ));
+
+    // ----- find_unique cold / hot -----
+    let target_id = id_of(
+        &client
+            .create("Note", &rec("unique-target"), &[], Some("bench"))
+            .await
+            .unwrap(),
+    );
+    let by_target = by_id(&target_id);
+
+    // Cold: write invalidates cache before each read
+    let mut t = Vec::with_capacity(read_iters);
+    for i in 0..read_iters {
+        client
+            .create("Note", &rec(&format!("ucold{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+        let s = Instant::now();
+        client
+            .find_unique("Note", &by_target, &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: find_unique cold (cache miss)".to_string(),
+        stats(t),
+    ));
+
+    // Hot: same record repeatedly (cache hit after first)
+    client.find_unique("Note", &by_target, &[]).await.unwrap();
+    let mut t = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let s = Instant::now();
+        client
+            .find_unique("Note", &by_target, &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: find_unique hot (cache hit)".to_string(),
+        stats(t),
+    ));
+
+    // ----- count hot (cache hit after first call) -----
+    client.count("Note", &[]).await.unwrap(); // warm
+    let mut t = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let s = Instant::now();
+        client.count("Note", &[]).await.unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push(("data layer: count hot (cache hit)".to_string(), stats(t)));
+
+    // count cold: write invalidates cache before each count
+    let mut t = Vec::with_capacity(read_iters);
+    for i in 0..read_iters {
+        client
+            .create("Note", &rec(&format!("cnt{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+        let s = Instant::now();
+        client.count("Note", &[]).await.unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push(("data layer: count cold (cache miss)".to_string(), stats(t)));
+
+    // ----- Relation: find_many with include (hasMany) -----
+    let rel_schema = "\
+        export interface RelNote { id: string; title: string; }\n\
+        export interface RelTag { id: string; label: string; relNoteId: string; }\n\
+        export const schema = { models: {\
+            RelNote: { tableName: 'bench_rel_notes',\
+                relationships: { tags: { type: 'hasMany', model: 'RelTag', foreignKey: 'relNoteId' } } },\
+            RelTag: { tableName: 'bench_rel_tags',\
+                relationships: { note: { type: 'belongsTo', model: 'RelNote', foreignKey: 'relNoteId' } } }\
+        } };\n\
+        export default schema;";
+    let rel_atomo = atomo::Atomo::builder()
+        .schema_content(rel_schema)
+        .database_url(&db)
+        .enable_migrations(true)
+        .build()
+        .await
+        .expect("rel atomo build");
+    let rel_client = rel_atomo.client();
+    let _ = sqlx::query("TRUNCATE bench_rel_notes, bench_rel_tags")
+        .execute(rel_atomo.db_pool())
+        .await;
+    // Seed: 20 notes, each with 3 tags
+    for i in 0..20 {
+        let note = rel_client
+            .create("RelNote", &rec(&format!("rn{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+        let nid = id_of(&note);
+        for j in 0..3 {
+            let mut tag = HashMap::new();
+            tag.insert("label".to_string(), json!(format!("t{i}-{j}")));
+            tag.insert("relNoteId".to_string(), json!(&nid));
+            rel_client
+                .create("RelTag", &tag, &[], Some("bench"))
+                .await
+                .unwrap();
+        }
+    }
+    // find_many with include (resolves hasMany tags per note)
+    let include_tags = vec!["tags".to_string()];
+    let rel_iters = read_iters.min(200);
+    let mut t = Vec::with_capacity(rel_iters);
+    for _ in 0..rel_iters {
+        let s = Instant::now();
+        rel_client
+            .find_many("RelNote", &[], &[], Some(20), Some(0), &include_tags)
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: find_many + include (20 notes × 3 tags)".to_string(),
+        stats(t),
+    ));
+
+    // ----- Eventual mode: reads stay hot through writes -----
+    // SAFETY: bench is single-threaded at this point; no concurrent env readers.
+    unsafe { std::env::set_var("ATOMO_CACHE_MODE", "eventual") };
+    let ev_atomo = atomo::Atomo::builder()
+        .schema_content(
+            "export interface Note { id: string; title: string; }\n\
+             export const schema = { models: { Note: { tableName: 'bench_ev_notes' } } };\n\
+             export default schema;",
+        )
+        .database_url(&db)
+        .enable_migrations(true)
+        .build()
+        .await
+        .expect("eventual atomo build");
+    unsafe { std::env::remove_var("ATOMO_CACHE_MODE") };
+    let ev_client = ev_atomo.client();
+    let _ = sqlx::query("TRUNCATE bench_ev_notes")
+        .execute(ev_atomo.db_pool())
+        .await;
+    for i in 0..50 {
+        ev_client
+            .create("Note", &rec(&format!("ev{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+    }
+    ev_client
+        .find_many("Note", &[], &[], Some(20), Some(0), &[])
+        .await
+        .unwrap();
+    // Interleaved writes + reads: cache stays hot (writes don't invalidate in eventual mode)
+    let mut t = Vec::with_capacity(iters);
+    for i in 0..iters {
+        ev_client
+            .create("Note", &rec(&format!("evw{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+        let s = Instant::now();
+        ev_client
+            .find_many("Note", &[], &[], Some(20), Some(0), &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: find_many eventual (hot through writes)".to_string(),
+        stats(t),
+    ));
 
     // ----- Job lease engine -----
     let pool = sqlx::PgPool::connect(&db).await.unwrap();
@@ -379,7 +574,7 @@ async fn main() {
         );
     }
     println!();
-    let _ = sqlx::query("TRUNCATE bench_notes")
+    let _ = sqlx::query("TRUNCATE bench_notes, bench_rel_notes, bench_rel_tags, bench_ev_notes")
         .execute(atomo.db_pool())
         .await;
 }

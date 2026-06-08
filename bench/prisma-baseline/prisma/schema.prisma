@@ -1,0 +1,38 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model BenchPrismaNote {
+  id        String   @id
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  tags BenchPrismaTag[]
+
+  @@map("bench_prisma_notes")
+}
+
+model BenchPrismaTag {
+  id     String  @id
+  label  String?
+  noteId String  @map("note_id")
+
+  note BenchPrismaNote @relation(fields: [noteId], references: [id])
+
+  @@map("bench_prisma_tags")
+}
+
+model BenchPrismaEvent {
+  id    String   @id
+  model String
+  data  Json
+  at    DateTime @default(now())
+
+  @@map("bench_prisma_events")
+}

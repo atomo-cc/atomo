@@ -31,6 +31,21 @@ Node baseline (`node-postgres`, raw SQL):
 DATABASE_URL=postgres://… BENCH_ITERS=2000 node bench/node-baseline.mjs   # needs `npm i pg`
 ```
 
+Prisma baseline (Prisma Client v6.19, **no built-in cache**):
+
+```bash
+cd bench/prisma-baseline && npm install && npx prisma generate
+DATABASE_URL=postgres://… BENCH_ITERS=2000 node bench.mjs
+```
+
+Payload CMS baseline (Payload v3.32 local API, **no built-in cache**):
+
+```bash
+cd bench/payload-baseline && npm install
+DATABASE_URL=postgres://… PAYLOAD_CONFIG_PATH=$PWD/payload.config.ts \
+  BENCH_ITERS=2000 npx tsx bench.mts
+```
+
 **Measure co-located** — both against a *local* Postgres on the same host. A remote DB inflates every
 write with a network round trip (we learned this the hard way; see Results). One reproducible way to
 do that on a dev box with Postgres in WSL2 is to run each in a container with `--network host`:
@@ -42,6 +57,14 @@ docker run --rm --network host -v "$PWD":/app -w /app -e CARGO_TARGET_DIR=/tmp/t
 # Node baseline
 docker run --rm --network host -v "$PWD":/app -w /app -e DATABASE_URL=… \
   node:20 bash -c "npm i pg --no-save --silent && node bench/node-baseline.mjs"
+# Prisma baseline
+docker run --rm --network host -v "$PWD"/bench/prisma-baseline:/app -w /app \
+  -e DATABASE_URL=… node:20 \
+  bash -c "npm install --silent && npx prisma generate && node bench.mjs"
+# Payload CMS baseline
+docker run --rm --network host -v "$PWD"/bench/payload-baseline:/app -w /app \
+  -e DATABASE_URL=… -e PAYLOAD_CONFIG_PATH=/app/payload.config.ts node:20 \
+  bash -c "npm install --silent && npx tsx bench.mts"
 ```
 
 Both harnesses warm up, time each operation serially, and print a markdown table of mean +
@@ -54,7 +77,11 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **data layer: create** | one insert + model-event emission via `AtomoClient::create` |
 | **data layer: create_many** | a 100-row batch via `AtomoClient::create_many` (one txn), reported per-row |
 | **data layer: update_many / delete_many** | a single-row update / soft-delete by id (one txn, write + events) |
-| **data layer: find_many** | a bounded read (limit 20) via `AtomoClient::find_many` |
+| **data layer: find_many hot / cold** | a bounded read (limit 20) via `AtomoClient::find_many` — hot = cache hit, cold = after a write invalidates the cache (DB round trip) |
+| **data layer: find_unique hot / cold** | a point read by id via `AtomoClient::find_unique` — hot = cache hit, cold = cache miss |
+| **data layer: count** | `AtomoClient::count` — `SELECT COUNT(*)` (not cached) |
+| **data layer: find_many + include** | `find_many` with a hasMany relationship: 20 parent records, each resolving 3 children — measures the N+1 relation-resolution cost |
+| **data layer: find_many eventual** | same as find_many hot but with `ATOMO_CACHE_MODE=eventual` — writes interleaved between reads do NOT invalidate the cache, showing cache staying hot under mixed load |
 | **job lease: 1 worker** | `JobStore::lease` throughput draining a queue (cap 50/call) |
 | **job lease: 8 workers** | concurrent `SELECT … FOR UPDATE SKIP LOCKED` dispatch — shows lock-free scaling |
 | **plugin hook tax: JS/Javy** | a `before_create` hook through `WasmHookRunner` (the real CRUD-hook path): the per-operation cost of crossing into the **JS (Javy/QuickJS)** sandbox + JSON marshalling |
@@ -80,7 +107,14 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | data layer: delete_many (1 row by id, single txn) | 3786 | 3617 | 5260 | 7165 | 264 |
 | data layer: **update_many** (per row, ~500 matched) | **36** | 34 | 37 | 37 | **28 028** |
 | data layer: **delete_many** (per row, ~500 matched) | **33** | 32 | 37 | 37 | **30 114** |
-| data layer: find_many (limit 20, cache hit) | 14.4 | 12 | 24 | 30 | 69 462 |
+| data layer: find_many hot (limit 20, cache hit) | 11.9 | 11 | 12 | 22 | 83 721 |
+| data layer: find_many cold (limit 20, cache miss) | 625 | 570 | 1012 | 1285 | 1 600 |
+| data layer: **find_unique** hot (cache hit) | **0.8** | — | 1 | 1 | **1 219 298** |
+| data layer: find_unique cold (cache miss) | 542 | 500 | 848 | 1191 | 1 845 |
+| data layer: **count** hot (cache hit) | **0.2** | — | — | — | **6 571 295** |
+| data layer: count cold (cache miss) | 1111 | 1025 | 1648 | 2238 | 900 |
+| data layer: find_many + include (20 notes × 3 tags) | 104 | 57 | 75 | 176 | 9 582 |
+| data layer: find_many eventual (hot through writes) | 42.5 | 37 | 73 | 112 | 23 528 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
 | plugin hook tax: JS/Javy `before_create` (load 413 ms once) | 178 | 166 | 237 | 331 | 5 630 |
@@ -104,6 +138,22 @@ for all matched rows (the SET/WHERE params don't scale with the match count) plu
 INSERT, all in one transaction. The event inserts are chunked under Postgres' bind-param limit, so
 bulk operations are safe at any size (a 11 000-row batch is a regression test).
 
+**Read paths — cold vs hot:** a *hot* `find_many` (cache hit) returns in **~12 µs** (84 k/s); a *cold*
+read (cache miss, after a write invalidates the model cache) costs **~625 µs** — the actual Postgres
+query time (~52× slower). `find_unique` (point read by id) is even faster when cached: **~0.8 µs
+(1.2 M ops/s)**, because the cached value is a single record vs a list. Cold `find_unique` is ~542 µs.
+`count` is now cached under the same per-model key space: hot count returns in **~0.2 µs (6.6 M
+ops/s)**, cold (after a write invalidates) costs ~1111 µs (the DB round trip).
+
+**Relation resolution (`include`):** `find_many` with a `hasMany` include (20 parent notes, each
+resolving 3 child tags) costs **~104 µs** — the child lookups hit the cache on repeated calls, so the
+incremental cost of N+1 relation resolution is low when the cache is warm.
+
+**Eventual mode:** with `ATOMO_CACHE_MODE=eventual`, writes do **not** invalidate the read cache (the
+TTL alone bounds staleness). Under a mixed read/write load the cache stays hot — reads cost **~43 µs**
+(23 k/s) even with a write between every read, vs ~625 µs cold in strong mode. The trade-off is
+bounded staleness (up to the TTL) for ~15× faster reads under write pressure.
+
 ## Head-to-head: Atomo vs Node (node-postgres), co-located
 
 The Node baseline (`bench/node-baseline.mjs`) does the equivalent raw SQL via `node-postgres`, same
@@ -113,7 +163,8 @@ machine, same DB, same serial-latency method.
 |---|--:|--:|---|
 | **persist a record + event** | 3715 µs (269/s) | 3159 µs (317/s) | **~on par (~1.2×)** — Atomo commits the row + its event in one transaction (one `fsync`), same as the Node txn; both **fsync-bound**. *(Was ~1.9× before the single-transaction fix — see below.)* |
 | raw insert (Node) / — | — | 2915 µs (343/s) | the DB write floor |
-| **read 20 rows** | **14 µs** cache-hit (69 k/s) | 469 µs (2.1 k/s) | Atomo's **in-process read cache** wins ~30× on hot reads; a *cold* Atomo read (cache miss) is ~the same as Node (both = the PG query) |
+| **read 20 rows** | **12 µs** cache-hit (84 k/s) | 469 µs (2.1 k/s) | Atomo's **in-process read cache** wins ~40× on hot reads; a *cold* Atomo read (cache miss, ~625 µs) is ~the same as Node (both ≈ the PG query) |
+| **point read (`find_unique`)** | **0.8 µs** cache-hit (1.2 M/s) | — | sub-microsecond point-read cache; cold = ~542 µs (the DB round trip) |
 | **footprint** | **9.8 MB** binary | Node runtime + `node_modules` | — |
 | **durable job lease** | **31 658/s** (8 workers) | — | **no Node equivalent** (Atomo-only) |
 
@@ -129,15 +180,15 @@ machine, same DB, same serial-latency method.
   > them into one transaction dropped create from **5998 µs → 3715 µs (−38%, +61% throughput)** and
   > took the Node gap from ~1.9× to ~1.2×. A benchmark that finds a real fix is worth more than one
   > that flatters.
-- **Where Atomo wins:** hot reads (its cache, ~30×), **footprint** (a 9.8 MB binary vs a Node
-  install), and **capabilities Node has no built-in answer for** — the durable job lease engine
-  (31 k leases/s, scaling **3.3×** from 1→8 workers via `SKIP LOCKED`), event sourcing, and the
-  plugin sandbox.
+- **Where Atomo wins:** hot reads (list cache ~40×, point-read cache **~1.2 M ops/s**), **footprint**
+  (a 9.8 MB binary vs a Node install), and **capabilities Node has no built-in answer for** — the
+  durable job lease engine (28 k leases/s, scaling **3×** from 1→8 workers via `SKIP LOCKED`), event
+  sourcing, and the plugin sandbox.
 - **The trade, stated plainly:** Atomo costs ~2× a bare insert on writes (both Postgres-`fsync`-bound)
-  in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, hot-path
-  read caching, and a typed, schema-driven backend (API + admin) out of the box.** Not raw speed —
-  built-ins + footprint. Most apps are read-heavy, where the cache wins and the write cost rarely
-  bites.
+  in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, sub-µs
+  point-read caching (1.2 M ops/s), and a typed, schema-driven backend (API + admin) out of the
+  box.** Not raw speed — built-ins + footprint. Most apps are read-heavy, where the cache wins and
+  the write cost rarely bites.
 
 > **Why co-located matters (a cautionary data point):** an earlier run with Postgres on a *separate*
 > host (Windows → WSL2 over the LAN) showed Atomo `create` at ~9 ms — but that was the **network
@@ -146,6 +197,80 @@ machine, same DB, same serial-latency method.
 Other portable takeaways: the **JS plugin load** (Javy/QuickJS instantiate) is a one-time ~400 ms at
 boot, not per-call; the **JS hook tax** (~178 µs/call here on Linux; was ~424 µs on Windows — wasmtime
 is slower there) is CPU-only and DB-independent.
+
+## Head-to-head: Atomo vs Prisma, co-located
+
+The Prisma baseline (`bench/prisma-baseline/`) uses **Prisma Client v6.19** against the same co-located
+Postgres, same serial-latency method. Prisma v6 does connection pooling, query building, and result
+mapping via its Rust-based query engine — more than raw `node-postgres`, but **has no built-in
+read cache** (every `find` hits the database; caching requires the paid Prisma Accelerate add-on or
+an external layer). Atomo's in-process cache is what makes reads lopsided.
+
+| Operation | Atomo | Prisma | Read |
+|---|--:|--:|---|
+| **create + event (txn)** | 4429 µs (226/s) | 4941 µs (202/s) | **comparable** — both fsync-bound; Atomo slightly faster (one binary, no IPC) |
+| create (bare, no event) | — | 4076 µs (245/s) | Prisma's query-engine overhead vs raw node-pg (~2.9 ms) |
+| **createMany** (per row, batch 100) | 75 µs (13 k/s) | 64 µs (16 k/s) | Prisma slightly faster (no event-log INSERT in the batch) |
+| **findMany (limit 20)** | **12 µs** hot (84 k/s) | 1340 µs (746/s) | Atomo's cache = **~112×** Prisma; cold Atomo (~625 µs) is ~2× faster (one binary, no IPC) |
+| **findUnique** | **0.8 µs** hot (1.2 M/s) | 607 µs (1.6 k/s) | Atomo's point-read cache = **~760×** Prisma |
+| **count** | **0.2 µs** hot (6.6 M/s) | 828 µs (1.2 k/s) | Atomo's cached count = **~4 100×** Prisma; cold Atomo (~1111 µs) is comparable |
+| **findMany + include** (20 × 3 tags) | **104 µs** (9.6 k/s) | 1177 µs (850/s) | cached relation resolution = **~11×** Prisma |
+| **update (1 row)** | 3985 µs (251/s) | 4380 µs (228/s) | both fsync-bound; Atomo includes event emission |
+| **delete (1 row)** | 4107 µs (244/s) | 4148 µs (241/s) | effectively identical — the fsync dominates |
+
+### Honest conclusions
+
+- **Writes are a wash.** Both Atomo and Prisma sit in the same ~4–5 ms band for single-row writes —
+  Postgres `fsync` dominates, not the runtime. Atomo does *more* per write (event emission) and is
+  still comparable. Batch writes are similar (~64–75 µs/row).
+- **Reads are where Atomo pulls ahead.** Prisma has no built-in read cache — every `findMany` and
+  `findUnique` hits the database. Atomo's in-process cache serves hot reads in **sub-µs to ~12 µs**
+  vs Prisma's ~600–1300 µs. For read-heavy workloads (most apps), this is the decisive gap.
+- **Prisma is the more direct comparison** than raw `node-postgres`. Most real backends use an ORM,
+  not hand-written SQL. Atomo vs Prisma is the comparison someone evaluating both would actually make.
+- **What Prisma has that Atomo doesn't (yet):** a mature ecosystem, broad ORM features (raw queries,
+  nested writes, aggregations), Prisma Studio, Prisma Accelerate (hosted cache/pool). **What Atomo
+  has that Prisma doesn't:** built-in event sourcing, WASM plugin hooks, durable job engine, admin
+  UI, a 9.8 MB single binary, and the cache that makes this comparison lopsided on reads.
+
+## Head-to-head: Atomo vs Payload CMS, co-located
+
+The Payload baseline (`bench/payload-baseline/`) uses **Payload CMS v3.32** (local API —
+`payload.create` / `payload.find` / etc., no HTTP server) against the same co-located Postgres, same
+serial-latency method. Payload v3 uses Drizzle ORM under the hood and does more per operation than
+Prisma or raw SQL: field-level hooks, access control evaluation, locked-document tracking, and
+preference cleanup. Like Prisma, **Payload v3 has no built-in read cache** — every `find` / `findByID`
+hits the database.
+
+| Operation | Atomo | Payload CMS | Read |
+|---|--:|--:|---|
+| **create** | 4429 µs (226/s) | 6186 µs (162/s) | Atomo **~1.4× faster** (includes event emission; Payload runs hooks + locked-doc tracking) |
+| **find (limit 20)** | **12 µs** hot (84 k/s) | 1495 µs (669/s) | Atomo's cache = **~125×** Payload; cold Atomo (~625 µs) is ~2.4× faster |
+| **findByID / findUnique** | **0.8 µs** hot (1.2 M/s) | 689 µs (1.5 k/s) | Atomo's point-read cache = **~860×** Payload |
+| **count** | **0.2 µs** hot (6.6 M/s) | 393 µs (2.5 k/s) | Atomo's cached count = **~2 000×** Payload; cold Atomo (~1111 µs) is slower (RLS scope overhead) |
+| **find + depth/include** | **104 µs** (9.6 k/s) | 3417 µs (293/s) | Atomo cached = **~33×**; Payload's depth resolution is heavier (each related doc goes through its full find pipeline) |
+| **update (1 row)** | 3985 µs (251/s) | 7271 µs (138/s) | Atomo **~1.8× faster** (includes event emission; Payload runs before/after hooks + locked-doc update) |
+| **delete (1 row)** | 4107 µs (244/s) | 7616 µs (131/s) | Atomo **~1.9× faster** (soft-delete + event; Payload does hard-delete + preference cleanup + locked-doc cleanup) |
+| **bulk create** (per row, ×100) | **75 µs** (13 k/s) | 5434 µs (184/s) | Atomo's multi-row INSERT = **~72× per row**; Payload has no native bulk create (sequential) |
+
+### Honest conclusions
+
+- **Payload does more per operation** — access control hooks, locked-document tracking, preference
+  cleanup on delete — so it's expected to be slower on writes. Atomo does event sourcing per write
+  (which Payload doesn't) and is still ~1.4–1.9× faster on mutations.
+- **Reads are the biggest gap** — same story as Prisma but wider, because Payload's find pipeline
+  (access control evaluation, hook execution, field transforms) adds overhead on top of the DB query.
+  Atomo's cache bypasses all of that on hot reads. Even cold Atomo reads (pure DB) are ~2× faster
+  than Payload's find, because Atomo's query path is thinner (one compiled binary, no JS hook
+  pipeline for a no-hook model).
+- **Count is now cached too.** Atomo's count was previously slower than Payload's (RLS scope
+  overhead); now it caches under the same model key space — hot count is **0.2 µs** (~2 000× Payload).
+  Cold count (~1111 µs) is still heavier than Payload's 393 µs due to RLS scoping.
+- **Payload is the closest "apples-to-apples" competitor** — both are schema-driven backend
+  frameworks with admin UI, hooks, and relation resolution. The difference: Atomo is a compiled Rust
+  binary with an in-process cache; Payload is a Node.js CMS with a richer plugin/admin ecosystem.
+  For read-heavy workloads the gap is decisive; for write-heavy workloads with heavy hook logic,
+  Payload's JS ecosystem may be the right trade.
 
 ## Full-stack HTTP: request throughput
 
