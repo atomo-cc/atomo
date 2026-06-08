@@ -69,3 +69,47 @@ async fn create_many_inserts_all_atomically() {
         .await
         .ok();
 }
+
+/// A batch large enough that its events exceed Postgres' 65535 bind-param ceiling (6 params/event
+/// → >10 922 events). Pre-chunking this failed the event INSERT; `persist_many_in` now chunks.
+#[tokio::test]
+#[ignore]
+async fn create_many_large_batch_chunks_event_inserts() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    // Own table — these tests share the dev DB and run in parallel, so they must not collide.
+    let schema = "export interface Note { id: string; title: string; }\n\
+         export const schema = { models: { Note: { tableName: 'batch_create_large_notes' } } };\n\
+         export default schema;";
+    let atomo = atomo::Atomo::builder()
+        .schema_content(schema)
+        .database_url(&url)
+        .enable_migrations(true)
+        .build()
+        .await
+        .expect("schema build + migrate");
+    let c = atomo.client();
+    sqlx::query("TRUNCATE batch_create_large_notes")
+        .execute(c.db_pool())
+        .await
+        .ok();
+
+    let n = 11_000; // 11 000 × 6 = 66 000 event params — over the single-statement limit
+    let batch: Vec<_> = (0..n)
+        .map(|i| rec(&[("title", json!(format!("n{i}")))]))
+        .collect();
+    let out = c.create_many("Note", &batch, Some("bulk")).await.unwrap();
+    assert_eq!(out.len(), n, "all rows returned");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM batch_create_large_notes")
+        .fetch_one(c.db_pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        count, n as i64,
+        "all rows persisted (event chunking worked)"
+    );
+
+    sqlx::query("TRUNCATE batch_create_large_notes")
+        .execute(c.db_pool())
+        .await
+        .ok();
+}

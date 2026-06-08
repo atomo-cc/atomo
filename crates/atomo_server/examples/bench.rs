@@ -180,6 +180,57 @@ async fn main() {
         stats(t),
     ));
 
+    // BULK update_many / delete_many: one call matching ~500 rows (one UPDATE + chunked event
+    // INSERT), reported per affected row to show the amortized bulk cost. A few rounds for stats.
+    let by_title = |t: &str| {
+        vec![WhereClause {
+            field: "title".to_string(),
+            operator: WhereOperator::Equals,
+            value: json!(t),
+        }]
+    };
+    let bulk_n = 500usize;
+    let mut tu = Vec::new();
+    let mut td = Vec::new();
+    for r in 0..5 {
+        // update round
+        let tag = format!("bulku-{r}");
+        let batch: Vec<_> = (0..bulk_n).map(|_| rec(&tag)).collect();
+        client
+            .create_many("Note", &batch, Some("bench"))
+            .await
+            .unwrap();
+        let patch = rec(&format!("bulku-done-{r}"));
+        let s = Instant::now();
+        let n = client
+            .update_many("Note", &by_title(&tag), &patch, &[], Some("bench"))
+            .await
+            .unwrap()
+            .len();
+        tu.push(s.elapsed() / n.max(1) as u32);
+        // delete round
+        let dtag = format!("bulkd-{r}");
+        let batch: Vec<_> = (0..bulk_n).map(|_| rec(&dtag)).collect();
+        client
+            .create_many("Note", &batch, Some("bench"))
+            .await
+            .unwrap();
+        let s = Instant::now();
+        let n = client
+            .delete_many("Note", &by_title(&dtag), Some("bench"))
+            .await
+            .unwrap();
+        td.push(s.elapsed() / n.max(1) as u32);
+    }
+    rows.push((
+        format!("data layer: update_many (per row, ~{bulk_n} matched)"),
+        stats(tu),
+    ));
+    rows.push((
+        format!("data layer: delete_many (per row, ~{bulk_n} matched)"),
+        stats(td),
+    ));
+
     let mut t = Vec::with_capacity(iters);
     for _ in 0..iters {
         let s = Instant::now();

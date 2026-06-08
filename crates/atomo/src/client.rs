@@ -476,7 +476,7 @@ impl AtomoClient {
                 actor: actor.map(|s| s.to_string()),
             })
             .collect();
-        self.event_store.persist_many_in(&mut *tx, &events).await?;
+        self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
 
         // Post-commit: fan-out + after-hooks + a single cache invalidation for the whole batch.
@@ -567,7 +567,7 @@ impl AtomoClient {
                 actor: actor.map(|s| s.to_string()),
             })
             .collect();
-        self.event_store.persist_many_in(&mut *tx, &events).await?;
+        self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
 
         for event in &events {
@@ -645,7 +645,7 @@ impl AtomoClient {
                 }
             })
             .collect();
-        self.event_store.persist_many_in(&mut *tx, &events).await?;
+        self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
 
         for event in &events {
