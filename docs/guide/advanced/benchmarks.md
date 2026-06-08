@@ -376,6 +376,35 @@ matters: it's what each plugin-touched operation costs on top of the bare data l
   native deps — **can't run in the sandbox at all**, regardless of speed, and belongs in a worker.
   The hook tax just tells you the cost of the in-sandbox logic that *does* fit.
 
+## When to use what
+
+The benchmarks above measure cost. This section maps cost to product decisions — when do those
+numbers matter, and when don't they?
+
+| Workload | Better fit | Why (data-backed) |
+|---|---|---|
+| **Read-heavy API** (dashboards, feeds, listings) | **Atomo** | Hot-cache reads: **12 µs** list / **0.8 µs** point-read vs Payload's ~700–1500 µs and Prisma's ~600–1300 µs. Most apps are 80%+ reads — the cache is the decisive gap. |
+| **Bulk data ingestion** (imports, migrations, ETL) | **Atomo** | `create_many`: **75 µs/row** (13 k/s) vs Payload's 5434 µs/row (184/s) — **~72× per row**. Bulk `update_many`/`delete_many`: ~33 µs/row (28–30 k/s). Payload has no native bulk path. |
+| **Lightweight self-hosted backend** (SaaS API, internal tools) | **Atomo** | A **9.8 MB** static binary with auth, event sourcing, durable jobs, schema-driven API, and admin UI. No Node runtime, no `node_modules`, no process manager. Deploy a single binary + Postgres. |
+| **High-concurrency mixed workload** | **Atomo** | The authed load test shows **2 384 req/s at p95 13.8 ms** under 50 VUs (JWT + GraphQL + cache + events). The in-process cache means reads don't contend for DB connections. |
+| **Content team CMS / editorial workflow** | **Payload** | Payload's admin UI is a polished React app with live preview, rich text (Lexical/Slate), media library, draft/publish workflow, and localization — built for content editors, not developers. Atomo's admin is functional but developer-oriented. |
+| **Plugin ecosystem / custom admin extensions** | **Payload** | Payload has a mature plugin ecosystem (SEO, form builder, nested docs, redirects, search) and a React-based admin that supports custom field components, views, and providers. Atomo's extension model is WASM plugins — powerful but earlier-stage. |
+| **Write-heavy with complex hooks** | **Either** | Single-row writes are fsync-bound in both (~4–8 ms). Atomo is ~1.4–1.9× faster per write (includes event sourcing), but if your hooks need npm packages, browser APIs, or native deps, Payload's JS runtime is the pragmatic choice — Atomo's WASM sandbox can't reach the outside world. |
+| **Durable background jobs** | **Atomo** | Built-in job engine with `SKIP LOCKED` lease dispatch: **31 658 leases/s** (8 workers). Payload has no built-in job queue — you'd add BullMQ, pg-boss, or similar. |
+
+### What this table is not
+
+This is not "Atomo replaces Payload." They overlap on schema-driven CRUD + admin but diverge on
+audience: Atomo is a **backend runtime** (API-first, event-sourced, small footprint); Payload is a
+**headless CMS** (content-first, editor-friendly, plugin-rich). The benchmark numbers inform which
+trade-offs matter for a given project — they don't make the choice for you.
+
+- If your team is **content editors** who need rich text, media management, and a polished admin
+  experience — Payload is the right tool regardless of the latency gap.
+- If your team is **developers** shipping an API backend where reads dominate, footprint matters, or
+  you need event sourcing and durable jobs out of the box — that's where the numbers above translate
+  to a real product advantage.
+
 ## Caveats (read before quoting a number)
 
 - **In-process, not HTTP.** Add network + HTTP + GraphQL overhead for end-to-end figures.
