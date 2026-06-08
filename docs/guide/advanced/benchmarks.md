@@ -74,16 +74,18 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
 |---|--:|--:|--:|--:|--:|
 | data layer: create (insert + event, single txn) | 3715 | 3664 | 5508 | 7429 | 269 |
-| data layer: **create_many** (per row, batch 100) | **407** | 405 | 544 | 544 | **2 460** |
+| data layer: **create_many** (per row, batch 100) | **77** | 76 | 107 | 107 | **13 006** |
 | data layer: find_many (limit 20, cache hit) | 14.4 | 12 | 24 | 30 | 69 462 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
 | plugin hook tax: JS/Javy `before_create` (load 413 ms once) | 178 | 166 | 237 | 331 | 5 630 |
 
-**Batch inserts:** `create_many` commits a 100-row batch in **one** transaction, so the per-row cost
-drops from **~3.7–4.1 ms to ~0.4 ms — roughly 10×** (one `fsync` amortized across the batch instead
-of one per row). For bulk imports/seeding this is the difference between N `fsync`s and one. (A
-multi-row `INSERT` / `COPY` would push this further by also cutting per-row round trips — a follow-up.)
+**Batch inserts:** `create_many` commits a 100-row batch via **two multi-row `INSERT`s** (the rows,
+then their events) in **one** transaction — so the per-row cost drops from **~3.9 ms to ~77 µs —
+roughly 50×** (≈13 k rows/sec). One `fsync` amortized across the batch *and* one round trip per
+statement instead of per row. (An earlier per-row-in-one-transaction version was ~407 µs/row — the
+multi-row `INSERT` cut another ~5× by eliminating the per-row round trips.) For very large loads a
+`COPY`-based path could push further still — a follow-up.
 
 ## Head-to-head: Atomo vs Node (node-postgres), co-located
 
