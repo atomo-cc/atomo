@@ -283,8 +283,10 @@ export default schema;
             while let Ok(ev) = rx.recv().await {
                 let op = match ev.event_type {
                     atomo::events::EventType::Created => AuditOperation::Create,
-                    atomo::events::EventType::Updated => AuditOperation::Update,
-                    atomo::events::EventType::Deleted => AuditOperation::Delete,
+                    atomo::events::EventType::Updated
+                    | atomo::events::EventType::Restored => AuditOperation::Update,
+                    atomo::events::EventType::Deleted
+                    | atomo::events::EventType::HardDeleted => AuditOperation::Delete,
                     atomo::events::EventType::Custom => AuditOperation::Read,
                 };
                 let entity_id = ev
@@ -840,8 +842,10 @@ async fn test_crm_mutation_audited_with_actor() {
             while let Ok(ev) = rx.recv().await {
                 let op = match ev.event_type {
                     atomo::events::EventType::Created => AuditOperation::Create,
-                    atomo::events::EventType::Updated => AuditOperation::Update,
-                    atomo::events::EventType::Deleted => AuditOperation::Delete,
+                    atomo::events::EventType::Updated
+                    | atomo::events::EventType::Restored => AuditOperation::Update,
+                    atomo::events::EventType::Deleted
+                    | atomo::events::EventType::HardDeleted => AuditOperation::Delete,
                     atomo::events::EventType::Custom => AuditOperation::Read,
                 };
                 let entity_id = ev

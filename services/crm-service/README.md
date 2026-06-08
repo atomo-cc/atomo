@@ -63,7 +63,7 @@ services/crm-service/
 ├── atomo.config.ts     # ⚙️  Atomo 平台配置
 ├── schema.ts           # 📊  CRM 数据模型定义
 ├── workflows/          # 🔄  业务流程自动化
-├── plugins/            # 🧩  WASM 业务插件
+├── plugins/            # 🧩  业务扩展插件
 ├── admin/              # 🎨  后台界面定制
 └── Dockerfile          # 🐳  部署配置
 ```
@@ -76,7 +76,7 @@ services/crm-service/
 - **数据库**: 由 Atomo 根据模型定义自动创建和迁移
 - **GraphQL API**: 完全自动生成，包含所有 CRUD 操作
 - **后台界面**: 基于 `atomo-admin-ui` 自动渲染，支持定制
-- **业务逻辑**: 通过 WASM 插件和工作流扩展
+- **业务逻辑**: 通过 actions、外部 workers 和工作流扩展
 
 ## 📊 数据模型
 
@@ -113,7 +113,7 @@ pnpm --filter atomo-crm-service generate
 - 自动创建/迁移数据库表
 - 生成完整的 GraphQL API
 - 启动后台管理界面
-- 热加载 WASM 插件
+- 启动 action 分发器
 
 - 启动 Admin UI 开发服务器
 - 让 TypeScript SDK 进入 watch/build 循环
@@ -155,7 +155,7 @@ onEvent("Contact.Created", async (event) => {
 });
 ```
 
-插件会自动编译为 WASM 并热加载。
+事件触发后 action 分发器会自动将任务入队，由外部 worker 处理。
 
 ## 🎨 后台界面定制
 

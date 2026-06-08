@@ -9,7 +9,7 @@ Atomo has unit, integration, and HTTP end-to-end tests across the Rust workspace
 cargo test --workspace
 ```
 
-The unit/middleware/WASM/doctest suites need no database and run as part of `cargo test --workspace`.
+The unit/middleware/doctest suites need no database and run as part of `cargo test --workspace`.
 
 ## Database-backed tests
 

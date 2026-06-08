@@ -18,8 +18,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforced in GraphQL resolvers (parsed from schema + conformance-tested in S1; **data-layer callers not yet gated**), OAuth2/OIDC SSO
 - Audit logs: ✅ REST endpoints + platform GraphQL; conformance-tested through CRM models (B4)
 - TypeScript SDK: ✅ types, React hooks, offline queue with sync-on-reconnect (not yet integration-tested)
-- WASM plugin runtime: ✅ fuel metering, permission-checked host functions, plugin lifecycle, CRUD hooks wired at boot
-- Scripting plugins (JS): ✅ `.js` plugins via embedded Javy/QuickJS (no toolchain) — CRUD hooks, permission-gated effects (`emit`/`dbQuery`/`http`), typed `emit` onto the event stream
+- Actions & workers (v1 architecture): ✅ `ActionDef` + `ModelEvents` types in the schema, action dispatcher (event → condition check → durable job enqueue), direct action API (`POST /api/actions/:name`), TypeScript Worker SDK (`@atomo-cc/worker-sdk`). Phase 1 complete; Phase 2 (worker → Rust CRUD API) next
 - Real-time (durable): ✅ GraphQL subscriptions over WebSocket with model filtering; **WS auth added in S2** (was unauthenticated)
 - Real-time (ephemeral): ✅ `atomo_realtime` hub — channels, presence & fan-out over `/realtime/ws` (Phase 2); never event-sourced. CRM dogfood (live Kanban/presence) + coordinator sessions + rate-limit/metrics hardening still TODO
 - Event sourcing: ✅ event_log persistence, replay, entity history (conformance-tested C3), CQRS projections (corruption fixed in B2; rebuild-replay still TODO)

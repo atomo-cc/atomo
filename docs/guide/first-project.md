@@ -12,7 +12,7 @@ pnpm --filter atomo-crm-service generate
 Key files:
 
 - `schema.ts` — data model and rules
-- `plugins/` — WASM extensions
+- `plugins/` — extensions
 - `workflows/` — business flows
 
 Edit `services/crm-service/schema.ts`, regenerate CRM artifacts, then verify SDK output with `pnpm --filter @atomo-cc/client-sdk build`.

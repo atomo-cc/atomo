@@ -78,6 +78,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
+pub mod actions;
 pub mod ai;
 pub mod cache;
 pub mod client;

@@ -8,7 +8,7 @@
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo Content Core es un **backend con event sourcing** open-source y autoalojable para apps orientadas a contenido. Define tu modelo de datos en un `schema.ts` de TypeScript y Atomo te da una **API GraphQL**, **autenticación + RBAC**, **realtime** y un **panel de administración** generado — ampliable con **plugins WASM/JS** y desplegable con **Docker** (sin necesidad del toolchain de Rust). Piénsalo como una **alternativa a Firebase/Supabase** autoalojada que corre sobre tu propio Postgres.
+Atomo Content Core es un **backend con event sourcing** open-source y autoalojable para apps orientadas a contenido. Define tu modelo de datos en un `schema.ts` de TypeScript y Atomo te da una **API GraphQL**, **autenticación + RBAC**, **realtime** y un **panel de administración** generado — ampliable con **actions y workers externos** y desplegable con **Docker** (sin necesidad del toolchain de Rust). Piénsalo como una **alternativa a Firebase/Supabase** autoalojada que corre sobre tu propio Postgres.
 
 ## ✨ Características principales
 
@@ -17,8 +17,8 @@ Atomo Content Core es un **backend con event sourcing** open-source y autoalojab
 - 🎯 **Impulsado por una app insignia**: Evolución de la plataforma impulsada por una aplicación CRM real
 - 🔧 **Definición de modo dual**: Esquema TypeScript + generación de código Rust
 - 🚀 **Alto rendimiento**: Backend en Rust + un stack de frontend moderno
-- 🔌 **Arquitectura de plugins**: Sistema de plugins WASM con soporte de extensión multilenguaje
-- 🧩 **Extender sin forkear**: restricciones de esquema declarables (`@unique` / `@@check` / parciales) + rutas HTTP personalizadas servidas por plugins (`/ext/<plugin>`)
+- 🔌 **Actions & Workers**: declara lifecycle actions en tu schema (`on.created`, `on.updated`) con condiciones — Atomo despacha jobs durables a workers TypeScript externos automáticamente
+- 🧩 **Extender sin forkear**: restricciones de esquema declarables (`@unique` / `@@check` / parciales) + API directa de actions (`POST /api/actions/:name`)
 - 📊 **Colaboración en tiempo real**: Sincronización de datos en tiempo real impulsada por WebSocket
 
 ## 🚀 Inicio rápido
@@ -125,9 +125,9 @@ graph TD
     D --> E[Consulta]
 
     B --> F[Bus de eventos]
-    F --> G[Procesador de IA]
-    F --> H[Servicio de notificaciones]
-    F --> I[Plugins WASM]
+    F --> G[Action Dispatcher]
+    G --> H[Cola de Jobs]
+    H --> I[Workers Externos]
 ```
 
 ### Stack tecnológico
@@ -266,8 +266,8 @@ Para el roadmap detallado y el progreso actual, consulta docs/roadmap.md; para l
 - [x] Limitación de tasa, trazado de solicitudes
 
 ### Fase 2: Mejora de inteligencia (mayormente completada)
-- [x] Sistema de plugins WASM (sandbox, permisos, hooks de ciclo de vida) + plugins de script JS (Javy)
-- [x] Extensibilidad sin fork: restricciones de esquema declarables (`@unique`/`@index`/`@@check`, incl. parciales con `WHERE`) + rutas HTTP personalizadas servidas por plugins (`/ext/<plugin>`)
+- [x] Actions & workers: lifecycle event bindings (`ModelEvents`), action dispatcher, API directa de actions, Worker SDK (`@atomo-cc/worker-sdk`)
+- [x] Extensibilidad sin fork: restricciones de esquema declarables (`@unique`/`@index`/`@@check`, incl. parciales con `WHERE`)
 - [x] Proyecciones de lectura CQRS (vistas materializadas dirigidas por eventos; borrados/correcciones numéricas ver B2)
 - [x] Caché de lectura (TTL + invalidación por eventos)
 - [x] Subida/almacenamiento de archivos (`File` field, multipart, validación de tipo de contenido + sniffing de magic bytes, event-sourced; backend local ✅, backend S3 tras la feature `storage-s3`; ver docs/guide/advanced/upload-storage-plan)

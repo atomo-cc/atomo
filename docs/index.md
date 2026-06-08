@@ -30,8 +30,8 @@ features:
     details: JWT auth, role-based access enforced from your schema's access rules, and tenant-scoped reads/writes.
   
   - icon: 🧩
-    title: WASM + JS Plugins
-    details: Extend with WebAssembly or drop-in JavaScript plugins (Javy) - permission-gated, sandboxed, with CRUD lifecycle hooks.
+    title: Actions & Workers
+    details: Declare lifecycle actions in your schema with conditions — Atomo dispatches durable jobs to external TypeScript workers automatically.
 
   - icon: 📊
     title: CQRS Projections & Caching

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Action system (Phase 1 of v1 architecture).** First-class `ActionDef` and `ModelEvents` types
+  in the schema: declare lifecycle event bindings (`on.created`, `on.updated`, `on.deleted`) with
+  optional conditions (`ChangedAny`, `FieldEquals`), and the new **action dispatcher** automatically
+  enqueues durable jobs when matching events commit. Direct action invocation via
+  `POST /api/actions/:name` (callable actions only). Types live in `atomo_schema`; impl logic
+  (`matches`, `build_input`, `is_callable`) re-exported through `atomo::prelude`. The Worker SDK
+  (`@atomo-cc/worker-sdk`) handles the pull side — workers listen on queue `"actions"` and register
+  handlers by action name. 15 Rust tests + 11 TypeScript tests.
+- **`Schema.actions`** field (`HashMap<String, ActionDef>`) and **`Model.events`** field
+  (`ModelEvents`) — both `#[serde(default)]` for backward compatibility.
+- **`POST /api/actions/:name`** endpoint for direct (non-lifecycle) action invocation; enqueues a
+  job and returns `{ jobId }`.
+- **Action dispatcher** (`atomo_server::action_dispatcher`): background event listener wired at
+  server boot alongside audit/projector listeners. Idempotent enqueue keyed on
+  `eventId:actionName`.
+
+### Fixed
+- **Non-exhaustive `EventType` match in HTTP E2E tests.** `Restored` and `HardDeleted` variants
+  were missing from the audit listener match arms in test helpers.
+
 ## [0.5.0] - 2026-06-08
 
 > **Performance + event-sourcing integrity.** Write latency cut by 38–50% across all mutation

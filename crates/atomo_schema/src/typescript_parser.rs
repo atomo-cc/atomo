@@ -342,6 +342,7 @@ impl TypeScriptParser {
                 table_name: None,
                 relationships: std::collections::HashMap::new(),
                 constraints: Vec::new(),
+                events: Default::default(),
             });
         }
 
@@ -437,6 +438,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         table_name: None,
         relationships: std::collections::HashMap::new(),
         constraints,
+        events: Default::default(),
     };
     let lines_consumed = i - start_index;
 

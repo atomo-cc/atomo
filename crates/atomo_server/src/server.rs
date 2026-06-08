@@ -231,6 +231,14 @@ impl AtomoServer {
         }
         info!("   ✓ Job queue ready (lease API at /jobs)");
 
+        // Action dispatcher: enqueue lifecycle action jobs when model events match schema bindings.
+        crate::action_dispatcher::spawn_action_dispatcher(
+            self.atomo.schema().clone(),
+            job_store.clone(),
+            self.atomo.event_receiver(),
+        );
+        info!("   ✓ Action dispatcher started");
+
         // Audit listener: record an audit entry for every model mutation event.
         {
             let audit = audit_service.clone();
@@ -415,6 +423,11 @@ impl AtomoServer {
             None
         };
 
+        let action_router = crate::action_routes::action_router(
+            self.atomo.schema().clone(),
+            job_store.clone(),
+        );
+
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
             .merge(crate::projector_routes::projector_router(
@@ -424,7 +437,8 @@ impl AtomoServer {
                 registry_store.clone(),
             ))
             .merge(media_router)
-            .merge(jobs_router);
+            .merge(jobs_router)
+            .merge(action_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }

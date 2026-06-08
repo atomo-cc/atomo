@@ -19,6 +19,6 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
 Pillars (from Atomo About & Paper):
 - River of Events: all changes are immutable events (audit/time travel).
 - Flowing Canvas: rich content blocks and flexible composition.
-- Energy Hub: open integrations via events and WASM plugins.
+- Energy Hub: open integrations via events and external workers.
 
 Data flows: `schema.ts` → codegen → GraphQL API + Admin UI + SDK types.

@@ -8,7 +8,7 @@
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo Content Core 是一个开源、可自托管、面向内容型应用的**事件溯源后端**。在 TypeScript `schema.ts` 中定义数据模型，Atomo 即为你生成 **GraphQL API**、**认证与 RBAC**、**实时通道**以及自动生成的**管理后台**——可通过 **WASM/JS 插件**扩展，并用 **Docker** 部署（无需 Rust 工具链）。可以把它看作运行在你自己的 Postgres 上、可自托管的 **Firebase/Supabase 替代方案**。
+Atomo Content Core 是一个开源、可自托管、面向内容型应用的**事件溯源后端**。在 TypeScript `schema.ts` 中定义数据模型，Atomo 即为你生成 **GraphQL API**、**认证与 RBAC**、**实时通道**以及自动生成的**管理后台**——可通过 **actions 和外部 workers** 扩展，并用 **Docker** 部署（无需 Rust 工具链）。可以把它看作运行在你自己的 Postgres 上、可自托管的 **Firebase/Supabase 替代方案**。
 
 ## ✨ 核心特性
 
@@ -17,8 +17,8 @@ Atomo Content Core 是一个开源、可自托管、面向内容型应用的**�
 - 🎯 **旗舰应用驱动**: 通过 CRM 应用驱动平台演进
 - 🔧 **双模式定义**: TypeScript Schema + Rust 代码生成
 - 🚀 **高性能**: Rust 后端 + 现代前端技术栈
-- 🔌 **插件化架构**: WASM 插件系统，支持多语言扩展
-- 🧩 **无需 fork 的扩展**: 可声明的 schema 约束（`@unique` / `@@check` / 部分索引）+ 插件提供的自定义 HTTP 路由（`/ext/<plugin>`）
+- 🔌 **Actions & Workers**: 在 schema 中声明生命周期 actions（`on.created`、`on.updated`）并支持条件——Atomo 自动将持久化任务分发给外部 TypeScript workers
+- 🧩 **无需 fork 的扩展**: 可声明的 schema 约束（`@unique` / `@@check` / 部分索引）+ 直接 action API（`POST /api/actions/:name`）
 - 📊 **实时协作**: WebSocket 驱动的实时数据同步
 
 ## 🚀 快速开始
@@ -125,9 +125,9 @@ graph TD
     D --> E[查询]
 
     B --> F[事件总线]
-    F --> G[AI 处理器]
-    F --> H[通知服务]
-    F --> I[WASM 插件]
+    F --> G[Action 分发器]
+    G --> H[任务队列]
+    H --> I[外部 Workers]
 ```
 
 ### 技术栈
@@ -266,8 +266,8 @@ pnpm --filter atomo-crm-service generate
 - [x] 速率限制, 请求追踪
 
 ### Phase 2: 智能化升级 (大部分完成)
-- [x] WASM 插件系统 (沙箱, 权限, 生命周期钩子) + JS 脚本插件 (Javy)
-- [x] 无需 fork 的扩展能力：可声明的 schema 约束（`@unique`/`@index`/`@@check`，含带 `WHERE` 的部分索引）+ 插件提供的自定义 HTTP 路由（`/ext/<plugin>`）
+- [x] Actions & workers: 生命周期事件绑定（`ModelEvents`）、action 分发器、直接 action API、Worker SDK（`@atomo-cc/worker-sdk`）
+- [x] 无需 fork 的扩展能力：可声明的 schema 约束（`@unique`/`@index`/`@@check`，含带 `WHERE` 的部分索引）
 - [x] CQRS 读投影 (事件驱动物化视图；删除/数值修正见 B2)
 - [x] 读缓存 (TTL + 事件失效)
 - [x] 文件上传/存储 (`File` 字段, multipart, 内容类型校验+魔术字节嗅探, 事件溯源; 本地后端✅, S3 后端在 `storage-s3` feature 后; 详见 docs/guide/advanced/upload-storage-plan)

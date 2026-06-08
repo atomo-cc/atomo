@@ -4,6 +4,39 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
     pub models: HashMap<String, Model>,
+    #[serde(default)]
+    pub actions: HashMap<String, ActionDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionDef {
+    pub name: String,
+    pub input: ActionInputDef,
+    #[serde(default)]
+    pub returns: Option<ActionReturn>,
+    #[serde(default)]
+    pub source_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ActionInputDef {
+    PickFields { model: String, fields: Vec<String> },
+    Object { fields: Vec<ActionInputField> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionInputField {
+    pub name: String,
+    pub field_type: String,
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ActionReturn {
+    Model(String),
+    Void,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +60,82 @@ pub struct Model {
     /// annotations can't express.
     #[serde(default)]
     pub constraints: Vec<ModelConstraint>,
+    /// Lifecycle event bindings: which actions to enqueue when a record is created/updated/deleted.
+    #[serde(default)]
+    pub events: ModelEvents,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelEvents {
+    #[serde(default)]
+    pub created: Vec<EventActionBinding>,
+    #[serde(default)]
+    pub updated: Vec<EventActionBinding>,
+    #[serde(default)]
+    pub deleted: Vec<EventActionBinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventActionBinding {
+    pub action: String,
+    #[serde(default)]
+    pub condition: Option<ActionCondition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ActionCondition {
+    ChangedAny(Vec<String>),
+    FieldEquals { field: String, value: serde_json::Value },
+}
+
+impl ActionCondition {
+    pub fn matches(
+        &self,
+        current: &HashMap<String, serde_json::Value>,
+        previous: Option<&HashMap<String, serde_json::Value>>,
+    ) -> bool {
+        match self {
+            ActionCondition::ChangedAny(fields) => {
+                let prev = match previous {
+                    Some(p) => p,
+                    None => return true,
+                };
+                fields.iter().any(|f| current.get(f) != prev.get(f))
+            }
+            ActionCondition::FieldEquals { field, value } => {
+                current.get(field).map_or(false, |v| v == value)
+            }
+        }
+    }
+}
+
+impl ActionDef {
+    pub fn is_callable(&self) -> bool {
+        self.returns.is_some()
+    }
+
+    pub fn is_lifecycle_only(&self) -> bool {
+        self.returns.is_none()
+    }
+
+    pub fn build_input(
+        &self,
+        doc: &HashMap<String, serde_json::Value>,
+    ) -> HashMap<String, serde_json::Value> {
+        match &self.input {
+            ActionInputDef::PickFields { fields, .. } => fields
+                .iter()
+                .filter_map(|f| doc.get(f).map(|v| (f.clone(), v.clone())))
+                .collect(),
+            ActionInputDef::Object { .. } => doc.clone(),
+        }
+    }
+}
+
+impl ModelEvents {
+    pub fn is_empty(&self) -> bool {
+        self.created.is_empty() && self.updated.is_empty() && self.deleted.is_empty()
+    }
 }
 
 /// A model-level constraint declared via an `@@` annotation in `schema.ts`.

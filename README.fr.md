@@ -8,7 +8,7 @@
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo Content Core est un **backend en event sourcing** open-source et auto-hébergeable pour les applications orientées contenu. Définissez votre modèle de données dans un `schema.ts` TypeScript et Atomo vous fournit une **API GraphQL**, l'**authentification + RBAC**, le **temps réel** et une **interface d'administration** générée — extensible via des **plugins WASM/JS** et déployable avec **Docker** (sans toolchain Rust). Voyez-le comme une **alternative à Firebase/Supabase** auto-hébergée qui tourne sur votre propre Postgres.
+Atomo Content Core est un **backend en event sourcing** open-source et auto-hébergeable pour les applications orientées contenu. Définissez votre modèle de données dans un `schema.ts` TypeScript et Atomo vous fournit une **API GraphQL**, l'**authentification + RBAC**, le **temps réel** et une **interface d'administration** générée — extensible via des **actions et des workers externes** et déployable avec **Docker** (sans toolchain Rust). Voyez-le comme une **alternative à Firebase/Supabase** auto-hébergée qui tourne sur votre propre Postgres.
 
 ## ✨ Fonctionnalités clés
 
@@ -17,8 +17,8 @@ Atomo Content Core est un **backend en event sourcing** open-source et auto-héb
 - 🎯 **Piloté par une application phare** : Évolution de la plateforme guidée par une véritable application CRM
 - 🔧 **Définition à double mode** : Schéma TypeScript + génération de code Rust
 - 🚀 **Hautes performances** : Backend Rust + une stack frontend moderne
-- 🔌 **Architecture à plugins** : Système de plugins WASM avec prise en charge d'extensions multilangages
-- 🧩 **Étendre sans forker** : contraintes de schéma déclaratives (`@unique` / `@@check` / partielles) + routes HTTP personnalisées servies par des plugins (`/ext/<plugin>`)
+- 🔌 **Actions & Workers** : déclarez des lifecycle actions dans votre schéma (`on.created`, `on.updated`) avec conditions — Atomo distribue automatiquement des jobs durables aux workers TypeScript externes
+- 🧩 **Étendre sans forker** : contraintes de schéma déclaratives (`@unique` / `@@check` / partielles) + API directe d'actions (`POST /api/actions/:name`)
 - 📊 **Collaboration en temps réel** : Synchronisation des données en temps réel pilotée par WebSocket
 
 ## 🚀 Démarrage rapide
@@ -125,9 +125,9 @@ graph TD
     D --> E[Requête]
 
     B --> F[Bus d'événements]
-    F --> G[Processeur d'IA]
-    F --> H[Service de notification]
-    F --> I[Plugins WASM]
+    F --> G[Action Dispatcher]
+    G --> H[File de Jobs]
+    H --> I[Workers Externes]
 ```
 
 ### Stack technique
@@ -266,8 +266,8 @@ Pour la feuille de route détaillée et l'avancement actuel, voir docs/roadmap.m
 - [x] Limitation de débit, traçage des requêtes
 
 ### Phase 2 : Montée en intelligence (en grande partie terminée)
-- [x] Système de plugins WASM (sandbox, permissions, hooks de cycle de vie) + plugins de script JS (Javy)
-- [x] Extensibilité sans fork : contraintes de schéma déclaratives (`@unique`/`@index`/`@@check`, y compris partielles avec `WHERE`) + routes HTTP personnalisées servies par des plugins (`/ext/<plugin>`)
+- [x] Actions & workers : lifecycle event bindings (`ModelEvents`), action dispatcher, API directe d'actions, Worker SDK (`@atomo-cc/worker-sdk`)
+- [x] Extensibilité sans fork : contraintes de schéma déclaratives (`@unique`/`@index`/`@@check`, y compris partielles avec `WHERE`)
 - [x] Projections de lecture CQRS (vues matérialisées pilotées par événements ; suppressions/corrections numériques voir B2)
 - [x] Cache de lecture (TTL + invalidation par événement)
 - [x] Téléversement/stockage de fichiers (champ `File`, multipart, validation du type de contenu + reniflage des magic bytes, event-sourced ; backend local ✅, backend S3 derrière la feature `storage-s3` ; voir docs/guide/advanced/upload-storage-plan)

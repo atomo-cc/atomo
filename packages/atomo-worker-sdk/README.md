@@ -52,6 +52,29 @@ process.on("SIGTERM", () => worker.stop());
 - **Capability-scoped.** The worker token only lets you lease the queues it was minted for; leasing
   any other queue is rejected by the server.
 
+## Handling Lifecycle Actions
+
+When a schema declares lifecycle event bindings (e.g. `on.created: [processPost]`), the server's
+**action dispatcher** enqueues jobs on the `"actions"` queue with `kind` set to the action name.
+Register handlers by action name:
+
+```ts
+const worker = createWorker({
+  url: "http://localhost:3000",
+  token: process.env.ATOMO_WORKER_TOKEN!,
+  queues: ["actions"],
+});
+
+worker.on("processPost", async ({ job }) => {
+  const { input, model, event } = job.payload as any;
+  // input contains the fields declared in ActionDef.input (e.g. { id, title })
+  // model is the source model name, event is "created"/"updated"/"deleted"
+  await callExternalApi(input);
+});
+
+worker.start();
+```
+
 ## API
 
 - `createWorker(options)` → `Worker` with `.on(kind, handler)`, `.start()`, `.stop()`.

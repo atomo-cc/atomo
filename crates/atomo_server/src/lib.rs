@@ -8,6 +8,8 @@
 #![allow(dead_code)]
 #![allow(clippy::too_many_arguments, clippy::match_like_matches_macro)]
 
+pub mod action_dispatcher;
+pub mod action_routes;
 pub mod aggregate;
 pub mod audit;
 pub mod auth;

@@ -8,7 +8,7 @@ Atomo is a **Content Core** - not just a CMS, but the "Arc Reactor" that powers 
 
 - 🏗️ **Event-sourced backend** generated from TypeScript schemas (CRUD, GraphQL, audit, projections)
 - 🔐 **Auth + RBAC + multi-tenant scoping** enforced from your schema's access rules
-- 🧩 **WASM + JavaScript plugin system** with permission-gated capabilities
+- 🧩 **Actions & Workers** — declare lifecycle actions in your schema; Atomo dispatches durable jobs to external TypeScript workers
 - 🤝 *Planned:* real-time collaboration (CRDT) and local-first offline sync — see the [roadmap](/roadmap)
 
 ## Prerequisites
@@ -247,7 +247,7 @@ Now that you have a running application, explore these features:
 
 - 📝 **[Custom Content Types](/guide/tutorials/content-types)** - Rich, block-based content
 - 🤝 **[Real-time Collaboration](/guide/collaboration)** - Multi-user editing
-- 🧩 **[Plugin Development](/guide/tutorials/plugin-dev)** - Extend with WASM
+- 🧩 **[Actions & Workers](/guide/advanced/jobs-and-workers)** - Extend with external workers
 - 🚀 **[Deployment](/guide/tutorials/deployment)** - Go to production
 
 ## Need Help?

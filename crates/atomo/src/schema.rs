@@ -8,7 +8,9 @@ use std::collections::HashMap;
 
 // Re-export from atomo_schema for compatibility
 pub use atomo_schema::{
-    Field, FieldAttribute, FieldType, Model, ModelConstraint, Schema, TypeScriptParser,
+    ActionCondition, ActionDef, ActionInputDef, ActionInputField, ActionReturn,
+    EventActionBinding, Field, FieldAttribute, FieldType, Model, ModelConstraint, ModelEvents,
+    Schema, TypeScriptParser,
 };
 
 /// Parse a TypeScript schema string into a Schema object
@@ -24,6 +26,7 @@ pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
 
     Ok(Schema {
         models: schema_models,
+        actions: HashMap::new(),
     })
 }
 
@@ -301,6 +304,7 @@ mod tests {
             table_name: Some(table.to_string()),
             relationships: rels.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
             constraints: Vec::new(),
+            events: Default::default(),
         }
     }
 
@@ -331,7 +335,7 @@ mod tests {
         let mut models = HashMap::new();
         models.insert("Contact".into(), contact);
         models.insert("Deal".into(), deal);
-        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
         // Every table gets soft-delete + tenant columns.
         assert!(
@@ -390,7 +394,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
-        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
         // @unique -> column UNIQUE constraint.
         assert!(
@@ -426,7 +430,7 @@ mod tests {
         ];
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
-        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
         // Composite unique -> UNIQUE INDEX (the idempotency key).
         assert!(

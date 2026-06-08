@@ -8,7 +8,7 @@
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo Content Core is an open-source, self-hostable **event-sourced backend** for content-driven apps. Define your data model in a TypeScript `schema.ts` and Atomo gives you a **GraphQL API**, **authentication + RBAC**, **realtime**, and a generated **admin UI** — extensible with **WASM/JS plugins** and deployable with **Docker** (no Rust toolchain required). Think of it as a self-hosted **Firebase/Supabase alternative** that runs on your own Postgres.
+Atomo Content Core is an open-source, self-hostable **event-sourced backend** for content-driven apps. Define your data model in a TypeScript `schema.ts` and Atomo gives you a **GraphQL API**, **authentication + RBAC**, **realtime**, and a generated **admin UI** — extensible with **actions and external workers** and deployable with **Docker** (no Rust toolchain required). Think of it as a self-hosted **Firebase/Supabase alternative** that runs on your own Postgres.
 
 ## ✨ Core Features
 
@@ -17,8 +17,8 @@ Atomo Content Core is an open-source, self-hostable **event-sourced backend** fo
 - 🎯 **Flagship-App-Driven**: Platform evolution driven by a real CRM application
 - 🔧 **Dual-Mode Definition**: TypeScript schema + Rust code generation
 - 🪶 **Lean & honest**: a ~10 MB self-hostable binary — most apps are read-heavy, and Atomo serves hot reads from cache (~30× a bare query), with event sourcing, durable jobs, and a typed schema-driven backend built in, at a modest (Postgres-`fsync`-bound) write cost. See the [benchmarks](docs/guide/advanced/benchmarks.md) — including an honest co-located head-to-head vs `node-postgres`.
-- 🔌 **Pluggable Architecture**: WASM plugin system with multi-language extension support
-- 🧩 **Extend Without Forking**: declarable schema constraints (`@unique` / `@@check` / partial) + plugin-served custom HTTP routes (`/ext/<plugin>`)
+- 🔌 **Actions & Workers**: declare lifecycle actions in your schema (`on.created`, `on.updated`) with conditions — Atomo dispatches durable jobs to external TypeScript workers automatically
+- 🧩 **Extend Without Forking**: declarable schema constraints (`@unique` / `@@check` / partial) + direct action API (`POST /api/actions/:name`)
 - 📊 **Realtime Collaboration**: WebSocket-driven realtime data sync
 
 ## 📍 Status
@@ -27,9 +27,9 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
 
 - **Solid today:** schema-driven **GraphQL API** (CRUD, relations, pagination,
   filtering), **auth** (Argon2id, JWT, RBAC, OAuth/OIDC), **event-sourced** writes +
-  audit, **declarable schema constraints**, **plugin-served custom HTTP routes** (incl.
-  atomic transactional routes), **WASM/JS plugins**, **realtime channels**, **file
-  storage**, and a generated **admin UI** — all self-hostable via Docker.
+  audit, **declarable schema constraints**, **actions & external workers** (lifecycle
+  event bindings + durable job queue + TypeScript Worker SDK), **realtime channels**,
+  **file storage**, and a generated **admin UI** — all self-hostable via Docker.
 - **Solid today (cont.):** opt-in **multi-tenant Row-Level Security** (`ATOMO_ENABLE_RLS`) —
   DB-enforced tenant isolation as defense-in-depth on top of the app-layer `tenant_id` scoping.
 - **Early / in progress:** AI + pgvector workflows (needs a pgvector env), some admin
@@ -106,7 +106,8 @@ atomo/
 │   └── atomo_control_plane/  # 🛰️  Multi-project control plane (registry, provisioner, gateway)
 ├── packages/                  # Frontend packages
 │   ├── atomo-client-sdk/     # 📚 Client SDK
-│   └── atomo-admin-ui/       # 🎛️  Admin interface
+│   ├── atomo-worker-sdk/     # ⚙️  Worker SDK (lease/heartbeat/complete loop)
+│   ├── atomo-admin-ui/       # 🎛️  Admin interface
 │   └── atomo-crm-app/        # 💼 CRM flagship app
 ├── templates/                 # 📋 Project templates
 │   ├── crm/                  # CRM template
@@ -129,9 +130,9 @@ graph TD
     D --> E[Query]
 
     B --> F[Event Bus]
-    F --> G[AI Processor]
-    F --> H[Notification Service]
-    F --> I[WASM Plugins]
+    F --> G[Action Dispatcher]
+    G --> H[Job Queue]
+    H --> I[External Workers]
 ```
 
 ### Tech Stack
@@ -270,8 +271,8 @@ For the detailed roadmap and current progress see docs/roadmap.md; for the platf
 - [x] Rate limiting, request tracing
 
 ### Phase 2: Intelligence Upgrade (mostly done)
-- [x] WASM plugin system (sandbox, permissions, lifecycle hooks) + JS script plugins (Javy)
-- [x] Extend-without-forking seams: declarable schema constraints (`@unique`/`@index`/`@@check`, incl. partial `WHERE`) + plugin-served custom HTTP routes (`/ext/<plugin>`)
+- [x] Actions & workers: lifecycle event bindings (`ModelEvents`), action dispatcher, direct action API, Worker SDK (`@atomo-cc/worker-sdk`)
+- [x] Extend-without-forking seams: declarable schema constraints (`@unique`/`@index`/`@@check`, incl. partial `WHERE`)
 - [x] CQRS read projections (event-driven materialized views; deletes/numeric corrections see B2)
 - [x] Read cache (TTL + event invalidation)
 - [x] File upload/storage (`File` field, multipart, content-type validation + magic-byte sniffing, event-sourced; local backend ✅, S3 backend behind the `storage-s3` feature; see docs/guide/advanced/upload-storage-plan)

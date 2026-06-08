@@ -39,6 +39,7 @@ impl SchemaParser {
 
         Ok(Schema {
             models: schema_models,
+            actions: HashMap::new(),
         })
     }
 
