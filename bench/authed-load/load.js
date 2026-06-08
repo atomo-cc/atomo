@@ -143,11 +143,7 @@ export default function (data) {
 
 // --- Read (find_many, limit 20) -------------------------------------------
 function doRead(token) {
-  const q = `{
-    records(model: "BenchNote", limit: 20) {
-      id title body
-    }
-  }`;
+  const q = `{ records(model: "BenchNote", limit: 20) }`;
   const res = gql(token, q);
   readLatency.add(res.timings.duration);
   checkGql(res, "read");
