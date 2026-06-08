@@ -331,7 +331,7 @@ async fn crm_schema_drives_the_platform() {
         "deleted deal in trash"
     );
     let restored = c
-        .restore_many("Deal", &[eq("id", json!(deal_id))])
+        .restore_many("Deal", &[eq("id", json!(deal_id))], None)
         .await
         .expect("restore");
     assert_eq!(restored, 1, "one deal restored");

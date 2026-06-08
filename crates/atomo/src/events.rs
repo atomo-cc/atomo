@@ -15,6 +15,8 @@ pub enum EventType {
     Created,
     Updated,
     Deleted,
+    Restored,
+    HardDeleted,
     /// Emitted by a plugin (not a CRUD mutation).
     Custom,
 }
@@ -55,9 +57,15 @@ impl SubscriptionBuilder {
         self
     }
 
-    /// Subscribe to all events
+    /// Subscribe to all lifecycle events
     pub fn on_all(mut self) -> Self {
-        self.event_types = vec![EventType::Created, EventType::Updated, EventType::Deleted];
+        self.event_types = vec![
+            EventType::Created,
+            EventType::Updated,
+            EventType::Deleted,
+            EventType::Restored,
+            EventType::HardDeleted,
+        ];
         self
     }
 

@@ -174,6 +174,7 @@ impl SqlBuilder {
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
+        sql.push_str(" RETURNING id");
         (sql, params)
     }
 
@@ -197,6 +198,7 @@ impl SqlBuilder {
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
+        sql.push_str(" RETURNING id");
         (sql, params)
     }
 

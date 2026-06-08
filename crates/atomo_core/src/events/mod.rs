@@ -73,8 +73,12 @@ pub enum EventType {
     Created,
     /// Entity update events
     Updated,
-    /// Entity deletion events
+    /// Entity deletion events (soft delete)
     Deleted,
+    /// Soft-deleted entity restored
+    Restored,
+    /// Entity permanently removed
+    HardDeleted,
     /// Entity state transition events
     StateChanged,
     /// Integration events from external systems
@@ -88,7 +92,11 @@ impl EventType {
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
             self,
-            EventType::Created | EventType::Updated | EventType::Deleted
+            EventType::Created
+                | EventType::Updated
+                | EventType::Deleted
+                | EventType::Restored
+                | EventType::HardDeleted
         )
     }
 

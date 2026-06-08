@@ -412,7 +412,7 @@ async fn test_restore_and_hard_delete() {
     // Restore -> visible again
     assert_eq!(
         client
-            .restore_many("TestUser", &where_clauses)
+            .restore_many("TestUser", &where_clauses, None)
             .await
             .unwrap(),
         1
@@ -435,7 +435,7 @@ async fn test_restore_and_hard_delete() {
     // Hard delete -> gone permanently (count of affected rows == 1)
     assert_eq!(
         client
-            .hard_delete_many("TestUser", &where_clauses)
+            .hard_delete_many("TestUser", &where_clauses, None)
             .await
             .unwrap(),
         1
@@ -448,7 +448,7 @@ async fn test_restore_and_hard_delete() {
     // A second restore affects 0 rows (the row no longer exists)
     assert_eq!(
         client
-            .restore_many("TestUser", &where_clauses)
+            .restore_many("TestUser", &where_clauses, None)
             .await
             .unwrap(),
         0
