@@ -100,6 +100,7 @@ export default defineConfig({
             { text: 'Proposal: Custom HTTP Routes', link: '/guide/advanced/custom-routes-proposal' },
             { text: 'Design: Custom Routes Phase 3', link: '/guide/advanced/custom-routes-phase3-design' },
             { text: 'Design: Multi-Project Platform', link: '/guide/advanced/multi-project-design' },
+            { text: 'Design: External Workers & Blob Storage', link: '/guide/advanced/workers-and-blobs-design' },
             { text: 'Proposal: Schema Constraints', link: '/guide/advanced/schema-constraints-proposal' },
             { text: 'Plan: CRM Conformance Suite', link: '/guide/advanced/crm-conformance-plan' }
           ]
