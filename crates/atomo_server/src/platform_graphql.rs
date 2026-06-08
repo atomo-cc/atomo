@@ -3,7 +3,7 @@
 //! This module provides the concrete implementations of platform functionality
 //! (users, sessions, audit logs) with actual database queries.
 
-use async_graphql::{Context, Error as GraphQLError, FieldResult, Object};
+use async_graphql::{Context, Error as GraphQLError, FieldResult, Json, Object};
 use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::{PgPool, Row};
@@ -516,6 +516,50 @@ impl PlatformMutation {
             .update_user(id, email, first_name, last_name, role, is_active)
             .await
             .map_err(|e| GraphQLError::new(e.to_string()))
+    }
+
+    /// Enqueue a durable job for an external worker. Requires an authenticated user; the job is
+    /// stamped with the request's tenant (from `x-tenant-id`, when scoped). Returns the job id.
+    /// Idempotent when `idempotencyKey` is given. See the [Jobs API](/api/jobs).
+    #[allow(clippy::too_many_arguments)]
+    async fn enqueue_job(
+        &self,
+        ctx: &Context<'_>,
+        queue: String,
+        kind: String,
+        payload: Option<Json<serde_json::Value>>,
+        idempotency_key: Option<String>,
+        max_attempts: Option<i32>,
+        priority: Option<i32>,
+    ) -> FieldResult<String> {
+        // Reaching a resolver does not by itself imply auth; require the user-id context the
+        // GraphQL handler injects only for authenticated requests.
+        if ctx.data_opt::<atomo::graphql::UserIdCtx>().is_none() {
+            return Err(GraphQLError::new("authentication required"));
+        }
+        if queue.is_empty() || kind.is_empty() {
+            return Err(GraphQLError::new("queue and kind are required"));
+        }
+        let jobs = ctx
+            .data::<std::sync::Arc<crate::jobs::JobStore>>()
+            .map_err(|_| GraphQLError::new("job queue unavailable"))?;
+        let tenant = ctx
+            .data_opt::<atomo::graphql::TenantCtx>()
+            .map(|t| t.0.clone());
+        let payload = payload
+            .map(|p| p.0)
+            .unwrap_or_else(|| serde_json::json!({}));
+        jobs.enqueue(
+            &queue,
+            &kind,
+            payload,
+            idempotency_key.as_deref(),
+            max_attempts.unwrap_or(5).clamp(1, 1000),
+            priority.unwrap_or(0),
+            tenant.as_deref(),
+        )
+        .await
+        .map_err(|e| GraphQLError::new(e.to_string()))
     }
 }
 

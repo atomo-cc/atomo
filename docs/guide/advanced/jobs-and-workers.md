@@ -50,7 +50,7 @@ immediately become `401`.
 
 ## 2. Enqueue work
 
-Three ways, all idempotent when you pass an `idempotencyKey`:
+Four ways, all idempotent when you pass an `idempotencyKey`:
 
 **From an app/UI (HTTP).** Any authenticated user; the job is stamped with the caller's tenant.
 
@@ -59,6 +59,13 @@ curl -X POST http://localhost:3000/jobs \
   -H "authorization: Bearer $JWT" -H 'content-type: application/json' \
   -d '{"queue":"media-gen","kind":"video.generate","payload":{"prompt":"a calm sea"}}'
 # → 201 { "id": "..." }
+```
+
+**From GraphQL.** The `enqueueJob` mutation (requires an authenticated request; stamps the request's
+tenant). Returns the job id:
+
+```graphql
+mutation { enqueueJob(queue: "media-gen", kind: "video.generate") }
 ```
 
 **From a workflow (no code).** Add a `Job` step — the new job id lands in the workflow context as

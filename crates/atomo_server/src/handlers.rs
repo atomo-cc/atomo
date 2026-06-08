@@ -95,9 +95,16 @@ pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
     let query = Query(service_query, platform_query);
     let mutation = Mutation(service_mutation, platform_mutation);
 
+    // Job queue handle for the `enqueueJob` mutation (shares the pool + event stream).
+    let job_store = std::sync::Arc::new(crate::jobs::JobStore::new(
+        atomo.db_pool().clone(),
+        atomo.event_sender(),
+    ));
+
     let mut builder = GraphQLSchema::build(query, mutation, subscription)
         .data(client)
-        .data(pool);
+        .data(pool)
+        .data(job_store);
 
     // Apply GraphQL limits from env (with safe defaults)
     let max_depth: Option<usize> = std::env::var("GRAPHQL_MAX_DEPTH")

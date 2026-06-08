@@ -42,7 +42,9 @@ Requires an authenticated user; the job is stamped with the caller's tenant. Ide
 // 201 → { "id": "01J…" }
 ```
 
-`400` if `queue`/`kind` is blank; `401` without auth.
+`400` if `queue`/`kind` is blank; `401` without auth. The same enqueue is available over GraphQL —
+`mutation { enqueueJob(queue, kind, payload?, idempotencyKey?, maxAttempts?, priority?) }` — and a
+workflow `Job` step ([Workflows API](/api/workflows)).
 
 ### `GET /jobs/{id}` — poll status
 

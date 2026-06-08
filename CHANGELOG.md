@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelines). A thrown error fails the job (server applies retry/backoff); `NonRetryableError`
   dead-letters. 9 unit tests (vitest) cover the per-job lifecycle and the `/jobs` client. Not yet
   published to npm (publish pipeline deferred).
+- **GraphQL `enqueueJob` mutation** — enqueue a durable job from GraphQL
+  (`enqueueJob(queue, kind, payload?, idempotencyKey?, maxAttempts?, priority?)` → job id). Requires
+  an authenticated request and stamps the request's tenant. Backed by a `JobStore` registered in the
+  schema context. Postgres-tested (`jobs_graphql`: auth required, enqueue, tenant stamping).
 - **Live job progress over realtime** — `POST /jobs/{id}/progress` (worker token) extends the lease
   and publishes an **ephemeral** update (`{ jobId, percent, message, data }`) to the realtime channel
   `job:{id}` — *not* written to the event log. A UI subscribes to that channel over `/realtime/ws`
