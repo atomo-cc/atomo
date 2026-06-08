@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use serde_json::Value;
-use sqlx::{postgres::PgArguments, Arguments, Column, PgPool, Row, TypeInfo};
+use sqlx::{postgres::PgArguments, postgres::PgPoolOptions, Arguments, Column, PgPool, Row, TypeInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -73,6 +73,18 @@ async fn bind_tenant_local(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Build a connection pool sized by `DATABASE_POOL_MAX` (default 20).
+async fn pool_from_env(url: &str) -> Result<PgPool> {
+    let max = std::env::var("DATABASE_POOL_MAX")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20u32);
+    Ok(PgPoolOptions::new()
+        .max_connections(max)
+        .connect(url)
+        .await?)
 }
 
 /// Core Atomo client that handles all database operations
@@ -179,7 +191,7 @@ impl AtomoClient {
             .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string());
 
         println!("Connecting to database: {}", database_url);
-        let pool = PgPool::connect(&database_url).await?;
+        let pool = pool_from_env(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
 
         // Auto-create tables
@@ -1133,7 +1145,7 @@ impl AtomoClientBuilder {
         });
 
         println!("Connecting to database: {}", database_url);
-        let pool = PgPool::connect(&database_url).await?;
+        let pool = pool_from_env(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
         let event_store = EventStore::new(pool.clone());
         event_store.init().await?;
