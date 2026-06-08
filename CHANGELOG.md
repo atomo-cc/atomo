@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`restore_many` and `hard_delete_many` now emit events (event-sourcing integrity).**
+  Both previously ran a bare SQL statement with no event creation — restores and hard deletes
+  were invisible to the event log, audit trail, broadcast subscribers, and projections. They now
+  follow the same transactional pattern as `delete_many`: fetch affected ids via `RETURNING id`,
+  build `Restored`/`HardDeleted` events, persist in the same transaction, broadcast, and
+  invalidate cache. New `EventType::Restored` and `EventType::HardDeleted` variants added to
+  both `atomo::events` and `atomo_core::events`.
 - **Bulk writes no longer hit Postgres' bind-param limit.** The batch event write
   (`EventStore::persist_many_in`, used by `create_many` / `update_many` / `delete_many`) built a
   single multi-row INSERT with 6 params/event, so a bulk op affecting **> ~10,922 rows** exceeded the
@@ -20,9 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Both previously ran the `UPDATE` and then `persist`ed each event as a *separate* autocommit
   (1 + N `fsync`s) with the event write `.ok()`-swallowed — the same pattern fixed in `create`. They
   now commit the write and all events together via `EventStore::persist_many_in` (one `fsync`), and
-  event failures propagate, so an update/delete is never recorded without its events. (`restore_many`
-  / `hard_delete_many` are single statements and currently emit **no** events — unchanged here; the
-  missing events are a separate event-sourcing follow-up, not a perf issue.)
+  event failures propagate, so an update/delete is never recorded without its events.
 - **Per-request completion log moved to `DEBUG` (was `INFO`) — ~45% more HTTP throughput by default.**
   Emitting a formatted log line for *every* request cost ~45% of request throughput in the benchmarks
   (~17 k → ~30 k req/s). Default deployments no longer pay it; boot/error logs stay at INFO+ and the

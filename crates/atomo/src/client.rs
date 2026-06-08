@@ -678,6 +678,7 @@ impl AtomoClient {
         &self,
         model_name: &str,
         where_clauses: &[WhereClause],
+        actor: Option<&str>,
     ) -> Result<usize> {
         let model = self
             .schema
@@ -686,9 +687,42 @@ impl AtomoClient {
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let (sql, params) = SqlBuilder::restore(model, where_clauses);
         let args = build_args(&params)?;
-        let affected = self.execute_scoped(&sql, args).await?;
+
+        let mut tx = self.pool.begin().await?;
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                bind_tenant_local(&mut tx, &tid).await?;
+            }
+        }
+        let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
+        let count = rows.len();
+        let events: Vec<ModelEvent> = rows
+            .iter()
+            .map(|row| {
+                let record = row_to_map(row);
+                let mut data = HashMap::new();
+                if let Some(id) = record.get("id") {
+                    data.insert("id".to_string(), id.clone());
+                }
+                ModelEvent {
+                    event_type: EventType::Restored,
+                    model_name: model_name.to_string(),
+                    data,
+                    previous_data: None,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    actor: actor.map(|s| s.to_string()),
+                }
+            })
+            .collect();
+        self.event_store.persist_many_in(&mut tx, &events).await?;
+        tx.commit().await?;
+
+        for event in &events {
+            let _ = self.event_sender.send(event.clone());
+        }
         self.cache.invalidate_model(model_name).await;
-        Ok(affected as usize)
+        Ok(count)
     }
 
     /// Permanently delete records (hard delete - row is removed). Returns affected count.
@@ -696,6 +730,7 @@ impl AtomoClient {
         &self,
         model_name: &str,
         where_clauses: &[WhereClause],
+        actor: Option<&str>,
     ) -> Result<usize> {
         let model = self
             .schema
@@ -704,9 +739,42 @@ impl AtomoClient {
             .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
         let (sql, params) = SqlBuilder::delete(model, where_clauses);
         let args = build_args(&params)?;
-        let affected = self.execute_scoped(&sql, args).await?;
+
+        let mut tx = self.pool.begin().await?;
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                bind_tenant_local(&mut tx, &tid).await?;
+            }
+        }
+        let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
+        let count = rows.len();
+        let events: Vec<ModelEvent> = rows
+            .iter()
+            .map(|row| {
+                let record = row_to_map(row);
+                let mut data = HashMap::new();
+                if let Some(id) = record.get("id") {
+                    data.insert("id".to_string(), id.clone());
+                }
+                ModelEvent {
+                    event_type: EventType::HardDeleted,
+                    model_name: model_name.to_string(),
+                    data,
+                    previous_data: None,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    actor: actor.map(|s| s.to_string()),
+                }
+            })
+            .collect();
+        self.event_store.persist_many_in(&mut tx, &events).await?;
+        tx.commit().await?;
+
+        for event in &events {
+            let _ = self.event_sender.send(event.clone());
+        }
         self.cache.invalidate_model(model_name).await;
-        Ok(affected as usize)
+        Ok(count)
     }
 
     /// Count records matching where clauses
