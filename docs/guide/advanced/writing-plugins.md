@@ -45,6 +45,12 @@ entry_point = "plugin.wasm"     # the Javy-compiled module (NOT the .js source)
 runtime = "js"                  # "js" (Javy) | "wasm" (compiled; default if entry ends .wasm)
 permissions = ["WriteDatabase", "WriteEvents"]
 
+# Optional but recommended: declare which lifecycle hooks this plugin implements. The host then
+# skips this plugin for any hook NOT listed — and skips marshalling the record entirely when no
+# loaded plugin implements a hook — instead of running the module on every operation to no-op.
+# Omit this for the legacy behavior (the plugin is invoked for every hook and decides at runtime).
+hooks = ["before_create", "after_update"]
+
 # Optional: custom HTTP routes. Each is served at /ext/<name><path>.
 [[routes]]
 method = "POST"

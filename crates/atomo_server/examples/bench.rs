@@ -106,6 +106,24 @@ async fn main() {
     }
     rows.push(("data layer: create (insert + event)".to_string(), stats(t)));
 
+    // create_many: a 100-row batch commits in ONE transaction (one fsync for the batch). Reported
+    // as per-row latency so it compares directly to single `create` above.
+    let batch_size = 100usize;
+    let batches = (iters / batch_size).max(1);
+    let mut t = Vec::with_capacity(batches);
+    for b in 0..batches {
+        let batch: Vec<_> = (0..batch_size)
+            .map(|i| rec(&format!("b{b}-{i}")))
+            .collect();
+        let s = Instant::now();
+        client.create_many("Note", &batch, Some("bench")).await.unwrap();
+        t.push(s.elapsed() / batch_size as u32); // per-row
+    }
+    rows.push((
+        format!("data layer: create_many (per row, batch={batch_size})"),
+        stats(t),
+    ));
+
     let mut t = Vec::with_capacity(iters);
     for _ in 0..iters {
         let s = Instant::now();

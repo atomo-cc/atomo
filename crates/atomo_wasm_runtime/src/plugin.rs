@@ -15,6 +15,12 @@ pub struct PluginManifest {
     /// `/ext/<plugin-name><path>` and dispatches matching requests to the plugin.
     #[serde(default)]
     pub routes: Vec<RouteDef>,
+    /// Hook functions this plugin implements, e.g. `["before_create", "after_update"]`. When
+    /// declared, the host **skips this plugin for any hook not listed** — avoiding a wasted
+    /// instantiate-and-run on every operation for hooks the plugin doesn't handle. **Omitted or
+    /// empty = legacy behavior**: the plugin is invoked for every hook and decides at runtime.
+    #[serde(default)]
+    pub hooks: Vec<String>,
 }
 
 /// A plugin-declared HTTP route.

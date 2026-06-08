@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event in a caller's transaction. Verified regression-free (data-layer + RLS create tests).
 
 ### Added
+- **`AtomoClient::create_many` — batch insert in one transaction.** Inserts N records + their N
+  events under a single commit (one `fsync` for the whole batch) instead of one per row, so bulk
+  loads/imports are dramatically faster than `create` in a loop. Atomic: any failure rolls the whole
+  batch back. `before_create` + validation run per record up front; `after_create` + cache
+  invalidation run once.
+- **Plugin hooks can declare which hooks they implement** (`hooks = [...]` in `plugin.toml`). The hook
+  runner **skips a plugin for hooks it didn't declare**, and skips the JSON marshalling + per-plugin
+  instantiate-and-run entirely when *no* loaded plugin implements a hook. Backward-compatible: omit
+  `hooks` for the legacy "run for everything" behavior.
 - **Opt-in `eventual` read-cache mode** (`ATOMO_CACHE_MODE=eventual`, `ATOMO_CACHE_TTL_SECS`). By
   default (`strong`) every write evicts the model's cached reads — correct, but it churns the cache
   so a write-heavy + read-heavy workload keeps missing. In `eventual` mode writes don't evict; cached

@@ -391,6 +391,104 @@ impl AtomoClient {
         Ok(record)
     }
 
+    /// Insert many records in **one transaction** — one `fsync` for the whole batch instead of one
+    /// per row. For bulk loads (imports, seeding) this is dramatically faster than calling
+    /// [`create`](Self::create) in a loop, where each call pays its own commit. The batch is
+    /// **atomic**: if any row fails (validation, constraint), the whole transaction rolls back and
+    /// nothing is persisted. `before_create` hooks + validation run per record *before* the
+    /// transaction (so an early reject costs no DB work); `after_create` + cache invalidation run
+    /// once after commit.
+    pub async fn create_many(
+        &self,
+        model_name: &str,
+        records: &[HashMap<String, Value>],
+        actor: Option<&str>,
+    ) -> Result<Vec<HashMap<String, Value>>> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Model '{}' not found", model_name))?;
+        if records.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Per-record before_create hook + validation, up front (no DB work if any rejects).
+        let mut prepared = Vec::with_capacity(records.len());
+        for data in records {
+            let hook_ctx = crate::hooks::HookContext {
+                model_name: model_name.to_string(),
+                operation: "create".to_string(),
+                data: data.clone(),
+                user_id: None,
+            };
+            let data = match self
+                .hook_runner
+                .run_before("before_create", &hook_ctx)
+                .await?
+            {
+                crate::hooks::HookResult::Continue(d) => d,
+                crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
+            };
+            if !model.validation.is_empty() {
+                let errors = crate::validation::validate(&data, &model.validation);
+                if let Some(e) = errors.first() {
+                    return Err(anyhow::anyhow!("validation failed: {}", e.message));
+                }
+            }
+            prepared.push(data);
+        }
+
+        // One transaction: every row insert + its event commit together — a single fsync.
+        let mut tx = self.pool.begin().await?;
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                bind_tenant_local(&mut tx, &tid).await?;
+            }
+        }
+        let mut records_out = Vec::with_capacity(prepared.len());
+        let mut events = Vec::with_capacity(prepared.len());
+        for data in &prepared {
+            let (sql, params) = SqlBuilder::insert(model, data);
+            let args = build_args(&params)?;
+            let row = sqlx::query_with(&sql, args).fetch_one(&mut *tx).await?;
+            let record = row_to_map(&row);
+            let event = ModelEvent {
+                event_type: EventType::Created,
+                model_name: model_name.to_string(),
+                data: record.clone(),
+                previous_data: None,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                event_id: uuid::Uuid::new_v4().to_string(),
+                actor: actor.map(|s| s.to_string()),
+            };
+            self.event_store.persist_in(&mut *tx, &event).await?;
+            events.push(event);
+            records_out.push(record);
+        }
+        tx.commit().await?;
+
+        // Post-commit: fan-out + after-hooks + a single cache invalidation for the whole batch.
+        for event in &events {
+            let _ = self.event_sender.send(event.clone());
+        }
+        for record in &records_out {
+            let after_ctx = crate::hooks::HookContext {
+                model_name: model_name.to_string(),
+                operation: "create".to_string(),
+                data: record.clone(),
+                user_id: None,
+            };
+            self.hook_runner
+                .run_after("after_create", &after_ctx)
+                .await
+                .ok();
+        }
+        self.cache.invalidate_model(model_name).await;
+
+        Ok(records_out)
+    }
+
     /// Update many records. **System/trusted API — does NOT enforce RBAC.** For request-handling
     /// use [`update_many_checked`](Self::update_many_checked).
     pub async fn update_many(
