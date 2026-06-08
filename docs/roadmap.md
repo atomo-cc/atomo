@@ -35,6 +35,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 > CRM Conformance Suite (`/guide/advanced/crm-conformance-plan`), which fixed 8 silent gaps and
 > 2 security holes. 🟡 marks capabilities that work in part with documented follow-ups.
 - Observability: ✅ structured tracing with request ID propagation
+- Benchmarks: 🟡 reproducible in-process engine harness (`examples/bench`) — data layer, job-lease engine (`SKIP LOCKED` scaling), JS/Javy hook tax, footprint; results recorded. Full-stack HTTP load test + a fair Node baseline still TODO. See `/guide/advanced/benchmarks`
 - Validation: ✅ rules parsed from schema.ts and enforced (required, email, min, max, numeric)
 - Soft deletes: ✅ full lifecycle — delete / restore / hardDelete / trash (deletedRecords) with query filtering
 - Audit: ✅ mutations auto-logged with the acting user; admin/manager-gated audit REST
@@ -124,7 +125,9 @@ This page is the single source of truth for delivery status and upcoming milesto
 
 ## Success Metrics & Quality Gates
 - Tests: > 85% coverage overall; 100% on critical paths
-- Performance: 3–5× faster than common Node.js stacks on core paths
+- Performance (**target, not yet measured against a Node baseline**): 3–5× faster than common
+  Node.js stacks on core paths. Engine-level numbers we *do* measure live in
+  [Benchmarks](/guide/advanced/benchmarks); a fair head-to-head Node baseline is a follow-up.
 - Security: independent security audit
 - Reliability: ≥ 99.9% service availability
 - Community: GitHub traction and template adoption

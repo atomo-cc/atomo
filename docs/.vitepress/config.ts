@@ -93,6 +93,7 @@ export default defineConfig({
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },
             { text: 'Performance Tuning', link: '/guide/advanced/performance' },
+            { text: 'Benchmarks', link: '/guide/advanced/benchmarks' },
             { text: 'Writing Plugins', link: '/guide/advanced/writing-plugins' },
             { text: 'Proposal: Scripting Plugins', link: '/guide/advanced/scripting-plugins-proposal' },
             { text: 'Proposal: Plugin Marketplace', link: '/guide/advanced/plugin-marketplace-proposal' },

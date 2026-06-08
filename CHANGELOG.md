@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Engine benchmark harness + results** (`crates/atomo_server/examples/bench.rs`,
+  `docs/guide/advanced/benchmarks.md`). Reproducible, release-only, in-process micro-benchmarks for
+  the data layer (create / find_many), the durable **job lease engine** (1 vs 8 concurrent workers —
+  shows `SKIP LOCKED` scaling), and the **plugin hook tax** (a JS/Javy `before_create` through the
+  real hook path — the per-operation cost for migrators evaluating custom logic in the sandbox), plus
+  the release binary footprint. Honest scope (engine-level, excludes HTTP/GraphQL; DB-locality caveats
+  documented). The roadmap's "3–5× faster than Node" line is now explicitly marked a **target** until
+  a fair Node baseline is measured.
+
 ## [0.4.0] - 2026-06-08
 
 > **External workers + blob storage.** Atomo can now own side-effect-heavy workloads (external API
