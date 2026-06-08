@@ -23,11 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event in a caller's transaction. Verified regression-free (data-layer + RLS create tests).
 
 ### Added
-- **`AtomoClient::create_many` — batch insert in one transaction.** Inserts N records + their N
-  events under a single commit (one `fsync` for the whole batch) instead of one per row — **~10×
-  faster per row** for bulk loads (measured: ~407 µs/row vs ~4.1 ms for single `create`, co-located).
-  Atomic: any failure rolls the whole batch back. `before_create` + validation run per record up
-  front; `after_create` + cache invalidation run once.
+- **`AtomoClient::create_many` — batch insert in one transaction.** Inserts a batch via **two
+  multi-row `INSERT`s** (the rows, then their events) in a single transaction — one round trip each +
+  one `fsync` for the whole batch, instead of 2N statements and N fsyncs. Bulk loads/imports are
+  dramatically faster than `create` in a loop (see [Benchmarks](docs/guide/advanced/benchmarks.md)).
+  A homogeneous batch (records share the same keys) takes the multi-row path; a mixed-shape batch
+  falls back to per-row inserts *in the same transaction* (still one `fsync`). Atomic: any failure
+  rolls the whole batch back. `before_create` + validation run per record up front; `after_create` +
+  cache invalidation run once.
 - **Plugin hooks can declare which hooks they implement** (`hooks = [...]` in `plugin.toml`). The hook
   runner **skips a plugin for hooks it didn't declare**, and skips the JSON marshalling + per-plugin
   instantiate-and-run entirely when *no* loaded plugin implements a hook. Backward-compatible: omit

@@ -439,21 +439,34 @@ impl AtomoClient {
             prepared.push(data);
         }
 
-        // One transaction: every row insert + its event commit together — a single fsync.
+        // One transaction for the whole batch — a single fsync.
         let mut tx = self.pool.begin().await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
             }
         }
-        let mut records_out = Vec::with_capacity(prepared.len());
-        let mut events = Vec::with_capacity(prepared.len());
-        for data in &prepared {
-            let (sql, params) = SqlBuilder::insert(model, data);
-            let args = build_args(&params)?;
-            let row = sqlx::query_with(&sql, args).fetch_one(&mut *tx).await?;
-            let record = row_to_map(&row);
-            let event = ModelEvent {
+        // Rows: one multi-row INSERT for a homogeneous batch (one round trip), else per-row in the
+        // same transaction. RETURNING preserves VALUES order, so records line up with `prepared`.
+        let records_out: Vec<HashMap<String, Value>> =
+            if let Some((sql, params)) = SqlBuilder::insert_many(model, &prepared) {
+                let args = build_args(&params)?;
+                let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
+                rows.iter().map(row_to_map).collect()
+            } else {
+                let mut out = Vec::with_capacity(prepared.len());
+                for data in &prepared {
+                    let (sql, params) = SqlBuilder::insert(model, data);
+                    let args = build_args(&params)?;
+                    let row = sqlx::query_with(&sql, args).fetch_one(&mut *tx).await?;
+                    out.push(row_to_map(&row));
+                }
+                out
+            };
+        // Events: one multi-row INSERT into event_log for the whole batch.
+        let events: Vec<ModelEvent> = records_out
+            .iter()
+            .map(|record| ModelEvent {
                 event_type: EventType::Created,
                 model_name: model_name.to_string(),
                 data: record.clone(),
@@ -461,11 +474,9 @@ impl AtomoClient {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
                 actor: actor.map(|s| s.to_string()),
-            };
-            self.event_store.persist_in(&mut *tx, &event).await?;
-            events.push(event);
-            records_out.push(record);
-        }
+            })
+            .collect();
+        self.event_store.persist_many_in(&mut *tx, &events).await?;
         tx.commit().await?;
 
         // Post-commit: fan-out + after-hooks + a single cache invalidation for the whole batch.
