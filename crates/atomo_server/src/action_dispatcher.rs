@@ -85,6 +85,12 @@ fn matching_bindings<'a>(
     let matched: Vec<&EventActionBinding> = candidates
         .iter()
         .filter(|b| {
+            // Loop prevention: if the event was caused by this action, skip it.
+            if let Some(ref origin) = ev.origin {
+                if origin == &b.action {
+                    return false;
+                }
+            }
             b.condition.as_ref().map_or(true, |cond| {
                 cond.matches(&ev.data, ev.previous_data.as_ref())
             })
@@ -107,6 +113,7 @@ fn build_job_payload(
         "input": input,
         "actor": ev.actor,
         "timestamp": ev.timestamp,
+        "origin": ev.origin,
     })
 }
 
@@ -189,6 +196,7 @@ mod tests {
             timestamp: "2026-01-01T00:00:00Z".into(),
             event_id: "evt1".into(),
             actor: None,
+            origin: None,
         };
         let bindings = matching_bindings(&schema, &ev).unwrap();
         assert_eq!(bindings.len(), 1);
@@ -216,6 +224,7 @@ mod tests {
             timestamp: "2026-01-01T00:00:00Z".into(),
             event_id: "evt2".into(),
             actor: None,
+            origin: None,
         };
         let bindings = matching_bindings(&schema, &ev).unwrap();
         assert_eq!(bindings.len(), 1);
@@ -245,6 +254,7 @@ mod tests {
             timestamp: "2026-01-01T00:00:00Z".into(),
             event_id: "evt3".into(),
             actor: None,
+            origin: None,
         };
         let bindings = matching_bindings(&schema, &ev).unwrap();
         assert_eq!(bindings.len(), 0);
@@ -261,6 +271,7 @@ mod tests {
             timestamp: "2026-01-01T00:00:00Z".into(),
             event_id: "evt4".into(),
             actor: None,
+            origin: None,
         };
         assert!(matching_bindings(&schema, &ev).is_none());
     }
@@ -279,6 +290,7 @@ mod tests {
             timestamp: "2026-01-01T00:00:00Z".into(),
             event_id: "evt5".into(),
             actor: Some("user1".into()),
+            origin: None,
         };
         let mut input = HashMap::new();
         input.insert("id".into(), json!("p1"));
@@ -290,5 +302,55 @@ mod tests {
         assert_eq!(payload["eventId"], "evt5");
         assert_eq!(payload["input"]["id"], "p1");
         assert_eq!(payload["actor"], "user1");
+    }
+
+    #[test]
+    fn origin_suppresses_same_action() {
+        let schema = test_schema();
+        let ev = ModelEvent {
+            event_type: EventType::Created,
+            model_name: "Post".into(),
+            data: {
+                let mut d = HashMap::new();
+                d.insert("id".into(), json!("p1"));
+                d.insert("title".into(), json!("Hello"));
+                d
+            },
+            previous_data: None,
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            event_id: "evt-origin".into(),
+            actor: None,
+            origin: Some("processPost".into()),
+        };
+        let bindings = matching_bindings(&schema, &ev).unwrap();
+        assert_eq!(bindings.len(), 0, "processPost should be suppressed by origin");
+    }
+
+    #[test]
+    fn origin_allows_different_action() {
+        let schema = test_schema();
+        let ev = ModelEvent {
+            event_type: EventType::Updated,
+            model_name: "Post".into(),
+            data: {
+                let mut d = HashMap::new();
+                d.insert("id".into(), json!("p1"));
+                d.insert("status".into(), json!("published"));
+                d
+            },
+            previous_data: Some({
+                let mut d = HashMap::new();
+                d.insert("id".into(), json!("p1"));
+                d.insert("status".into(), json!("draft"));
+                d
+            }),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            event_id: "evt-origin2".into(),
+            actor: None,
+            origin: Some("processPost".into()),
+        };
+        let bindings = matching_bindings(&schema, &ev).unwrap();
+        assert_eq!(bindings.len(), 1, "onStatusChange should still fire");
+        assert_eq!(bindings[0].action, "onStatusChange");
     }
 }

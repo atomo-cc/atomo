@@ -329,6 +329,8 @@ struct MintReq {
     name: String,
     #[serde(default)]
     queues: Vec<String>,
+    #[serde(default)]
+    capabilities: Vec<String>,
 }
 
 async fn mint_worker(
@@ -339,11 +341,13 @@ async fn mint_worker(
     if let Some(resp) = require_admin(user) {
         return resp;
     }
-    match workers.mint(&req.name, &req.queues).await {
-        // The plaintext token is returned ONCE — it is not recoverable later.
+    match workers.mint(&req.name, &req.queues, &req.capabilities).await {
         Ok((id, token)) => (
             StatusCode::CREATED,
-            Json(json!({ "id": id, "token": token, "queues": req.queues })),
+            Json(json!({
+                "id": id, "token": token,
+                "queues": req.queues, "capabilities": req.capabilities,
+            })),
         )
             .into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -376,6 +380,7 @@ async fn list_workers(
                         "id": t.id,
                         "name": t.name,
                         "queues": t.queues,
+                        "capabilities": t.capabilities,
                         "isRevoked": t.is_revoked,
                         "createdAt": t.created_at.to_rfc3339(),
                     })

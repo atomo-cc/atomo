@@ -428,6 +428,12 @@ impl AtomoServer {
             job_store.clone(),
         );
 
+        let crud_router = crate::crud_routes::crud_router(
+            std::sync::Arc::new(self.atomo.client().clone()),
+            self.atomo.schema().clone(),
+            worker_tokens.clone(),
+        );
+
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
             .merge(crate::projector_routes::projector_router(
@@ -438,7 +444,8 @@ impl AtomoServer {
             ))
             .merge(media_router)
             .merge(jobs_router)
-            .merge(action_router);
+            .merge(action_router)
+            .merge(crud_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }

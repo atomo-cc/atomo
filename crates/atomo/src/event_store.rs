@@ -207,6 +207,7 @@ impl From<EventRow> for ModelEvent {
             timestamp: row.timestamp,
             event_id: row.event_id,
             actor: row.actor,
+            origin: None,
         }
     }
 }

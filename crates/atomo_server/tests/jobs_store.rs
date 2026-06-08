@@ -28,7 +28,7 @@ async fn worker_token_mint_verify_revoke() {
     let queue = format!("media-{}", uuid::Uuid::new_v4());
 
     let (id, token) = s
-        .mint("media-worker", std::slice::from_ref(&queue))
+        .mint("media-worker", std::slice::from_ref(&queue), &[])
         .await
         .unwrap();
     assert!(token.starts_with("wkr_"));

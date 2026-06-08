@@ -10,6 +10,7 @@
 
 pub mod action_dispatcher;
 pub mod action_routes;
+pub mod crud_routes;
 pub mod aggregate;
 pub mod audit;
 pub mod auth;

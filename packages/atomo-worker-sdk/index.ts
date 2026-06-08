@@ -45,6 +45,8 @@ export interface JobContext {
   heartbeat(): Promise<void>;
   /** Publish a live progress update (ephemeral — fans out over realtime, not persisted). */
   progress(update: ProgressUpdate): Promise<void>;
+  /** CRUD client scoped to the job's actor (role/tenant from the event that triggered the job). */
+  crud: CrudClient;
 }
 
 export type JobHandler = (ctx: JobContext) => Promise<unknown> | unknown;
@@ -138,6 +140,123 @@ export class JobsClient {
   }
 }
 
+// ── CRUD Client ──────────────────────────────────────────────────────────────
+
+export interface ActorSnapshot {
+  userId?: string;
+  role?: string;
+  tenantId?: string;
+}
+
+/** Thrown by `CrudClient` on non-OK responses. */
+export class CrudError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: string,
+  ) {
+    super(`CRUD ${status}: ${body}`);
+    this.name = "CrudError";
+  }
+}
+
+export interface CrudOptions {
+  /** The action that caused this mutation. The server uses it for loop prevention:
+   *  the action dispatcher won't re-enqueue the same action for events it caused. */
+  origin?: string;
+}
+
+/** REST client for `/api/worker/crud/:model` — available as `ctx.crud` in handlers. */
+export class CrudClient {
+  constructor(
+    private readonly url: string,
+    private readonly token: string,
+    private readonly fetchImpl: typeof globalThis.fetch,
+    private readonly actor?: ActorSnapshot,
+  ) {}
+
+  private headers(): Record<string, string> {
+    return { "content-type": "application/json", "x-worker-token": this.token };
+  }
+
+  async create(
+    model: string,
+    data: Record<string, unknown>,
+    opts?: CrudOptions,
+  ): Promise<Record<string, unknown>> {
+    const res = await this.fetchImpl(`${this.url}/api/worker/crud/${model}`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ data, actor: this.actor, origin: opts?.origin }),
+    });
+    if (!res.ok) throw new CrudError(res.status, await res.text());
+    return (await res.json()) as Record<string, unknown>;
+  }
+
+  async findById(model: string, id: string): Promise<Record<string, unknown> | null> {
+    const params = this.actor ? `?actor=${encodeURIComponent(JSON.stringify(this.actor))}` : "";
+    const res = await this.fetchImpl(`${this.url}/api/worker/crud/${model}/${id}${params}`, {
+      headers: this.headers(),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new CrudError(res.status, await res.text());
+    return (await res.json()) as Record<string, unknown>;
+  }
+
+  async update(
+    model: string,
+    id: string,
+    data: Record<string, unknown>,
+    opts?: CrudOptions,
+  ): Promise<Record<string, unknown>> {
+    const res = await this.fetchImpl(`${this.url}/api/worker/crud/${model}/${id}`, {
+      method: "PATCH",
+      headers: this.headers(),
+      body: JSON.stringify({ data, actor: this.actor, origin: opts?.origin }),
+    });
+    if (!res.ok) throw new CrudError(res.status, await res.text());
+    return (await res.json()) as Record<string, unknown>;
+  }
+
+  async delete(model: string, id: string, opts?: CrudOptions): Promise<void> {
+    const res = await this.fetchImpl(`${this.url}/api/worker/crud/${model}/${id}`, {
+      method: "DELETE",
+      headers: this.headers(),
+      body: JSON.stringify({ actor: this.actor, origin: opts?.origin }),
+    });
+    if (!res.ok) throw new CrudError(res.status, await res.text());
+  }
+
+  async findMany(
+    model: string,
+    opts?: { where?: unknown; limit?: number; offset?: number },
+  ): Promise<Record<string, unknown>[]> {
+    const qs = new URLSearchParams();
+    if (opts?.where) qs.set("where", JSON.stringify(opts.where));
+    if (opts?.limit != null) qs.set("limit", String(opts.limit));
+    if (opts?.offset != null) qs.set("offset", String(opts.offset));
+    if (this.actor) qs.set("actor", JSON.stringify(this.actor));
+    const q = qs.toString() ? `?${qs}` : "";
+    const res = await this.fetchImpl(`${this.url}/api/worker/crud/${model}${q}`, {
+      headers: this.headers(),
+    });
+    if (!res.ok) throw new CrudError(res.status, await res.text());
+    return (await res.json()) as Record<string, unknown>[];
+  }
+}
+
+/** Extract an ActorSnapshot from a job payload (as written by the action dispatcher). */
+function actorFromPayload(payload: unknown): ActorSnapshot | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const p = payload as Record<string, unknown>;
+  const actor = typeof p.actor === "string" ? p.actor : undefined;
+  const tenantId = typeof p.tenantId === "string" ? p.tenantId : undefined;
+  const role = typeof p.role === "string" ? p.role : undefined;
+  if (!actor && !tenantId && !role) return undefined;
+  return { userId: actor, tenantId, role };
+}
+
+// ── handleJob ────────────────────────────────────────────────────────────────
+
 /** Minimal surface `handleJob` needs — lets tests pass a fake client. */
 export type JobLifecycle = Pick<JobsClient, "heartbeat" | "complete" | "fail" | "progress">;
 
@@ -150,7 +269,7 @@ export async function handleJob(
   client: JobLifecycle,
   job: LeasedJob,
   handler: JobHandler | undefined,
-  opts: { visibilitySecs: number; heartbeatSecs: number },
+  opts: { visibilitySecs: number; heartbeatSecs: number; crud: CrudClient },
 ): Promise<void> {
   if (!handler) {
     await client.fail(job.id, job.leaseId, `no handler for kind '${job.kind}'`, false);
@@ -174,7 +293,13 @@ export async function handleJob(
   };
 
   try {
-    const result = await handler({ job, signal: controller.signal, heartbeat: beat, progress });
+    const result = await handler({
+      job,
+      signal: controller.signal,
+      heartbeat: beat,
+      progress,
+      crud: opts.crud,
+    });
     await client.complete(job.id, job.leaseId, result ?? null);
   } catch (err) {
     const retryable = !(err instanceof NonRetryableError);
@@ -226,7 +351,13 @@ export function createWorker(opts: WorkerOptions): Worker {
       }
       for (const job of jobs) {
         inFlight++;
-        const p = handleJob(client, job, handlers.get(job.kind), { visibilitySecs, heartbeatSecs })
+        const actor = actorFromPayload(job.payload);
+        const crud = new CrudClient(opts.url, opts.token, fetchImpl, actor);
+        const p = handleJob(client, job, handlers.get(job.kind), {
+          visibilitySecs,
+          heartbeatSecs,
+          crud,
+        })
           .catch(onError)
           .finally(() => {
             inFlight--;

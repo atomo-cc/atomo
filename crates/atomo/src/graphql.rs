@@ -76,7 +76,7 @@ struct PaginatedRecords {
     page_info: PageInfo,
 }
 
-fn parse_where(where_json: &Value) -> Vec<WhereClause> {
+pub fn parse_where(where_json: &Value) -> Vec<WhereClause> {
     let mut clauses = Vec::new();
     if let Value::Object(map) = where_json {
         for (field, condition) in map {
