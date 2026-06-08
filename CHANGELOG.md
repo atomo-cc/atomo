@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conditional GETs (`If-None-Match`) return `304`. This makes `video`/`audio` seekable/scrubbable.
   S3-backed reads continue to 302-redirect to a presigned URL, which serves Range natively.
 
+- **Media content checksum + dedup** — every upload now records a sha256 `checksum` (returned in the
+  `POST /media` response). Identical content for the **same tenant** dedups to the existing media id
+  (nothing re-stored) — re-uploading the same reference image is free. Tenant-scoped (no cross-tenant
+  sharing), ignores soft-deleted rows; `media.checksum` self-heals on boot for pre-existing DBs.
+  Tested (`media_http_dedups_identical_content_per_tenant`).
+
 ### Fixed
 - **Platform-table column drift self-heals on boot.** `ensure_platform_tables` now idempotently adds
   `sessions.is_revoked` (alongside the existing `users.tenant_id` patch) for databases created before

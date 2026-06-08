@@ -41,6 +41,13 @@ async fn seed_user_token(
     auth.issue_tokens(&id, &email, "admin").await.unwrap().0
 }
 
+async fn json_body(resp: axum::response::Response) -> serde_json::Value {
+    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
 fn multipart(filename: &str, content_type: &str, data: &[u8]) -> (String, Body) {
     let b = "BOUNDARYtest123";
     let mut buf = Vec::new();
@@ -118,10 +125,13 @@ async fn media_http_full_lifecycle_and_security() {
         "content/type mismatch blocked"
     );
 
-    // 3. valid upload -> 200 {id,url}
+    // 3. valid upload -> 200 {id,url}. Unique PNG (valid signature + random tail) so
+    // content-addressed dedup never reuses a prior run's media (bytes in a deleted temp dir).
+    let mut png = PNG.to_vec();
+    png.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
     let r = app
         .clone()
-        .oneshot(upload_req(Some(&token), "image/png", PNG))
+        .oneshot(upload_req(Some(&token), "image/png", &png))
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
@@ -152,7 +162,7 @@ async fn media_http_full_lifecycle_and_security() {
     let served = axum::body::to_bytes(r.into_body(), 1_000_000)
         .await
         .unwrap();
-    assert_eq!(served.as_ref(), PNG);
+    assert_eq!(served.as_ref(), png.as_slice());
 
     // 5. delete without auth -> 401
     let r = app
@@ -256,11 +266,15 @@ async fn media_http_supports_range_requests() {
     state.init().await.unwrap();
     let app = media_router(state, auth);
 
-    // Upload a known 26-byte payload as octet-stream (no magic-byte constraint).
-    const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    // A 26-byte payload: fixed ends ("ABCDEF…XYZ") for the range asserts, unique middle so
+    // content-addressed dedup never reuses another run's media (whose bytes live in a temp dir).
+    let mut data = b"ABCDEF".to_vec();
+    data.extend_from_slice(&uuid::Uuid::new_v4().simple().to_string().as_bytes()[..17]);
+    data.extend_from_slice(b"XYZ");
+    assert_eq!(data.len(), 26);
     let r = app
         .clone()
-        .oneshot(upload_req(Some(&token), "application/octet-stream", ABC))
+        .oneshot(upload_req(Some(&token), "application/octet-stream", &data))
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
@@ -386,10 +400,13 @@ async fn media_http_private_reads_are_tenant_scoped() {
     let app = media_router(state, auth);
     std::env::remove_var("STORAGE_PRIVATE_READS");
 
-    // upload as tenant t1
+    // upload as tenant t1 — unique PNG (valid signature + random tail) so dedup doesn't reuse a
+    // prior run's media whose bytes live in a now-deleted temp dir.
+    let mut png = PNG.to_vec();
+    png.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
     let r = app
         .clone()
-        .oneshot(upload_req(Some(&t1), "image/png", PNG))
+        .oneshot(upload_req(Some(&t1), "image/png", &png))
         .await
         .unwrap();
     assert_eq!(r.status(), StatusCode::OK);
@@ -421,6 +438,62 @@ async fn media_http_private_reads_are_tenant_scoped() {
     assert_eq!(
         app.oneshot(get(Some(&t1))).await.unwrap().status(),
         StatusCode::OK
+    );
+
+    tokio::fs::remove_dir_all(&dir).await.ok();
+}
+
+#[tokio::test]
+#[ignore]
+async fn media_http_dedups_identical_content_per_tenant() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let t1 = seed_user_token(&pool, &auth, Some("dt1")).await;
+    let t2 = seed_user_token(&pool, &auth, Some("dt2")).await;
+    let dir = std::env::temp_dir().join(format!("atomo-media-dedup-{}", uuid::Uuid::new_v4()));
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
+    state.init().await.unwrap();
+    let app = media_router(state, auth);
+
+    // Unique bytes per run so the dedup is about *these* bytes, not leftovers.
+    let data = format!("identical-bytes-{}", uuid::Uuid::new_v4()).into_bytes();
+    let up = |token: &str, bytes: &[u8]| {
+        app.clone()
+            .oneshot(upload_req(Some(token), "application/octet-stream", bytes))
+    };
+    let id_of = |v: &serde_json::Value| v["id"].as_str().unwrap().to_string();
+
+    // First upload returns an id + a 64-hex checksum.
+    let r = up(&t1, &data).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let b1 = json_body(r).await;
+    let id1 = id_of(&b1);
+    let checksum = b1["checksum"].as_str().unwrap();
+    assert_eq!(checksum.len(), 64);
+    assert!(checksum.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // Same tenant + identical bytes → deduped to the same id (nothing re-stored).
+    let r = up(&t1, &data).await.unwrap();
+    let id2 = id_of(&json_body(r).await);
+    assert_eq!(id1, id2, "identical content for one tenant dedups");
+
+    // A different tenant uploading the same bytes gets its OWN media (no cross-tenant sharing).
+    let r = up(&t2, &data).await.unwrap();
+    let id3 = id_of(&json_body(r).await);
+    assert_ne!(id1, id3, "dedup must be tenant-scoped");
+
+    // Different bytes → a new id even for the same tenant.
+    let other = format!("other-bytes-{}", uuid::Uuid::new_v4()).into_bytes();
+    let r = up(&t1, &other).await.unwrap();
+    assert_ne!(
+        id1,
+        id_of(&json_body(r).await),
+        "different content is a new media"
     );
 
     tokio::fs::remove_dir_all(&dir).await.ok();

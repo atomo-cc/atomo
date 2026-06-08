@@ -20,11 +20,13 @@ async fn upload_read_delete_roundtrip_and_events() {
     ));
     state.init().await.unwrap();
 
-    // upload
-    let id = state
-        .store_upload("photo.png", "image/png", b"PNGDATA", "user-1", Some("t1"))
+    // upload — unique bytes per run so content-addressed dedup never reuses a stale row.
+    let data = format!("PNGDATA-{}", uuid::Uuid::new_v4()).into_bytes();
+    let (id, checksum) = state
+        .store_upload("photo.png", "image/png", &data, "user-1", Some("t1"))
         .await
         .unwrap();
+    assert_eq!(checksum.len(), 64, "sha256 content checksum returned");
 
     // a Media Created event was emitted (auto-audited by the boot listener in the running server)
     let ev = rx.recv().await.unwrap();
@@ -33,7 +35,7 @@ async fn upload_read_delete_roundtrip_and_events() {
 
     // read back
     let (bytes, ct, tenant) = state.read(&id).await.unwrap().unwrap();
-    assert_eq!(bytes, b"PNGDATA");
+    assert_eq!(bytes, data);
     assert_eq!(ct, "image/png");
     assert_eq!(tenant.as_deref(), Some("t1"));
 

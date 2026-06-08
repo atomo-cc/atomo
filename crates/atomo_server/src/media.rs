@@ -67,6 +67,7 @@ impl MediaState {
                 content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
                 size BIGINT NOT NULL DEFAULT 0,
                 storage_key TEXT NOT NULL,
+                checksum TEXT,
                 uploaded_by TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 deleted_at TIMESTAMPTZ
@@ -74,11 +75,27 @@ impl MediaState {
         )
         .execute(&self.pool)
         .await?;
+        // Pre-existing databases: add the content checksum column (idempotent).
+        sqlx::query("ALTER TABLE media ADD COLUMN IF NOT EXISTS checksum TEXT")
+            .execute(&self.pool)
+            .await?;
+        // Fast content-addressed dedup lookup (per tenant), live rows only.
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS media_checksum
+             ON media (tenant_id, checksum) WHERE deleted_at IS NULL",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    /// Store bytes + metadata + emit a `Media` Created event. Returns the new media id.
-    /// Validation (size, content-type) is the caller's responsibility (done in the handler).
+    /// Store bytes + metadata + emit a `Media` Created event. Returns `(id, checksum)`.
+    ///
+    /// **Content-addressed dedup:** the sha256 of the bytes is recorded as `checksum`. If a live
+    /// media with the same `(tenant, checksum)` already exists, its id is returned and nothing new
+    /// is stored — identical re-uploads (e.g. the same reference image) cost nothing. Dedup is
+    /// tenant-scoped, so it never shares bytes across tenants. Validation (size, content-type) is
+    /// the caller's responsibility (done in the handler).
     pub async fn store_upload(
         &self,
         filename: &str,
@@ -86,7 +103,24 @@ impl MediaState {
         bytes: &[u8],
         user_id: &str,
         tenant_id: Option<&str>,
-    ) -> Result<String> {
+    ) -> Result<(String, String)> {
+        let checksum = sha256_hex(bytes);
+
+        // Dedup: return an existing live media with the same content for this tenant.
+        // `IS NOT DISTINCT FROM` makes the tenant comparison NULL-safe (public uploads dedup too).
+        if let Some(row) = sqlx::query(
+            "SELECT id FROM media
+             WHERE checksum = $1 AND tenant_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
+             LIMIT 1",
+        )
+        .bind(&checksum)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await?
+        {
+            return Ok((row.get::<String, _>("id"), checksum));
+        }
+
         let id = uuid::Uuid::new_v4().to_string();
         let tenant = tenant_id.unwrap_or("public");
         let ext = std::path::Path::new(filename)
@@ -106,8 +140,8 @@ impl MediaState {
         );
         self.storage.put(&key, bytes).await?;
         let insert = sqlx::query(
-            "INSERT INTO media (id, tenant_id, filename, content_type, size, storage_key, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO media (id, tenant_id, filename, content_type, size, storage_key, checksum, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(&id)
         .bind(tenant_id)
@@ -115,6 +149,7 @@ impl MediaState {
         .bind(content_type)
         .bind(bytes.len() as i64)
         .bind(&key)
+        .bind(&checksum)
         .bind(user_id)
         .execute(&self.pool)
         .await;
@@ -126,7 +161,7 @@ impl MediaState {
         extra.insert("contentType".to_string(), json!(content_type));
         extra.insert("size".to_string(), json!(bytes.len()));
         self.emit(EventType::Created, &id, user_id, extra);
-        Ok(id)
+        Ok((id, checksum))
     }
 
     /// Look up a non-deleted media's storage key + content type + tenant (no bytes).
@@ -221,6 +256,17 @@ impl MediaState {
             actor: Some(actor.to_string()),
         });
     }
+}
+
+/// Lowercase hex SHA-256 of the bytes — the content checksum used for dedup + integrity.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
 }
 
 /// Content types we will store + serve. Excludes inline-XSS-risky types (svg, html).
@@ -326,13 +372,14 @@ async fn upload(
         )
         .await
     {
-        Ok(id) => (
+        Ok((id, checksum)) => (
             StatusCode::OK,
             Json(json!({
                 "id": id,
                 "url": format!("/media/{}", id),
                 "contentType": content_type,
                 "size": bytes.len(),
+                "checksum": checksum,
             })),
         )
             .into_response(),

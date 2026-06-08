@@ -431,8 +431,11 @@ per media app remains the rational default.
 ### Phase 1 — Blob store extensions (mostly done)
 - **Done:** `local`+`s3` backends, `POST /media` (multipart), `GET /media/{id}` with **Range**
   support + `ETag`/conditional GET, soft-delete, GC.
-- **Remaining:** content checksum column (strong content-addressed ETag), optional `namespace`.
-- **Deliverable:** media upload/serve/stream on a single host — already useful today.
+- **Done — content checksum + dedup:** every upload records a sha256 `media.checksum`; identical
+  content for the same tenant dedups to the existing media id (tenant-scoped, ignores soft-deletes).
+  Tested (`media_http_dedups_identical_content_per_tenant`).
+- **Remaining:** optional `namespace`.
+- **Deliverable:** media upload/serve/stream/dedup on a single host — already useful today.
 
 ### Phase 2 — Durable jobs + lease API ✅ (done)
 - **Lease engine** (`atomo_server::jobs::JobStore`): event-sourced job lifecycle (`Job` events) +
@@ -472,9 +475,9 @@ per media app remains the rational default.
 - **Remaining:** Rust worker crate.
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
-### Phase 4 — Presigned upload + dedup (S3 backend already shipped)
-- `s3`/R2 backend + presigned/302 **GET** already exist. Add presigned **PUT** (worker → S3 direct,
-  then commit metadata) + optional sha256 content-addressing & dedup.
+### Phase 4 — Presigned upload (S3 backend + dedup already shipped)
+- `s3`/R2 backend + presigned/302 **GET** and **sha256 content-addressed dedup** already exist.
+  Remaining: presigned **PUT** (worker → S3 direct, then commit metadata).
 - **Deliverable:** large-media pipelines that never stream bytes through the server.
 
 ### Phase 5 — Operability & optional extensions (build on real need)

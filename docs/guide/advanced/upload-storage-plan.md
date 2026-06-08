@@ -156,6 +156,11 @@ fast-follows.
   proxy path: single-range `206` with `Content-Range`, `416` for unsatisfiable ranges, `Accept-Ranges`
   on every response, and a strong `ETag` (immutable media id) enabling `If-None-Match` → `304`. This
   makes `video`/`audio` seekable. Tested by `media_http_supports_range_requests` + `range_parsing_covers_rfc_cases`.
+- **Content checksum + dedup** — ✅ every upload records a sha256 `checksum` (returned in the upload
+  response). Identical content for the **same tenant** dedups to the existing media id — nothing is
+  re-stored (e.g. re-uploading the same reference image is free). Dedup is tenant-scoped (never
+  shares bytes across tenants) and ignores soft-deleted rows. Tested by
+  `media_http_dedups_identical_content_per_tenant`.
 
 ## Verifying the S3 backend locally (MinIO)
 
