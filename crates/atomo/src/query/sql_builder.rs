@@ -86,6 +86,58 @@ impl SqlBuilder {
         (sql, params)
     }
 
+    /// Build a **multi-row** INSERT for a homogeneous batch — one statement, one round trip.
+    /// Returns `None` (caller falls back to per-row inserts) when the batch is empty, has no
+    /// columns, the records have differing key sets, or the batch would exceed Postgres' bind-param
+    /// limit. Columns absent from every record get their DB default uniformly (`id`, `created_at`),
+    /// because the homogeneity check guarantees the column set is identical across rows.
+    pub fn insert_many(
+        model: &Model,
+        records: &[HashMap<String, Value>],
+    ) -> Option<(String, Vec<Value>)> {
+        let first = records.first()?;
+        // Fixed, deterministic column order shared by every row (HashMap order is not stable).
+        let mut cols: Vec<String> = first.keys().cloned().collect();
+        cols.sort();
+        let ncols = cols.len();
+        if ncols == 0 {
+            return None;
+        }
+        // Homogeneity: every record must have exactly these keys.
+        for r in records {
+            if r.len() != ncols || !cols.iter().all(|c| r.contains_key(c)) {
+                return None;
+            }
+        }
+        // Stay well under Postgres' 65535 bind-param ceiling; fall back to per-row beyond that.
+        if records.len().saturating_mul(ncols) > 60_000 {
+            return None;
+        }
+
+        let mut params = Vec::with_capacity(records.len() * ncols);
+        let mut tuples = Vec::with_capacity(records.len());
+        for (ri, r) in records.iter().enumerate() {
+            let mut ph = Vec::with_capacity(ncols);
+            for (ci, col) in cols.iter().enumerate() {
+                ph.push(format!("${}", ri * ncols + ci + 1));
+                params.push(r.get(col).cloned().unwrap_or(Value::Null));
+            }
+            tuples.push(format!("({})", ph.join(", ")));
+        }
+        let column_sql = cols
+            .iter()
+            .map(|c| to_snake_case(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES {} RETURNING *",
+            table_name(model),
+            column_sql,
+            tuples.join(", ")
+        );
+        Some((sql, params))
+    }
+
     /// Build UPDATE query. Returns (sql, params)
     pub fn update(
         model: &Model,
@@ -327,6 +379,33 @@ mod tests {
     fn table_name_honors_explicit_else_pluralizes() {
         assert_eq!(table_name(&model("Contact", Some("contact"))), "contact");
         assert_eq!(table_name(&model("Contact", None)), "contacts");
+    }
+
+    #[test]
+    fn insert_many_builds_one_multi_row_insert_for_homogeneous_batch() {
+        let m = model("Note", Some("notes"));
+        let mk = |t: &str, b: &str| {
+            let mut h = std::collections::HashMap::new();
+            h.insert("title".to_string(), json!(t));
+            h.insert("body".to_string(), json!(b));
+            h
+        };
+        let (sql, params) =
+            SqlBuilder::insert_many(&m, &[mk("a", "x"), mk("b", "y")]).expect("homogeneous → Some");
+        // Columns sorted for determinism; one statement with two value tuples.
+        assert_eq!(
+            sql,
+            "INSERT INTO notes (body, title) VALUES ($1, $2), ($3, $4) RETURNING *"
+        );
+        assert_eq!(params, vec![json!("x"), json!("a"), json!("y"), json!("b")]);
+
+        // Differing key sets → None (caller falls back to per-row).
+        let mut odd = std::collections::HashMap::new();
+        odd.insert("title".to_string(), json!("c"));
+        assert!(SqlBuilder::insert_many(&m, &[mk("a", "x"), odd]).is_none());
+
+        // Empty batch → None.
+        assert!(SqlBuilder::insert_many(&m, &[]).is_none());
     }
 
     #[test]

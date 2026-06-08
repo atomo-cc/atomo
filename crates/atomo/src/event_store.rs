@@ -66,6 +66,52 @@ impl EventStore {
         Ok(())
     }
 
+    /// Persist many events in a single **multi-row** INSERT on a caller-supplied executor (the
+    /// batch's transaction) — one statement instead of N. Used by `create_many`.
+    pub async fn persist_many_in<'e, E>(&self, executor: E, events: &[ModelEvent]) -> Result<()>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let tuples: Vec<String> = (0..events.len())
+            .map(|i| {
+                let b = i * 6;
+                format!(
+                    "(${},${},${},${},${},${})",
+                    b + 1,
+                    b + 2,
+                    b + 3,
+                    b + 4,
+                    b + 5,
+                    b + 6
+                )
+            })
+            .collect();
+        let sql = format!(
+            "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, timestamp) \
+             VALUES {} ON CONFLICT (event_id) DO NOTHING",
+            tuples.join(", ")
+        );
+        let mut q = sqlx::query(&sql);
+        for e in events {
+            q = q
+                .bind(e.event_id.clone())
+                .bind(format!("{:?}", e.event_type))
+                .bind(e.model_name.clone())
+                .bind(serde_json::to_value(&e.data)?)
+                .bind(
+                    e.previous_data
+                        .as_ref()
+                        .and_then(|d| serde_json::to_value(d).ok()),
+                )
+                .bind(e.timestamp.clone());
+        }
+        q.execute(executor).await?;
+        Ok(())
+    }
+
     /// Replay events for a model, optionally from a given timestamp
     pub async fn replay(&self, model_name: &str, since: Option<&str>) -> Result<Vec<ModelEvent>> {
         let rows = if let Some(ts) = since {
