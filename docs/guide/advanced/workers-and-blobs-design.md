@@ -450,11 +450,14 @@ per media app remains the rational default.
   reclaim/retry) and `jobs_http` (end-to-end lease/complete + 401/403 enforcement).
 
 ### Phase 3 — Worker SDK + enqueue seams (in progress)
+- **Done — TS worker SDK** (`@atomo-cc/worker-sdk`, `packages/atomo-worker-sdk`): `createWorker` +
+  per-`kind` handlers; the SDK owns the lease/heartbeat/complete/fail loop, concurrency, and
+  auto-heartbeat. A thrown error fails the job (server retries); `NonRetryableError` dead-letters.
+  vitest-tested; not yet npm-published.
 - **Done — REST enqueue seam:** `POST /jobs` (any authenticated user; the job is stamped with the
   caller's tenant), so apps can put work on the queue over HTTP today (`jobs_http` covers it).
-- **Remaining:** TS worker SDK (lease/heartbeat/ack/retry built in) + Rust worker crate; richer
-  enqueue seams (GraphQL `enqueueJob` mutation, workflow `Job` step, plugin `enqueueJob` effect);
-  `JobProgress` → realtime hub fan-out (live admin/client progress).
+- **Remaining:** Rust worker crate; richer enqueue seams (GraphQL `enqueueJob` mutation, workflow
+  `Job` step, plugin `enqueueJob` effect); `JobProgress` → realtime hub fan-out (live progress).
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
 ### Phase 4 — Presigned upload + dedup (S3 backend already shipped)

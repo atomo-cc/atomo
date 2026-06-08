@@ -20,9 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   user; the job is stamped with the caller's tenant). Admins mint tokens via `POST /jobs/workers`
   (Admin role). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent disjoint
   dispatch, reclaim, retry→dead; `jobs_http`: end-to-end enqueue→lease→complete + 401/403/409
-  enforcement). The worker SDK and richer enqueue seams (GraphQL mutation / workflow step / plugin
-  effect) are the next slice. See
-  [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
+  enforcement). Richer enqueue seams (GraphQL mutation / workflow step / plugin effect) are the next
+  slice. See [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
+- **TypeScript worker SDK** (`@atomo-cc/worker-sdk`, `packages/atomo-worker-sdk`). Write a handler
+  per job `kind`; the SDK owns the `lease → heartbeat → complete/fail` loop, concurrency, and
+  auto-heartbeat, so worker code only does the actual work (provider APIs, browser automation, media
+  pipelines). A thrown error fails the job (server applies retry/backoff); `NonRetryableError`
+  dead-letters. 9 unit tests (vitest) cover the per-job lifecycle and the `/jobs` client. Not yet
+  published to npm (publish pipeline deferred).
 - **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
   single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable
   ranges), advertises `Accept-Ranges: bytes`, and emits a strong `ETag` (the immutable media id) so
