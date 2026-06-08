@@ -465,7 +465,11 @@ per media app remains the rational default.
   the SDK exposes `ctx.progress(...)`. Proven end-to-end (`jobs_http_progress_publishes_to_realtime`).
 - **Done — GraphQL `enqueueJob` mutation:** enqueue from GraphQL (auth-required, tenant-stamped) via
   a `JobStore` in the schema context. Postgres-tested (`jobs_graphql`).
-- **Remaining:** Rust worker crate; plugin `enqueueJob` effect (last enqueue seam).
+- **Done — plugin `enqueueJob` effect:** a WASM/JS plugin returns
+  `{ enqueueJob: { queue, kind, payload?, idempotencyKey? } }` (gated by `WriteDatabase`), on both the
+  CRUD-hook and route-handler effect paths. DB-tested. **All enqueue seams are now complete** (REST /
+  GraphQL / workflow / plugin / Rust).
+- **Remaining:** Rust worker crate.
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
 ### Phase 4 — Presigned upload + dedup (S3 backend already shipped)

@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelines). A thrown error fails the job (server applies retry/backoff); `NonRetryableError`
   dead-letters. 9 unit tests (vitest) cover the per-job lifecycle and the `/jobs` client. Not yet
   published to npm (publish pipeline deferred).
+- **Plugin `enqueueJob` effect** — a WASM/JS plugin can enqueue a durable job by returning
+  `{ "enqueueJob": { "queue", "kind", "payload"?, "idempotencyKey"? } }`, gated by the plugin's
+  `WriteDatabase` permission (works on both the CRUD-hook and route-handler effect paths). DB-tested
+  (`wasm_plugins::tests::enqueue_job_effect_creates_a_job`). This is the **last enqueue seam** — jobs
+  can now be created from REST, GraphQL, a workflow step, a plugin, or Rust.
 - **GraphQL `enqueueJob` mutation** — enqueue a durable job from GraphQL
   (`enqueueJob(queue, kind, payload?, idempotencyKey?, maxAttempts?, priority?)` → job id). Requires
   an authenticated request and stamps the request's tenant. Backed by a `JobStore` registered in the

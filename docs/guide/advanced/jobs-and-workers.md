@@ -50,7 +50,7 @@ immediately become `401`.
 
 ## 2. Enqueue work
 
-Four ways, all idempotent when you pass an `idempotencyKey`:
+Five ways, all idempotent when you pass an `idempotencyKey`:
 
 **From an app/UI (HTTP).** Any authenticated user; the job is stamped with the caller's tenant.
 
@@ -76,6 +76,9 @@ mutation { enqueueJob(queue: "media-gen", kind: "video.generate") }
   "action": { "Job": { "queue": "media-gen", "kind": "video.generate",
                        "payload": { "prompt": "…" }, "idempotency_key": "deal-42" } } }
 ```
+
+**From a plugin** (WASM/JS): return an `{ "enqueueJob": { "queue", "kind", "payload"?, "idempotencyKey"? } }`
+effect (needs the `WriteDatabase` grant). See [Writing Plugins](/guide/advanced/writing-plugins).
 
 **From Rust** (in-process): `JobStore::enqueue(queue, kind, payload, idempotency_key, max_attempts, priority, tenant_id)`.
 
