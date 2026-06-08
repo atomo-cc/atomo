@@ -303,12 +303,64 @@ isolates request handling (the layer the data-layer bench excludes). Both co-loc
 - A single-IP flood also trips Atomo's **rate limiter** (fast 429s — real protection, a load-test
   artifact); raise `RATE_LIMIT_RPS` when benchmarking, as we did.
 
-> **Follow-up:** this is bare-endpoint throughput (no DB). DB-bound endpoints are comparable for both
-> (see the data layer); a full *authenticated CRUD under load* comparison needs JWT plumbing on both
-> sides to stay fair (Atomo gates reads behind auth by default) — not yet done.
+> **Follow-up:** bare-endpoint throughput (no DB). For authenticated CRUD under load, see the
+> **Authed Load** section below.
 
 Harness: `bench/http/` (`schema.ts`, `node-server.mjs`, `load.js`, `seed.sql`) — boot each server
 co-located, then `k6 run` against it.
+
+## Authed load: full-stack CRUD under concurrency
+
+The engine-level and bare-HTTP benches above isolate individual layers. This measures the **full
+production path under realistic concurrency** — JWT auth, session verification, GraphQL resolution,
+read cache, write + event sourcing — all together. **k6**, 50 VUs, 60 s steady state, server in Docker
+(`--network host`), k6 on the host. Co-located Postgres. Pool size 30.
+
+Four scenarios, each isolating a workload shape:
+
+| Scenario | Workload | Req/s | p50 | p95 | Errors |
+|---|---|--:|--:|--:|--:|
+| **mixed** | 80% read, 10% create, 5% update, 5% delete | **2 384** | 5.2 ms | 13.8 ms | 0% |
+| **read-only** | 100% reads (limit 20) | **2 397** | 5.0 ms | 10.7 ms | 0% |
+| **write-only** | 100% creates | **1 361** | 17.8 ms | 30.7 ms | 0% |
+| **mutate** | 50% update, 50% delete | **201** | 131 ms | 482 ms | 0% |
+
+**Machine:** Intel i5-13400 (10C/16T), 64 GB · Postgres in WSL2 (local) · release build ·
+pool size 30 · `RATE_LIMIT_RPS=999999` · **2026-06-08**.
+
+### Per-operation latency (from the mixed scenario)
+
+| Operation | avg | p50 | p95 |
+|---|--:|--:|--:|
+| read (limit 20) | 5.8 ms | 4.5 ms | 9.6 ms |
+| create | 14.1 ms | 11.4 ms | 17.8 ms |
+| update | 13.1 ms | 11.4 ms | 17.9 ms |
+| delete | 14.0 ms | 11.3 ms | 17.7 ms |
+
+### Honest conclusions
+
+- **Reads dominate throughput.** Under the 80/10/5/5 mixed workload, the read cache keeps p95 at
+  **13.8 ms** — most iterations hit the cache and return without a DB round trip.
+- **Writes are ~3× slower than reads** (~14 ms vs ~5 ms) — each write commits a row mutation + event
+  in one transaction (one `fsync`), which is the expected cost.
+- **The mutate scenario is a worst-case stress test**, not a realistic workload. All 50 VUs hit the
+  same fallback row (the seeded data has no `createdIds` for the delete path to consume), causing
+  heavy **row-level lock contention** on Postgres. The p95 of ~482 ms reflects lock wait time, not
+  Atomo overhead. Real workloads spread updates across many rows.
+- **Pool size matters.** An earlier run with pool=10 (default) under the same mixed workload showed
+  309 req/s and p95 446 ms — **7.7× lower throughput and 32× higher tail latency** than pool=30.
+  The pool bottleneck (5:1 VU-to-connection contention) dominated. `DATABASE_POOL_MAX` is now
+  configurable (default 20).
+
+Harness: `bench/authed-load/` (`load.js`, `schema.ts`, `Dockerfile`, `docker-run.sh`).
+
+```bash
+# Quick run (from WSL, with Docker):
+DATABASE_URL=postgres://… ./bench/authed-load/docker-run.sh
+
+# Individual scenario:
+k6 run -e BASE=http://127.0.0.1:3099 -e SCENARIO=read-only bench/authed-load/load.js
+```
 
 ## Reading the plugin hook tax (for migrators)
 

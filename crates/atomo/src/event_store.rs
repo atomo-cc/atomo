@@ -35,6 +35,21 @@ impl EventStore {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_event_log_type ON event_log (model_name, event_type, timestamp)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log (timestamp)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_event_log_record ON event_log ((data->>'id')) WHERE data->>'id' IS NOT NULL",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
