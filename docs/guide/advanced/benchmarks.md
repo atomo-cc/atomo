@@ -53,6 +53,7 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | --- | --- |
 | **data layer: create** | one insert + model-event emission via `AtomoClient::create` |
 | **data layer: create_many** | a 100-row batch via `AtomoClient::create_many` (one txn), reported per-row |
+| **data layer: update_many / delete_many** | a single-row update / soft-delete by id (one txn, write + events) |
 | **data layer: find_many** | a bounded read (limit 20) via `AtomoClient::find_many` |
 | **job lease: 1 worker** | `JobStore::lease` throughput draining a queue (cap 50/call) |
 | **job lease: 8 workers** | concurrent `SELECT … FOR UPDATE SKIP LOCKED` dispatch — shows lock-free scaling |
@@ -75,6 +76,8 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 |---|--:|--:|--:|--:|--:|
 | data layer: create (insert + event, single txn) | 3715 | 3664 | 5508 | 7429 | 269 |
 | data layer: **create_many** (per row, batch 100) | **77** | 76 | 107 | 107 | **13 006** |
+| data layer: update_many (1 row by id, single txn) | 3709 | 3607 | 4645 | 6835 | 270 |
+| data layer: delete_many (1 row by id, single txn) | 3786 | 3617 | 5260 | 7165 | 264 |
 | data layer: find_many (limit 20, cache hit) | 14.4 | 12 | 24 | 30 | 69 462 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
@@ -86,6 +89,12 @@ roughly 50×** (≈13 k rows/sec). One `fsync` amortized across the batch *and* 
 statement instead of per row. (An earlier per-row-in-one-transaction version was ~407 µs/row — the
 multi-row `INSERT` cut another ~5× by eliminating the per-row round trips.) For very large loads a
 `COPY`-based path could push further still — a follow-up.
+
+**Single-row writes** (`create` / `update_many` / `delete_many`) all sit in the same **~3.7–3.9 ms**
+band — each is **one transaction = one `fsync`** (the write + its events commit together). The number
+is dominated by Postgres commit durability, not Atomo; relax it with co-located storage,
+`synchronous_commit`, or batching (`create_many`). (Each was ~2× this before its event write was
+folded into the same transaction.)
 
 ## Head-to-head: Atomo vs Node (node-postgres), co-located
 
