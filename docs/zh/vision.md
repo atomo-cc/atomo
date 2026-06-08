@@ -164,12 +164,11 @@ export const workflow = defineWorkflow('OrderFlow')
 
 状态与边界（Status & boundaries）
 - 状态：设计/规划中（当前已落地 Admin UI 动态渲染路径）。
-- 边界：WASM 暴露状态/副作用通道；平台渲染器只负责 UI 转绘，不直接写业务，提升可测与可替换性。
+- 边界：平台渲染器只负责 UI 转绘，不直接写业务，提升可测与可替换性。
 
-### 扩展性与插件（Extensibility and Plugins）
+### 扩展性与钩子（Extensibility and Hooks）
 
-- WASM 运行时（进行中）：已定义 Manifest/Permission/PluginContext；计划以 wasmtime 提供沙箱执行。
-- 生命周期钩子：在关键点注入类型安全逻辑。
+- 生命周期钩子：通过 `HookRunner` trait 在关键点注入类型安全逻辑。
 - ABI 考量：事件/模型接口力求稳定，支持多语言（Rust/TS/Go/C#）。
 
 能力模型与清单（示例）

@@ -183,12 +183,11 @@ Details
 
 Status and boundaries
 - Status: design/planning (Admin UI dynamic rendering is the current landed path).
-- Boundaries: WASM exposes state/effect channels; platform renderers only render and forward effects — no business writes — maximizing testability and replaceability.
+- Boundaries: platform renderers only render and forward effects — no business writes — maximizing testability and replaceability.
 
-### Extensibility and Plugins
+### Extensibility and Hooks
 
-- WASM runtime (in progress): manifest, permissions, and plugin context types are defined; execution sandbox is planned via wasmtime.
-- Lifecycle hooks: service code can inject validated logic at well‑defined points.
+- Lifecycle hooks: service code can inject validated logic at well‑defined points via the `HookRunner` trait.
 - ABI considerations: event and model interfaces aim for stable cross‑language contracts (Rust, TS, Go, C# in the future).
 
 Capability model and manifest (example)

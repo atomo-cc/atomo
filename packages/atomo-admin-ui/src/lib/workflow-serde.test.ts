@@ -22,7 +22,6 @@ const fixtures: Workflow[] = [
       { name: 'wait', action: { Delay: { seconds: 5 } }, condition: { field: 'x', operator: 'eq', value: 1 }, on_failure: 'Stop' },
       { name: 'call', action: { Http: { method: 'POST', url: 'http://x', body: { a: 1 } } }, condition: null, on_failure: { Retry: { max_attempts: 3 } } },
       { name: 'mut', action: { Mutation: { query: 'q', variables: { id: '1' } } }, condition: null, on_failure: 'Continue' },
-      { name: 'plug', action: { Plugin: { plugin_name: 'p', function: 'f' } }, condition: null, on_failure: 'Continue' },
     ],
   },
 ]

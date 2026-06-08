@@ -3,7 +3,7 @@
 # - Atomo Server (Rust binary)
 # - CRM Service configuration
 # - Admin UI (React app)
-# - All plugins and workflows
+# - All workflows
 
 # Stage 1: Build Rust backend
 FROM rust:1.70 as rust-builder

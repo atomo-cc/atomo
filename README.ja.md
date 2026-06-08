@@ -99,8 +99,7 @@ atomo/
 │   ├── atomo_server/         # 🌐 Web サーバー
 │   ├── atomo_schema/         # 📝 スキーマパーサー
 │   ├── atomo_projectors/     # 📊 イベントプロジェクター
-│   ├── atomo_realtime/       # 📡 一時的なリアルタイムチャネルとプレゼンス
-│   └── atomo_wasm_runtime/   # 🔌 WASM プラグインランタイム
+│   └── atomo_realtime/       # 📡 一時的なリアルタイムチャネルとプレゼンス
 ├── packages/                  # フロントエンドパッケージ
 │   ├── atomo-client-sdk/     # 📚 クライアント SDK
 │   └── atomo-admin-ui/       # 🎛️  管理画面
@@ -239,19 +238,6 @@ pnpm --filter atomo-crm-service generate
        // 自動生成された CRUD 操作
    }
    ```
-
-### プラグイン開発
-
-```rust
-// WASM プラグインの例
-use atomo_wasm_runtime::*;
-
-#[wasm_bindgen]
-pub fn process_content(content: &str) -> String {
-    // カスタムのコンテンツ処理ロジック
-    content.to_uppercase()
-}
-```
 
 詳細なロードマップと現在の進捗は docs/roadmap.md を、プラットフォームのビジョンとアーキテクチャは docs/vision.md を参照してください。
 

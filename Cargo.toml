@@ -4,10 +4,9 @@ resolver = "2"
 members = [
     "crates/atomo",
     "crates/atomo_cli",
-    "crates/atomo_core", 
+    "crates/atomo_core",
     "crates/atomo_server",
     "crates/atomo_projectors",
-    "crates/atomo_wasm_runtime",
     "crates/atomo_schema",
     "crates/atomo_realtime",
     "crates/atomo_realtime_server",
@@ -61,8 +60,6 @@ overflow-checks = false
 lto = false
 codegen-units = 256
 
-# Strip debuginfo from third-party deps (wasmtime/cranelift alone are ~650M of debug
-# info). Keeps debug = 1 for our own workspace crates. Major disk-pressure relief.
 [profile.dev.package."*"]
 debug = false
 
@@ -74,11 +71,6 @@ codegen-units = 512
 incremental = true
 opt-level = 0
 
-# Release/production profile (used for the published atomo-server image).
-# `strip` drops symbols (the unstripped binary is ~40M, mostly wasmtime); thin LTO
-# trims dead code and is a bit faster at runtime for a modest build-time cost.
-# Keeps opt-level = 3 (default) — this is a throughput-sensitive server, so we do
-# NOT trade speed for size with opt-level = "z".
 [profile.release]
 strip = true
 lto = "thin"

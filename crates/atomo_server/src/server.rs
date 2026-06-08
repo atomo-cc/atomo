@@ -21,24 +21,6 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::{config::ServerConfig, handlers::create_router};
 
-/// Adapter: runs workflow `Plugin` steps through the WasmPluginManager (WASM + JS/Javy).
-struct WasmPluginExecutorAdapter(
-    std::sync::Arc<tokio::sync::Mutex<crate::wasm_plugins::WasmPluginManager>>,
-);
-
-#[async_trait::async_trait]
-impl atomo::workflow::PluginExecutor for WasmPluginExecutorAdapter {
-    async fn execute(
-        &self,
-        plugin_name: &str,
-        function: &str,
-        context_json: &str,
-    ) -> Result<Option<String>> {
-        let mut mgr = self.0.lock().await;
-        mgr.call_hook(plugin_name, function, context_json)
-    }
-}
-
 /// Adapter: runs workflow `Job` steps by enqueueing onto the durable job queue.
 struct JobEnqueueAdapter(std::sync::Arc<crate::jobs::JobStore>);
 
@@ -61,8 +43,6 @@ impl atomo::workflow::JobExecutor for JobEnqueueAdapter {
 pub struct AtomoServer {
     config: ServerConfig,
     atomo: Atomo,
-    plugin_manager:
-        Option<std::sync::Arc<tokio::sync::Mutex<crate::wasm_plugins::WasmPluginManager>>>,
 }
 
 impl AtomoServer {
@@ -70,47 +50,20 @@ impl AtomoServer {
     pub async fn new(config: ServerConfig) -> Result<Self> {
         info!("📊 Loading schema from: {}", config.schema_path);
 
-        // Discover WASM plugins and bridge them into the CRUD hook lifecycle
-        let mut plugin_manager = crate::wasm_plugins::WasmPluginManager::new("plugins")?;
-        let loaded = plugin_manager.discover_and_load().await.unwrap_or_default();
-        let mut builder = Atomo::builder()
+        let atomo = Atomo::builder()
             .schema_file(&config.schema_path)
             .database_url(&config.database_url)
             .enable_migrations(true)
-            .enable_ai(config.enable_ai);
-        let mut manager_handle = None;
-        if !loaded.is_empty() {
-            info!("🔌 Loaded {} WASM plugin(s): {:?}", loaded.len(), loaded);
-            let manager = std::sync::Arc::new(tokio::sync::Mutex::new(plugin_manager));
-            let mut runner = crate::wasm_hooks::WasmHookRunner::new(manager.clone());
-            // Enable JS effect fulfillment with a pool from the same database.
-            if let Ok(pool) = sqlx::PgPool::connect(&config.database_url).await {
-                runner = runner.with_fulfillment(pool);
-            }
-            builder = builder.hook_runner(std::sync::Arc::new(runner));
-            manager_handle = Some(manager);
-        }
-        let atomo = builder.build().await?;
+            .enable_ai(config.enable_ai)
+            .build()
+            .await?;
 
-        // Let plugin `emit` effects publish onto the model-event stream.
-        if let Some(mgr) = &manager_handle {
-            mgr.lock().await.set_event_sender(atomo.event_sender());
-        }
-
-        Ok(Self {
-            config,
-            atomo,
-            plugin_manager: manager_handle,
-        })
+        Ok(Self { config, atomo })
     }
 
     /// Create from existing Atomo instance (for testing/embedding)
     pub fn from_atomo(config: ServerConfig, atomo: Atomo) -> Self {
-        Self {
-            config,
-            atomo,
-            plugin_manager: None,
-        }
+        Self { config, atomo }
     }
 
     #[instrument(skip(self))]
@@ -374,14 +327,10 @@ impl AtomoServer {
 
         // Workflow engine: durable (Postgres-backed), plus ./workflows/*.json files, then listeners.
         let mut engine = atomo::workflow::WorkflowEngine::with_pool(self.atomo.db_pool().clone());
-        // Inject the executor so workflow `Mutation` steps run against the GraphQL schema (item 3).
+        // Inject the executor so workflow `Mutation` steps run against the GraphQL schema.
         engine.set_mutation_executor(std::sync::Arc::new(
             crate::handlers::GraphQlMutationExecutor::new(graphql_schema.clone()),
         ));
-        // Inject the plugin executor so workflow `Plugin` steps run via the WasmPluginManager.
-        if let Some(mgr) = &self.plugin_manager {
-            engine.set_plugin_executor(std::sync::Arc::new(WasmPluginExecutorAdapter(mgr.clone())));
-        }
         // Inject the job executor so workflow `Job` steps enqueue onto the durable job queue.
         engine.set_job_executor(std::sync::Arc::new(JobEnqueueAdapter(job_store.clone())));
         let workflow_engine = std::sync::Arc::new(engine);
@@ -466,29 +415,6 @@ impl AtomoServer {
             None
         };
 
-        // Custom HTTP routes declared by plugins, mounted under /ext/<plugin><path>.
-        // This is the extend-without-forking seam: a plugin ships endpoints the
-        // server dispatches to its JS handler (request envelope in, response out).
-        let plugin_routes_router = if let Some(mgr) = &self.plugin_manager {
-            let routes = mgr.lock().await.plugin_routes();
-            if routes.is_empty() {
-                None
-            } else {
-                info!(
-                    "   ✓ Mounted {} custom plugin route(s) under /ext/<plugin>",
-                    routes.len()
-                );
-                Some(crate::plugin_routes::plugin_routes_router(
-                    mgr.clone(),
-                    auth_service.clone(),
-                    self.atomo.db_pool().clone(),
-                    routes,
-                ))
-            }
-        } else {
-            None
-        };
-
         let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
             .merge(crate::handlers::workflow_router(workflow_engine.clone()))
             .merge(crate::projector_routes::projector_router(
@@ -502,10 +428,6 @@ impl AtomoServer {
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }
-        if let Some(plugin_routes_router) = plugin_routes_router {
-            app = app.merge(plugin_routes_router);
-        }
-
         // Optionally serve a bundled Admin UI SPA at /admin. Present in the Docker
         // image (ATOMO_ADMIN_DIR=/app/admin); absent in plain `cargo run`, where
         // this is simply skipped. Unknown /admin/* paths fall back to index.html

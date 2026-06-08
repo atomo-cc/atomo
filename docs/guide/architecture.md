@@ -7,7 +7,6 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
 - CLI: `atomo_cli` orchestrates codegen, dev runtime, build, deploy.
 - Schema: `atomo_schema` parses `schema.ts` (SWC) and generates code.
 - Projectors: `atomo_projectors` build read models from the event log.
-- Plugins: `atomo_wasm_runtime` executes sandboxed WASM extensions.
 - Realtime: `atomo_realtime` is a transport-agnostic, in-memory hub for the
   ephemeral, high-frequency tier (channels, presence, fan-out); `atomo_server`
   mounts its WebSocket transport at `/realtime/ws`. It never touches the event

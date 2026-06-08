@@ -99,8 +99,7 @@ atomo/
 │   ├── atomo_server/         # 🌐 Web 服务器
 │   ├── atomo_schema/         # 📝 Schema 解析器
 │   ├── atomo_projectors/     # 📊 事件投影器
-│   ├── atomo_realtime/       # 📡 临时实时通道与在线状态
-│   └── atomo_wasm_runtime/   # 🔌 WASM 插件运行时
+│   └── atomo_realtime/       # 📡 临时实时通道与在线状态
 ├── packages/                  # 前端包
 │   ├── atomo-client-sdk/     # 📚 客户端 SDK
 │   └── atomo-admin-ui/       # 🎛️  管理界面
@@ -239,19 +238,6 @@ pnpm --filter atomo-crm-service generate
        // 自动生成的 CRUD 操作
    }
    ```
-
-### 插件开发
-
-```rust
-// WASM 插件示例
-use atomo_wasm_runtime::*;
-
-#[wasm_bindgen]
-pub fn process_content(content: &str) -> String {
-    // 自定义内容处理逻辑
-    content.to_uppercase()
-}
-```
 
 详细开发路线图和当前进度请参考 docs/roadmap.md；平台愿景与架构请参考 docs/vision.md。
 

@@ -51,12 +51,9 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chron
 async-trait = "0.1"
 urlencoding = "2.1"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
-atomo_wasm_runtime = { path = "../atomo_wasm_runtime" }
 atomo_projectors = { path = "../atomo_projectors" }
 atomo_realtime = { path = "../atomo_realtime" }
-toml = "0.8"
 serde_yaml = "0.9"
-wasmtime = "16.0"
 # Optional S3 storage backend (enable with --features storage-s3)
 aws-config = { version = "1", optional = true }
 aws-sdk-s3 = { version = "1", optional = true }

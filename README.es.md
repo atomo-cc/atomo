@@ -99,8 +99,7 @@ atomo/
 │   ├── atomo_server/         # 🌐 Servidor web
 │   ├── atomo_schema/         # 📝 Analizador de esquemas
 │   ├── atomo_projectors/     # 📊 Proyectores de eventos
-│   ├── atomo_realtime/       # 📡 Canales en tiempo real efímeros y presencia
-│   └── atomo_wasm_runtime/   # 🔌 Runtime de plugins WASM
+│   └── atomo_realtime/       # 📡 Canales en tiempo real efímeros y presencia
 ├── packages/                  # Paquetes de frontend
 │   ├── atomo-client-sdk/     # 📚 SDK de cliente
 │   └── atomo-admin-ui/       # 🎛️  Interfaz de administración
@@ -239,19 +238,6 @@ pnpm --filter atomo-crm-service generate
        // Operaciones CRUD generadas automáticamente
    }
    ```
-
-### Desarrollo de plugins
-
-```rust
-// Ejemplo de plugin WASM
-use atomo_wasm_runtime::*;
-
-#[wasm_bindgen]
-pub fn process_content(content: &str) -> String {
-    // Lógica personalizada de procesamiento de contenido
-    content.to_uppercase()
-}
-```
 
 Para el roadmap detallado y el progreso actual, consulta docs/roadmap.md; para la visión de la plataforma y la arquitectura, consulta docs/vision.md.
 

@@ -2,8 +2,8 @@
 #
 # atomo-server image — runs the Atomo backend with **no Rust toolchain on the
 # host**, and bundles a **generic Admin UI** served at /admin. The admin is
-# service-agnostic (it introspects /meta/schema); service-specific views load as
-# runtime plugins, so this build has no dependency on any service's source.
+# service-agnostic (it introspects /meta/schema) — this build has no dependency
+# on any service's source.
 # cargo-chef caches the Rust dependency compile. Build: `docker build -t atomo-server .`
 
 # ---- Admin UI: build the generic SPA (packages/* only — no services/). ----

@@ -18,7 +18,6 @@ function actionLabel(action: StepAction): string {
     case 'Delay': return `Delay ${body.seconds}s`
     case 'Http': return `Http ${body.method} ${body.url}`
     case 'SetVariable': return `SetVariable ${body.key}`
-    case 'Plugin': return `Plugin ${body.plugin_name}.${body.function}`
     case 'Mutation': return 'Mutation'
     default: return key
   }
