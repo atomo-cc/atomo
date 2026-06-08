@@ -65,6 +65,12 @@ participates in audit/history/projections — this is what makes Atomo's upload 
   an unsatisfiable range) so `video`/`audio` can seek, advertises `Accept-Ranges: bytes`, and emits
   a strong `ETag` (the immutable media id) for conditional GETs (`If-None-Match` → 304). On the S3
   redirect path, S3 serves Range natively against the presigned URL.
+- `POST /media/presign` — (S3 only) get a presigned **PUT** URL for a large/out-of-band upload →
+  `{ id, key, uploadUrl }`. `501` when the backend can't presign (local disk). The client PUTs bytes
+  **directly** to `uploadUrl` (they never pass through the server), then calls commit.
+- `POST /media/commit` — register a presigned upload: `{ id, key, filename?, contentType?, checksum? }`.
+  Validates `key` belongs to the caller's tenant, confirms the object exists + measures it via S3
+  `HEAD`, dedups on `checksum`, records metadata + emits `Media` Created → `{ id, url, deduped }`.
 - `DELETE /media/{id}` — soft-delete + `MediaDeleted` event.
 - Requires axum's **`multipart`** feature + `DefaultBodyLimit` size cap.
 
@@ -161,6 +167,13 @@ fast-follows.
   re-stored (e.g. re-uploading the same reference image is free). Dedup is tenant-scoped (never
   shares bytes across tenants) and ignores soft-deleted rows. Tested by
   `media_http_dedups_identical_content_per_tenant`.
+- **Presigned direct upload (S3)** — ✅ `POST /media/presign` returns a presigned **PUT** URL; the
+  client uploads bytes **directly to S3** (never through the server), then `POST /media/commit`
+  validates the tenant-prefixed key, confirms + measures the object via S3 `HEAD`, dedups, and
+  records metadata. `presigned_put_url` + `size` on the `StorageBackend` trait (S3 = presign/HEAD,
+  local = None/stat). **Verified against MinIO** (`s3_presigned_put_is_uploadable`,
+  `media_presign_commit_roundtrip`). For large media a worker bypasses the server entirely. *(The
+  `storage-s3` feature needs rustc ≥ 1.91 — the latest aws-sdk MSRV.)*
 
 ## Verifying the S3 backend locally (MinIO)
 

@@ -475,10 +475,11 @@ per media app remains the rational default.
 - **Remaining:** Rust worker crate.
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
-### Phase 4 — Presigned upload (S3 backend + dedup already shipped)
-- `s3`/R2 backend + presigned/302 **GET** and **sha256 content-addressed dedup** already exist.
-  Remaining: presigned **PUT** (worker → S3 direct, then commit metadata).
-- **Deliverable:** large-media pipelines that never stream bytes through the server.
+### Phase 4 — Presigned upload + dedup ✅ (done)
+- `s3`/R2 backend, presigned/302 **GET**, **sha256 content-addressed dedup**, and presigned **PUT**
+  (`POST /media/presign` → direct upload → `POST /media/commit`, tenant-prefix validated, size via S3
+  `HEAD`) are all shipped. Verified against MinIO.
+- **Deliverable:** large-media pipelines that never stream bytes through the server — **done.**
 
 ### Phase 5 — Operability & optional extensions (build on real need)
 - Admin job views (list/inspect-stream/retry/dead-letter), blob GC/retention, queue metrics.

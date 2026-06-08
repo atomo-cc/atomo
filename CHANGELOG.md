@@ -58,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conditional GETs (`If-None-Match`) return `304`. This makes `video`/`audio` seekable/scrubbable.
   S3-backed reads continue to 302-redirect to a presigned URL, which serves Range natively.
 
+- **Presigned direct upload (S3)** — `POST /media/presign` returns a presigned **PUT** URL so a
+  client (e.g. a worker) uploads large media **straight to S3** without streaming through the server;
+  `POST /media/commit` then validates the tenant-prefixed key, confirms + measures the object via S3
+  `HEAD`, dedups on checksum, and records metadata. New `StorageBackend::presigned_put_url` + `size`
+  (S3 = presign/HEAD; local = unsupported/stat). Verified end-to-end against MinIO
+  (`s3_presigned_put_is_uploadable`, `media_presign_commit_roundtrip`). The `storage-s3` feature now
+  requires rustc ≥ 1.91 (latest aws-sdk MSRV).
 - **Media content checksum + dedup** — every upload now records a sha256 `checksum` (returned in the
   `POST /media` response). Identical content for the **same tenant** dedups to the existing media id
   (nothing re-stored) — re-uploading the same reference image is free. Tenant-scoped (no cross-tenant

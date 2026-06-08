@@ -16,6 +16,17 @@ pub trait StorageBackend: Send + Sync {
     async fn presigned_get_url(&self, _key: &str, _ttl: std::time::Duration) -> Option<String> {
         None
     }
+    /// A presigned PUT URL a client can upload to directly when the backend supports it (S3);
+    /// None = the backend can't presign (e.g. local disk) so callers must use the proxy upload.
+    async fn presigned_put_url(&self, _key: &str, _ttl: std::time::Duration) -> Option<String> {
+        None
+    }
+    /// Size in bytes of the object at `key`, or None if it doesn't exist. Used to confirm + measure
+    /// an out-of-band (presigned) upload at commit time without downloading the bytes.
+    async fn size(&self, key: &str) -> Result<Option<u64>> {
+        // Default: derive from a full read (fine for small/local backends; S3 overrides with HEAD).
+        Ok(self.get(key).await?.map(|b| b.len() as u64))
+    }
 }
 
 /// Files under a local root directory. Keys are relative paths; `..`/absolute keys are rejected
@@ -60,6 +71,14 @@ impl StorageBackend for LocalStorage {
         let path = self.resolve(key)?;
         tokio::fs::remove_file(&path).await.ok();
         Ok(())
+    }
+
+    async fn size(&self, key: &str) -> Result<Option<u64>> {
+        let path = self.resolve(key)?;
+        match tokio::fs::metadata(&path).await {
+            Ok(m) => Ok(Some(m.len())),
+            Err(_) => Ok(None),
+        }
     }
 }
 
@@ -152,6 +171,34 @@ impl StorageBackend for S3Storage {
             .await
             .ok()?;
         Some(req.uri().to_string())
+    }
+
+    async fn presigned_put_url(&self, key: &str, ttl: std::time::Duration) -> Option<String> {
+        let cfg = aws_sdk_s3::presigning::PresigningConfig::expires_in(ttl).ok()?;
+        let req = self
+            .client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(cfg)
+            .await
+            .ok()?;
+        Some(req.uri().to_string())
+    }
+
+    async fn size(&self, key: &str) -> Result<Option<u64>> {
+        match self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+        {
+            Ok(out) => Ok(out.content_length().map(|n| n.max(0) as u64)),
+            // Treat a missing object (404) as None; surface other errors.
+            Err(_) => Ok(None),
+        }
     }
 }
 

@@ -17,6 +17,7 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
@@ -164,6 +165,105 @@ impl MediaState {
         Ok((id, checksum))
     }
 
+    /// Generated storage key: `{tenant}/{yyyy}/{mm}/{id}{ext}` — never the client filename
+    /// (path-traversal defense), tenant-prefixed so a commit can validate ownership.
+    fn storage_key(id: &str, filename: &str, tenant_id: Option<&str>) -> String {
+        let tenant = tenant_id.unwrap_or("public");
+        let ext = std::path::Path::new(filename)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{e}"))
+            .unwrap_or_default();
+        let now = chrono::Utc::now();
+        format!(
+            "{}/{}/{}/{}{}",
+            tenant,
+            now.format("%Y"),
+            now.format("%m"),
+            id,
+            ext
+        )
+    }
+
+    /// Presign a direct **PUT** for a large/out-of-band upload: returns `(id, key, upload_url)`.
+    /// The client PUTs bytes straight to `upload_url` (e.g. S3), then calls `commit_upload`. Returns
+    /// `None` if the backend can't presign (e.g. local disk) — use the proxy `store_upload` instead.
+    pub async fn presign_upload(
+        &self,
+        filename: &str,
+        tenant_id: Option<&str>,
+    ) -> Option<(String, String, String)> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let key = Self::storage_key(&id, filename, tenant_id);
+        let url = self
+            .storage
+            .presigned_put_url(&key, std::time::Duration::from_secs(300))
+            .await?;
+        Some((id, key, url))
+    }
+
+    /// Register an out-of-band (presigned) upload. Validates `key` belongs to the caller's tenant,
+    /// confirms the object exists (and measures its size) via the backend, dedups on `checksum`,
+    /// then records metadata + emits a `Media` Created event. Returns `(id, deduped)`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn commit_upload(
+        &self,
+        id: &str,
+        key: &str,
+        filename: &str,
+        content_type: &str,
+        checksum: Option<&str>,
+        user_id: &str,
+        tenant_id: Option<&str>,
+    ) -> Result<(String, bool)> {
+        // The key must live under the caller's tenant prefix (the presigned URL only allowed this
+        // exact key; this stops a client committing someone else's object).
+        let tenant = tenant_id.unwrap_or("public");
+        if !key.starts_with(&format!("{tenant}/")) {
+            anyhow::bail!("storage key does not belong to this tenant");
+        }
+        // Confirm the upload actually happened + get its true size (don't trust the client).
+        let size = match self.storage.size(key).await? {
+            Some(s) => s,
+            None => anyhow::bail!("no object at key — upload not completed?"),
+        };
+        // Content-addressed dedup (when the client supplied a checksum).
+        if let Some(sum) = checksum {
+            if let Some(row) = sqlx::query(
+                "SELECT id FROM media
+                 WHERE checksum = $1 AND tenant_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
+                 LIMIT 1",
+            )
+            .bind(sum)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await?
+            {
+                // The freshly-uploaded duplicate object is left for GC.
+                return Ok((row.get::<String, _>("id"), true));
+            }
+        }
+        sqlx::query(
+            "INSERT INTO media (id, tenant_id, filename, content_type, size, storage_key, checksum, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(filename)
+        .bind(content_type)
+        .bind(size as i64)
+        .bind(key)
+        .bind(checksum)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        let mut extra = HashMap::new();
+        extra.insert("contentType".to_string(), json!(content_type));
+        extra.insert("size".to_string(), json!(size));
+        self.emit(EventType::Created, id, user_id, extra);
+        Ok((id.to_string(), false))
+    }
+
     /// Look up a non-deleted media's storage key + content type + tenant (no bytes).
     pub async fn lookup(&self, id: &str) -> Result<Option<(String, String, Option<String>)>> {
         let row = sqlx::query(
@@ -306,10 +406,104 @@ fn content_matches(ct: &str, bytes: &[u8]) -> bool {
 
 /// POST /media (auth) and GET/DELETE /media/{id}. Upload/delete require a token (enforced in
 /// the handler after optional_auth injects the user); GET is public via unguessable key.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PresignReq {
+    filename: Option<String>,
+}
+
+/// `POST /media/presign` (auth): get a presigned PUT URL for a direct upload to the backend (S3).
+/// `501` when the backend can't presign (e.g. local disk) — use `POST /media` instead.
+async fn presign(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    Json(req): Json<PresignReq>,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    let filename = req.filename.unwrap_or_else(|| "upload".to_string());
+    match state
+        .presign_upload(&filename, user.tenant_id.as_deref())
+        .await
+    {
+        Some((id, key, url)) => Json(json!({
+            "id": id,
+            "key": key,
+            "uploadUrl": url,
+            "method": "PUT",
+        }))
+        .into_response(),
+        None => (
+            StatusCode::NOT_IMPLEMENTED,
+            "storage backend does not support presigned uploads; use POST /media",
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitReq {
+    id: String,
+    key: String,
+    filename: Option<String>,
+    content_type: Option<String>,
+    checksum: Option<String>,
+}
+
+/// `POST /media/commit` (auth): register an out-of-band (presigned) upload. The bytes were uploaded
+/// directly to the backend, so content can't be magic-byte sniffed here — the declared content-type
+/// allowlist still applies. Returns `{ id, url, deduped }`.
+async fn commit(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    Json(req): Json<CommitReq>,
+) -> Response {
+    let user = match user {
+        Some(Extension(u)) => u,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+    let content_type = req
+        .content_type
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    if !content_type_allowed(&content_type) {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "content-type not allowed",
+        )
+            .into_response();
+    }
+    let filename = req.filename.unwrap_or_else(|| "upload".to_string());
+    match state
+        .commit_upload(
+            &req.id,
+            &req.key,
+            &filename,
+            &content_type,
+            req.checksum.as_deref(),
+            &user.id,
+            user.tenant_id.as_deref(),
+        )
+        .await
+    {
+        Ok((id, deduped)) => Json(json!({
+            "id": id,
+            "url": format!("/media/{}", id),
+            "deduped": deduped,
+        }))
+        .into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
 pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
     let max = state.max_size;
     Router::new()
         .route("/media", post(upload))
+        .route("/media/presign", post(presign))
+        .route("/media/commit", post(commit))
         .route("/media/gc", post(gc))
         .route("/media/{id}", get(serve_media).delete(delete_media))
         // Hard backstop with headroom for multipart framing; the precise per-file limit is the
