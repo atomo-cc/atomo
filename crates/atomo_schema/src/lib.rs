@@ -14,6 +14,7 @@
     clippy::match_single_binding
 )]
 
+pub mod codegen;
 pub mod dsl_parser;
 pub mod hasura_v2_resolver_generator;
 pub mod hasura_v2_type_generator;

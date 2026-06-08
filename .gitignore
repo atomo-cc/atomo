@@ -3,6 +3,7 @@ target/
 dist/
 build/
 generated/
+!examples/**/generated/
 
 # Dependencies
 node_modules/
