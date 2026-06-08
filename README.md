@@ -16,7 +16,7 @@ Atomo Content Core is an open-source, self-hostable **event-sourced backend** fo
 - 🧠 **AI-Native Design**: Built-in AI workflows and intelligent content processing
 - 🎯 **Flagship-App-Driven**: Platform evolution driven by a real CRM application
 - 🔧 **Dual-Mode Definition**: TypeScript schema + Rust code generation
-- 🚀 **High Performance**: Rust backend + a modern frontend stack
+- 🪶 **Lean & honest**: a ~10 MB self-hostable binary — most apps are read-heavy, and Atomo serves hot reads from cache (~30× a bare query), with event sourcing, durable jobs, and a typed schema-driven backend built in, at a modest (Postgres-`fsync`-bound) write cost. See the [benchmarks](docs/guide/advanced/benchmarks.md) — including an honest co-located head-to-head vs `node-postgres`.
 - 🔌 **Pluggable Architecture**: WASM plugin system with multi-language extension support
 - 🧩 **Extend Without Forking**: declarable schema constraints (`@unique` / `@@check` / partial) + plugin-served custom HTTP routes (`/ext/<plugin>`)
 - 📊 **Realtime Collaboration**: WebSocket-driven realtime data sync
