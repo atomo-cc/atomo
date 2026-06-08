@@ -454,22 +454,27 @@ timeouts, and idempotency must be correct under concurrent workers and connectio
 the care taken for RLS under PgBouncer). Everything else is additive plumbing around an unchanged
 server and sandbox.
 
-## Decisions to confirm before building
+## Decisions (confirmed for v1)
 
-Recommendations in **bold**; confirm or override before implementation (mirrors the multi-project
-pre-build decisions):
-
-1. **Worker transport:** **HTTP pull-lease + realtime "wake" nudge** (vs pure long-poll, or a
-   push/gRPC model). Pull keeps workers behind NAT and gives free backpressure.
-2. **Queue substrate:** **Postgres `SELECT … FOR UPDATE SKIP LOCKED`** on the `jobs` projection (vs
-   adding Redis/NATS). Reuses the one datastore; sufficient to dozens of workers / moderate
-   throughput. Revisit a dedicated broker only if throughput demands it.
+1. **Worker transport:** **HTTP pull-lease + realtime "wake" nudge.** Workers pull (lease) over
+   HTTP; the realtime hub sends a lightweight "queue has work" nudge so idle workers wake without
+   tight polling. Keeps workers behind NAT (no inbound port), gives free backpressure, and recovers
+   from crashes via lease expiry. (Push/gRPC rejected: needs inbound worker connectivity and a
+   hand-built backpressure path; worse fit for browser-automation boxes with persistent profiles.)
+2. **Queue substrate:** **Postgres `SELECT … FOR UPDATE SKIP LOCKED`** on the `jobs` projection.
+   Reuses the one datastore — no new infrastructure to deploy/secure/back up; sufficient to dozens
+   of workers / moderate throughput. (A dedicated Redis/NATS broker is revisited only if a real
+   high-throughput need appears.)
 3. **Default blob backend:** **`local` for dev/single-host, `s3`/R2 for production**, selected per
    project like the deployment `Driver`.
-4. **Worker languages:** **TS SDK first** (matches existing provider/automation code), **Rust crate
-   second**.
-5. **Delivery semantics:** **at-least-once + idempotency keys** (vs attempting exactly-once).
-   Simpler, crash-safe, and content-addressed blobs neutralize duplicate side-effects.
+4. **Worker languages:** **TypeScript SDK first** (matches existing provider/browser-automation
+   code — Playwright, ffmpeg, provider SDKs), **Rust crate second** for native/high-throughput
+   workers.
+5. **Delivery semantics:** **at-least-once + idempotency keys.** A job may run twice (lease expiry
+   after a worker actually finished); idempotency keys make enqueue safe and content-addressed
+   blobs neutralize duplicate side-effects. (Exactly-once rejected: far more machinery, and it
+   still can't make an *external provider call* exactly-once — the real side-effect lives outside
+   the transaction, so the complexity wouldn't close the actual gap.)
 
 ## A standing caveat (from the portfolio thesis)
 
