@@ -11,7 +11,7 @@ use atomo::events::{EventType, ModelEvent};
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     middleware,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -368,6 +368,7 @@ async fn gc(
 async fn serve_media(
     State(state): State<Arc<MediaState>>,
     user: Option<Extension<AuthUser>>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
     let (key, ct, tenant) = match state.lookup(&id).await {
@@ -384,7 +385,9 @@ async fn serve_media(
             Some(_) => {}
         }
     }
-    // Backends that support it (S3) redirect to a short-lived presigned URL; others proxy bytes.
+    // Backends that support it (S3) redirect to a short-lived presigned URL; the client then makes
+    // its `Range` request directly against S3, which honors byte ranges natively — so range
+    // handling below only needs to cover the proxied-bytes path (local disk).
     if let Some(url) = state
         .storage
         .presigned_get_url(&key, std::time::Duration::from_secs(300))
@@ -393,13 +396,135 @@ async fn serve_media(
         return axum::response::Redirect::temporary(&url).into_response();
     }
     match state.storage.get(&key).await {
-        Ok(Some(bytes)) => Response::builder()
-            .header(header::CONTENT_TYPE, ct)
-            .header("X-Content-Type-Options", "nosniff")
-            .body(Body::from(bytes))
-            .unwrap(),
+        Ok(Some(bytes)) => serve_bytes(&headers, &id, &ct, bytes, state.private_reads),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// A parsed single-range request against a body of `total` bytes.
+enum RangeSpec {
+    /// A satisfiable range, inclusive `[start, end]`.
+    Satisfiable(u64, u64),
+    /// Syntactically valid but cannot be served (e.g. start past EOF) → 416.
+    Unsatisfiable,
+    /// Absent or malformed `Range` header → ignore it and serve the full body (RFC 7233 §3.1).
+    Ignore,
+}
+
+/// Parse a single `Range: bytes=…` value. Only one range is supported; multi-range
+/// (`a-b,c-d`) and malformed specs are ignored (full body served), matching RFC 7233 guidance to
+/// disregard an unparseable Range rather than fail the request.
+fn parse_range(raw: &str, total: u64) -> RangeSpec {
+    let spec = match raw.trim().strip_prefix("bytes=") {
+        Some(s) => s.trim(),
+        None => return RangeSpec::Ignore,
+    };
+    if spec.is_empty() || spec.contains(',') {
+        return RangeSpec::Ignore; // multi-range unsupported → serve full
+    }
+    let (lo, hi) = match spec.split_once('-') {
+        Some(p) => p,
+        None => return RangeSpec::Ignore,
+    };
+    if total == 0 {
+        return RangeSpec::Unsatisfiable;
+    }
+    let last = total - 1;
+    match (lo.trim(), hi.trim()) {
+        ("", "") => RangeSpec::Ignore,
+        // Suffix range: last N bytes (`bytes=-N`).
+        ("", n) => match n.parse::<u64>() {
+            Ok(0) => RangeSpec::Unsatisfiable,
+            Ok(n) => RangeSpec::Satisfiable(total.saturating_sub(n), last),
+            Err(_) => RangeSpec::Ignore,
+        },
+        // Open-ended: `bytes=start-`.
+        (start, "") => match start.parse::<u64>() {
+            Ok(s) if s <= last => RangeSpec::Satisfiable(s, last),
+            Ok(_) => RangeSpec::Unsatisfiable,
+            Err(_) => RangeSpec::Ignore,
+        },
+        // Closed: `bytes=start-end`.
+        (start, end) => match (start.parse::<u64>(), end.parse::<u64>()) {
+            (Ok(s), Ok(e)) if s > e => RangeSpec::Ignore, // invalid spec
+            (Ok(s), Ok(_)) if s > last => RangeSpec::Unsatisfiable,
+            (Ok(s), Ok(e)) => RangeSpec::Satisfiable(s, e.min(last)),
+            _ => RangeSpec::Ignore,
+        },
+    }
+}
+
+/// Serve `bytes` with HTTP Range support (RFC 7233) so players can seek — essential for scrubbing
+/// `video/*` and `audio/*`. Media bytes are immutable per id, so a strong `ETag` (the id) plus
+/// `Cache-Control` enable conditional GETs (`If-None-Match` → 304) and long client caching.
+fn serve_bytes(
+    headers: &HeaderMap,
+    id: &str,
+    content_type: &str,
+    bytes: Vec<u8>,
+    private: bool,
+) -> Response {
+    let total = bytes.len() as u64;
+    let etag = format!("\"{id}\"");
+    let cache_control = if private {
+        "private, max-age=3600"
+    } else {
+        "public, max-age=86400, immutable"
+    };
+
+    // Conditional GET: client already has this (immutable) content.
+    if let Some(inm) = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+    {
+        if inm == etag || inm.trim() == "*" {
+            return Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .header(header::ETAG, &etag)
+                .header(header::CACHE_CONTROL, cache_control)
+                .body(Body::empty())
+                .unwrap();
+        }
+    }
+
+    if let Some(raw) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
+        match parse_range(raw, total) {
+            RangeSpec::Satisfiable(start, end) => {
+                let slice = bytes[start as usize..=end as usize].to_vec();
+                return Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_TYPE, content_type)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .header(
+                        header::CONTENT_RANGE,
+                        format!("bytes {start}-{end}/{total}"),
+                    )
+                    .header(header::ETAG, &etag)
+                    .header(header::CACHE_CONTROL, cache_control)
+                    .body(Body::from(slice))
+                    .unwrap();
+            }
+            RangeSpec::Unsatisfiable => {
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{total}"))
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .body(Body::empty())
+                    .unwrap();
+            }
+            RangeSpec::Ignore => {} // fall through to full body
+        }
+    }
+
+    Response::builder()
+        .header(header::CONTENT_TYPE, content_type)
+        .header("X-Content-Type-Options", "nosniff")
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::ETAG, &etag)
+        .header(header::CACHE_CONTROL, cache_control)
+        .body(Body::from(bytes))
+        .unwrap()
 }
 
 async fn delete_media(
@@ -442,5 +567,54 @@ mod tests {
         // types without a known signature are accepted
         assert!(content_matches("text/plain", b"anything"));
         assert!(content_matches("application/octet-stream", b"\x00\x01"));
+    }
+
+    #[test]
+    fn range_parsing_covers_rfc_cases() {
+        use super::{parse_range, RangeSpec};
+        let sat = |r: RangeSpec| match r {
+            RangeSpec::Satisfiable(s, e) => Some((s, e)),
+            _ => None,
+        };
+        // Closed range, clamped to EOF.
+        assert_eq!(sat(parse_range("bytes=0-499", 1000)), Some((0, 499)));
+        assert_eq!(sat(parse_range("bytes=500-100000", 1000)), Some((500, 999)));
+        // Open-ended.
+        assert_eq!(sat(parse_range("bytes=900-", 1000)), Some((900, 999)));
+        // Suffix (last N bytes).
+        assert_eq!(sat(parse_range("bytes=-200", 1000)), Some((800, 999)));
+        assert_eq!(sat(parse_range("bytes=-5000", 1000)), Some((0, 999))); // suffix > total
+                                                                           // Whitespace tolerated.
+        assert_eq!(sat(parse_range(" bytes=0-0 ", 1000)), Some((0, 0)));
+
+        // Unsatisfiable: start past EOF, or zero-length suffix.
+        assert!(matches!(
+            parse_range("bytes=1000-1001", 1000),
+            RangeSpec::Unsatisfiable
+        ));
+        assert!(matches!(
+            parse_range("bytes=-0", 1000),
+            RangeSpec::Unsatisfiable
+        ));
+        assert!(matches!(
+            parse_range("bytes=0-0", 0),
+            RangeSpec::Unsatisfiable
+        ));
+
+        // Ignored (serve full): missing unit, multi-range, reversed, garbage, empty.
+        assert!(matches!(parse_range("0-100", 1000), RangeSpec::Ignore));
+        assert!(matches!(
+            parse_range("bytes=0-10,20-30", 1000),
+            RangeSpec::Ignore
+        ));
+        assert!(matches!(
+            parse_range("bytes=500-100", 1000),
+            RangeSpec::Ignore
+        ));
+        assert!(matches!(
+            parse_range("bytes=abc-def", 1000),
+            RangeSpec::Ignore
+        ));
+        assert!(matches!(parse_range("bytes=-", 1000), RangeSpec::Ignore));
     }
 }

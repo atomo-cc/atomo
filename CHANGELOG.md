@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
+  single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable
+  ranges), advertises `Accept-Ranges: bytes`, and emits a strong `ETag` (the immutable media id) so
+  conditional GETs (`If-None-Match`) return `304`. This makes `video`/`audio` seekable/scrubbable.
+  S3-backed reads continue to 302-redirect to a presigned URL, which serves Range natively.
+
+### Fixed
+- **Platform-table column drift self-heals on boot.** `ensure_platform_tables` now idempotently adds
+  `sessions.is_revoked` (alongside the existing `users.tenant_id` patch) for databases created before
+  the column existed — without it, auth (`issue/validate/revoke`) failed against an older `sessions`
+  table.
+
 ## [0.3.0] - 2026-06-06
 
 > **Opt-in multi-tenant RLS + multi-project control-plane foundations.** Default single-server use
