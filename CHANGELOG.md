@@ -13,9 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the data layer (create / find_many), the durable **job lease engine** (1 vs 8 concurrent workers —
   shows `SKIP LOCKED` scaling), and the **plugin hook tax** (a JS/Javy `before_create` through the
   real hook path — the per-operation cost for migrators evaluating custom logic in the sandbox), plus
-  the release binary footprint. Honest scope (engine-level, excludes HTTP/GraphQL; DB-locality caveats
-  documented). The roadmap's "3–5× faster than Node" line is now explicitly marked a **target** until
-  a fair Node baseline is measured.
+  the release binary footprint. Honest scope (engine-level, excludes HTTP/GraphQL).
+- **Co-located Node head-to-head** (`bench/node-baseline.mjs`). Atomo and a `node-postgres` baseline
+  run on the same host as Postgres (no network hop) over the same DB. Finding, recorded honestly:
+  Atomo is **~2× slower than raw `node-postgres` on data-layer writes** (it does event sourcing +
+  hooks + a typed layer; both are `fsync`-bound), so the "3–5× faster than Node" target is **not**
+  supported on this path and stays a target. Atomo wins on **hot reads** (its in-process cache, ~30×),
+  **footprint** (a 9.8 MB binary), and **capabilities Node has no built-in answer for** (the
+  31 k-lease/s job engine that scales 3.3× across workers, event sourcing, the sandbox). The plugin
+  hook tax (~178 µs/call on Linux) is the number for migrators evaluating custom logic in the sandbox.
 
 ## [0.4.0] - 2026-06-08
 
