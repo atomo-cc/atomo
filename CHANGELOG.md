@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`update_many` / `delete_many` commit their write + events in one transaction (perf + atomicity).**
+  Both previously ran the `UPDATE` and then `persist`ed each event as a *separate* autocommit
+  (1 + N `fsync`s) with the event write `.ok()`-swallowed — the same pattern fixed in `create`. They
+  now commit the write and all events together via `EventStore::persist_many_in` (one `fsync`), and
+  event failures propagate, so an update/delete is never recorded without its events. (`restore_many`
+  / `hard_delete_many` are single statements and currently emit **no** events — unchanged here; the
+  missing events are a separate event-sourcing follow-up, not a perf issue.)
 - **Per-request completion log moved to `DEBUG` (was `INFO`) — ~45% more HTTP throughput by default.**
   Emitting a formatted log line for *every* request cost ~45% of request throughput in the benchmarks
   (~17 k → ~30 k req/s). Default deployments no longer pay it; boot/error logs stay at INFO+ and the
