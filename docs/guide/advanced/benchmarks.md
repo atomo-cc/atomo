@@ -99,8 +99,11 @@ machine, same DB, same serial-latency method.
   install), and **capabilities Node has no built-in answer for** — the durable job lease engine
   (31 k leases/s, scaling **3.3×** from 1→8 workers via `SKIP LOCKED`), event sourcing, and the
   plugin sandbox.
-- **The trade Atomo offers** is therefore *not* "raw speed" — it's event-sourcing + API + admin +
-  typed safety + a worker engine, in a tiny owned binary, at a modest write-latency cost.
+- **The trade, stated plainly:** Atomo costs ~2× a bare insert on writes (both Postgres-`fsync`-bound)
+  in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, hot-path
+  read caching, and a typed, schema-driven backend (API + admin) out of the box.** Not raw speed —
+  built-ins + footprint. Most apps are read-heavy, where the cache wins and the write cost rarely
+  bites.
 
 > **Why co-located matters (a cautionary data point):** an earlier run with Postgres on a *separate*
 > host (Windows → WSL2 over the LAN) showed Atomo `create` at ~9 ms — but that was the **network
