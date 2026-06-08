@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-08
+
+> **Performance + event-sourcing integrity.** Write latency cut by 38–50% across all mutation
+> paths (single-transaction commits), bulk writes scale to any batch size (chunked event inserts),
+> and the event log now records **who** did each operation (actor persistence). Two event-sourcing
+> integrity gaps fixed: `restore_many`/`hard_delete_many` event emission, and
+> `Restored`/`HardDeleted` event type replay. New benchmarks cover the full production path
+> (JWT + GraphQL + cache + events) at 2,384 req/s under 50 VUs.
+
 ### Fixed
 - **`restore_many` and `hard_delete_many` now emit events (event-sourcing integrity).**
   Both previously ran a bare SQL statement with no event creation — restores and hard deletes
@@ -21,8 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   65,535-param ceiling and errored. It now **chunks** the event inserts (one statement per ≤5,000
   events, all in the same transaction), so bulk operations are safe at any size. Covered by an
   11,000-row regression test.
+- **Actor is now persisted to `event_log` (audit trail integrity).** The `actor` field on
+  `ModelEvent` was populated in-memory but silently dropped at the persistence boundary — never
+  written to the DB, never read back on replay. Now persisted end-to-end: `actor TEXT` column
+  added, written in both single and bulk INSERT paths, read back on `replay()` and
+  `entity_history()`, indexed (partial, `WHERE actor IS NOT NULL`). Existing tables get the
+  column via idempotent `ALTER TABLE ADD COLUMN IF NOT EXISTS`.
+- **`Restored`/`HardDeleted` events no longer silently map to `Created` on replay.** The
+  `EventRow` → `ModelEvent` conversion was missing match arms for the two new event types,
+  so replayed event history showed all lifecycle events as `Created`. Fixed.
 
 ### Changed
+- **Configurable DB connection pool** via `DATABASE_POOL_MAX` env var (default 20, up from sqlx
+  default 10). Under 50 concurrent VUs, pool=30 vs pool=10 showed **7.7× throughput and 32× p95
+  improvement** (309 → 2,384 req/s, p95 446 → 13.8 ms).
 - **`update_many` / `delete_many` commit their write + events in one transaction (perf + atomicity).**
   Both previously ran the `UPDATE` and then `persist`ed each event as a *separate* autocommit
   (1 + N `fsync`s) with the event write `.ok()`-swallowed — the same pattern fixed in `create`. They
@@ -83,6 +104,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **footprint** (a 9.8 MB binary), and **capabilities Node has no built-in answer for** (the
   31 k-lease/s job engine that scales 3.3× across workers, event sourcing, the sandbox). The plugin
   hook tax (~178 µs/call on Linux) is the number for migrators evaluating custom logic in the sandbox.
+- **Authed CRUD load test** (`bench/authed-load/`). k6 harness exercising the full production path
+  (JWT auth + GraphQL + read cache + event sourcing) under 50 VUs. Four scenarios: mixed
+  (80/10/5/5), read-only, write-only, mutate. Results: mixed **2,384 req/s at p95 13.8 ms**,
+  read-only 2,397, write-only 1,361.
+- **`event_log` indexes** for event-type queries, standalone timestamp, record-id (expression index
+  on `data->>'id'`), and actor (partial). Support event replay, entity history, and write-path
+  query plans.
+- **`find_unique` caching** — point reads by id now hit the in-process cache (**0.8 µs / 1.2 M
+  ops/s** on cache hit).
+- **"When to use what" positioning table** in benchmarks doc — data-backed comparison across 8
+  workload types (Atomo vs Payload), tied to measured numbers. Honest about where each fits.
 
 ## [0.4.0] - 2026-06-08
 
