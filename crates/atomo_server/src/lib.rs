@@ -106,10 +106,17 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     for sql in stmts {
         sqlx::query(sql).execute(pool).await?;
     }
-    // For pre-existing databases: add users.tenant_id if missing (idempotent).
+    // For pre-existing databases: add columns introduced after the table was first created
+    // (idempotent). A DB whose `sessions` predates `is_revoked` otherwise breaks auth, since
+    // issue/validate/revoke all reference the column.
     sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT")
         .execute(pool)
         .await?;
+    sqlx::query(
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_revoked BOOLEAN NOT NULL DEFAULT false",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

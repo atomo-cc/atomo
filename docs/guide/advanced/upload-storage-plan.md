@@ -61,7 +61,10 @@ participates in audit/history/projections — this is what makes Atomo's upload 
 - `POST /media` — multipart upload → store bytes + insert metadata + emit event →
   `{id, url, contentType, size}`. **Behind `auth_middleware`**.
 - `GET /media/{id}` — serve bytes (local) or 302 → presigned URL (S3). Gated by read access +
-  tenant scope.
+  tenant scope. The local proxy path honors HTTP **Range** requests (206 / `Content-Range`, 416 for
+  an unsatisfiable range) so `video`/`audio` can seek, advertises `Accept-Ranges: bytes`, and emits
+  a strong `ETag` (the immutable media id) for conditional GETs (`If-None-Match` → 304). On the S3
+  redirect path, S3 serves Range natively against the presigned URL.
 - `DELETE /media/{id}` — soft-delete + `MediaDeleted` event.
 - Requires axum's **`multipart`** feature + `DefaultBodyLimit` size cap.
 
@@ -149,6 +152,10 @@ fast-follows.
   short-lived presigned URL when the backend provides one (S3); local proxies bytes.
 - **Phase SEC** — ✅ magic-byte content sniffing + opt-in tenant read scoping
   (`STORAGE_PRIVATE_READS`); rate limiting is inherited from the app-level middleware.
+- **Range / streaming serve** — ✅ `GET /media/{id}` supports HTTP Range (RFC 7233) on the local
+  proxy path: single-range `206` with `Content-Range`, `416` for unsatisfiable ranges, `Accept-Ranges`
+  on every response, and a strong `ETag` (immutable media id) enabling `If-None-Match` → `304`. This
+  makes `video`/`audio` seekable. Tested by `media_http_supports_range_requests` + `range_parsing_covers_rfc_cases`.
 
 ## Verifying the S3 backend locally (MinIO)
 

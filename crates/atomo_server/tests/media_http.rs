@@ -242,6 +242,103 @@ async fn media_http_full_lifecycle_and_security() {
 
 #[tokio::test]
 #[ignore]
+async fn media_http_supports_range_requests() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let token = seed_user_token(&pool, &auth, None).await;
+    let dir = std::env::temp_dir().join(format!("atomo-media-range-{}", uuid::Uuid::new_v4()));
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
+    state.init().await.unwrap();
+    let app = media_router(state, auth);
+
+    // Upload a known 26-byte payload as octet-stream (no magic-byte constraint).
+    const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let r = app
+        .clone()
+        .oneshot(upload_req(Some(&token), "application/octet-stream", ABC))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(r.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let id = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let get = |range: Option<&str>, inm: Option<&str>| {
+        let mut b = Request::builder().uri(format!("/media/{id}"));
+        if let Some(rg) = range {
+            b = b.header("Range", rg);
+        }
+        if let Some(tag) = inm {
+            b = b.header("If-None-Match", tag);
+        }
+        b.body(Body::empty()).unwrap()
+    };
+
+    // Full GET advertises range support + a strong ETag.
+    let r = app.clone().oneshot(get(None, None)).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(r.headers().get("accept-ranges").unwrap(), "bytes");
+    let etag = r
+        .headers()
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(etag, format!("\"{id}\""));
+
+    // Satisfiable range -> 206 + Content-Range + exact slice.
+    let r = app
+        .clone()
+        .oneshot(get(Some("bytes=2-5"), None))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(r.headers().get("content-range").unwrap(), "bytes 2-5/26");
+    let part = axum::body::to_bytes(r.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    assert_eq!(part.as_ref(), b"CDEF");
+
+    // Suffix range (last 3 bytes) -> 206.
+    let r = app
+        .clone()
+        .oneshot(get(Some("bytes=-3"), None))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+    let part = axum::body::to_bytes(r.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    assert_eq!(part.as_ref(), b"XYZ");
+
+    // Unsatisfiable range -> 416 + Content-Range: bytes */len.
+    let r = app
+        .clone()
+        .oneshot(get(Some("bytes=100-200"), None))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(r.headers().get("content-range").unwrap(), "bytes */26");
+
+    // Conditional GET with the current ETag -> 304.
+    let r = app.clone().oneshot(get(None, Some(&etag))).await.unwrap();
+    assert_eq!(r.status(), StatusCode::NOT_MODIFIED);
+
+    tokio::fs::remove_dir_all(&dir).await.ok();
+}
+
+#[tokio::test]
+#[ignore]
 async fn media_http_rejects_oversized_body() {
     let pool = connect().await;
     let auth = HttpAuthService::new("test-secret", pool.clone());
