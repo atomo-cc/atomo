@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`AtomoClient::create_many` — batch insert in one transaction.** Inserts a batch via **two
   multi-row `INSERT`s** (the rows, then their events) in a single transaction — one round trip each +
-  one `fsync` for the whole batch, instead of 2N statements and N fsyncs. Bulk loads/imports are
-  dramatically faster than `create` in a loop (see [Benchmarks](docs/guide/advanced/benchmarks.md)).
+  one `fsync` for the whole batch, instead of 2N statements and N fsyncs — **~50× faster per row**
+  than `create` in a loop (measured: ~77 µs/row, ~13 k rows/sec, vs ~3.9 ms; co-located).
   A homogeneous batch (records share the same keys) takes the multi-row path; a mixed-shape batch
   falls back to per-row inserts *in the same transaction* (still one `fsync`). Atomic: any failure
   rolls the whole batch back. `before_create` + validation run per record up front; `after_create` +
