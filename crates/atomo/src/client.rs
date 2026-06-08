@@ -198,7 +198,7 @@ impl AtomoClient {
             event_store,
             embedding_store: None,
             hook_runner: Arc::new(crate::hooks::NoopHookRunner),
-            cache: crate::cache::ReadCache::new(60),
+            cache: crate::cache::ReadCache::from_env(60),
         })
     }
 
@@ -933,7 +933,7 @@ impl AtomoClientBuilder {
             hook_runner: self
                 .hook_runner
                 .unwrap_or_else(|| Arc::new(crate::hooks::NoopHookRunner)),
-            cache: crate::cache::ReadCache::new(60),
+            cache: crate::cache::ReadCache::from_env(60),
         })
     }
 }

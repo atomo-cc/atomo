@@ -12,19 +12,52 @@ struct CacheEntry {
     expires_at: Instant,
 }
 
-/// Read-through cache with TTL and event-based invalidation
+/// Cache consistency mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheMode {
+    /// Writes evict the model's cached reads immediately — a read never reflects state older than
+    /// the last write to that model. The default.
+    Strong,
+    /// Writes do **not** evict; cached reads are served until their TTL expires. Reads can be stale
+    /// up to the TTL, but the cache stays hot *through* writes — a much higher hit rate under a
+    /// mixed read/write load. Opt in with `ATOMO_CACHE_MODE=eventual`.
+    Eventual,
+}
+
+/// Read-through cache with TTL and (in strong mode) write-driven invalidation.
 #[derive(Clone)]
 pub struct ReadCache {
     entries: Arc<RwLock<HashMap<String, CacheEntry>>>,
     ttl: Duration,
+    mode: CacheMode,
 }
 
 impl ReadCache {
+    /// Strong-consistency cache with the given TTL (used by tests / internal callers).
     pub fn new(ttl_secs: u64) -> Self {
+        Self::with_mode(ttl_secs, CacheMode::Strong)
+    }
+
+    pub fn with_mode(ttl_secs: u64, mode: CacheMode) -> Self {
         Self {
             entries: Arc::new(RwLock::new(HashMap::new())),
             ttl: Duration::from_secs(ttl_secs),
+            mode,
         }
+    }
+
+    /// Build from env: `ATOMO_CACHE_MODE` (`strong` default | `eventual`) and `ATOMO_CACHE_TTL_SECS`
+    /// (defaults to `default_ttl_secs`). In `eventual` mode the TTL is the **maximum read staleness**.
+    pub fn from_env(default_ttl_secs: u64) -> Self {
+        let ttl = std::env::var("ATOMO_CACHE_TTL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default_ttl_secs);
+        let mode = match std::env::var("ATOMO_CACHE_MODE").as_deref() {
+            Ok("eventual") => CacheMode::Eventual,
+            _ => CacheMode::Strong,
+        };
+        Self::with_mode(ttl, mode)
     }
 
     /// Get a cached value by key
@@ -51,8 +84,12 @@ impl ReadCache {
         );
     }
 
-    /// Invalidate all entries for a model
+    /// Invalidate all entries for a model (on write). In `Eventual` mode this is a **no-op** — the
+    /// cache stays hot through writes and the TTL alone bounds staleness.
     pub async fn invalidate_model(&self, model_name: &str) {
+        if self.mode == CacheMode::Eventual {
+            return;
+        }
         let mut entries = self.entries.write().await;
         entries.retain(|k, _| !k.starts_with(&format!("{}:", model_name)));
     }
@@ -118,6 +155,22 @@ mod tests {
         assert_eq!(c.get("Contact:a").await, None);
         assert_eq!(c.get("Contact:b").await, None);
         assert_eq!(c.get("Company:a").await, Some(json!(3)));
+    }
+
+    #[tokio::test]
+    async fn eventual_mode_keeps_cache_through_writes() {
+        // In eventual mode a write does NOT evict — the entry survives invalidate_model and is
+        // served until its TTL expires (the cache stays hot through writes).
+        let c = ReadCache::with_mode(60, CacheMode::Eventual);
+        c.set("Contact:a", json!(1)).await;
+        c.invalidate_model("Contact").await; // a write would call this; in eventual mode it's a no-op
+        assert_eq!(c.get("Contact:a").await, Some(json!(1)));
+
+        // Strong mode (default) still evicts on write.
+        let s = ReadCache::with_mode(60, CacheMode::Strong);
+        s.set("Contact:a", json!(1)).await;
+        s.invalidate_model("Contact").await;
+        assert_eq!(s.get("Contact:a").await, None);
     }
 
     #[tokio::test]
