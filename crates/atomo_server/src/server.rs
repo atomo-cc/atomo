@@ -441,10 +441,14 @@ impl AtomoServer {
             // Generate/propagate request IDs
             .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
             .layer(PropagateRequestIdLayer::x_request_id())
-            // Structured tracing with request metadata
+            // Structured tracing with request metadata. The per-response completion log is at
+            // DEBUG, not INFO: emitting a formatted log line for *every* request cost ~45% of HTTP
+            // throughput in the benchmarks (and most deployments don't want per-request INFO spam).
+            // Boot/error logs stay at INFO+, and the `request` info_span still carries request-id
+            // context onto any warn/error within a request. Set `RUST_LOG=debug` for per-request logs.
             .layer(
                 TraceLayer::new_for_http()
-                    .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)),
+                    .on_response(DefaultOnResponse::new().level(tracing::Level::DEBUG)),
             )
             .layer(cors_layer);
 

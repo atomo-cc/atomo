@@ -143,9 +143,12 @@ isolates request handling (the layer the data-layer bench excludes). Both co-loc
   headers, CORS, a rate-limit token bucket, and request-id propagation; the bare Fastify does routing
   only. A Fastify with equivalent middleware would close the gap — the honest framing is
   *batteries-included request path vs bare router*.
-- **Actionable tuning:** the default→lean jump (17 k → 30 k req/s) is **mostly per-request `INFO`
-  logging** — set `RUST_LOG=warn` (ship logs as `LOG_FORMAT=json` to a collector) for high-throughput
-  deployments. A big, free win, and the clearest practical takeaway here.
+- **Now fixed in the default.** The default→lean jump (17 k → 30 k req/s) was almost all
+  **per-request `INFO` logging**. The per-request *completion* log is now emitted at **DEBUG**, so a
+  default deployment performs like the "lean" row (~30 k req/s), not the old ~17 k — the benchmark's
+  clearest finding, banked as the default. (Boot/error logs stay at INFO+; set `RUST_LOG=debug` to
+  restore per-request logs; ship as `LOG_FORMAT=json` to a collector.) *The ~17 k "default" row above
+  reflects pre-change behavior.*
 - A single-IP flood also trips Atomo's **rate limiter** (fast 429s — real protection, a load-test
   artifact); raise `RATE_LIMIT_RPS` when benchmarking, as we did.
 

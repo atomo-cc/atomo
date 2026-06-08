@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Per-request completion log moved to `DEBUG` (was `INFO`) — ~45% more HTTP throughput by default.**
+  Emitting a formatted log line for *every* request cost ~45% of request throughput in the benchmarks
+  (~17 k → ~30 k req/s). Default deployments no longer pay it; boot/error logs stay at INFO+ and the
+  per-request `request` span still carries request-id context onto any warn/error. Set `RUST_LOG=debug`
+  to restore per-request logs.
 - **`create` commits the row + its event in one transaction (perf + atomicity).** The data layer
   previously wrote the record (autocommit) and then `event_log` (autocommit) as **two** separate
   commits — two `fsync`s, ~2× the necessary write latency (surfaced by the new benchmarks). They now
