@@ -24,12 +24,16 @@ impl EventStore {
                 model_name TEXT NOT NULL,
                 data JSONB NOT NULL DEFAULT '{}',
                 previous_data JSONB,
+                actor TEXT,
                 timestamp TEXT NOT NULL DEFAULT now()::text,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query("ALTER TABLE event_log ADD COLUMN IF NOT EXISTS actor TEXT")
+            .execute(&self.pool)
+            .await?;
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_event_log_model ON event_log (model_name, timestamp)",
         )
@@ -50,6 +54,11 @@ impl EventStore {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_event_log_actor ON event_log (actor) WHERE actor IS NOT NULL",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -66,8 +75,8 @@ impl EventStore {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         sqlx::query(
-            "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, timestamp)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, actor, timestamp)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (event_id) DO NOTHING"
         )
         .bind(&event.event_id)
@@ -75,6 +84,7 @@ impl EventStore {
         .bind(&event.model_name)
         .bind(serde_json::to_value(&event.data)?)
         .bind(event.previous_data.as_ref().and_then(|d| serde_json::to_value(d).ok()))
+        .bind(&event.actor)
         .bind(&event.timestamp)
         .execute(executor)
         .await?;
@@ -90,25 +100,26 @@ impl EventStore {
         conn: &mut sqlx::PgConnection,
         events: &[ModelEvent],
     ) -> Result<()> {
-        // 6 bind params per event; 5000 → 30 000 params/chunk, comfortably under the 65535 limit.
-        const CHUNK: usize = 5000;
+        // 7 bind params per event; 4000 → 28 000 params/chunk, comfortably under the 65535 limit.
+        const CHUNK: usize = 4000;
         for chunk in events.chunks(CHUNK) {
             let tuples: Vec<String> = (0..chunk.len())
                 .map(|i| {
-                    let b = i * 6;
+                    let b = i * 7;
                     format!(
-                        "(${},${},${},${},${},${})",
+                        "(${},${},${},${},${},${},${})",
                         b + 1,
                         b + 2,
                         b + 3,
                         b + 4,
                         b + 5,
-                        b + 6
+                        b + 6,
+                        b + 7
                     )
                 })
                 .collect();
             let sql = format!(
-                "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, timestamp) \
+                "INSERT INTO event_log (event_id, event_type, model_name, data, previous_data, actor, timestamp) \
                  VALUES {} ON CONFLICT (event_id) DO NOTHING",
                 tuples.join(", ")
             );
@@ -124,6 +135,7 @@ impl EventStore {
                             .as_ref()
                             .and_then(|d| serde_json::to_value(d).ok()),
                     )
+                    .bind(e.actor.clone())
                     .bind(e.timestamp.clone());
             }
             q.execute(&mut *conn).await?;
@@ -135,11 +147,11 @@ impl EventStore {
     pub async fn replay(&self, model_name: &str, since: Option<&str>) -> Result<Vec<ModelEvent>> {
         let rows = if let Some(ts) = since {
             sqlx::query_as::<_, EventRow>(
-                "SELECT event_id, event_type, model_name, data, previous_data, timestamp FROM event_log WHERE model_name = $1 AND timestamp >= $2 ORDER BY timestamp"
+                "SELECT event_id, event_type, model_name, data, previous_data, actor, timestamp FROM event_log WHERE model_name = $1 AND timestamp >= $2 ORDER BY timestamp"
             ).bind(model_name).bind(ts).fetch_all(&self.pool).await?
         } else {
             sqlx::query_as::<_, EventRow>(
-                "SELECT event_id, event_type, model_name, data, previous_data, timestamp FROM event_log WHERE model_name = $1 ORDER BY timestamp"
+                "SELECT event_id, event_type, model_name, data, previous_data, actor, timestamp FROM event_log WHERE model_name = $1 ORDER BY timestamp"
             ).bind(model_name).fetch_all(&self.pool).await?
         };
         Ok(rows.into_iter().map(|r| r.into()).collect())
@@ -152,7 +164,7 @@ impl EventStore {
         entity_id: &str,
     ) -> Result<Vec<ModelEvent>> {
         let rows = sqlx::query_as::<_, EventRow>(
-            "SELECT event_id, event_type, model_name, data, previous_data, timestamp FROM event_log WHERE model_name = $1 AND data->>'id' = $2 ORDER BY timestamp"
+            "SELECT event_id, event_type, model_name, data, previous_data, actor, timestamp FROM event_log WHERE model_name = $1 AND data->>'id' = $2 ORDER BY timestamp"
         ).bind(model_name).bind(entity_id).fetch_all(&self.pool).await?;
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
@@ -165,6 +177,7 @@ struct EventRow {
     model_name: String,
     data: Value,
     previous_data: Option<Value>,
+    actor: Option<String>,
     timestamp: String,
 }
 
@@ -191,7 +204,7 @@ impl From<EventRow> for ModelEvent {
             previous_data,
             timestamp: row.timestamp,
             event_id: row.event_id,
-            actor: None,
+            actor: row.actor,
         }
     }
 }
