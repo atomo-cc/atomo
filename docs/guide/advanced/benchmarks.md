@@ -111,7 +111,8 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | data layer: find_many cold (limit 20, cache miss) | 625 | 570 | 1012 | 1285 | 1 600 |
 | data layer: **find_unique** hot (cache hit) | **0.8** | — | 1 | 1 | **1 219 298** |
 | data layer: find_unique cold (cache miss) | 542 | 500 | 848 | 1191 | 1 845 |
-| data layer: count (`SELECT COUNT(*)`) | 934 | 874 | 1357 | 1795 | 1 071 |
+| data layer: **count** hot (cache hit) | **0.2** | — | — | — | **6 571 295** |
+| data layer: count cold (cache miss) | 1111 | 1025 | 1648 | 2238 | 900 |
 | data layer: find_many + include (20 notes × 3 tags) | 104 | 57 | 75 | 176 | 9 582 |
 | data layer: find_many eventual (hot through writes) | 42.5 | 37 | 73 | 112 | 23 528 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
@@ -141,7 +142,8 @@ bulk operations are safe at any size (a 11 000-row batch is a regression test).
 read (cache miss, after a write invalidates the model cache) costs **~625 µs** — the actual Postgres
 query time (~52× slower). `find_unique` (point read by id) is even faster when cached: **~0.8 µs
 (1.2 M ops/s)**, because the cached value is a single record vs a list. Cold `find_unique` is ~542 µs.
-`count` (`SELECT COUNT(*)`) is uncached and costs ~934 µs per call.
+`count` is now cached under the same per-model key space: hot count returns in **~0.2 µs (6.6 M
+ops/s)**, cold (after a write invalidates) costs ~1111 µs (the DB round trip).
 
 **Relation resolution (`include`):** `find_many` with a `hasMany` include (20 parent notes, each
 resolving 3 child tags) costs **~104 µs** — the child lookups hit the cache on repeated calls, so the
@@ -211,7 +213,7 @@ an external layer). Atomo's in-process cache is what makes reads lopsided.
 | **createMany** (per row, batch 100) | 75 µs (13 k/s) | 64 µs (16 k/s) | Prisma slightly faster (no event-log INSERT in the batch) |
 | **findMany (limit 20)** | **12 µs** hot (84 k/s) | 1340 µs (746/s) | Atomo's cache = **~112×** Prisma; cold Atomo (~625 µs) is ~2× faster (one binary, no IPC) |
 | **findUnique** | **0.8 µs** hot (1.2 M/s) | 607 µs (1.6 k/s) | Atomo's point-read cache = **~760×** Prisma |
-| **count** | 934 µs (1.1 k/s) | 828 µs (1.2 k/s) | both uncached, comparable (Prisma slightly faster — no RLS scope overhead) |
+| **count** | **0.2 µs** hot (6.6 M/s) | 828 µs (1.2 k/s) | Atomo's cached count = **~4 100×** Prisma; cold Atomo (~1111 µs) is comparable |
 | **findMany + include** (20 × 3 tags) | **104 µs** (9.6 k/s) | 1177 µs (850/s) | cached relation resolution = **~11×** Prisma |
 | **update (1 row)** | 3985 µs (251/s) | 4380 µs (228/s) | both fsync-bound; Atomo includes event emission |
 | **delete (1 row)** | 4107 µs (244/s) | 4148 µs (241/s) | effectively identical — the fsync dominates |
@@ -245,7 +247,7 @@ hits the database.
 | **create** | 4429 µs (226/s) | 6186 µs (162/s) | Atomo **~1.4× faster** (includes event emission; Payload runs hooks + locked-doc tracking) |
 | **find (limit 20)** | **12 µs** hot (84 k/s) | 1495 µs (669/s) | Atomo's cache = **~125×** Payload; cold Atomo (~625 µs) is ~2.4× faster |
 | **findByID / findUnique** | **0.8 µs** hot (1.2 M/s) | 689 µs (1.5 k/s) | Atomo's point-read cache = **~860×** Payload |
-| **count** | 934 µs (1.1 k/s) | 393 µs (2.5 k/s) | Payload **~2.4× faster** (lighter count path, no RLS scope) |
+| **count** | **0.2 µs** hot (6.6 M/s) | 393 µs (2.5 k/s) | Atomo's cached count = **~2 000×** Payload; cold Atomo (~1111 µs) is slower (RLS scope overhead) |
 | **find + depth/include** | **104 µs** (9.6 k/s) | 3417 µs (293/s) | Atomo cached = **~33×**; Payload's depth resolution is heavier (each related doc goes through its full find pipeline) |
 | **update (1 row)** | 3985 µs (251/s) | 7271 µs (138/s) | Atomo **~1.8× faster** (includes event emission; Payload runs before/after hooks + locked-doc update) |
 | **delete (1 row)** | 4107 µs (244/s) | 7616 µs (131/s) | Atomo **~1.9× faster** (soft-delete + event; Payload does hard-delete + preference cleanup + locked-doc cleanup) |
@@ -261,8 +263,9 @@ hits the database.
   Atomo's cache bypasses all of that on hot reads. Even cold Atomo reads (pure DB) are ~2× faster
   than Payload's find, because Atomo's query path is thinner (one compiled binary, no JS hook
   pipeline for a no-hook model).
-- **Payload wins on count** — its count path is lighter (Drizzle → `SELECT COUNT(*)` directly) vs
-  Atomo's RLS-scoped count query. A fair callout.
+- **Count is now cached too.** Atomo's count was previously slower than Payload's (RLS scope
+  overhead); now it caches under the same model key space — hot count is **0.2 µs** (~2 000× Payload).
+  Cold count (~1111 µs) is still heavier than Payload's 393 µs due to RLS scoping.
 - **Payload is the closest "apples-to-apples" competitor** — both are schema-driven backend
   frameworks with admin UI, hooks, and relation resolution. The difference: Atomo is a compiled Rust
   binary with an in-process cache; Payload is a Node.js CMS with a richer plugin/admin ecosystem.

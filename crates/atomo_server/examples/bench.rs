@@ -310,14 +310,28 @@ async fn main() {
         stats(t),
     ));
 
-    // ----- count -----
+    // ----- count hot (cache hit after first call) -----
+    client.count("Note", &[]).await.unwrap(); // warm
     let mut t = Vec::with_capacity(iters);
     for _ in 0..iters {
         let s = Instant::now();
         client.count("Note", &[]).await.unwrap();
         t.push(s.elapsed());
     }
-    rows.push(("data layer: count".to_string(), stats(t)));
+    rows.push(("data layer: count hot (cache hit)".to_string(), stats(t)));
+
+    // count cold: write invalidates cache before each count
+    let mut t = Vec::with_capacity(read_iters);
+    for i in 0..read_iters {
+        client
+            .create("Note", &rec(&format!("cnt{i}")), &[], Some("bench"))
+            .await
+            .unwrap();
+        let s = Instant::now();
+        client.count("Note", &[]).await.unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push(("data layer: count cold (cache miss)".to_string(), stats(t)));
 
     // ----- Relation: find_many with include (hasMany) -----
     let rel_schema = "\

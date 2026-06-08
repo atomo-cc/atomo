@@ -711,6 +711,15 @@ impl AtomoClient {
 
     /// Count records matching where clauses
     pub async fn count(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
+        let cache_key = crate::cache::ReadCache::key(
+            model_name,
+            &format!("count:{:?}{:?}", where_clauses, current_tenant()),
+        );
+        if let Some(cached) = self.cache.get(&cache_key).await {
+            if let Some(n) = cached.as_i64() {
+                return Ok(n);
+            }
+        }
         let model = self
             .schema
             .models
@@ -734,7 +743,11 @@ impl AtomoClient {
         };
         let args = build_args(&params)?;
         let row = self.fetch_one_scoped(&sql, args).await?;
-        Ok(row.try_get::<i64, _>("count").unwrap_or(0))
+        let n = row.try_get::<i64, _>("count").unwrap_or(0);
+        self.cache
+            .set(&cache_key, serde_json::Value::Number(n.into()))
+            .await;
+        Ok(n)
     }
 
     /// Count only soft-deleted records (for the trash view's total).
