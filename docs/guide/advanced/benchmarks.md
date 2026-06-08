@@ -31,11 +31,19 @@ Node baseline (`node-postgres`, raw SQL):
 DATABASE_URL=postgres://… BENCH_ITERS=2000 node bench/node-baseline.mjs   # needs `npm i pg`
 ```
 
-Prisma baseline (Prisma Client, the standard Node ORM):
+Prisma baseline (Prisma Client v6.19, **no built-in cache**):
 
 ```bash
 cd bench/prisma-baseline && npm install && npx prisma generate
 DATABASE_URL=postgres://… BENCH_ITERS=2000 node bench.mjs
+```
+
+Payload CMS baseline (Payload v3.32 local API, **no built-in cache**):
+
+```bash
+cd bench/payload-baseline && npm install
+DATABASE_URL=postgres://… PAYLOAD_CONFIG_PATH=$PWD/payload.config.ts \
+  BENCH_ITERS=2000 npx tsx bench.mts
 ```
 
 **Measure co-located** — both against a *local* Postgres on the same host. A remote DB inflates every
@@ -53,6 +61,10 @@ docker run --rm --network host -v "$PWD":/app -w /app -e DATABASE_URL=… \
 docker run --rm --network host -v "$PWD"/bench/prisma-baseline:/app -w /app \
   -e DATABASE_URL=… node:20 \
   bash -c "npm install --silent && npx prisma generate && node bench.mjs"
+# Payload CMS baseline
+docker run --rm --network host -v "$PWD"/bench/payload-baseline:/app -w /app \
+  -e DATABASE_URL=… -e PAYLOAD_CONFIG_PATH=/app/payload.config.ts node:20 \
+  bash -c "npm install --silent && npx tsx bench.mts"
 ```
 
 Both harnesses warm up, time each operation serially, and print a markdown table of mean +
@@ -186,10 +198,11 @@ is slower there) is CPU-only and DB-independent.
 
 ## Head-to-head: Atomo vs Prisma, co-located
 
-The Prisma baseline (`bench/prisma-baseline/`) uses **Prisma Client v6** (the standard ORM layer most
-Node backends use) against the same co-located Postgres, same serial-latency method. Prisma does
-connection pooling, query building, and result mapping via its Rust-based query engine — more than raw
-`node-postgres`, less than Atomo (no event sourcing, hooks, or built-in caching).
+The Prisma baseline (`bench/prisma-baseline/`) uses **Prisma Client v6.19** against the same co-located
+Postgres, same serial-latency method. Prisma v6 does connection pooling, query building, and result
+mapping via its Rust-based query engine — more than raw `node-postgres`, but **has no built-in
+read cache** (every `find` hits the database; caching requires the paid Prisma Accelerate add-on or
+an external layer). Atomo's in-process cache is what makes reads lopsided.
 
 | Operation | Atomo | Prisma | Read |
 |---|--:|--:|---|
@@ -217,6 +230,44 @@ connection pooling, query building, and result mapping via its Rust-based query 
   nested writes, aggregations), Prisma Studio, Prisma Accelerate (hosted cache/pool). **What Atomo
   has that Prisma doesn't:** built-in event sourcing, WASM plugin hooks, durable job engine, admin
   UI, a 9.8 MB single binary, and the cache that makes this comparison lopsided on reads.
+
+## Head-to-head: Atomo vs Payload CMS, co-located
+
+The Payload baseline (`bench/payload-baseline/`) uses **Payload CMS v3.32** (local API —
+`payload.create` / `payload.find` / etc., no HTTP server) against the same co-located Postgres, same
+serial-latency method. Payload v3 uses Drizzle ORM under the hood and does more per operation than
+Prisma or raw SQL: field-level hooks, access control evaluation, locked-document tracking, and
+preference cleanup. Like Prisma, **Payload v3 has no built-in read cache** — every `find` / `findByID`
+hits the database.
+
+| Operation | Atomo | Payload CMS | Read |
+|---|--:|--:|---|
+| **create** | 4429 µs (226/s) | 6186 µs (162/s) | Atomo **~1.4× faster** (includes event emission; Payload runs hooks + locked-doc tracking) |
+| **find (limit 20)** | **12 µs** hot (84 k/s) | 1495 µs (669/s) | Atomo's cache = **~125×** Payload; cold Atomo (~625 µs) is ~2.4× faster |
+| **findByID / findUnique** | **0.8 µs** hot (1.2 M/s) | 689 µs (1.5 k/s) | Atomo's point-read cache = **~860×** Payload |
+| **count** | 934 µs (1.1 k/s) | 393 µs (2.5 k/s) | Payload **~2.4× faster** (lighter count path, no RLS scope) |
+| **find + depth/include** | **104 µs** (9.6 k/s) | 3417 µs (293/s) | Atomo cached = **~33×**; Payload's depth resolution is heavier (each related doc goes through its full find pipeline) |
+| **update (1 row)** | 3985 µs (251/s) | 7271 µs (138/s) | Atomo **~1.8× faster** (includes event emission; Payload runs before/after hooks + locked-doc update) |
+| **delete (1 row)** | 4107 µs (244/s) | 7616 µs (131/s) | Atomo **~1.9× faster** (soft-delete + event; Payload does hard-delete + preference cleanup + locked-doc cleanup) |
+| **bulk create** (per row, ×100) | **75 µs** (13 k/s) | 5434 µs (184/s) | Atomo's multi-row INSERT = **~72× per row**; Payload has no native bulk create (sequential) |
+
+### Honest conclusions
+
+- **Payload does more per operation** — access control hooks, locked-document tracking, preference
+  cleanup on delete — so it's expected to be slower on writes. Atomo does event sourcing per write
+  (which Payload doesn't) and is still ~1.4–1.9× faster on mutations.
+- **Reads are the biggest gap** — same story as Prisma but wider, because Payload's find pipeline
+  (access control evaluation, hook execution, field transforms) adds overhead on top of the DB query.
+  Atomo's cache bypasses all of that on hot reads. Even cold Atomo reads (pure DB) are ~2× faster
+  than Payload's find, because Atomo's query path is thinner (one compiled binary, no JS hook
+  pipeline for a no-hook model).
+- **Payload wins on count** — its count path is lighter (Drizzle → `SELECT COUNT(*)` directly) vs
+  Atomo's RLS-scoped count query. A fair callout.
+- **Payload is the closest "apples-to-apples" competitor** — both are schema-driven backend
+  frameworks with admin UI, hooks, and relation resolution. The difference: Atomo is a compiled Rust
+  binary with an in-process cache; Payload is a Node.js CMS with a richer plugin/admin ecosystem.
+  For read-heavy workloads the gap is decisive; for write-heavy workloads with heavy hook logic,
+  Payload's JS ecosystem may be the right trade.
 
 ## Full-stack HTTP: request throughput
 
