@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event in a caller's transaction. Verified regression-free (data-layer + RLS create tests).
 
 ### Added
+- **Opt-in `eventual` read-cache mode** (`ATOMO_CACHE_MODE=eventual`, `ATOMO_CACHE_TTL_SECS`). By
+  default (`strong`) every write evicts the model's cached reads — correct, but it churns the cache
+  so a write-heavy + read-heavy workload keeps missing. In `eventual` mode writes don't evict; cached
+  reads are served until the TTL (the max staleness), keeping the cache **hot through writes** for a
+  much higher hit rate under mixed load (cache hits ~12 µs vs ~hundreds of µs for a DB read). Default
+  unchanged; consistency trade is the operator's explicit choice. See
+  [Caching](docs/guide/caching.md).
 - **Engine benchmark harness + results** (`crates/atomo_server/examples/bench.rs`,
   `docs/guide/advanced/benchmarks.md`). Reproducible, release-only, in-process micro-benchmarks for
   the data layer (create / find_many), the durable **job lease engine** (1 vs 8 concurrent workers —
