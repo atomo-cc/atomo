@@ -354,7 +354,18 @@ impl AtomoClient {
 
         let (sql, params) = SqlBuilder::insert(model, &data);
         let args = build_args(&params)?;
-        let row = self.fetch_one_scoped(&sql, args).await?;
+
+        // The row insert and its `event_log` write commit together in ONE transaction — a single
+        // `fsync`, not two. (Previously these were two autocommit statements ⇒ two fsyncs ≈ 2× the
+        // create latency on durable storage.) This also makes create **atomic**: a row is never
+        // persisted without its event. The tenant bind (RLS) lives in the same tx, as before.
+        let mut tx = self.pool.begin().await?;
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                bind_tenant_local(&mut tx, &tid).await?;
+            }
+        }
+        let row = sqlx::query_with(&sql, args).fetch_one(&mut *tx).await?;
         let record = row_to_map(&row);
 
         let event = ModelEvent {
@@ -366,9 +377,11 @@ impl AtomoClient {
             event_id: uuid::Uuid::new_v4().to_string(),
             actor: actor.map(|s| s.to_string()),
         };
-        let _ = self.event_sender.send(event.clone());
-        self.event_store.persist(&event).await.ok();
+        self.event_store.persist_in(&mut *tx, &event).await?;
+        tx.commit().await?;
 
+        // Post-commit: in-memory fan-out + after-hook + cache invalidation (unchanged).
+        let _ = self.event_sender.send(event.clone());
         self.hook_runner
             .run_after("after_create", &hook_ctx)
             .await
