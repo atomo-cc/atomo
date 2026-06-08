@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS bench_prisma_notes (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bench_prisma_tags (
+  id TEXT PRIMARY KEY,
+  label TEXT,
+  note_id TEXT NOT NULL REFERENCES bench_prisma_notes(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bench_prisma_events (
+  id TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  data JSONB NOT NULL,
+  at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

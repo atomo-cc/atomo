@@ -31,6 +31,13 @@ Node baseline (`node-postgres`, raw SQL):
 DATABASE_URL=postgres://… BENCH_ITERS=2000 node bench/node-baseline.mjs   # needs `npm i pg`
 ```
 
+Prisma baseline (Prisma Client, the standard Node ORM):
+
+```bash
+cd bench/prisma-baseline && npm install && npx prisma generate
+DATABASE_URL=postgres://… BENCH_ITERS=2000 node bench.mjs
+```
+
 **Measure co-located** — both against a *local* Postgres on the same host. A remote DB inflates every
 write with a network round trip (we learned this the hard way; see Results). One reproducible way to
 do that on a dev box with Postgres in WSL2 is to run each in a container with `--network host`:
@@ -42,6 +49,10 @@ docker run --rm --network host -v "$PWD":/app -w /app -e CARGO_TARGET_DIR=/tmp/t
 # Node baseline
 docker run --rm --network host -v "$PWD":/app -w /app -e DATABASE_URL=… \
   node:20 bash -c "npm i pg --no-save --silent && node bench/node-baseline.mjs"
+# Prisma baseline
+docker run --rm --network host -v "$PWD"/bench/prisma-baseline:/app -w /app \
+  -e DATABASE_URL=… node:20 \
+  bash -c "npm install --silent && npx prisma generate && node bench.mjs"
 ```
 
 Both harnesses warm up, time each operation serially, and print a markdown table of mean +
@@ -172,6 +183,40 @@ machine, same DB, same serial-latency method.
 Other portable takeaways: the **JS plugin load** (Javy/QuickJS instantiate) is a one-time ~400 ms at
 boot, not per-call; the **JS hook tax** (~178 µs/call here on Linux; was ~424 µs on Windows — wasmtime
 is slower there) is CPU-only and DB-independent.
+
+## Head-to-head: Atomo vs Prisma, co-located
+
+The Prisma baseline (`bench/prisma-baseline/`) uses **Prisma Client v6** (the standard ORM layer most
+Node backends use) against the same co-located Postgres, same serial-latency method. Prisma does
+connection pooling, query building, and result mapping via its Rust-based query engine — more than raw
+`node-postgres`, less than Atomo (no event sourcing, hooks, or built-in caching).
+
+| Operation | Atomo | Prisma | Read |
+|---|--:|--:|---|
+| **create + event (txn)** | 4429 µs (226/s) | 4941 µs (202/s) | **comparable** — both fsync-bound; Atomo slightly faster (one binary, no IPC) |
+| create (bare, no event) | — | 4076 µs (245/s) | Prisma's query-engine overhead vs raw node-pg (~2.9 ms) |
+| **createMany** (per row, batch 100) | 75 µs (13 k/s) | 64 µs (16 k/s) | Prisma slightly faster (no event-log INSERT in the batch) |
+| **findMany (limit 20)** | **12 µs** hot (84 k/s) | 1340 µs (746/s) | Atomo's cache = **~112×** Prisma; cold Atomo (~625 µs) is ~2× faster (one binary, no IPC) |
+| **findUnique** | **0.8 µs** hot (1.2 M/s) | 607 µs (1.6 k/s) | Atomo's point-read cache = **~760×** Prisma |
+| **count** | 934 µs (1.1 k/s) | 828 µs (1.2 k/s) | both uncached, comparable (Prisma slightly faster — no RLS scope overhead) |
+| **findMany + include** (20 × 3 tags) | **104 µs** (9.6 k/s) | 1177 µs (850/s) | cached relation resolution = **~11×** Prisma |
+| **update (1 row)** | 3985 µs (251/s) | 4380 µs (228/s) | both fsync-bound; Atomo includes event emission |
+| **delete (1 row)** | 4107 µs (244/s) | 4148 µs (241/s) | effectively identical — the fsync dominates |
+
+### Honest conclusions
+
+- **Writes are a wash.** Both Atomo and Prisma sit in the same ~4–5 ms band for single-row writes —
+  Postgres `fsync` dominates, not the runtime. Atomo does *more* per write (event emission) and is
+  still comparable. Batch writes are similar (~64–75 µs/row).
+- **Reads are where Atomo pulls ahead.** Prisma has no built-in read cache — every `findMany` and
+  `findUnique` hits the database. Atomo's in-process cache serves hot reads in **sub-µs to ~12 µs**
+  vs Prisma's ~600–1300 µs. For read-heavy workloads (most apps), this is the decisive gap.
+- **Prisma is the more direct comparison** than raw `node-postgres`. Most real backends use an ORM,
+  not hand-written SQL. Atomo vs Prisma is the comparison someone evaluating both would actually make.
+- **What Prisma has that Atomo doesn't (yet):** a mature ecosystem, broad ORM features (raw queries,
+  nested writes, aggregations), Prisma Studio, Prisma Accelerate (hosted cache/pool). **What Atomo
+  has that Prisma doesn't:** built-in event sourcing, WASM plugin hooks, durable job engine, admin
+  UI, a 9.8 MB single binary, and the cache that makes this comparison lopsided on reads.
 
 ## Full-stack HTTP: request throughput
 
