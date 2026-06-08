@@ -48,6 +48,15 @@ pub enum StepAction {
         plugin_name: String,
         function: String,
     },
+    /// Enqueue a durable job for an external worker (the job id is stored in `context["job_id"]`).
+    Job {
+        queue: String,
+        kind: String,
+        #[serde(default)]
+        payload: Value,
+        #[serde(default)]
+        idempotency_key: Option<String>,
+    },
     /// Send an HTTP request
     Http {
         method: String,
@@ -103,6 +112,21 @@ pub struct WorkflowEngine {
     /// GraphQL/server layer (no dependency cycle).
     mutation_executor: Option<Arc<dyn MutationExecutor>>,
     plugin_executor: Option<Arc<dyn PluginExecutor>>,
+    job_executor: Option<Arc<dyn JobExecutor>>,
+}
+
+/// Seam for executing a workflow `Job` step. The server implements it against the durable job
+/// store, so a no-code workflow can enqueue work for an external worker.
+#[async_trait::async_trait]
+pub trait JobExecutor: Send + Sync {
+    /// Enqueue a job on `queue` with `kind`/`payload`; returns the job id.
+    async fn enqueue(
+        &self,
+        queue: &str,
+        kind: &str,
+        payload: &Value,
+        idempotency_key: Option<&str>,
+    ) -> Result<String>;
 }
 
 /// Seam for executing a workflow `Mutation` step. The engine defines it; the server implements
@@ -140,6 +164,7 @@ impl WorkflowEngine {
             pool: None,
             mutation_executor: None,
             plugin_executor: None,
+            job_executor: None,
         }
     }
 
@@ -150,6 +175,7 @@ impl WorkflowEngine {
             pool: Some(pool),
             mutation_executor: None,
             plugin_executor: None,
+            job_executor: None,
         }
     }
 
@@ -161,6 +187,11 @@ impl WorkflowEngine {
     /// Inject the executor that runs `Plugin` steps (set at server boot).
     pub fn set_plugin_executor(&mut self, exec: Arc<dyn PluginExecutor>) {
         self.plugin_executor = Some(exec);
+    }
+
+    /// Inject the executor that runs `Job` steps (set at server boot).
+    pub fn set_job_executor(&mut self, exec: Arc<dyn JobExecutor>) {
+        self.job_executor = Some(exec);
     }
 
     /// Ensure the workflows table exists and load any persisted definitions into memory.
@@ -276,6 +307,7 @@ impl WorkflowEngine {
                 &mut execution.context,
                 self.mutation_executor.as_ref(),
                 self.plugin_executor.as_ref(),
+                self.job_executor.as_ref(),
             )
             .await
             {
@@ -298,6 +330,7 @@ impl WorkflowEngine {
                                     &mut execution.context,
                                     self.mutation_executor.as_ref(),
                                     self.plugin_executor.as_ref(),
+                                    self.job_executor.as_ref(),
                                 )
                                 .await
                                 .is_ok()
@@ -427,6 +460,7 @@ async fn execute_step(
     context: &mut HashMap<String, Value>,
     mutation_executor: Option<&Arc<dyn MutationExecutor>>,
     plugin_executor: Option<&Arc<dyn PluginExecutor>>,
+    job_executor: Option<&Arc<dyn JobExecutor>>,
 ) -> Result<()> {
     match action {
         StepAction::Delay { seconds } => {
@@ -482,6 +516,22 @@ async fn execute_step(
             None => anyhow::bail!(
                 "workflow Plugin step: no executor configured (server must inject one)"
             ),
+        },
+        StepAction::Job {
+            queue,
+            kind,
+            payload,
+            idempotency_key,
+        } => match job_executor {
+            Some(exec) => {
+                let id = exec
+                    .enqueue(queue, kind, payload, idempotency_key.as_deref())
+                    .await?;
+                context.insert("job_id".to_string(), Value::String(id));
+            }
+            None => {
+                anyhow::bail!("workflow Job step: no executor configured (server must inject one)")
+            }
         },
     }
     Ok(())
@@ -752,6 +802,96 @@ mod tests {
             exec.context.get("plugin_output"),
             Some(&json!({"normalized": true})),
             "plugin output stored in context"
+        );
+    }
+
+    #[tokio::test]
+    async fn job_step_enqueues_via_injected_executor() {
+        // Records the enqueue args (queue, kind, payload, key) and returns a fixed job id.
+        type Recorded = (String, String, Value, Option<String>);
+        struct MockJobs(std::sync::Mutex<Option<Recorded>>);
+        #[async_trait::async_trait]
+        impl JobExecutor for MockJobs {
+            async fn enqueue(
+                &self,
+                queue: &str,
+                kind: &str,
+                payload: &Value,
+                idempotency_key: Option<&str>,
+            ) -> Result<String> {
+                *self.0.lock().unwrap() = Some((
+                    queue.to_string(),
+                    kind.to_string(),
+                    payload.clone(),
+                    idempotency_key.map(str::to_string),
+                ));
+                Ok("job-123".to_string())
+            }
+        }
+        let rec = std::sync::Arc::new(MockJobs(std::sync::Mutex::new(None)));
+        let mut engine = WorkflowEngine::new();
+        engine.set_job_executor(rec.clone());
+        engine.register(Workflow {
+            name: "job_wf".to_string(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![WorkflowStep {
+                name: "enqueue".to_string(),
+                action: StepAction::Job {
+                    queue: "media-gen".into(),
+                    kind: "video.generate".into(),
+                    payload: json!({"prompt": "hi"}),
+                    idempotency_key: Some("k1".into()),
+                },
+                condition: None,
+                on_failure: FailurePolicy::Stop,
+            }],
+        });
+        let exec = engine.execute("job_wf", HashMap::new()).await.unwrap();
+        assert_eq!(
+            exec.status,
+            ExecutionStatus::Completed,
+            "errors: {:?}",
+            exec.errors
+        );
+        // The job id is exposed to later steps via context.
+        assert_eq!(exec.context.get("job_id"), Some(&json!("job-123")));
+        // The executor received the step's queue/kind/payload/key.
+        let got = rec.0.lock().unwrap().clone().expect("enqueue must run");
+        assert_eq!(got.0, "media-gen");
+        assert_eq!(got.1, "video.generate");
+        assert_eq!(got.2, json!({"prompt": "hi"}));
+        assert_eq!(got.3.as_deref(), Some("k1"));
+    }
+
+    #[tokio::test]
+    async fn job_step_without_executor_fails_loudly() {
+        let engine = WorkflowEngine::new(); // no job executor injected
+        engine.register(Workflow {
+            name: "job_wf_noexec".to_string(),
+            trigger: WorkflowTrigger::Manual,
+            steps: vec![WorkflowStep {
+                name: "enqueue".to_string(),
+                action: StepAction::Job {
+                    queue: "q".into(),
+                    kind: "k".into(),
+                    payload: json!({}),
+                    idempotency_key: None,
+                },
+                condition: None,
+                on_failure: FailurePolicy::Stop,
+            }],
+        });
+        let exec = engine
+            .execute("job_wf_noexec", HashMap::new())
+            .await
+            .unwrap();
+        assert_eq!(exec.status, ExecutionStatus::Failed);
+        assert!(
+            exec.errors
+                .iter()
+                .any(|e| e.contains("no executor configured")),
+            "should fail loudly when no job executor is configured: {:?}",
+            exec.errors
         );
     }
 }

@@ -456,8 +456,12 @@ per media app remains the rational default.
   vitest-tested; not yet npm-published.
 - **Done — REST enqueue seam:** `POST /jobs` (any authenticated user; the job is stamped with the
   caller's tenant), so apps can put work on the queue over HTTP today (`jobs_http` covers it).
-- **Remaining:** Rust worker crate; richer enqueue seams (GraphQL `enqueueJob` mutation, workflow
-  `Job` step, plugin `enqueueJob` effect); `JobProgress` → realtime hub fan-out (live progress).
+- **Done — workflow `Job` step:** a no-code workflow can enqueue a job
+  (`{ "Job": { queue, kind, payload?, idempotency_key? } }`); the new job id lands in the workflow
+  context as `job_id`. Wired via the `JobExecutor` seam (engine-defined, server-injected like the
+  Mutation/Plugin seams); unit-tested in `atomo::workflow`.
+- **Remaining:** Rust worker crate; remaining enqueue seams (GraphQL `enqueueJob` mutation, plugin
+  `enqueueJob` effect); `JobProgress` → realtime hub fan-out (live progress).
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
 ### Phase 4 — Presigned upload + dedup (S3 backend already shipped)

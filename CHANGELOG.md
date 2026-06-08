@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelines). A thrown error fails the job (server applies retry/backoff); `NonRetryableError`
   dead-letters. 9 unit tests (vitest) cover the per-job lifecycle and the `/jobs` client. Not yet
   published to npm (publish pipeline deferred).
+- **Workflow `Job` step** — a no-code workflow can enqueue a durable job
+  (`{ "Job": { "queue", "kind", "payload"?, "idempotency_key"? } }`); the new job id is stored in the
+  workflow context as `job_id` for later steps. Added via a `JobExecutor` seam (engine-defined,
+  server-injected, mirroring the existing Mutation/Plugin step seams). Unit-tested in
+  `atomo::workflow` (enqueue dispatch + fail-loud when no executor is configured).
 - **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
   single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable
   ranges), advertises `Accept-Ranges: bytes`, and emits a strong `ETag` (the immutable media id) so

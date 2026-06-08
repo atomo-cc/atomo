@@ -29,7 +29,11 @@ POST /workflows/{name}/run     # execute a workflow with a JSON context body
 ```
 
 - **Triggers**: `{ "OnEvent": { "model", "event_type" } }`, `"Manual"`, or `{ "Schedule": { "cron" } }`.
-- **Actions**: `Mutation`, `Plugin`, `Http`, `Delay`, `SetVariable`.
+- **Actions**: `Mutation`, `Plugin`, `Http`, `Delay`, `SetVariable`, `Job`.
+  - `Job` enqueues a durable job for an external worker:
+    `{ "Job": { "queue": "media-gen", "kind": "video.generate", "payload": { … }, "idempotency_key": "k1" } }`.
+    The new job's id is stored in the workflow context as `job_id` for later steps. See
+    [External Workers & Blob Storage](/guide/advanced/workers-and-blobs-design).
 - **Conditions**: `{ "field", "operator", "value" }` with operators `eq | neq | gt | lt | contains`.
 - **Failure policy**: `"Stop"`, `"Continue"`, or `{ "Retry": { "max_attempts": N } }`.
 

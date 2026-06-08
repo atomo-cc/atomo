@@ -39,6 +39,25 @@ impl atomo::workflow::PluginExecutor for WasmPluginExecutorAdapter {
     }
 }
 
+/// Adapter: runs workflow `Job` steps by enqueueing onto the durable job queue.
+struct JobEnqueueAdapter(std::sync::Arc<crate::jobs::JobStore>);
+
+#[async_trait::async_trait]
+impl atomo::workflow::JobExecutor for JobEnqueueAdapter {
+    async fn enqueue(
+        &self,
+        queue: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+        idempotency_key: Option<&str>,
+    ) -> Result<String> {
+        // Workflow-enqueued jobs use default retry/priority and no tenant binding.
+        self.0
+            .enqueue(queue, kind, payload.clone(), idempotency_key, 5, 0, None)
+            .await
+    }
+}
+
 pub struct AtomoServer {
     config: ServerConfig,
     atomo: Atomo,
@@ -342,6 +361,8 @@ impl AtomoServer {
         if let Some(mgr) = &self.plugin_manager {
             engine.set_plugin_executor(std::sync::Arc::new(WasmPluginExecutorAdapter(mgr.clone())));
         }
+        // Inject the job executor so workflow `Job` steps enqueue onto the durable job queue.
+        engine.set_job_executor(std::sync::Arc::new(JobEnqueueAdapter(job_store.clone())));
         let workflow_engine = std::sync::Arc::new(engine);
         {
             workflow_engine.init().await?; // create table + load persisted definitions
