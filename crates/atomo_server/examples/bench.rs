@@ -9,6 +9,7 @@
 //! recorded results on a stated machine.
 
 use atomo::hooks::{HookContext, HookRunner};
+use atomo::query::{WhereClause, WhereOperator};
 use atomo_server::jobs::JobStore;
 use atomo_server::wasm_hooks::WasmHookRunner;
 use atomo_server::wasm_plugins::WasmPluginManager;
@@ -112,15 +113,70 @@ async fn main() {
     let batches = (iters / batch_size).max(1);
     let mut t = Vec::with_capacity(batches);
     for b in 0..batches {
-        let batch: Vec<_> = (0..batch_size)
-            .map(|i| rec(&format!("b{b}-{i}")))
-            .collect();
+        let batch: Vec<_> = (0..batch_size).map(|i| rec(&format!("b{b}-{i}"))).collect();
         let s = Instant::now();
-        client.create_many("Note", &batch, Some("bench")).await.unwrap();
+        client
+            .create_many("Note", &batch, Some("bench"))
+            .await
+            .unwrap();
         t.push(s.elapsed() / batch_size as u32); // per-row
     }
     rows.push((
         format!("data layer: create_many (per row, batch={batch_size})"),
+        stats(t),
+    ));
+
+    // update_many: update a single row by id, repeatedly (per-call latency, like create — now the
+    // UPDATE + its event commit in one transaction).
+    let id_of =
+        |r: &HashMap<String, Value>| r.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+    let by_id = |id: &str| {
+        vec![WhereClause {
+            field: "id".to_string(),
+            operator: WhereOperator::Equals,
+            value: json!(id),
+        }]
+    };
+    let seed_id = id_of(
+        &client
+            .create("Note", &rec("seed"), &[], Some("bench"))
+            .await
+            .unwrap(),
+    );
+    let mut_iters = iters.min(500);
+    let mut t = Vec::with_capacity(mut_iters);
+    for i in 0..mut_iters {
+        let patch = rec(&format!("u{i}"));
+        let s = Instant::now();
+        client
+            .update_many("Note", &by_id(&seed_id), &patch, &[], Some("bench"))
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: update_many (1 row by id)".to_string(),
+        stats(t),
+    ));
+
+    // delete_many: soft-delete a single row by id (row created untimed, the delete is timed).
+    let mut t = Vec::with_capacity(mut_iters);
+    for i in 0..mut_iters {
+        let id = id_of(
+            &client
+                .create("Note", &rec(&format!("d{i}")), &[], Some("bench"))
+                .await
+                .unwrap(),
+        );
+        let s = Instant::now();
+        client
+            .delete_many("Note", &by_id(&id), Some("bench"))
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "data layer: delete_many (1 row by id)".to_string(),
         stats(t),
     ));
 

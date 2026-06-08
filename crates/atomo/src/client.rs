@@ -543,11 +543,21 @@ impl AtomoClient {
 
         let (sql, params) = SqlBuilder::update(model, where_clauses, &data);
         let args = build_args(&params)?;
-        let rows = self.fetch_all_scoped(&sql, args).await?;
-        let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
 
-        for record in &records {
-            let event = ModelEvent {
+        // The UPDATE and its events commit in ONE transaction — one `fsync`, not 1 + N autocommits
+        // — and the event writes now propagate (were `.ok()`-swallowed), so an update is never
+        // recorded without its events.
+        let mut tx = self.pool.begin().await?;
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                bind_tenant_local(&mut tx, &tid).await?;
+            }
+        }
+        let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
+        let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
+        let events: Vec<ModelEvent> = records
+            .iter()
+            .map(|record| ModelEvent {
                 event_type: EventType::Updated,
                 model_name: model_name.to_string(),
                 data: record.clone(),
@@ -555,11 +565,14 @@ impl AtomoClient {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
                 actor: actor.map(|s| s.to_string()),
-            };
-            let _ = self.event_sender.send(event.clone());
-            self.event_store.persist(&event).await.ok();
-        }
+            })
+            .collect();
+        self.event_store.persist_many_in(&mut *tx, &events).await?;
+        tx.commit().await?;
 
+        for event in &events {
+            let _ = self.event_sender.send(event.clone());
+        }
         self.hook_runner
             .run_after("after_update", &hook_ctx)
             .await
@@ -600,30 +613,44 @@ impl AtomoClient {
 
         let (sql, params) = SqlBuilder::soft_delete(model, where_clauses);
         let args = build_args(&params)?;
+
         // `RETURNING id` gives us the affected rows so each Deleted event can carry its id
-        // (projections/audit need it to remove the right row).
-        let rows = self.fetch_all_scoped(&sql, args).await?;
-        let count = rows.len();
-
-        for row in &rows {
-            let record = row_to_map(row);
-            let mut data = HashMap::new();
-            if let Some(id) = record.get("id") {
-                data.insert("id".to_string(), id.clone());
+        // (projections/audit need it to remove the right row). The soft-delete UPDATE and its
+        // events commit in ONE transaction (one `fsync`, not 1 + N), and the event writes now
+        // propagate (were `.ok()`-swallowed).
+        let mut tx = self.pool.begin().await?;
+        if rls_enabled() {
+            if let Some(tid) = current_tenant() {
+                bind_tenant_local(&mut tx, &tid).await?;
             }
-            let event = ModelEvent {
-                event_type: EventType::Deleted,
-                model_name: model_name.to_string(),
-                data,
-                previous_data: None,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                event_id: uuid::Uuid::new_v4().to_string(),
-                actor: actor.map(|s| s.to_string()),
-            };
-            let _ = self.event_sender.send(event.clone());
-            self.event_store.persist(&event).await.ok();
         }
+        let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
+        let count = rows.len();
+        let events: Vec<ModelEvent> = rows
+            .iter()
+            .map(|row| {
+                let record = row_to_map(row);
+                let mut data = HashMap::new();
+                if let Some(id) = record.get("id") {
+                    data.insert("id".to_string(), id.clone());
+                }
+                ModelEvent {
+                    event_type: EventType::Deleted,
+                    model_name: model_name.to_string(),
+                    data,
+                    previous_data: None,
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    actor: actor.map(|s| s.to_string()),
+                }
+            })
+            .collect();
+        self.event_store.persist_many_in(&mut *tx, &events).await?;
+        tx.commit().await?;
 
+        for event in &events {
+            let _ = self.event_sender.send(event.clone());
+        }
         self.hook_runner
             .run_after("after_delete", &hook_ctx)
             .await
