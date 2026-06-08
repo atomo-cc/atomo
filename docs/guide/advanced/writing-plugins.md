@@ -57,7 +57,7 @@ auth = true                     # require a valid JWT; the verified principal is
 | Grant | Enables |
 |---|---|
 | `ReadDatabase` | `dbQuery` effects (a constrained read) |
-| `WriteDatabase` | `transaction` batches in a route handler |
+| `WriteDatabase` | `transaction` batches in a route handler; `enqueueJob` effects |
 | `WriteEvents` | `emit` effects (publish a model event) |
 | `HttpRequests` | `http` effects (outbound HTTP) |
 
@@ -108,6 +108,9 @@ batch back and returns the else-response. Full spec + the no-overdraw debit exam
 - `{ "emit":    { "model", "event": "Created"|"Updated"|"Deleted"|"Custom", "data" } }`
 - `{ "dbQuery": { "model", "limit" } }` — a constrained read-only `SELECT`
 - `{ "http":    { "method", "url", "body"? } }`
+- `{ "enqueueJob": { "queue", "kind", "payload"?, "idempotencyKey"? } }` — enqueue a durable job
+  for an external worker (needs `WriteDatabase`). See
+  [Durable Jobs & Workers](/guide/advanced/jobs-and-workers).
 
 ## Build a Tier-1 (JavaScript) plugin
 

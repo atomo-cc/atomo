@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-08
+
+> **External workers + blob storage.** Atomo can now own side-effect-heavy workloads (external API
+> orchestration, browser automation, media pipelines) via trusted out-of-process **workers** that
+> pull durable, event-sourced **jobs** — without weakening the plugin sandbox. Plus first-class
+> **blob** handling (Range streaming, checksum + dedup, presigned S3 upload). All additive: default
+> single-server use is unchanged and there are **no breaking changes** (new `jobs`/`worker_tokens`
+> tables and the `media.checksum`/`sessions.is_revoked` columns self-create/heal on boot). Jobs can
+> be enqueued from REST, GraphQL, a workflow step, a plugin, or Rust; workers use the
+> `@atomo-cc/worker-sdk` (not yet npm-published). Note: the optional `storage-s3` feature now
+> requires **rustc ≥ 1.91** (latest aws-sdk MSRV). `:v0.4.0` + `:latest` images are built from this tag.
+
+### Added
+- **Durable job queue + external-worker lease API** (`atomo_server::jobs` + `/jobs`) — the brain
+  side of the external-worker model. Event-sourced jobs (`Job` model events for the lifecycle) with
+  idempotent enqueue (`(queue, idempotency_key)`), atomic `SELECT … FOR UPDATE SKIP LOCKED` leasing
+  with per-job lease tokens, heartbeat/complete/fail, visibility-timeout reclaim (at-least-once,
+  crash-safe — a background sweep runs every `ATOMO_JOB_RECLAIM_INTERVAL` seconds), and a
+  retry/backoff/dead-letter policy. Exposed over HTTP for trusted out-of-process workers:
+  `POST /jobs/lease|{id}/heartbeat|{id}/complete|{id}/fail`, authenticated by a **worker token**
+  (`X-Worker-Token`) — a credential class distinct from user JWTs, stored only as a SHA-256 and
+  **capability-scoped to specific queues**. Apps enqueue work with `POST /jobs` (any authenticated
+  user; the job is stamped with the caller's tenant) and poll it with `GET /jobs/{id}` (status +
+  result, tenant-scoped). Admins manage worker tokens via `POST /jobs/workers` (mint),
+  `GET /jobs/workers` (list, metadata only), and `DELETE /jobs/workers/{id}` (revoke → the token's
+  requests immediately 401). Proven against Postgres (`jobs_store`: lifecycle, idempotency, concurrent
+  disjoint dispatch, reclaim, retry→dead, worker-token mint/verify/revoke; `jobs_http`:
+  enqueue→lease→complete + status poll + validation + token list/revoke + 401/403/409 enforcement). Documented in [Durable Jobs & External
+  Workers](docs/guide/advanced/jobs-and-workers.md) + [Jobs API](docs/api/jobs.md). Remaining enqueue
+  seams (GraphQL mutation / plugin effect) are the next slice; the workflow `Job` step already
+  enqueues. See [External Workers & Blob Storage](docs/guide/advanced/workers-and-blobs-design.md).
+- **TypeScript worker SDK** (`@atomo-cc/worker-sdk`, `packages/atomo-worker-sdk`). Write a handler
+  per job `kind`; the SDK owns the `lease → heartbeat → complete/fail` loop, concurrency, and
+  auto-heartbeat, so worker code only does the actual work (provider APIs, browser automation, media
+  pipelines). A thrown error fails the job (server applies retry/backoff); `NonRetryableError`
+  dead-letters. 9 unit tests (vitest) cover the per-job lifecycle and the `/jobs` client. Not yet
+  published to npm (publish pipeline deferred).
+- **Plugin `enqueueJob` effect** — a WASM/JS plugin can enqueue a durable job by returning
+  `{ "enqueueJob": { "queue", "kind", "payload"?, "idempotencyKey"? } }`, gated by the plugin's
+  `WriteDatabase` permission (works on both the CRUD-hook and route-handler effect paths). DB-tested
+  (`wasm_plugins::tests::enqueue_job_effect_creates_a_job`). This is the **last enqueue seam** — jobs
+  can now be created from REST, GraphQL, a workflow step, a plugin, or Rust.
+- **GraphQL `enqueueJob` mutation** — enqueue a durable job from GraphQL
+  (`enqueueJob(queue, kind, payload?, idempotencyKey?, maxAttempts?, priority?)` → job id). Requires
+  an authenticated request and stamps the request's tenant. Backed by a `JobStore` registered in the
+  schema context. Postgres-tested (`jobs_graphql`: auth required, enqueue, tenant stamping).
+- **Live job progress over realtime** — `POST /jobs/{id}/progress` (worker token) extends the lease
+  and publishes an **ephemeral** update (`{ jobId, percent, message, data }`) to the realtime channel
+  `job:{id}` — *not* written to the event log. A UI subscribes to that channel over `/realtime/ws`
+  for a live progress bar. The worker SDK exposes it as `ctx.progress({ percent?, message?, data? })`.
+  Proven end-to-end against Postgres + the in-memory hub (`jobs_http_progress_publishes_to_realtime`:
+  worker posts → watcher receives) + SDK vitest.
+- **Workflow `Job` step** — a no-code workflow can enqueue a durable job
+  (`{ "Job": { "queue", "kind", "payload"?, "idempotency_key"? } }`); the new job id is stored in the
+  workflow context as `job_id` for later steps. Added via a `JobExecutor` seam (engine-defined,
+  server-injected, mirroring the existing Mutation/Plugin step seams). Unit-tested in
+  `atomo::workflow` (enqueue dispatch + fail-loud when no executor is configured).
+- **HTTP Range support for media serving** (`GET /media/{id}`). The local proxy path honors
+  single-range `Range` requests (`206 Partial Content` + `Content-Range`, `416` for unsatisfiable
+  ranges), advertises `Accept-Ranges: bytes`, and emits a strong `ETag` (the immutable media id) so
+  conditional GETs (`If-None-Match`) return `304`. This makes `video`/`audio` seekable/scrubbable.
+  S3-backed reads continue to 302-redirect to a presigned URL, which serves Range natively.
+
+- **Presigned direct upload (S3)** — `POST /media/presign` returns a presigned **PUT** URL so a
+  client (e.g. a worker) uploads large media **straight to S3** without streaming through the server;
+  `POST /media/commit` then validates the tenant-prefixed key, confirms + measures the object via S3
+  `HEAD`, dedups on checksum, and records metadata. New `StorageBackend::presigned_put_url` + `size`
+  (S3 = presign/HEAD; local = unsupported/stat). Verified end-to-end against MinIO
+  (`s3_presigned_put_is_uploadable`, `media_presign_commit_roundtrip`). The `storage-s3` feature now
+  requires rustc ≥ 1.91 (latest aws-sdk MSRV).
+- **Media content checksum + dedup** — every upload now records a sha256 `checksum` (returned in the
+  `POST /media` response). Identical content for the **same tenant** dedups to the existing media id
+  (nothing re-stored) — re-uploading the same reference image is free. Tenant-scoped (no cross-tenant
+  sharing), ignores soft-deleted rows; `media.checksum` self-heals on boot for pre-existing DBs.
+  Tested (`media_http_dedups_identical_content_per_tenant`).
+
+### Fixed
+- **Platform-table column drift self-heals on boot.** `ensure_platform_tables` now idempotently adds
+  `sessions.is_revoked` (alongside the existing `users.tenant_id` patch) for databases created before
+  the column existed — without it, auth (`issue/validate/revoke`) failed against an older `sessions`
+  table.
+
 ## [0.3.0] - 2026-06-06
 
 > **Opt-in multi-tenant RLS + multi-project control-plane foundations.** Default single-server use

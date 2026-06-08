@@ -61,7 +61,16 @@ participates in audit/history/projections — this is what makes Atomo's upload 
 - `POST /media` — multipart upload → store bytes + insert metadata + emit event →
   `{id, url, contentType, size}`. **Behind `auth_middleware`**.
 - `GET /media/{id}` — serve bytes (local) or 302 → presigned URL (S3). Gated by read access +
-  tenant scope.
+  tenant scope. The local proxy path honors HTTP **Range** requests (206 / `Content-Range`, 416 for
+  an unsatisfiable range) so `video`/`audio` can seek, advertises `Accept-Ranges: bytes`, and emits
+  a strong `ETag` (the immutable media id) for conditional GETs (`If-None-Match` → 304). On the S3
+  redirect path, S3 serves Range natively against the presigned URL.
+- `POST /media/presign` — (S3 only) get a presigned **PUT** URL for a large/out-of-band upload →
+  `{ id, key, uploadUrl }`. `501` when the backend can't presign (local disk). The client PUTs bytes
+  **directly** to `uploadUrl` (they never pass through the server), then calls commit.
+- `POST /media/commit` — register a presigned upload: `{ id, key, filename?, contentType?, checksum? }`.
+  Validates `key` belongs to the caller's tenant, confirms the object exists + measures it via S3
+  `HEAD`, dedups on `checksum`, records metadata + emits `Media` Created → `{ id, url, deduped }`.
 - `DELETE /media/{id}` — soft-delete + `MediaDeleted` event.
 - Requires axum's **`multipart`** feature + `DefaultBodyLimit` size cap.
 
@@ -149,6 +158,22 @@ fast-follows.
   short-lived presigned URL when the backend provides one (S3); local proxies bytes.
 - **Phase SEC** — ✅ magic-byte content sniffing + opt-in tenant read scoping
   (`STORAGE_PRIVATE_READS`); rate limiting is inherited from the app-level middleware.
+- **Range / streaming serve** — ✅ `GET /media/{id}` supports HTTP Range (RFC 7233) on the local
+  proxy path: single-range `206` with `Content-Range`, `416` for unsatisfiable ranges, `Accept-Ranges`
+  on every response, and a strong `ETag` (immutable media id) enabling `If-None-Match` → `304`. This
+  makes `video`/`audio` seekable. Tested by `media_http_supports_range_requests` + `range_parsing_covers_rfc_cases`.
+- **Content checksum + dedup** — ✅ every upload records a sha256 `checksum` (returned in the upload
+  response). Identical content for the **same tenant** dedups to the existing media id — nothing is
+  re-stored (e.g. re-uploading the same reference image is free). Dedup is tenant-scoped (never
+  shares bytes across tenants) and ignores soft-deleted rows. Tested by
+  `media_http_dedups_identical_content_per_tenant`.
+- **Presigned direct upload (S3)** — ✅ `POST /media/presign` returns a presigned **PUT** URL; the
+  client uploads bytes **directly to S3** (never through the server), then `POST /media/commit`
+  validates the tenant-prefixed key, confirms + measures the object via S3 `HEAD`, dedups, and
+  records metadata. `presigned_put_url` + `size` on the `StorageBackend` trait (S3 = presign/HEAD,
+  local = None/stat). **Verified against MinIO** (`s3_presigned_put_is_uploadable`,
+  `media_presign_commit_roundtrip`). For large media a worker bypasses the server entirely. *(The
+  `storage-s3` feature needs rustc ≥ 1.91 — the latest aws-sdk MSRV.)*
 
 ## Verifying the S3 backend locally (MinIO)
 

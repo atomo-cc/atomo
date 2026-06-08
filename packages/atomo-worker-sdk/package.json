@@ -1,0 +1,41 @@
+{
+  "name": "@atomo-cc/worker-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for writing Atomo external job workers — supply handlers, the SDK owns the lease/heartbeat/complete/fail loop.",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "atomo",
+    "jobs",
+    "worker",
+    "queue"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

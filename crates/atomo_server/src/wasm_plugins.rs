@@ -258,6 +258,8 @@ impl WasmPluginManager {
                 ("dbQuery", Permission::ReadDatabase)
             } else if obj.contains_key("http") {
                 ("http", Permission::HttpRequests)
+            } else if obj.contains_key("enqueueJob") {
+                ("enqueueJob", Permission::WriteDatabase)
             } else {
                 continue;
             };
@@ -360,6 +362,41 @@ impl WasmPluginManager {
                 let _ = tx.send(event);
             }
             Some(serde_json::json!({ "emit": e }).to_string())
+        } else if let Some(j) = obj.get("enqueueJob") {
+            // { queue, kind, payload?, idempotencyKey? } — enqueue a durable job for an external
+            // worker (gated by WriteDatabase). Stamped with no tenant; include one in the payload
+            // if needed. The job's lifecycle events flow through the same event sender.
+            let queue = j.get("queue").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = j.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            if queue.is_empty() || kind.is_empty() {
+                return Some(
+                    serde_json::json!({ "enqueueJob": { "error": "queue and kind required" } })
+                        .to_string(),
+                );
+            }
+            let payload = j
+                .get("payload")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let idem = j.get("idempotencyKey").and_then(|v| v.as_str());
+            match &self.event_sender {
+                Some(tx) => {
+                    let store = crate::jobs::JobStore::new(pool.clone(), tx.clone());
+                    match store.enqueue(queue, kind, payload, idem, 5, 0, None).await {
+                        Ok(id) => {
+                            Some(serde_json::json!({ "enqueueJob": { "id": id } }).to_string())
+                        }
+                        Err(e) => Some(
+                            serde_json::json!({ "enqueueJob": { "error": e.to_string() } })
+                                .to_string(),
+                        ),
+                    }
+                }
+                None => Some(
+                    serde_json::json!({ "enqueueJob": { "error": "job queue unavailable" } })
+                        .to_string(),
+                ),
+            }
         } else {
             None
         }
@@ -393,6 +430,8 @@ impl WasmPluginManager {
                 Permission::ReadDatabase
             } else if obj.contains_key("http") {
                 Permission::HttpRequests
+            } else if obj.contains_key("enqueueJob") {
+                Permission::WriteDatabase
             } else {
                 continue;
             };
@@ -551,5 +590,50 @@ mod tests {
             .contains("\"ok\":false"));
 
         sqlx::query("DROP TABLE widgets").execute(&pool).await.ok();
+    }
+
+    // DB-gated: the `enqueueJob` plugin effect enqueues a real durable job.
+    #[tokio::test]
+    #[ignore]
+    async fn enqueue_job_effect_creates_a_job() {
+        use super::WasmPluginManager;
+        use sqlx::Row;
+        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let (tx, _rx) = tokio::sync::broadcast::channel(8);
+        // Ensure the jobs table exists.
+        crate::jobs::JobStore::new(pool.clone(), tx.clone())
+            .init()
+            .await
+            .unwrap();
+
+        let mut mgr = WasmPluginManager::new("plugins").unwrap();
+        mgr.set_event_sender(tx);
+        let http = reqwest::Client::new();
+        let queue = format!("plugin-{}", uuid::Uuid::new_v4());
+
+        let effect = serde_json::json!({
+            "enqueueJob": { "queue": queue, "kind": "k", "payload": { "x": 1 } }
+        });
+        let res = mgr
+            .fulfill_one_effect(&effect, &pool, &http)
+            .await
+            .expect("enqueueJob effect returns a result");
+        let v: serde_json::Value = serde_json::from_str(&res).unwrap();
+        let id = v["enqueueJob"]["id"].as_str().expect("job id returned");
+
+        let row = sqlx::query("SELECT status, queue, kind FROM jobs WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("status"), "queued");
+        assert_eq!(row.get::<String, _>("queue"), queue);
+        assert_eq!(row.get::<String, _>("kind"), "k");
+
+        // A blank queue/kind is reported as an error, not a panic.
+        let bad = serde_json::json!({ "enqueueJob": { "queue": "", "kind": "k" } });
+        let res = mgr.fulfill_one_effect(&bad, &pool, &http).await.unwrap();
+        assert!(res.contains("error"), "blank queue rejected: {res}");
     }
 }

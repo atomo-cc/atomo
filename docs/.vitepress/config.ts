@@ -34,7 +34,7 @@ export default defineConfig({
         { text: '路线图', link: '/zh/roadmap' }
       ]},
       {
-        text: 'v0.1.0',
+        text: 'v0.4.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Roadmap', link: '/roadmap' }
@@ -88,6 +88,7 @@ export default defineConfig({
             { text: 'Access Control (RBAC)', link: '/guide/advanced/access-hooks' },
             { text: 'Validation Rules', link: '/guide/advanced/validation' },
             { text: 'Multi-tenant', link: '/guide/advanced/multi-tenant' },
+            { text: 'Durable Jobs & Workers', link: '/guide/advanced/jobs-and-workers' },
             { text: 'AI & Vector Search', link: '/guide/advanced/ai-vector' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },
@@ -100,6 +101,7 @@ export default defineConfig({
             { text: 'Proposal: Custom HTTP Routes', link: '/guide/advanced/custom-routes-proposal' },
             { text: 'Design: Custom Routes Phase 3', link: '/guide/advanced/custom-routes-phase3-design' },
             { text: 'Design: Multi-Project Platform', link: '/guide/advanced/multi-project-design' },
+            { text: 'Design: External Workers & Blob Storage', link: '/guide/advanced/workers-and-blobs-design' },
             { text: 'Proposal: Schema Constraints', link: '/guide/advanced/schema-constraints-proposal' },
             { text: 'Plan: CRM Conformance Suite', link: '/guide/advanced/crm-conformance-plan' }
           ]
@@ -116,6 +118,7 @@ export default defineConfig({
             { text: 'Auth (REST)', link: '/api/auth' },
             { text: 'Audit (REST)', link: '/api/audit' },
             { text: 'Workflows (REST)', link: '/api/workflows' },
+            { text: 'Jobs (REST)', link: '/api/jobs' },
             { text: 'Projections (REST)', link: '/api/projections' },
             { text: 'Schema Metadata', link: '/api/metadata' },
             { text: 'Content Blocks', link: '/api/content-blocks' },

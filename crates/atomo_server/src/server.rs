@@ -39,6 +39,25 @@ impl atomo::workflow::PluginExecutor for WasmPluginExecutorAdapter {
     }
 }
 
+/// Adapter: runs workflow `Job` steps by enqueueing onto the durable job queue.
+struct JobEnqueueAdapter(std::sync::Arc<crate::jobs::JobStore>);
+
+#[async_trait::async_trait]
+impl atomo::workflow::JobExecutor for JobEnqueueAdapter {
+    async fn enqueue(
+        &self,
+        queue: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+        idempotency_key: Option<&str>,
+    ) -> Result<String> {
+        // Workflow-enqueued jobs use default retry/priority and no tenant binding.
+        self.0
+            .enqueue(queue, kind, payload.clone(), idempotency_key, 5, 0, None)
+            .await
+    }
+}
+
 pub struct AtomoServer {
     config: ServerConfig,
     atomo: Atomo,
@@ -200,6 +219,65 @@ impl AtomoServer {
         let media_router = crate::media::media_router(media_state, auth_service.clone());
         info!("   ✓ Media storage ready");
 
+        // Ephemeral realtime hub — created here (before the job wiring) so the job-progress
+        // endpoint can publish live updates to it; the same hub backs the `/realtime/ws` router
+        // mounted further down.
+        let realtime_hub = if self.config.enable_realtime {
+            Some(atomo_realtime::Hub::new())
+        } else {
+            None
+        };
+        // A long-lived system connection used to publish job progress onto `job:{id}` channels.
+        let job_progress_publisher = match &realtime_hub {
+            Some(hub) => Some(
+                hub.connect(atomo_realtime::Principal::new("system:jobs", None))
+                    .await
+                    .handle,
+            ),
+            None => None,
+        };
+
+        // Durable job queue + worker-token auth (external-worker lease API under /jobs).
+        let job_store = std::sync::Arc::new(crate::jobs::JobStore::new(
+            self.atomo.db_pool().clone(),
+            self.atomo.event_sender(),
+        ));
+        job_store.init().await?;
+        let worker_tokens = std::sync::Arc::new(crate::jobs::WorkerTokenStore::new(
+            self.atomo.db_pool().clone(),
+        ));
+        worker_tokens.init().await?;
+        let jobs_router = crate::job_routes::jobs_router(
+            job_store.clone(),
+            worker_tokens.clone(),
+            auth_service.clone(),
+            job_progress_publisher,
+        );
+        // Crash recovery: periodically return expired leases (dead/stalled workers) to the queue.
+        {
+            let store = job_store.clone();
+            let interval_secs: u64 = std::env::var("ATOMO_JOB_RECLAIM_INTERVAL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|&n| n >= 1)
+                .unwrap_or(30);
+            tokio::spawn(async move {
+                let mut ticker =
+                    tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+                loop {
+                    ticker.tick().await;
+                    match store.reclaim_expired().await {
+                        Ok(n) if n > 0 => {
+                            tracing::info!(reclaimed = n, "reclaimed expired job leases")
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::warn!(error = %e, "job lease reclaim failed"),
+                    }
+                }
+            });
+        }
+        info!("   ✓ Job queue ready (lease API at /jobs)");
+
         // Audit listener: record an audit entry for every model mutation event.
         {
             let audit = audit_service.clone();
@@ -302,6 +380,8 @@ impl AtomoServer {
         if let Some(mgr) = &self.plugin_manager {
             engine.set_plugin_executor(std::sync::Arc::new(WasmPluginExecutorAdapter(mgr.clone())));
         }
+        // Inject the job executor so workflow `Job` steps enqueue onto the durable job queue.
+        engine.set_job_executor(std::sync::Arc::new(JobEnqueueAdapter(job_store.clone())));
         let workflow_engine = std::sync::Arc::new(engine);
         {
             workflow_engine.init().await?; // create table + load persisted definitions
@@ -371,10 +451,9 @@ impl AtomoServer {
         // Rate limiting
         let rate_limiter = crate::rate_limit::RateLimiter::from_env();
 
-        // Ephemeral realtime tier (in-memory hub; durable outcomes still go via
-        // the normal command path). Started once here and shared by the route.
-        let realtime_router = if self.config.enable_realtime {
-            let hub = atomo_realtime::Hub::new();
+        // Ephemeral realtime tier (in-memory hub; durable outcomes still go via the normal command
+        // path). The hub was created above (so job progress can publish to it); mount its WS route.
+        let realtime_router = if let Some(hub) = realtime_hub {
             info!("   ✓ Realtime hub started (ephemeral channels + presence)");
             Some(crate::realtime::realtime_router(hub, auth_service.clone()))
         } else {
@@ -412,7 +491,8 @@ impl AtomoServer {
             .merge(crate::registry_routes::registry_router(
                 registry_store.clone(),
             ))
-            .merge(media_router);
+            .merge(media_router)
+            .merge(jobs_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }

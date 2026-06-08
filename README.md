@@ -37,7 +37,7 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
   control plane** (`atomo_control_plane` — foundations + `atomo project` CLI; not yet a runnable
   service), and the local-first SDK. See the [roadmap](docs/roadmap.md).
 
-Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.3.0`) rather than `:latest` for
+Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.4.0`) rather than `:latest` for
 reproducibility.
 
 ## 🚀 Quick Start
