@@ -2,7 +2,8 @@
 //!
 //! Three trust planes share the `/jobs` prefix:
 //! - **Worker plane** (`X-Worker-Token`): `lease` / `{id}/heartbeat` / `{id}/complete` / `{id}/fail`
-//!   — the pull side an external worker drives. The token is capability-scoped to specific queues.
+//!   / `{id}/progress` — the pull side an external worker drives. The token is capability-scoped to
+//!   specific queues. `progress` publishes an ephemeral update to the job's realtime channel.
 //! - **App plane** (user JWT): `POST /jobs` enqueues work (stamped with the caller's tenant);
 //!   `GET /jobs/{id}` polls a job's status/result (tenant-scoped). (Richer enqueue seams — GraphQL
 //!   mutation, plugin effect — can follow; the workflow `Job` step already enqueues.)
@@ -11,6 +12,7 @@
 use crate::auth::{optional_auth_middleware, AuthUser, HttpAuthService};
 use crate::jobs::{FailOutcome, JobStore, LeasedJob, WorkerIdentity, WorkerTokenStore};
 use crate::platform_models::UserRole;
+use atomo_realtime::{ClientHandle, ClientMsg};
 use axum::{
     extract::{Path, Request, State},
     http::StatusCode,
@@ -175,6 +177,58 @@ async fn fail(
         Ok(Some(FailOutcome::DeadLetter)) => Json(json!({ "outcome": "dead" })).into_response(),
         // Stale lease — no-op.
         Ok(None) => StatusCode::CONFLICT.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Realtime channel a job's live progress is published to. A client that enqueued job `id`
+/// subscribes to `job:{id}` over `/realtime/ws` to watch it.
+pub fn progress_channel(id: &str) -> String {
+    format!("job:{id}")
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressReq {
+    lease_id: String,
+    #[serde(default = "default_visibility")]
+    visibility_secs: i64,
+    percent: Option<f64>,
+    message: Option<String>,
+    #[serde(default)]
+    data: Value,
+}
+
+/// Report live progress for a leased job. Validates+extends the lease (progress is a sign of life,
+/// like a heartbeat), then publishes an ephemeral message to the job's realtime channel — it is
+/// **not** written to the durable event log. `409` if the lease was lost.
+async fn progress(
+    State((jobs, publisher)): State<(Arc<JobStore>, Option<ClientHandle>)>,
+    Extension(_worker): Extension<WorkerIdentity>,
+    Path(id): Path<String>,
+    Json(req): Json<ProgressReq>,
+) -> Response {
+    let vis = req.visibility_secs.clamp(1, 86_400);
+    match jobs.heartbeat(&id, &req.lease_id, vis).await {
+        Ok(true) => {
+            if let Some(pubr) = &publisher {
+                let body = json!({
+                    "jobId": id,
+                    "percent": req.percent,
+                    "message": req.message,
+                    "data": req.data,
+                });
+                if let Ok(raw) = serde_json::value::to_raw_value(&body) {
+                    pubr.dispatch(ClientMsg::Publish {
+                        channel: progress_channel(&id),
+                        payload: raw,
+                    })
+                    .await;
+                }
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(false) => StatusCode::CONFLICT.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -356,6 +410,7 @@ pub fn jobs_router(
     jobs: Arc<JobStore>,
     workers: Arc<WorkerTokenStore>,
     auth: HttpAuthService,
+    progress_publisher: Option<ClientHandle>,
 ) -> Router {
     let worker_routes = Router::new()
         .route("/jobs/lease", post(lease))
@@ -367,6 +422,16 @@ pub fn jobs_router(
             worker_auth_middleware,
         ))
         .with_state(jobs.clone());
+
+    // Progress reporting carries the realtime publisher alongside the store, so it lives in its own
+    // worker-token-authed sub-router (distinct state type from the routes above).
+    let progress_route = Router::new()
+        .route("/jobs/{id}/progress", post(progress))
+        .route_layer(middleware::from_fn_with_state(
+            workers.clone(),
+            worker_auth_middleware,
+        ))
+        .with_state((jobs.clone(), progress_publisher));
 
     // App-side enqueue + status poll: any authenticated user.
     let app_routes = Router::new()
@@ -388,5 +453,8 @@ pub fn jobs_router(
         ))
         .with_state(workers);
 
-    worker_routes.merge(app_routes).merge(admin_routes)
+    worker_routes
+        .merge(progress_route)
+        .merge(app_routes)
+        .merge(admin_routes)
 }

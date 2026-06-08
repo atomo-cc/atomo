@@ -460,8 +460,11 @@ per media app remains the rational default.
   (`{ "Job": { queue, kind, payload?, idempotency_key? } }`); the new job id lands in the workflow
   context as `job_id`. Wired via the `JobExecutor` seam (engine-defined, server-injected like the
   Mutation/Plugin seams); unit-tested in `atomo::workflow`.
+- **Done — `JobProgress` → realtime:** `POST /jobs/{id}/progress` (worker token) extends the lease
+  and publishes an ephemeral update to the realtime hub on channel `job:{id}` (not the event log);
+  the SDK exposes `ctx.progress(...)`. Proven end-to-end (`jobs_http_progress_publishes_to_realtime`).
 - **Remaining:** Rust worker crate; remaining enqueue seams (GraphQL `enqueueJob` mutation, plugin
-  `enqueueJob` effect); `JobProgress` → realtime hub fan-out (live progress).
+  `enqueueJob` effect).
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
 ### Phase 4 — Presigned upload + dedup (S3 backend already shipped)

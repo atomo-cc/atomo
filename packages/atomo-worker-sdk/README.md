@@ -47,6 +47,8 @@ process.on("SIGTERM", () => worker.stop());
   and dead-letters once attempts are exhausted. Throw `NonRetryableError` to dead-letter immediately.
 - **Heartbeats are automatic.** While a handler runs, the SDK extends the lease. If the lease is lost
   (a heartbeat returns `409`), `ctx.signal` aborts so a cooperating handler can bail early.
+- **Live progress.** Call `ctx.progress({ percent?, message?, data? })` to publish an ephemeral
+  update; it fans out over realtime on channel `job:{id}` (not persisted) for a UI to show progress.
 - **Capability-scoped.** The worker token only lets you lease the queues it was minted for; leasing
   any other queue is rejected by the server.
 

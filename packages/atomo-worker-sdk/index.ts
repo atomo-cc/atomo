@@ -26,6 +26,16 @@ export interface LeasedJob {
   leaseId: string;
 }
 
+/** A live progress update, published to the job's realtime channel (`job:{id}`). */
+export interface ProgressUpdate {
+  /** Fraction complete, 0..1 (your convention). */
+  percent?: number;
+  /** Human-readable status line. */
+  message?: string;
+  /** Arbitrary structured detail. */
+  data?: unknown;
+}
+
 export interface JobContext {
   /** The leased job (with its `payload`). */
   job: LeasedJob;
@@ -33,6 +43,8 @@ export interface JobContext {
   signal: AbortSignal;
   /** Extend the lease now. The SDK also auto-heartbeats while the handler runs. */
   heartbeat(): Promise<void>;
+  /** Publish a live progress update (ephemeral — fans out over realtime, not persisted). */
+  progress(update: ProgressUpdate): Promise<void>;
 }
 
 export type JobHandler = (ctx: JobContext) => Promise<unknown> | unknown;
@@ -116,10 +128,18 @@ export class JobsClient {
     const res = await this.post(`/jobs/${id}/fail`, { leaseId, error, retryable });
     if (!res.ok && res.status !== 409) throw new Error(`fail failed: ${res.status}`);
   }
+
+  /** Publish a progress update. Returns `false` if the lease was lost (409). */
+  async progress(id: string, leaseId: string, update: ProgressUpdate): Promise<boolean> {
+    const res = await this.post(`/jobs/${id}/progress`, { leaseId, ...update });
+    if (res.status === 409) return false;
+    if (!res.ok) throw new Error(`progress failed: ${res.status}`);
+    return true;
+  }
 }
 
 /** Minimal surface `handleJob` needs — lets tests pass a fake client. */
-export type JobLifecycle = Pick<JobsClient, "heartbeat" | "complete" | "fail">;
+export type JobLifecycle = Pick<JobsClient, "heartbeat" | "complete" | "fail" | "progress">;
 
 /**
  * Run a single leased job to completion: auto-heartbeat while the handler runs, then `complete`
@@ -148,8 +168,13 @@ export async function handleJob(
   };
   const timer = setInterval(() => void beat(), Math.max(1, opts.heartbeatSecs) * 1000);
 
+  const progress = async (update: ProgressUpdate): Promise<void> => {
+    const alive = await client.progress(job.id, job.leaseId, update);
+    if (!alive) controller.abort();
+  };
+
   try {
-    const result = await handler({ job, signal: controller.signal, heartbeat: beat });
+    const result = await handler({ job, signal: controller.signal, heartbeat: beat, progress });
     await client.complete(job.id, job.leaseId, result ?? null);
   } catch (err) {
     const retryable = !(err instanceof NonRetryableError);

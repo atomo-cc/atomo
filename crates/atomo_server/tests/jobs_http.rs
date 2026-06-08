@@ -70,7 +70,7 @@ async fn jobs_http_lease_lifecycle_and_auth() {
     jobs.init().await.unwrap();
     let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
     workers.init().await.unwrap();
-    let app = jobs_router(jobs.clone(), workers.clone(), auth);
+    let app = jobs_router(jobs.clone(), workers.clone(), auth, None);
 
     let allowed = format!("media-{}", uuid::Uuid::new_v4());
     let forbidden = format!("billing-{}", uuid::Uuid::new_v4());
@@ -249,7 +249,7 @@ async fn jobs_http_enqueue_validation_idempotency_and_fail_outcomes() {
     jobs.init().await.unwrap();
     let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
     workers.init().await.unwrap();
-    let app = jobs_router(jobs.clone(), workers.clone(), auth);
+    let app = jobs_router(jobs.clone(), workers.clone(), auth, None);
     let queue = format!("q-{}", uuid::Uuid::new_v4());
 
     // A non-admin user cannot mint worker tokens.
@@ -371,7 +371,7 @@ async fn jobs_http_worker_token_list_and_revoke() {
     jobs.init().await.unwrap();
     let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
     workers.init().await.unwrap();
-    let app = jobs_router(jobs, workers, auth);
+    let app = jobs_router(jobs, workers, auth, None);
     let queue = format!("q-{}", uuid::Uuid::new_v4());
 
     let admin_hdr = [("authorization", format!("Bearer {admin}"))];
@@ -490,4 +490,98 @@ async fn jobs_http_worker_token_list_and_revoke() {
         StatusCode::UNAUTHORIZED,
         "revoked token rejected"
     );
+}
+
+#[tokio::test]
+#[ignore]
+async fn jobs_http_progress_publishes_to_realtime() {
+    use atomo_realtime::{ClientMsg, Hub, Principal, ServerMsg};
+
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let (tx, _rx) = tokio::sync::broadcast::channel(64);
+    let jobs = Arc::new(JobStore::new(pool.clone(), tx));
+    jobs.init().await.unwrap();
+    let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
+    workers.init().await.unwrap();
+    let queue = format!("media-{}", uuid::Uuid::new_v4());
+
+    // Enqueue + lease a job directly to get a valid lease.
+    let job_id = jobs
+        .enqueue(&queue, "video.generate", json!({}), None, 5, 0, None)
+        .await
+        .unwrap();
+    let leased = jobs
+        .lease(std::slice::from_ref(&queue), 1, 30)
+        .await
+        .unwrap();
+    let lease_id = leased[0].lease_id.clone();
+    let (_tok_id, token) = workers
+        .mint("w", std::slice::from_ref(&queue))
+        .await
+        .unwrap();
+
+    // Hub: a watcher subscribes to the job's channel; the server gets a system publisher.
+    let hub = Hub::new();
+    let mut watcher = hub.connect(Principal::new("watcher", None)).await;
+    let channel = format!("job:{job_id}");
+    watcher
+        .handle
+        .dispatch(ClientMsg::Subscribe {
+            channel: channel.clone(),
+        })
+        .await;
+    let publisher = hub
+        .connect(Principal::new("system:jobs", None))
+        .await
+        .handle;
+    // Let the subscribe command register before publishing.
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+    let app = jobs_router(jobs, workers, auth, Some(publisher));
+
+    // Report progress with the valid lease → 204.
+    let r = app
+        .clone()
+        .oneshot(post(
+            &format!("/jobs/{job_id}/progress"),
+            &[("x-worker-token", &token)],
+            json!({"leaseId": lease_id, "percent": 0.5, "message": "halfway"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::NO_CONTENT);
+
+    // The watcher receives the progress on the job channel (skipping any presence frames).
+    let mut got = None;
+    for _ in 0..5 {
+        match tokio::time::timeout(std::time::Duration::from_secs(2), watcher.outbound.recv()).await
+        {
+            Ok(Some(ServerMsg::Message {
+                channel: ch,
+                payload,
+                ..
+            })) if ch == channel => {
+                got = Some(serde_json::from_str::<Value>(payload.get()).unwrap());
+                break;
+            }
+            Ok(Some(_)) => continue, // presence/joined — ignore
+            _ => break,
+        }
+    }
+    let msg = got.expect("watcher received a progress message");
+    assert_eq!(msg["jobId"], job_id);
+    assert_eq!(msg["percent"], 0.5);
+    assert_eq!(msg["message"], "halfway");
+
+    // A bogus lease → 409 (and nothing published).
+    let r = app
+        .oneshot(post(
+            &format!("/jobs/{job_id}/progress"),
+            &[("x-worker-token", &token)],
+            json!({"leaseId": "nope", "message": "x"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::CONFLICT);
 }

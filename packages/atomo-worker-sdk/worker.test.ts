@@ -18,11 +18,13 @@ function fakeClient(): JobLifecycle & {
   heartbeat: ReturnType<typeof vi.fn>;
   complete: ReturnType<typeof vi.fn>;
   fail: ReturnType<typeof vi.fn>;
+  progress: ReturnType<typeof vi.fn>;
 } {
   return {
     heartbeat: vi.fn().mockResolvedValue(true),
     complete: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue(undefined),
+    progress: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -71,6 +73,30 @@ describe("handleJob", () => {
       return null;
     }, OPTS);
     expect(seen).toEqual({ prompt: "hi" });
+  });
+
+  it("ctx.progress publishes via the client", async () => {
+    const c = fakeClient();
+    await handleJob(c, JOB, async ({ progress }) => {
+      await progress({ percent: 0.5, message: "halfway" });
+      return null;
+    }, OPTS);
+    expect(c.progress).toHaveBeenCalledWith("j1", "L1", { percent: 0.5, message: "halfway" });
+  });
+});
+
+describe("JobsClient.progress", () => {
+  it("posts to /jobs/{id}/progress and returns false on a lost lease (409)", async () => {
+    const ok = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    let client = new JobsClient("http://h", "tok", ok as unknown as typeof fetch);
+    expect(await client.progress("j1", "L1", { percent: 0.1 })).toBe(true);
+    const [url, init] = ok.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://h/jobs/j1/progress");
+    expect(JSON.parse(init.body as string)).toEqual({ leaseId: "L1", percent: 0.1 });
+
+    const lost = vi.fn().mockResolvedValue(new Response(null, { status: 409 }));
+    client = new JobsClient("http://h", "tok", lost as unknown as typeof fetch);
+    expect(await client.progress("j1", "L1", {})).toBe(false);
   });
 });
 

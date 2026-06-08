@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelines). A thrown error fails the job (server applies retry/backoff); `NonRetryableError`
   dead-letters. 9 unit tests (vitest) cover the per-job lifecycle and the `/jobs` client. Not yet
   published to npm (publish pipeline deferred).
+- **Live job progress over realtime** — `POST /jobs/{id}/progress` (worker token) extends the lease
+  and publishes an **ephemeral** update (`{ jobId, percent, message, data }`) to the realtime channel
+  `job:{id}` — *not* written to the event log. A UI subscribes to that channel over `/realtime/ws`
+  for a live progress bar. The worker SDK exposes it as `ctx.progress({ percent?, message?, data? })`.
+  Proven end-to-end against Postgres + the in-memory hub (`jobs_http_progress_publishes_to_realtime`:
+  worker posts → watcher receives) + SDK vitest.
 - **Workflow `Job` step** — a no-code workflow can enqueue a durable job
   (`{ "Job": { "queue", "kind", "payload"?, "idempotency_key"? } }`); the new job id is stored in the
   workflow context as `job_id` for later steps. Added via a `JobExecutor` seam (engine-defined,

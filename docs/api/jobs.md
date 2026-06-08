@@ -17,6 +17,7 @@ POST   /jobs/lease            # lease up to N eligible jobs
 POST   /jobs/{id}/heartbeat   # extend a held lease
 POST   /jobs/{id}/complete    # mark a leased job succeeded (+ result)
 POST   /jobs/{id}/fail        # report a failed attempt
+POST   /jobs/{id}/progress    # publish a live progress update (realtime)
 
 # Admin plane (user JWT, Admin role)
 POST   /jobs/workers          # mint a worker token
@@ -96,6 +97,19 @@ Each returned job carries a unique `leaseId` that must be echoed back to heartbe
 { "outcome": "dead" }
 // 409 → the lease is stale (no-op)
 ```
+
+### `POST /jobs/{id}/progress`
+
+Publish a live, **ephemeral** progress update — it fans out over realtime (it is **not** written to
+the durable event log). Also extends the lease (progress is a sign of life).
+
+```json
+{ "leaseId": "…", "percent": 0.5, "message": "calling provider", "data": { … } }   // → 204; 409 if the lease is stale
+```
+
+The server publishes `{ "jobId", "percent", "message", "data" }` to the realtime channel
+**`job:{id}`**. A client that enqueued the job subscribes to that channel over `/realtime/ws` to
+watch it live.
 
 ## Admin plane
 

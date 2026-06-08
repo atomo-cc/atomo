@@ -87,14 +87,27 @@ const worker = createWorker({
   concurrency: 4,
 });
 
-worker.on("video.generate", async ({ job, signal }) => {
+worker.on("video.generate", async ({ job, signal, progress }) => {
   if (typeof job.payload !== "object") throw new NonRetryableError("bad payload");
+  await progress({ percent: 0.1, message: "calling provider" });  // live update (see below)
   const mp4 = await runProviderPipeline(job.payload, { signal }); // your native code
   return { assetId: await upload(mp4) };                          // → stored as the job result
 });
 
 worker.start();
 process.on("SIGTERM", () => worker.stop());
+```
+
+### Live progress (optional)
+
+Call `ctx.progress({ percent?, message?, data? })` from a handler to publish an **ephemeral** update.
+It fans out over realtime on the channel **`job:{id}`** (it is *not* persisted). A UI that enqueued
+the job subscribes to that channel over `/realtime/ws` to show a live progress bar:
+
+```ts
+const ws = new WebSocket("ws://localhost:3000/realtime/ws?token=" + jwt);
+ws.onopen = () => ws.send(JSON.stringify({ op: "subscribe", channel: `job:${jobId}` }));
+ws.onmessage = (e) => { const m = JSON.parse(e.data); /* { jobId, percent, message, data } */ };
 ```
 
 ## 4. Poll the result

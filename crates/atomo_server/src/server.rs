@@ -219,6 +219,24 @@ impl AtomoServer {
         let media_router = crate::media::media_router(media_state, auth_service.clone());
         info!("   ✓ Media storage ready");
 
+        // Ephemeral realtime hub — created here (before the job wiring) so the job-progress
+        // endpoint can publish live updates to it; the same hub backs the `/realtime/ws` router
+        // mounted further down.
+        let realtime_hub = if self.config.enable_realtime {
+            Some(atomo_realtime::Hub::new())
+        } else {
+            None
+        };
+        // A long-lived system connection used to publish job progress onto `job:{id}` channels.
+        let job_progress_publisher = match &realtime_hub {
+            Some(hub) => Some(
+                hub.connect(atomo_realtime::Principal::new("system:jobs", None))
+                    .await
+                    .handle,
+            ),
+            None => None,
+        };
+
         // Durable job queue + worker-token auth (external-worker lease API under /jobs).
         let job_store = std::sync::Arc::new(crate::jobs::JobStore::new(
             self.atomo.db_pool().clone(),
@@ -233,6 +251,7 @@ impl AtomoServer {
             job_store.clone(),
             worker_tokens.clone(),
             auth_service.clone(),
+            job_progress_publisher,
         );
         // Crash recovery: periodically return expired leases (dead/stalled workers) to the queue.
         {
@@ -432,10 +451,9 @@ impl AtomoServer {
         // Rate limiting
         let rate_limiter = crate::rate_limit::RateLimiter::from_env();
 
-        // Ephemeral realtime tier (in-memory hub; durable outcomes still go via
-        // the normal command path). Started once here and shared by the route.
-        let realtime_router = if self.config.enable_realtime {
-            let hub = atomo_realtime::Hub::new();
+        // Ephemeral realtime tier (in-memory hub; durable outcomes still go via the normal command
+        // path). The hub was created above (so job progress can publish to it); mount its WS route.
+        let realtime_router = if let Some(hub) = realtime_hub {
             info!("   ✓ Realtime hub started (ephemeral channels + presence)");
             Some(crate::realtime::realtime_router(hub, auth_service.clone()))
         } else {
