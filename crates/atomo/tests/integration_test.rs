@@ -454,3 +454,270 @@ async fn test_restore_and_hard_delete() {
         0
     );
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_restore_emits_restored_event() {
+    use atomo::query::{WhereClause, WhereOperator};
+    let schema = test_schema();
+    let client = atomo::client::AtomoClient::builder()
+        .database_url(
+            std::env::var("DATABASE_URL").unwrap_or("postgresql://localhost/atomo_test".into()),
+        )
+        .enable_migrations(true)
+        .build(&schema)
+        .await
+        .expect("Failed to build client");
+
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), json!("RestoreEvent"));
+    let record = client
+        .create("TestUser", &data, &[], None)
+        .await
+        .expect("create failed");
+    let id = record.get("id").cloned().unwrap();
+    let where_clauses = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: id,
+    }];
+
+    client
+        .delete_many("TestUser", &where_clauses, None)
+        .await
+        .unwrap();
+
+    let mut rx = client.subscribe("TestUser", &[], &[]).await;
+
+    client
+        .restore_many("TestUser", &where_clauses, None)
+        .await
+        .unwrap();
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timeout waiting for Restored event")
+        .expect("recv failed");
+    assert_eq!(event.model_name, "TestUser");
+    assert!(
+        matches!(event.event_type, atomo::events::EventType::Restored),
+        "expected Restored, got {:?}",
+        event.event_type
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_hard_delete_emits_hard_deleted_event() {
+    use atomo::query::{WhereClause, WhereOperator};
+    let schema = test_schema();
+    let client = atomo::client::AtomoClient::builder()
+        .database_url(
+            std::env::var("DATABASE_URL").unwrap_or("postgresql://localhost/atomo_test".into()),
+        )
+        .enable_migrations(true)
+        .build(&schema)
+        .await
+        .expect("Failed to build client");
+
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), json!("HardDeleteEvent"));
+    let record = client
+        .create("TestUser", &data, &[], None)
+        .await
+        .expect("create failed");
+    let id = record.get("id").cloned().unwrap();
+    let where_clauses = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: id,
+    }];
+
+    let mut rx = client.subscribe("TestUser", &[], &[]).await;
+
+    client
+        .hard_delete_many("TestUser", &where_clauses, None)
+        .await
+        .unwrap();
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timeout waiting for HardDeleted event")
+        .expect("recv failed");
+    assert_eq!(event.model_name, "TestUser");
+    assert!(
+        matches!(event.event_type, atomo::events::EventType::HardDeleted),
+        "expected HardDeleted, got {:?}",
+        event.event_type
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_actor_persisted_and_replayed() {
+    use atomo::query::{WhereClause, WhereOperator};
+    let schema = test_schema();
+    let client = atomo::client::AtomoClient::builder()
+        .database_url(
+            std::env::var("DATABASE_URL").unwrap_or("postgresql://localhost/atomo_test".into()),
+        )
+        .enable_migrations(true)
+        .build(&schema)
+        .await
+        .expect("Failed to build client");
+
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), json!("ActorTest"));
+    let record = client
+        .create("TestUser", &data, &[], Some("user-42"))
+        .await
+        .expect("create failed");
+    let id = record.get("id").cloned().unwrap();
+
+    // Update with a different actor
+    let where_clauses = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: id.clone(),
+    }];
+    let mut update_data = HashMap::new();
+    update_data.insert("name".to_string(), json!("ActorTestUpdated"));
+    client
+        .update_many("TestUser", &where_clauses, &update_data, &[], Some("user-99"))
+        .await
+        .expect("update failed");
+
+    // Replay all events and verify actors survived the round-trip
+    let store = atomo::event_store::EventStore::new(client.db_pool().clone());
+    let events = store.replay("TestUser", None).await.expect("replay failed");
+    let actor_events: Vec<_> = events
+        .iter()
+        .filter(|e| e.data.get("name").map(|v| v.as_str()) == Some(Some("ActorTest"))
+            || e.data.get("name").map(|v| v.as_str()) == Some(Some("ActorTestUpdated")))
+        .collect();
+
+    assert!(
+        actor_events.len() >= 2,
+        "expected at least a Created + Updated event, got {}",
+        actor_events.len()
+    );
+    let created = actor_events
+        .iter()
+        .find(|e| matches!(e.event_type, atomo::events::EventType::Created))
+        .expect("no Created event found");
+    assert_eq!(
+        created.actor.as_deref(),
+        Some("user-42"),
+        "Created event actor must be user-42"
+    );
+    let updated = actor_events
+        .iter()
+        .find(|e| matches!(e.event_type, atomo::events::EventType::Updated))
+        .expect("no Updated event found");
+    assert_eq!(
+        updated.actor.as_deref(),
+        Some("user-99"),
+        "Updated event actor must be user-99"
+    );
+
+    // Also verify entity_history returns actor
+    let id_str = id.as_str().unwrap();
+    let history = store
+        .entity_history("TestUser", id_str)
+        .await
+        .expect("entity_history failed");
+    assert!(
+        history.iter().any(|e| e.actor.as_deref() == Some("user-42")),
+        "entity_history must include actor"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_restore_and_hard_delete_events_persist_to_event_log() {
+    use atomo::query::{WhereClause, WhereOperator};
+    let schema = test_schema();
+    let client = atomo::client::AtomoClient::builder()
+        .database_url(
+            std::env::var("DATABASE_URL").unwrap_or("postgresql://localhost/atomo_test".into()),
+        )
+        .enable_migrations(true)
+        .build(&schema)
+        .await
+        .expect("Failed to build client");
+
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), json!("EventLogPersist"));
+    let record = client
+        .create("TestUser", &data, &[], Some("actor-a"))
+        .await
+        .expect("create failed");
+    let id = record.get("id").cloned().unwrap();
+    let id_str = id.as_str().unwrap().to_string();
+    let where_clauses = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: id,
+    }];
+
+    // Soft delete → restore → hard delete
+    client
+        .delete_many("TestUser", &where_clauses, Some("actor-b"))
+        .await
+        .unwrap();
+    client
+        .restore_many("TestUser", &where_clauses, Some("actor-c"))
+        .await
+        .unwrap();
+    client
+        .hard_delete_many("TestUser", &where_clauses, Some("actor-d"))
+        .await
+        .unwrap();
+
+    // Replay entity history — all four lifecycle events should be persisted
+    let store = atomo::event_store::EventStore::new(client.db_pool().clone());
+    let history = store
+        .entity_history("TestUser", &id_str)
+        .await
+        .expect("entity_history failed");
+
+    let types: Vec<_> = history.iter().map(|e| format!("{:?}", e.event_type)).collect();
+    assert!(
+        types.contains(&"Created".to_string()),
+        "missing Created in {types:?}"
+    );
+    assert!(
+        types.contains(&"Deleted".to_string()),
+        "missing Deleted in {types:?}"
+    );
+    assert!(
+        types.contains(&"Restored".to_string()),
+        "missing Restored in {types:?}"
+    );
+    assert!(
+        types.contains(&"HardDeleted".to_string()),
+        "missing HardDeleted in {types:?}"
+    );
+
+    // Verify actors on each event
+    let actors: Vec<_> = history
+        .iter()
+        .map(|e| (format!("{:?}", e.event_type), e.actor.clone()))
+        .collect();
+    assert!(
+        actors.contains(&("Created".to_string(), Some("actor-a".to_string()))),
+        "Created actor mismatch in {actors:?}"
+    );
+    assert!(
+        actors.contains(&("Deleted".to_string(), Some("actor-b".to_string()))),
+        "Deleted actor mismatch in {actors:?}"
+    );
+    assert!(
+        actors.contains(&("Restored".to_string(), Some("actor-c".to_string()))),
+        "Restored actor mismatch in {actors:?}"
+    );
+    assert!(
+        actors.contains(&("HardDeleted".to_string(), Some("actor-d".to_string()))),
+        "HardDeleted actor mismatch in {actors:?}"
+    );
+}

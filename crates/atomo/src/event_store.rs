@@ -187,6 +187,8 @@ impl From<EventRow> for ModelEvent {
             "Created" => EventType::Created,
             "Updated" => EventType::Updated,
             "Deleted" => EventType::Deleted,
+            "Restored" => EventType::Restored,
+            "HardDeleted" => EventType::HardDeleted,
             _ => EventType::Created,
         };
         let data = match row.data {
