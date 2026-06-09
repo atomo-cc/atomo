@@ -338,8 +338,7 @@ fn resolve_fields(
         let optional = if is_id { false } else if is_required { false } else { is_optional || !is_required };
         // For relation fields, if not explicitly required, default to optional.
         let optional = if f.base_type == "relation" && !is_required { true } else { optional };
-        // Timestamp fields default to not optional.
-        let optional = if f.base_type == "datetime" { false } else { optional };
+        let optional = if f.base_type == "datetime" && !is_optional { false } else { optional };
 
         let mut attrs = Vec::new();
         if is_id {
@@ -543,15 +542,48 @@ fn parse_event_list(on_block: &str, event_kind: &str) -> Vec<EventActionBinding>
 
     let mut bindings = Vec::new();
 
-    // Match patterns like: onNewContact  or  onStageChange.whenChanged('stage')
-    let binding_re = Regex::new(r"(\w+)(?:\s*\.\s*whenChanged\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\))?").unwrap();
-    for cap in binding_re.captures_iter(inner) {
-        let action_name = cap[1].to_string();
-        // Skip keywords that aren't action references.
+    // Split on commas that are not inside parentheses to get individual entries.
+    let entries = split_top_level_commas(inner);
+    let str_re = Regex::new(r"['\x22]([^'\x22]+)['\x22]").unwrap();
+
+    for entry in entries {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Extract leading identifier: actionName or actionName.whenChanged(...) or actionName.when(...)
+        let ident_re = Regex::new(r"^(\w+)").unwrap();
+        let action_name = match ident_re.captures(trimmed) {
+            Some(cap) => cap[1].to_string(),
+            None => continue,
+        };
         if ["true", "false", "null", "undefined"].contains(&action_name.as_str()) {
             continue;
         }
-        let condition = cap.get(2).map(|m| ActionCondition::ChangedAny(vec![m.as_str().to_string()]));
+
+        let condition = if let Some(wc_match) = Regex::new(r"\.whenChanged\s*\(([^)]*)\)").unwrap().captures(trimmed) {
+            let args_str = &wc_match[1];
+            let fields: Vec<String> = str_re.captures_iter(args_str)
+                .map(|c| c[1].to_string())
+                .collect();
+            if fields.is_empty() { None } else { Some(ActionCondition::ChangedAny(fields)) }
+        } else if let Some(w_match) = Regex::new(r"\.when\s*\(([^)]*)\)").unwrap().captures(trimmed) {
+            let args_str = &w_match[1];
+            let strs: Vec<String> = str_re.captures_iter(args_str)
+                .map(|c| c[1].to_string())
+                .collect();
+            if strs.len() >= 2 {
+                Some(ActionCondition::FieldEquals {
+                    field: strs[0].clone(),
+                    value: serde_json::Value::String(strs[1].clone()),
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         bindings.push(EventActionBinding {
             action: action_name,
             condition,
@@ -559,6 +591,26 @@ fn parse_event_list(on_block: &str, event_kind: &str) -> Vec<EventActionBinding>
     }
 
     bindings
+}
+
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let mut depth = 0usize;
+    let mut splits = Vec::new();
+    let mut start = 0;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                splits.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    splits.push(&s[start..]);
+    splits
 }
 
 // ── tests ───────────────────────────────────────────────────────────────────

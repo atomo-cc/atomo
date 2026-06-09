@@ -8,9 +8,14 @@ mod tests {
     use anyhow::Result;
 
     fn crm_schema_content() -> String {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../services/crm-service/schema.ts");
-        std::fs::read_to_string(&path).expect("CRM schema file should exist")
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../services/crm-service");
+        let schema = std::fs::read_to_string(base.join("atomo/schema.ts"))
+            .expect("CRM schema.ts should exist");
+        let actions = std::fs::read_to_string(base.join("atomo/actions.ts"))
+            .expect("CRM actions.ts should exist");
+        // Concatenate so the parser sees action definitions alongside the schema
+        format!("{actions}\n\n{schema}")
     }
 
     #[test]
@@ -22,60 +27,61 @@ mod tests {
         );
         let schema = crate::schema_dsl_parser::parse_builder_dsl(&content).unwrap();
 
-        // Core models present
-        assert!(schema.models.contains_key("Contact"));
+        // All 6 models present
+        assert!(schema.models.contains_key("User"));
         assert!(schema.models.contains_key("Company"));
+        assert!(schema.models.contains_key("Contact"));
+        assert!(schema.models.contains_key("Lead"));
         assert!(schema.models.contains_key("Deal"));
         assert!(schema.models.contains_key("Activity"));
 
-        // Contact.created → onNewContact
-        let contact = &schema.models["Contact"];
-        assert_eq!(contact.events.created.len(), 1, "Contact should have 1 created event");
-        assert_eq!(contact.events.created[0].action, "onNewContact");
-        assert!(contact.events.created[0].condition.is_none());
+        // User.created → sendWelcomeEmail
+        let user = &schema.models["User"];
+        assert_eq!(user.events.created.len(), 1, "User should have 1 created event");
+        assert_eq!(user.events.created[0].action, "sendWelcomeEmail");
+        assert!(user.events.created[0].condition.is_none());
 
-        // Contact.updated → onStageChange (changedAny: ["stage"])
-        assert_eq!(contact.events.updated.len(), 1);
-        assert_eq!(contact.events.updated[0].action, "onStageChange");
-        if let Some(crate::types::ActionCondition::ChangedAny(fields)) =
-            &contact.events.updated[0].condition
-        {
-            assert_eq!(fields, &["stage"]);
+        // Company.created → enrichCompany
+        let company = &schema.models["Company"];
+        assert_eq!(company.events.created.len(), 1, "Company should have 1 created event");
+        assert_eq!(company.events.created[0].action, "enrichCompany");
+
+        // Company.updated → enrichCompany.whenChanged('website', ...)
+        assert_eq!(company.events.updated.len(), 1);
+        assert_eq!(company.events.updated[0].action, "enrichCompany");
+        assert!(company.events.updated[0].condition.is_some());
+
+        // Lead.created → scoreLead + rollupLeadStats
+        let lead = &schema.models["Lead"];
+        assert_eq!(lead.events.created.len(), 2, "Lead should have 2 created events");
+        let lead_created_names: Vec<&str> = lead.events.created.iter().map(|e| e.action.as_str()).collect();
+        assert!(lead_created_names.contains(&"scoreLead"));
+        assert!(lead_created_names.contains(&"rollupLeadStats"));
+
+        // Lead.updated has conditional actions
+        assert_eq!(lead.events.updated.len(), 2, "Lead should have 2 updated events");
+
+        // Activity.created → updateContactLastActivity
+        let activity = &schema.models["Activity"];
+        assert_eq!(activity.events.created.len(), 1);
+        assert_eq!(activity.events.created[0].action, "updateContactLastActivity");
+
+        // Lifecycle actions parsed (at least the .from().input([]) ones)
+        let welcome = schema.actions.get("sendWelcomeEmail").expect("sendWelcomeEmail action");
+        assert_eq!(welcome.source_model.as_deref(), Some("User"));
+        if let crate::types::ActionInputDef::PickFields { model, fields } = &welcome.input {
+            assert_eq!(model, "User");
+            assert!(fields.contains(&"id".to_string()));
+            assert!(fields.contains(&"email".to_string()));
         } else {
-            panic!("expected ChangedAny([\"stage\"]) on Contact.updated");
+            panic!("expected PickFields for sendWelcomeEmail");
         }
 
-        // Deal.updated → onDealStatusChange (changedAny: ["status"])
-        let deal = &schema.models["Deal"];
-        assert_eq!(deal.events.updated.len(), 1, "Deal should have 1 updated event");
-        assert_eq!(deal.events.updated[0].action, "onDealStatusChange");
-        if let Some(crate::types::ActionCondition::ChangedAny(fields)) =
-            &deal.events.updated[0].condition
-        {
-            assert_eq!(fields, &["status"]);
-        } else {
-            panic!("expected ChangedAny([\"status\"]) on Deal.updated");
-        }
+        let enrich = schema.actions.get("enrichCompany").expect("enrichCompany action");
+        assert_eq!(enrich.source_model.as_deref(), Some("Company"));
 
-        // Actions
-        assert_eq!(schema.actions.len(), 3);
-        let on_new = schema.actions.get("onNewContact").expect("onNewContact action");
-        assert_eq!(on_new.source_model.as_deref(), Some("Contact"));
-        if let crate::types::ActionInputDef::PickFields { model, fields } = &on_new.input {
-            assert_eq!(model, "Contact");
-            assert_eq!(fields, &["id", "name", "email"]);
-        } else {
-            panic!("expected PickFields for onNewContact");
-        }
-
-        let on_deal = schema.actions.get("onDealStatusChange").expect("onDealStatusChange action");
-        assert_eq!(on_deal.source_model.as_deref(), Some("Deal"));
-        if let crate::types::ActionInputDef::PickFields { model, fields } = &on_deal.input {
-            assert_eq!(model, "Deal");
-            assert_eq!(fields, &["id", "contactId", "status", "value"]);
-        } else {
-            panic!("expected PickFields for onDealStatusChange");
-        }
+        let score = schema.actions.get("scoreLead").expect("scoreLead action");
+        assert_eq!(score.source_model.as_deref(), Some("Lead"));
     }
 
     #[test]
@@ -350,60 +356,11 @@ export const ProductModel = defineModel({
             "Should generate hook methods"
         );
 
-        println!("✅ Complete Hook and Access Control DSL flow test passed!");
-        println!("📊 Parsed {} models", models.len());
+        println!("Complete Hook and Access Control DSL flow test passed!");
+        println!("Parsed {} models", models.len());
         println!(
-            "🔧 Generated {} lines of Rust code",
+            "Generated {} lines of Rust code",
             rust_code.lines().count()
-        );
-        println!("🎯 Access Control:");
-        println!("   - create: Boolean check");
-        println!("   - read: Query conditions");
-        println!("   - update/delete: User ownership checks");
-        println!("🪝 Hooks:");
-        println!(
-            "   - beforeOperation: {} hooks",
-            product_model
-                .hooks
-                .as_ref()
-                .unwrap()
-                .before_operation
-                .as_ref()
-                .unwrap()
-                .len()
-        );
-        println!(
-            "   - afterOperation: {} hooks",
-            product_model
-                .hooks
-                .as_ref()
-                .unwrap()
-                .after_operation
-                .as_ref()
-                .unwrap()
-                .len()
-        );
-        println!(
-            "   - beforeChange: {} hooks",
-            product_model
-                .hooks
-                .as_ref()
-                .unwrap()
-                .before_change
-                .as_ref()
-                .unwrap()
-                .len()
-        );
-        println!(
-            "   - afterRead: {} hooks",
-            product_model
-                .hooks
-                .as_ref()
-                .unwrap()
-                .after_read
-                .as_ref()
-                .unwrap()
-                .len()
         );
 
         Ok(())

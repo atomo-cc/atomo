@@ -96,6 +96,11 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **action overhead: event emission** | `create` with events declared but no dispatcher — isolates event construction + broadcast cost |
 | **action overhead: dispatch + enqueue** | `create` with a live action dispatcher — measures binding match + job INSERT overhead |
 | **action overhead: worker CRUD callback** | HTTP round-trip through `/api/worker/crud/:model` via `oneshot` — measures auth + capability check + CRUD + JSON serialization |
+| **crm: create Company / Contact** | `create` with a real-world CRM model (6–8 fields, FK relations, validations) — validates that field count doesn't change write cost |
+| **crm: create_many Lead** | batch create with select/enum fields and two FK relations — per-row cost in a complex-model batch |
+| **crm: find_many filtered** | `find_many` with WHERE on a select field (`status`) or FK field (`companyId`) — measures cache-hit read with non-trivial filters |
+| **crm: find_unique by id** | point read on a CRM Contact — same cache-hit path as simple Note, validates no per-field overhead |
+| **crm: mixed workload** | interleaved `create Deal` + `find_many Lead` — simulates a real CRM app pattern |
 
 ## Results
 
@@ -127,6 +132,41 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | data layer: find_many eventual (hot through writes) | 42.5 | 37 | 73 | 112 | 23 528 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
+
+**CRM-schema results (real-world model complexity):**
+
+The simple-model bench above uses a trivial `Note {id, title}` — one field, no relations. To validate
+that model complexity doesn't change the picture, the CRM scenarios use the full CRM schema shape: 5
+models (Company, Contact, Lead, Deal, Activity), 6–8 fields each, FK relations, select/enum
+constraints, and validation rules. Tables are `bench_crm_`-prefixed to isolate from the simple bench.
+
+| Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
+|---|--:|--:|--:|--:|--:|
+| crm: create Company (7 fields) | 4202 | 4009 | 5617 | 7601 | 238 |
+| crm: create Contact (6 fields + FK) | 4248 | 3912 | 6238 | 7577 | 235 |
+| crm: create_many Lead (per row, batch=50) | 259 | 268 | 381 | 381 | 3 862 |
+| crm: find_many Lead WHERE status='qualified' hot | 20 | 18 | 22 | 40 | 50 641 |
+| crm: find_many Contact WHERE companyId=X hot | 20 | 18 | 23 | 38 | 49 982 |
+| crm: find_unique Contact by id hot | 1.2 | 1 | 1 | 2 | 822 247 |
+| crm: mixed (create Deal + find_many Lead) | 4482 | 4390 | 6188 | 7351 | 223 |
+
+**Machine:** Intel i5-13400 (10C/16T), 64 GB · Postgres in WSL2 (local) · release build (Docker
+`rust:latest`, `--network host`) · 2000 iterations · **2026-06-09**.
+
+Key takeaways:
+
+- **Writes scale with transaction count, not field count.** CRM `create` (~4.2 ms) ≈ Note `create`
+  (~4.1 ms, same run) — both are one txn = one `fsync`. Adding 6 more fields and a FK costs nothing
+  measurable.
+- **Batch creates stay efficient.** CRM `create_many` at 259 µs/row (batch=50) is proportional to the
+  Note batch at 142 µs/row (batch=100) — the per-row cost is dominated by the multi-row INSERT, not
+  per-field overhead. The difference is batch size (50 vs 100), not schema complexity.
+- **Filtered reads are fast.** `find_many` with a WHERE clause on a select/enum field (20 µs) or FK
+  field (20 µs) — cache-hit performance is consistent regardless of filter complexity.
+- **Point reads stay sub-µs class.** CRM `find_unique` by id at 1.2 µs (822 k ops/s) vs Note at
+  0.7 µs (1.4 M ops/s) — the slight difference is the larger cached record, not per-field overhead.
+- **Mixed workloads** (interleaved create + read) cost ~4.5 ms — the write dominates, and the hot
+  read adds negligible time.
 
 **Batch inserts:** `create_many` commits a 100-row batch via **two multi-row `INSERT`s** (the rows,
 then their events) in **one** transaction — so the per-row cost drops from **~3.9 ms to ~77 µs —

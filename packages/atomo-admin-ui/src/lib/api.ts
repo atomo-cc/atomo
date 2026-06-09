@@ -17,6 +17,20 @@ export interface AuthUser {
   last_name?: string
 }
 
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+}
+
+function camelizeKeys(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(camelizeKeys)
+  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [snakeToCamel(k), camelizeKeys(v)])
+    )
+  }
+  return obj
+}
+
 class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
@@ -185,7 +199,7 @@ class AtomoApiClient {
 
     const paginated = result.paginatedRecords
     return {
-      data: paginated?.data || [],
+      data: camelizeKeys(paginated?.data || []),
       total: paginated?.pageInfo?.totalCount || 0,
       page,
       limit,
@@ -201,7 +215,7 @@ class AtomoApiClient {
         record(model: $model, id: $id)
       }
     `, { model: modelName, id })
-    return result.record
+    return camelizeKeys(result.record)
   }
 
   /**
@@ -213,7 +227,7 @@ class AtomoApiClient {
         create(model: $model, data: $data)
       }
     `, { model: modelName, data })
-    return result.create
+    return camelizeKeys(result.create)
   }
 
   /**
@@ -225,7 +239,7 @@ class AtomoApiClient {
         update(model: $model, where: $where, data: $data)
       }
     `, { model: modelName, where: { id: { equals: id } }, data })
-    return result.update
+    return camelizeKeys(result.update)
   }
 
   /**
@@ -250,7 +264,7 @@ class AtomoApiClient {
         }
       }
     `, { model: modelName, limit, offset })
-    return result.deletedRecords?.data || []
+    return camelizeKeys(result.deletedRecords?.data || [])
   }
 
   /** Restore a soft-deleted record by id. */
