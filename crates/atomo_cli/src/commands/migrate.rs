@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use atomo_schema::{Field, Model, TypeScriptParser};
+use atomo_schema::{is_builder_dsl, parse_builder_dsl, Field, Model, TypeScriptParser};
 use colored::*;
 use console::style;
 use sqlx::{PgPool, Row};
@@ -64,10 +64,15 @@ pub async fn generate_migration_command(name: Option<String>) -> Result<()> {
     let content = fs::read_to_string(&schema_path)
         .with_context(|| format!("Failed to read schema file: {}", schema_path.display()))?;
 
-    let parser = TypeScriptParser::new();
-    let models = parser
-        .parse(&content)
-        .with_context(|| "Failed to parse TypeScript schema")?;
+    let models = if is_builder_dsl(&content) {
+        parse_builder_dsl(&content)
+            .map(|s| s.models.into_values().collect())
+            .with_context(|| "Failed to parse schema DSL")?
+    } else {
+        TypeScriptParser::new()
+            .parse(&content)
+            .with_context(|| "Failed to parse TypeScript schema")?
+    };
 
     // Connect to database to get current schema
     let db_url = std::env::var("DATABASE_URL")

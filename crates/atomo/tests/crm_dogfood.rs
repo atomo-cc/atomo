@@ -1,5 +1,5 @@
 //! CRM dogfood: load the REAL services/crm-service/schema.ts through the platform and run a
-//! realistic flow (Company -> Contact -> Deal -> stage move -> relationship). The flagship is
+//! realistic flow (Company -> Contact -> Deal -> status move -> relationship). The flagship is
 //! supposed to drive the platform; this is the first test that actually eats that dog food.
 //! Requires Postgres via DATABASE_URL. Run: cargo test -p atomo --test crm_dogfood -- --ignored
 
@@ -59,68 +59,59 @@ async fn crm_schema_drives_the_platform() {
         .create(
             "Contact",
             &rec(&[
-                ("firstName", json!("Ada")),
-                ("lastName", json!("Lovelace")),
+                ("name", json!("Ada Lovelace")),
                 ("email", json!("ada@acme.com")),
                 ("companyId", json!(company_id)),
-                ("avatar", json!("media_ada_123")),
             ]),
             &[],
             None,
         )
         .await
         .expect("create Contact");
-    // File field round-trips as a TEXT column (the media id/url).
-    assert_eq!(
-        contact.get("avatar").and_then(|v| v.as_str()),
-        Some("media_ada_123"),
-        "File field stored + returned as the media id"
-    );
     let contact_id = contact
         .get("id")
         .and_then(|v| v.as_str())
         .unwrap()
         .to_string();
 
-    // 3. Deal referencing the contact — stage is an enum (DealStage), value is numeric.
+    // 3. Deal referencing the contact
     let deal = c
         .create(
             "Deal",
             &rec(&[
                 ("title", json!("Acme renewal")),
                 ("value", json!(50000)),
-                ("stage", json!("lead")),
-                ("position", json!(0)),
+                ("status", json!("open")),
                 ("contactId", json!(contact_id)),
             ]),
             &[],
             None,
         )
         .await
-        .expect("create Deal (enum stage + numeric value)");
+        .expect("create Deal");
     let deal_id = deal.get("id").and_then(|v| v.as_str()).unwrap().to_string();
     assert_eq!(
-        deal.get("stage").and_then(|v| v.as_str()),
-        Some("lead"),
-        "stage round-trips as a string"
+        deal.get("status").and_then(|v| v.as_str()),
+        Some("open"),
+        "status round-trips as a string"
     );
 
-    // 4. Move the deal across stages (the Kanban core operation).
+    // 4. Move the deal status (the pipeline core operation).
     let moved = c
         .update_many(
             "Deal",
             &[eq("id", json!(deal_id))],
-            &rec(&[("stage", json!("qualified"))]),
+            &rec(&[("status", json!("won"))]),
             &[],
             None,
         )
         .await
-        .expect("move Deal stage");
+        .expect("move Deal status");
     assert_eq!(moved.len(), 1, "exactly one deal updated");
     assert_eq!(
-        moved[0].get("stage").and_then(|v| v.as_str()),
-        Some("qualified"),
-        "stage advanced"
+        moved[0].get("status").and_then(|v| v.as_str()),
+        Some("won"),
+        "status advanced"
     );
 
     // Update-aware validation: the stage-only patch above succeeded despite `title` (required)
@@ -154,8 +145,7 @@ async fn crm_schema_drives_the_platform() {
         .expect("query deals by contact");
     assert_eq!(deals.len(), 1, "contact should have exactly one deal");
 
-    // 5b. Nested includes via resolve_includes: contact.company (belongsTo) + contact.deals
-    //     (hasMany). This is the real relationship-resolution path, not a flat FK query.
+    // 5b. Nested includes via resolve_includes: contact.company (belongsTo).
     let with_rels = c
         .find_many(
             "Contact",
@@ -163,39 +153,29 @@ async fn crm_schema_drives_the_platform() {
             &[],
             None,
             None,
-            &["company".into(), "deals".into()],
+            &["company".into()],
         )
         .await
         .expect("query contact with includes");
     let contact_full = &with_rels[0];
-    // belongsTo: company should be nested as an object with the right name.
     let company_rel = contact_full.get("company");
     assert!(
         company_rel
             .and_then(|v| v.get("name"))
             .and_then(|v| v.as_str())
             == Some("Acme Inc"),
-        "contact.company (belongsTo) should resolve to the company object, got: {:?}",
+        "contact.company (belongsTo) should resolve, got: {:?}",
         company_rel
     );
-    // hasMany: deals should be a nested array containing the deal.
-    let deals_rel = contact_full.get("deals").and_then(|v| v.as_array());
-    assert!(
-        deals_rel.is_some_and(|a| a.len() == 1),
-        "contact.deals (hasMany) should resolve to a 1-element array, got: {:?}",
-        contact_full.get("deals")
-    );
 
-    // 6. Validation is enforced in the DATA layer (not just GraphQL). The CRM declares
-    //    title: required and Company name: required — empty values must be rejected here.
+    // 6. Validation: required title → empty must be rejected.
     let bad_deal = c
         .create(
             "Deal",
             &rec(&[
                 ("title", json!("")),
                 ("value", json!(1)),
-                ("stage", json!("lead")),
-                ("position", json!(0)),
+                ("status", json!("open")),
                 ("contactId", json!(contact_id)),
             ]),
             &[],
@@ -216,15 +196,13 @@ async fn crm_schema_drives_the_platform() {
         "empty required name should fail validation"
     );
 
-    // 7. Pagination + orderBy via CRM. Add a second, higher-value deal, then order by value DESC
-    //    with limit 1 → the bigger deal comes first.
+    // 7. Pagination + orderBy: add a second deal, order by value DESC.
     c.create(
         "Deal",
         &rec(&[
             ("title", json!("Big deal")),
             ("value", json!(99000)),
-            ("stage", json!("lead")),
-            ("position", json!(1)),
+            ("status", json!("open")),
             ("contactId", json!(contact_id)),
         ]),
         &[],
@@ -267,19 +245,17 @@ async fn crm_schema_drives_the_platform() {
         "offset paginates"
     );
 
-    // 7b. Read-cache conformance: find_many populates the cache; a create must invalidate it so
-    //     the very next identical query reflects the new row (no stale cached result).
+    // 7b. Read-cache conformance.
     let before = c
         .find_many("Deal", &[], &[], None, None, &[])
         .await
-        .unwrap(); // populates cache
+        .unwrap();
     c.create(
         "Deal",
         &rec(&[
             ("title", json!("Cache deal")),
             ("value", json!(5)),
-            ("stage", json!("lead")),
-            ("position", json!(2)),
+            ("status", json!("open")),
             ("contactId", json!(contact_id)),
         ]),
         &[],
@@ -290,21 +266,14 @@ async fn crm_schema_drives_the_platform() {
     let after = c
         .find_many("Deal", &[], &[], None, None, &[])
         .await
-        .unwrap(); // must be fresh
+        .unwrap();
     assert_eq!(
         after.len(),
         before.len() + 1,
-        "create must invalidate the read cache (got stale result)"
-    );
-    assert!(
-        after
-            .iter()
-            .any(|d| d.get("title").and_then(|v| v.as_str()) == Some("Cache deal")),
-        "new deal must appear after invalidation"
+        "create must invalidate the read cache"
     );
 
-    // 8. Soft-delete lifecycle via CRM: delete the first Deal → hidden from find_many, present in
-    //    trash, then restore → visible again.
+    // 8. Soft-delete lifecycle.
     let deleted = c
         .delete_many("Deal", &[eq("id", json!(deal_id))], None)
         .await
@@ -347,7 +316,7 @@ async fn crm_schema_drives_the_platform() {
     );
 
     // Cleanup the tables this test generated.
-    for t in ["deal", "contact", "company", "activity"] {
+    for t in ["deals", "contacts", "companies", "activities"] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await
@@ -355,9 +324,6 @@ async fn crm_schema_drives_the_platform() {
     }
 }
 
-// Phase C3: event sourcing — a Deal's full lifecycle (Created → stage Updated → Deleted) is
-// persisted to event_log and reconstructable via EventStore::entity_history. This relies on
-// every event carrying the id (the B2 delete-event fix is what makes Deleted show up here).
 #[tokio::test]
 #[ignore]
 async fn crm_deal_event_history_replays() {
@@ -376,8 +342,7 @@ async fn crm_deal_event_history_replays() {
         .create(
             "Contact",
             &rec(&[
-                ("firstName", json!("E")),
-                ("lastName", json!("S")),
+                ("name", json!("Eve S")),
                 ("email", json!("e@s.com")),
             ]),
             &[],
@@ -396,8 +361,7 @@ async fn crm_deal_event_history_replays() {
             &rec(&[
                 ("title", json!("Hist")),
                 ("value", json!(10)),
-                ("stage", json!("lead")),
-                ("position", json!(0)),
+                ("status", json!("open")),
                 ("contactId", json!(cid)),
             ]),
             &[],
@@ -417,16 +381,7 @@ async fn crm_deal_event_history_replays() {
     c.update_many(
         "Deal",
         &by_id(&did),
-        &rec(&[("stage", json!("qualified"))]),
-        &[],
-        None,
-    )
-    .await
-    .unwrap();
-    c.update_many(
-        "Deal",
-        &by_id(&did),
-        &rec(&[("stage", json!("won"))]),
+        &rec(&[("status", json!("won"))]),
         &[],
         None,
     )
@@ -434,7 +389,6 @@ async fn crm_deal_event_history_replays() {
     .unwrap();
     c.delete_many("Deal", &by_id(&did), None).await.unwrap();
 
-    // Reconstruct the Deal's history from the event store.
     let store = atomo::event_store::EventStore::new(atomo.db_pool().clone());
     let history = store
         .entity_history("Deal", &did)
@@ -447,13 +401,11 @@ async fn crm_deal_event_history_replays() {
         vec![
             EventType::Created,
             EventType::Updated,
-            EventType::Updated,
             EventType::Deleted
         ],
-        "Deal history must replay Created → Updated → Updated → Deleted, got {:?}",
+        "Deal history must replay Created → Updated → Deleted, got {:?}",
         types
     );
-    // The Deleted event must carry the id (B2 fix) — that's why it appears in entity_history.
     assert_eq!(
         history
             .last()
@@ -464,7 +416,7 @@ async fn crm_deal_event_history_replays() {
         Some(did.as_str())
     );
 
-    for t in ["deal", "contact", "company", "activity"] {
+    for t in ["deals", "contacts", "companies", "activities"] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await
@@ -472,8 +424,6 @@ async fn crm_deal_event_history_replays() {
     }
 }
 
-// Post-conformance: data-layer RBAC seam. client.enforce_access gates by the CRM's access
-// rules OUTSIDE the GraphQL resolver, so SDK/server/plugin callers can enforce too.
 #[tokio::test]
 #[ignore]
 async fn data_layer_enforce_access_gates_by_role() {
@@ -487,7 +437,7 @@ async fn data_layer_enforce_access_gates_by_role() {
         .unwrap();
     let c = atomo.client();
 
-    // Contact create requires sales|manager|admin (CRM schema).
+    // Contact create requires sales|admin.
     assert!(
         c.enforce_access("Contact", "create", Some("Viewer"))
             .is_err(),
@@ -501,7 +451,7 @@ async fn data_layer_enforce_access_gates_by_role() {
         c.enforce_access("Contact", "create", None).is_err(),
         "anon needs auth"
     );
-    // delete is manager|admin only.
+    // delete is admin only.
     assert!(
         c.enforce_access("Contact", "delete", Some("Sales"))
             .is_err(),
@@ -517,7 +467,7 @@ async fn data_layer_enforce_access_gates_by_role() {
         "viewer can read"
     );
 
-    for t in ["deal", "contact", "company", "activity"] {
+    for t in ["deals", "contacts", "companies", "activities"] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await

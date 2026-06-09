@@ -10,13 +10,18 @@ use std::collections::HashMap;
 pub use atomo_schema::{
     ActionCondition, ActionDef, ActionInputDef, ActionInputField, ActionReturn,
     EventActionBinding, Field, FieldAttribute, FieldType, Model, ModelConstraint, ModelEvents,
-    Schema, TypeScriptParser,
+    Schema, TypeScriptParser, is_builder_dsl, parse_builder_dsl,
 };
 
-/// Parse a TypeScript schema string into a Schema object, including events and actions.
+/// Parse a schema string into a Schema object. Auto-detects the builder DSL
+/// (`@atomo/schema` imports) vs the legacy TypeScript-interface format.
 pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
-    let parser = TypeScriptParser::new();
-    parser.parse_schema(content)
+    if is_builder_dsl(content) {
+        parse_builder_dsl(content)
+    } else {
+        let parser = TypeScriptParser::new();
+        parser.parse_schema(content)
+    }
 }
 
 /// Generate database migrations from schema

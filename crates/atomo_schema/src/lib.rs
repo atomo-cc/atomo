@@ -21,6 +21,7 @@ pub mod hasura_v2_type_generator;
 pub mod hook_access_generator;
 pub mod operation_definitions;
 pub mod parser;
+pub mod schema_dsl_parser;
 pub mod types;
 pub mod typescript_parser;
 
@@ -33,5 +34,6 @@ pub use hasura_v2_type_generator::*;
 pub use hook_access_generator::*;
 pub use operation_definitions::*;
 pub use parser::*;
+pub use schema_dsl_parser::{is_builder_dsl, parse_builder_dsl};
 pub use types::*;
 pub use typescript_parser::*;

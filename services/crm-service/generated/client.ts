@@ -9,60 +9,50 @@ export interface CrudClient {
 }
 
 export interface Activity {
-  activityType: string;
   contactId: string;
-  content?: string;
   createdAt: string;
+  dealId?: string;
   id: string;
-  metadata?: unknown;
-  title?: string;
+  notes?: string;
+  type: string;
   updatedAt: string;
 }
 
 export interface Company {
-  address?: string;
   createdAt: string;
   id: string;
   industry?: string;
   name: string;
-  notes: unknown[];
-  size?: string;
   updatedAt: string;
   website?: string;
 }
 
 export interface Contact {
-  avatar?: string;
   companyId?: string;
   createdAt: string;
   email: string;
-  firstName: string;
   id: string;
-  lastName: string;
-  notes: unknown[];
+  name: string;
   phone?: string;
-  tags: string[];
+  stage?: string;
   updatedAt: string;
 }
 
 export interface Deal {
-  actualCloseDate?: string;
-  companyId?: string;
   contactId: string;
   createdAt: string;
-  description: unknown[];
-  expectedCloseDate?: string;
   id: string;
-  position: number;
-  stage: string;
+  status?: string;
   title: string;
   updatedAt: string;
-  value: number;
+  value?: number;
 }
 
-export type onNewContactInput = Pick<Contact, 'id' | 'firstName' | 'lastName' | 'email'>;
+export type onDealStatusChangeInput = Pick<Deal, 'id' | 'contactId' | 'status' | 'value'>;
 
-export type onDealStageChangeInput = Pick<Deal, 'id' | 'stage' | 'value' | 'contactId'>;
+export type onNewContactInput = Pick<Contact, 'id' | 'name' | 'email'>;
+
+export type onStageChangeInput = Pick<Contact, 'id' | 'stage'>;
 
 export interface ActivityCrud {
   create(data: Partial<Activity>): Promise<Activity>;
@@ -130,16 +120,19 @@ export class TypedClient {
     delete: (id) => this.client.delete('Deal', id),
     findMany: (opts) => this.client.findMany('Deal', opts) as Promise<Deal[]>,
   };
+
 }
 
 export interface ModelEventMap {
   'Contact.created': 'onNewContact';
-  'Deal.updated': 'onDealStageChange';
+  'Contact.updated': 'onStageChange';
+  'Deal.updated': 'onDealStatusChange';
 }
 
 export interface ActionHandlers {
-  onDealStageChange: { input: onDealStageChangeInput };
+  onDealStatusChange: { input: onDealStatusChangeInput };
   onNewContact: { input: onNewContactInput };
+  onStageChange: { input: onStageChangeInput };
 }
 
 export interface TypedJobContext<K extends keyof ActionHandlers> {

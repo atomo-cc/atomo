@@ -22,31 +22,20 @@ const worker = createWorker({
 
 // ── onNewContact ────────────────────────────────────────────────────────────
 // Triggered by: Contact.created event
-// Logs an Activity entry for the new contact and could enrich from external APIs.
+// Logs an Activity entry for the new contact.
 
 worker.on("onNewContact", async (ctx) => {
   const { input } = (ctx as TypedJobContext<"onNewContact">).job.payload;
 
   console.log(
-    `[contact-worker] New contact: ${input.firstName} ${input.lastName} <${input.email}>`,
+    `[contact-worker] New contact: ${input.name} <${input.email}>`,
   );
 
-  // Log an Activity for the new contact
   await ctx.crud.create("Activity", {
     contactId: input.id,
-    activityType: "note",
-    title: "Contact created",
-    content: `${input.firstName} ${input.lastName} was added to the CRM.`,
+    type: "email",
+    notes: `${input.name} was added to the CRM.`,
   }, { origin: "onNewContact" });
-
-  // Example: enrich from a third-party data provider
-  // const enriched = await enrichContact(input.email);
-  // if (enriched?.phone) {
-  //   await ctx.crud.update("Contact", input.id,
-  //     { phone: enriched.phone },
-  //     { origin: "onNewContact" },
-  //   );
-  // }
 
   return { processed: true };
 });

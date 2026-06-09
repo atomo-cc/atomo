@@ -406,12 +406,20 @@ impl TypeScriptParser {
     }
 
     /// Parse a full Schema from TypeScript content, including models, events, and actions.
+    ///
+    /// Only models declared in the `export const schema = { models: { ... } }` block are
+    /// included. Auxiliary interfaces (content blocks, enum pseudo-models) are excluded so
+    /// that codegen and migrations only target actual schema-declared models.
     pub fn parse_schema(&self, content: &str) -> Result<Schema> {
         let models = self.parse(content)?;
         let actions = Self::parse_actions(content);
+        let meta_keys: std::collections::HashSet<String> =
+            Self::parse_model_metadata(content).into_keys().collect();
         let mut schema_models = HashMap::new();
         for model in models {
-            schema_models.insert(model.name.clone(), model);
+            if meta_keys.contains(&model.name) {
+                schema_models.insert(model.name.clone(), model);
+            }
         }
         Ok(Schema {
             models: schema_models,

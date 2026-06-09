@@ -1,3 +1,4 @@
+use crate::hasura_v2_type_generator::safe_ident;
 use crate::operation_definitions::OperationDefinitions;
 use crate::types::*;
 use anyhow::Result;
@@ -685,6 +686,9 @@ pub struct Mutation;
             let struct_field_name = self.camel_to_snake_case(field_name);
             field_mappings.push(db_field_name.clone());
 
+            let ident = safe_ident(field_name);
+            let struct_ident = safe_ident(&struct_field_name);
+
             // Generate field binding logic
             let field_binding = if !field.optional {
                 // Required field - provide default if None
@@ -692,22 +696,20 @@ pub struct Mutation;
                     crate::types::FieldType::String => {
                         format!(
                             "let {} = object.{}.unwrap_or_else(|| \"\".to_string());",
-                            field_name, struct_field_name
+                            ident, struct_ident
                         )
                     }
                     crate::types::FieldType::Array(inner) => {
                         // Check if this array will be converted to JSON in type generation
                         match inner.as_ref() {
                             crate::types::FieldType::Custom(name) if name.contains("Block") => {
-                                // Block arrays become serde_json::Value, so use JSON array default
-                                format!("let {} = object.{}.unwrap_or_else(|| serde_json::Value::Array(Vec::new()));", field_name, struct_field_name)
+                                format!("let {} = object.{}.unwrap_or_else(|| serde_json::Value::Array(Vec::new()));", ident, struct_ident)
                             }
                             _ => {
-                                // Regular arrays stay as Vec<T>, so use Vec::new() and create JSON for DB binding
                                 format!(
                                     r#"let {} = object.{}.unwrap_or_else(|| Vec::new());
         let {}_json = serde_json::to_value(&{})?;"#,
-                                    field_name, struct_field_name, field_name, field_name
+                                    ident, struct_ident, field_name, ident
                                 )
                             }
                         }
@@ -715,19 +717,19 @@ pub struct Mutation;
                     crate::types::FieldType::Json => {
                         format!(
                             "let {} = object.{}.unwrap_or_else(|| serde_json::json!({{}}));",
-                            field_name, struct_field_name
+                            ident, struct_ident
                         )
                     }
                     _ => {
                         format!(
                             "let {} = object.{}.unwrap_or_default();",
-                            field_name, struct_field_name
+                            ident, struct_ident
                         )
                     }
                 }
             } else {
                 // Optional field
-                format!("let {} = object.{};", field_name, struct_field_name)
+                format!("let {} = object.{};", ident, struct_ident)
             };
 
             field_bindings.push((field_binding, field_name.clone(), field.clone()));
@@ -742,23 +744,21 @@ pub struct Mutation;
             binding_code.push_str(binding);
             binding_code.push('\n');
 
+            let ident = safe_ident(field_name);
             // Add to bind fields
             match &field.field_type {
                 crate::types::FieldType::Array(inner) => {
-                    // Check if this array will be converted to JSON in type generation
                     match inner.as_ref() {
                         crate::types::FieldType::Custom(name) if name.contains("Block") => {
-                            // Block arrays are already JSON values, bind directly
-                            bind_fields.push(field_name.clone());
+                            bind_fields.push(ident);
                         }
                         _ => {
-                            // Regular arrays need JSON conversion, use _json variable
                             bind_fields.push(format!("{}_json", field_name));
                         }
                     }
                 }
                 _ => {
-                    bind_fields.push(field_name.clone());
+                    bind_fields.push(ident);
                 }
             }
         }
@@ -912,6 +912,8 @@ pub struct Mutation;
 
             let db_field_name = self.camel_to_snake_case(field_name);
             let struct_field_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(field_name);
+            let struct_ident = safe_ident(&struct_field_name);
 
             let update_logic = match field.field_type {
                 crate::types::FieldType::Array(_) => {
@@ -920,10 +922,10 @@ pub struct Mutation;
             let {}_json = serde_json::to_value(&{})?;
             query_builder.push(", {} = ").push_bind({}_json);
         }}"#,
+                        ident,
+                        struct_ident,
                         field_name,
-                        struct_field_name,
-                        field_name,
-                        field_name,
+                        ident,
                         db_field_name,
                         field_name
                     )
@@ -933,7 +935,7 @@ pub struct Mutation;
                         r#"        if let Some({}) = set_input.{} {{
             query_builder.push(", {} = ").push_bind({});
         }}"#,
-                        field_name, struct_field_name, db_field_name, field_name
+                        ident, struct_ident, db_field_name, ident
                     )
                 }
             };
@@ -1014,6 +1016,8 @@ pub struct Mutation;
 
             let db_field_name = self.camel_to_snake_case(field_name);
             let struct_field_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(field_name);
+            let struct_ident = safe_ident(&struct_field_name);
 
             let update_logic = match field.field_type {
                 crate::types::FieldType::Array(_) => {
@@ -1022,10 +1026,10 @@ pub struct Mutation;
             let {}_json = serde_json::to_value(&{})?;
             query_builder.push(", {} = ").push_bind({}_json);
         }}"#,
+                        ident,
+                        struct_ident,
                         field_name,
-                        struct_field_name,
-                        field_name,
-                        field_name,
+                        ident,
                         db_field_name,
                         field_name
                     )
@@ -1035,7 +1039,7 @@ pub struct Mutation;
                         r#"        if let Some({}) = set_input.{} {{
             query_builder.push(", {} = ").push_bind({});
         }}"#,
-                        field_name, struct_field_name, db_field_name, field_name
+                        ident, struct_ident, db_field_name, ident
                     )
                 }
             };

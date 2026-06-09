@@ -2,6 +2,18 @@ use crate::operation_definitions::OperationDefinitions;
 use crate::types::*;
 use anyhow::Result;
 
+pub fn safe_ident(name: &str) -> String {
+    match name {
+        "type" | "match" | "move" | "ref" | "self" | "super" | "crate" | "mod" | "fn"
+        | "struct" | "enum" | "trait" | "impl" | "pub" | "use" | "let" | "mut" | "const"
+        | "static" | "loop" | "for" | "while" | "if" | "else" | "return" | "break"
+        | "continue" | "as" | "in" | "where" | "async" | "await" | "dyn" | "abstract"
+        | "become" | "box" | "do" | "final" | "macro" | "override" | "priv" | "try"
+        | "typeof" | "unsafe" | "unsized" | "virtual" | "yield" => format!("r#{}", name),
+        _ => name.to_string(),
+    }
+}
+
 /// Hasura v2 Style Type Generator
 /// Generates GraphQL types following Hasura v2 conventions
 pub struct HasuraV2TypeGenerator;
@@ -500,8 +512,8 @@ impl From<AuditLogEntryRow> for AuditLogEntry {
 
         for (field_name, field) in &model.fields {
             let field_type = self.convert_field_type(&field.field_type, field.optional);
-
-            fields.push(format!("    pub {}: {}", field_name, field_type));
+            let ident = safe_ident(field_name);
+            fields.push(format!("    pub {}: {}", ident, field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -526,7 +538,8 @@ pub struct {model_name} {{
 
         for (field_name, field) in &model.fields {
             let field_type = self.convert_field_type(&field.field_type, field.optional);
-            fields.push(format!("    pub {}: {}", field_name, field_type));
+            let ident = safe_ident(field_name);
+            fields.push(format!("    pub {}: {}", ident, field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -622,7 +635,7 @@ impl From<{model_name}> for {core_type} {{
             let db_field_name = self.camel_to_snake_case(field_name);
             let field_type = self.convert_field_type_for_db(&field.field_type, field.optional);
 
-            fields.push(format!("    pub {}: {}", db_field_name, field_type));
+            fields.push(format!("    pub {}: {}", safe_ident(&db_field_name), field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -631,57 +644,59 @@ impl From<{model_name}> for {core_type} {{
         let mut from_fields = Vec::new();
         for (field_name, field) in &model.fields {
             let db_field_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(field_name);
+            let db_ident = safe_ident(&db_field_name);
 
             // Handle BigDecimal to f64 conversion for numeric fields
             let conversion = match &field.field_type {
                 FieldType::Number if field.optional => {
-                    format!("            {}: row.{}.map(|v| v.to_string().parse::<f64>().unwrap_or(0.0))", field_name, db_field_name)
+                    format!("            {}: row.{}.map(|v| v.to_string().parse::<f64>().unwrap_or(0.0))", ident, db_ident)
                 }
                 FieldType::Number => {
                     format!(
                         "            {}: row.{}.to_string().parse::<f64>().unwrap_or(0.0)",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 FieldType::Blocks if field.optional => {
-                    format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                    format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", ident, db_ident)
                 }
                 FieldType::Blocks => {
                     format!(
                         "            {}: serde_json::from_value(row.{}).unwrap_or_default()",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 FieldType::Array(inner) => match inner.as_ref() {
                     FieldType::Custom(name) if name == "ContentBlock" || name.contains("Block") => {
                         if field.optional {
-                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", ident, db_ident)
                         } else {
-                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", ident, db_ident)
                         }
                     }
                     _ => {
                         if field.optional {
-                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", ident, db_ident)
                         } else {
-                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", ident, db_ident)
                         }
                     }
                 },
                 FieldType::Custom(_custom_type) if field.optional => {
                     format!(
                         "            {}: row.{}.map(|s| s.parse().unwrap_or_default())",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 FieldType::Custom(_custom_type) => {
                     format!(
                         "            {}: row.{}.parse().unwrap_or_default()",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 _ => {
-                    format!("            {}: row.{}", field_name, db_field_name)
+                    format!("            {}: row.{}", ident, db_ident)
                 }
             };
 
@@ -752,17 +767,17 @@ impl From<{model_name}Row> for {model_name} {{
         for (field_name, field) in &model.fields {
             let snake_case_name = self.camel_to_snake_case(field_name);
             let comparison_type = self.get_field_comparison_type(&field.field_type);
+            let ident = safe_ident(&snake_case_name);
 
             if snake_case_name != *field_name {
-                // If the field name changes from camelCase to snake_case, add GraphQL rename
                 fields.push(format!(
                     "    #[graphql(name = \"{}\")]\n    pub {}: Option<{}>",
-                    field_name, snake_case_name, comparison_type
+                    field_name, ident, comparison_type
                 ));
             } else {
                 fields.push(format!(
                     "    pub {}: Option<{}>",
-                    snake_case_name, comparison_type
+                    ident, comparison_type
                 ));
             }
         }
@@ -790,15 +805,15 @@ pub struct {model_name}BoolExp {{
         // Use GraphQL field renames to maintain camelCase for GraphQL but snake_case for Rust
         for field_name in model.fields.keys() {
             let snake_case_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(&snake_case_name);
 
             if snake_case_name != *field_name {
-                // If the field name changes from camelCase to snake_case, add GraphQL rename
                 fields.push(format!(
                     "    #[graphql(name = \"{}\")]\n    pub {}: Option<OrderBy>",
-                    field_name, snake_case_name
+                    field_name, ident
                 ));
             } else {
-                fields.push(format!("    pub {}: Option<OrderBy>", snake_case_name));
+                fields.push(format!("    pub {}: Option<OrderBy>", ident));
             }
         }
 
@@ -825,7 +840,7 @@ pub struct {model_name}OrderBy {{
         // Use snake_case field names for Hasura v2 compatibility
         for field_name in model.fields.keys() {
             let snake_case_name = self.camel_to_snake_case(field_name);
-            variants.push(snake_case_name);
+            variants.push(safe_ident(&snake_case_name));
         }
 
         let variants_str = variants.join(",\n    ");
@@ -856,10 +871,11 @@ pub enum {model_name}SelectColumn {{
 
             // Use snake_case field names for Hasura v2 compatibility
             let snake_case_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(&snake_case_name);
             let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
             fields.push(format!(
                 "    pub {}: Option<{}>",
-                snake_case_name, field_type
+                ident, field_type
             ));
         }
 
@@ -891,10 +907,11 @@ pub struct {model_name}InsertInput {{
 
             // Use snake_case field names for Hasura v2 compatibility
             let snake_case_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(&snake_case_name);
             let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
             fields.push(format!(
                 "    pub {}: Option<{}>",
-                snake_case_name, field_type
+                ident, field_type
             ));
         }
 

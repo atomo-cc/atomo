@@ -8,7 +8,10 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": ".",
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@atomo/schema": ["../../packages/atomo-schema/src/index.ts"]
+    }
   },
   "include": ["*.ts", "workers/*.ts", "generated/*.ts", "admin/*.ts"]
 }
