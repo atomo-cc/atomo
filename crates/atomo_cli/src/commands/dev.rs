@@ -811,6 +811,127 @@ async fn generate_resolvers_only(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
 
+    // ── detect_service_context ──────────────────────────────────────────
 
+    #[test]
+    fn detect_service_context_returns_dir_name_when_schema_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let svc_dir = tmp.path().join("crm-service");
+        fs::create_dir_all(&svc_dir).unwrap();
+        fs::write(svc_dir.join("schema.ts"), "// schema").unwrap();
+
+        let name = detect_service_context(&svc_dir).unwrap();
+        assert_eq!(name, "crm-service");
+    }
+
+    #[test]
+    fn detect_service_context_returns_dir_name_at_repo_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        // tmp.path() itself acts as the "repo root" directory
+        fs::write(tmp.path().join("schema.ts"), "// schema").unwrap();
+
+        let name = detect_service_context(tmp.path()).unwrap();
+        // Should return whatever the temp dir is named
+        let expected = tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(name, expected);
+    }
+
+    #[test]
+    fn detect_service_context_errors_when_no_schema() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No schema.ts created
+        let result = detect_service_context(tmp.path());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("schema.ts not found"),
+            "unexpected error message: {}",
+            msg
+        );
+    }
+
+    // ── detect_workspace_root_from ──────────────────────────────────────
+
+    #[test]
+    fn detect_workspace_root_finds_root_from_subdirectory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Create a workspace-style root: Cargo.toml with [workspace] + crates/
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("crates").join("my_crate").join("src")).unwrap();
+
+        let deep = root.join("crates").join("my_crate").join("src");
+        let found = detect_workspace_root_from(&deep).unwrap();
+        assert_eq!(found, Some(root.to_path_buf()));
+    }
+
+    #[test]
+    fn detect_workspace_root_finds_root_from_immediate_child() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("crates")).unwrap();
+
+        let child = root.join("crates");
+        let found = detect_workspace_root_from(&child).unwrap();
+        assert_eq!(found, Some(root.to_path_buf()));
+    }
+
+    #[test]
+    fn detect_workspace_root_returns_none_without_workspace() {
+        let tmp = tempfile::tempdir().unwrap();
+        // A plain Cargo.toml without [workspace] and no crates/ dir
+        fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"solo\"\n",
+        )
+        .unwrap();
+
+        let found = detect_workspace_root_from(tmp.path()).unwrap();
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn detect_workspace_root_returns_none_when_no_crates_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Has [workspace] in Cargo.toml but no crates/ directory
+        fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+
+        let found = detect_workspace_root_from(tmp.path()).unwrap();
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn detect_workspace_root_returns_none_for_empty_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Completely empty directory — no Cargo.toml anywhere
+        let found = detect_workspace_root_from(tmp.path()).unwrap();
+        assert_eq!(found, None);
+    }
+}
 

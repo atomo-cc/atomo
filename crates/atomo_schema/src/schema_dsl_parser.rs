@@ -819,4 +819,228 @@ export const Activity = model('activities', {
         assert!(ts.contains("export interface ActionHandlers {"));
         assert!(ts.contains("export interface TypedWorker {"));
     }
+
+    // ── is_builder_dsl edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn is_builder_dsl_rejects_legacy_ts_interface() {
+        let legacy = r#"
+            export interface Post {
+                id: string;
+                title: string;
+                body: string;
+            }
+        "#;
+        assert!(!is_builder_dsl(legacy));
+    }
+
+    #[test]
+    fn is_builder_dsl_rejects_empty_string() {
+        assert!(!is_builder_dsl(""));
+    }
+
+    #[test]
+    fn is_builder_dsl_detects_commented_out_import() {
+        // The function does a plain `contains`, so a commented-out import still
+        // returns true. Verify that current behaviour so we notice if it changes.
+        let commented = r#"
+            // import { model } from '@atomo/schema'
+        "#;
+        assert!(
+            is_builder_dsl(commented),
+            "commented-out import currently counts as builder DSL (substring match)"
+        );
+    }
+
+    // ── parse_builder_dsl edge cases ───────────────────────────────────────
+
+    #[test]
+    fn minimal_model_with_only_id_field() {
+        let dsl = r#"
+import { model, text } from '@atomo/schema'
+
+export const Tag = model('tags', {
+  fields: {
+    id: text().id(),
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        let tag = schema.models.get("Tag").expect("Tag model");
+        assert_eq!(tag.fields.len(), 1);
+        assert_eq!(tag.fields["id"].field_type, FieldType::String);
+        assert!(!tag.fields["id"].optional);
+        assert!(tag.fields["id"].attributes.iter().any(|a| matches!(a, FieldAttribute::Primary)));
+        assert!(tag.access.is_none());
+        assert!(tag.events.is_empty());
+        assert!(tag.relationships.is_empty());
+    }
+
+    #[test]
+    fn model_with_all_field_types() {
+        let dsl = r#"
+import { model, text, email, url, number, select, datetime, relation, boolean, json, file } from '@atomo/schema'
+
+export const Author = model('authors', {
+  fields: {
+    id: text().id(),
+  },
+})
+
+export const Everything = model('everything', {
+  fields: {
+    id: text().id(),
+    title: text().required(),
+    contact: email().required(),
+    homepage: url().optional(),
+    count: number().min(0).max(999),
+    status: select(['draft', 'published']).default('draft'),
+    publishedAt: datetime().defaultNow(),
+    authorId: relation('authors').required(),
+    active: boolean(),
+    meta: json().optional(),
+    avatar: file().optional(),
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        let model = schema.models.get("Everything").expect("Everything model");
+
+        assert_eq!(model.fields["id"].field_type, FieldType::String);
+        assert_eq!(model.fields["title"].field_type, FieldType::String);
+        assert_eq!(model.fields["contact"].field_type, FieldType::String);
+        assert_eq!(model.fields["homepage"].field_type, FieldType::String);
+        assert_eq!(model.fields["count"].field_type, FieldType::Number);
+        assert_eq!(model.fields["status"].field_type, FieldType::String);
+        assert_eq!(model.fields["publishedAt"].field_type, FieldType::DateTime);
+        assert_eq!(model.fields["authorId"].field_type, FieldType::String);
+        assert_eq!(model.fields["active"].field_type, FieldType::Boolean);
+        assert_eq!(model.fields["meta"].field_type, FieldType::Json);
+        assert_eq!(model.fields["avatar"].field_type, FieldType::File);
+
+        // Relation creates a relationship entry
+        let rel = model.relationships.get("author").expect("author relationship");
+        assert_eq!(rel.model, "Author");
+        assert_eq!(rel.foreign_key.as_deref(), Some("authorId"));
+
+        // Validation: email field gets email rule, number gets min/max
+        assert!(model.validation["contact"].contains("email"));
+        assert!(model.validation["count"].contains("min:0"));
+        assert!(model.validation["count"].contains("max:999"));
+    }
+
+    #[test]
+    fn model_with_no_fields_block_produces_empty_fields() {
+        // A model(...) call that has a body but no `fields: { ... }` key
+        let dsl = r#"
+import { model } from '@atomo/schema'
+
+export const Empty = model('empties', {
+  access: {
+    read: allow.public(),
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        let model = schema.models.get("Empty").expect("Empty model");
+        assert!(model.fields.is_empty(), "model with no fields block should have empty fields");
+    }
+
+    #[test]
+    fn model_call_missing_brace_body_is_skipped() {
+        // `model('x')` without the second arg object — parse_model_blocks regex
+        // requires `, {` so this should just produce no models.
+        let dsl = r#"
+import { model } from '@atomo/schema'
+
+export const Broken = model('broken')
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        assert!(schema.models.is_empty(), "model with no body block should be skipped");
+    }
+
+    #[test]
+    fn action_with_no_input_call() {
+        let dsl = r#"
+import { model, text, action } from '@atomo/schema'
+
+export const onPing = action('onPing')
+  .from('pings')
+
+export const Ping = model('pings', {
+  fields: {
+    id: text().id(),
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        let action = schema.actions.get("onPing").expect("onPing action");
+        assert_eq!(action.source_model.as_deref(), Some("Ping"));
+        // No .input() means the parser falls through to Object { fields: [] }
+        match &action.input {
+            ActionInputDef::Object { fields } => {
+                assert!(fields.is_empty(), "no .input() should produce empty Object input");
+            }
+            other => panic!("expected Object variant for action with no .input(), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn multiple_actions_referencing_same_model() {
+        let dsl = r#"
+import { model, text, action } from '@atomo/schema'
+
+export const onOrderCreated = action('onOrderCreated')
+  .from('orders')
+  .input(['id', 'total'])
+
+export const onOrderShipped = action('onOrderShipped')
+  .from('orders')
+  .input(['id', 'trackingNumber'])
+
+export const onOrderRefunded = action('onOrderRefunded')
+  .from('orders')
+  .input(['id', 'total', 'reason'])
+
+export const Order = model('orders', {
+  fields: {
+    id: text().id(),
+    total: number(),
+    trackingNumber: text().optional(),
+    reason: text().optional(),
+  },
+  on: {
+    created: [onOrderCreated],
+    updated: [onOrderShipped, onOrderRefunded],
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+
+        // All three actions should exist and point at the same model
+        assert_eq!(schema.actions.len(), 3);
+        for name in &["onOrderCreated", "onOrderShipped", "onOrderRefunded"] {
+            let a = schema.actions.get(*name).unwrap();
+            assert_eq!(a.source_model.as_deref(), Some("Order"), "{} should reference Order", name);
+        }
+
+        // Verify distinct input fields
+        if let ActionInputDef::PickFields { fields, .. } = &schema.actions["onOrderCreated"].input {
+            assert_eq!(fields, &["id", "total"]);
+        } else {
+            panic!("expected PickFields");
+        }
+        if let ActionInputDef::PickFields { fields, .. } = &schema.actions["onOrderShipped"].input {
+            assert_eq!(fields, &["id", "trackingNumber"]);
+        } else {
+            panic!("expected PickFields");
+        }
+
+        // Event bindings on the model
+        let order = &schema.models["Order"];
+        assert_eq!(order.events.created.len(), 1);
+        assert_eq!(order.events.updated.len(), 2);
+        assert_eq!(order.events.updated[0].action, "onOrderShipped");
+        assert_eq!(order.events.updated[1].action, "onOrderRefunded");
+    }
 }
