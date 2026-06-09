@@ -504,6 +504,268 @@ async fn main() {
         },
     ));
 
+    // ===== CRM schema benchmarks =====
+    // Uses the real CRM schema shape (6 models, relations, selects, validations)
+    // with bench_crm_ prefixed tables to avoid collision.
+    let crm_schema = r#"
+import { model, text, number, email, select, datetime, relation, url } from '@atomo-cc/schema'
+
+export const Company = model('bench_crm_companies', {
+  fields: {
+    id: text().id(),
+    name: text().required().min(2).max(120),
+    website: url().optional(),
+    domain: text().optional(),
+    industry: text().optional(),
+    leadCount: number().default(0),
+    openDealValue: number().default(0),
+    createdAt: datetime().defaultNow(),
+    updatedAt: datetime().autoUpdate(),
+  },
+})
+
+export const Contact = model('bench_crm_contacts', {
+  fields: {
+    id: text().id(),
+    firstName: text().required().min(1).max(80),
+    lastName: text().required().min(1).max(80),
+    email: email().required(),
+    phone: text().optional(),
+    companyId: relation('bench_crm_companies').optional(),
+    lastActivityAt: datetime().optional(),
+    createdAt: datetime().defaultNow(),
+    updatedAt: datetime().autoUpdate(),
+  },
+})
+
+export const Lead = model('bench_crm_leads', {
+  fields: {
+    id: text().id(),
+    email: email().required(),
+    source: select(['website', 'referral', 'event', 'import', 'outbound']).default('website'),
+    status: select(['new', 'qualified', 'disqualified', 'converted']).default('new'),
+    score: number().default(0),
+    companyId: relation('bench_crm_companies').optional(),
+    contactId: relation('bench_crm_contacts').optional(),
+    createdAt: datetime().defaultNow(),
+    updatedAt: datetime().autoUpdate(),
+  },
+})
+
+export const Deal = model('bench_crm_deals', {
+  fields: {
+    id: text().id(),
+    title: text().required().min(2).max(160),
+    value: number().required().min(0),
+    stage: select(['prospecting', 'proposal', 'negotiation', 'won', 'lost']).default('prospecting'),
+    companyId: relation('bench_crm_companies').required(),
+    contactId: relation('bench_crm_contacts').optional(),
+    closedAt: datetime().optional(),
+    createdAt: datetime().defaultNow(),
+    updatedAt: datetime().autoUpdate(),
+  },
+})
+
+export const Activity = model('bench_crm_activities', {
+  fields: {
+    id: text().id(),
+    type: select(['call', 'email', 'meeting', 'note']).required(),
+    note: text().optional(),
+    contactId: relation('bench_crm_contacts').required(),
+    dealId: relation('bench_crm_deals').optional(),
+    occurredAt: datetime().defaultNow(),
+    createdAt: datetime().defaultNow(),
+  },
+})
+"#;
+
+    let crm = atomo::Atomo::builder()
+        .schema_content(crm_schema)
+        .database_url(&db)
+        .enable_migrations(true)
+        .build()
+        .await
+        .expect("crm atomo build");
+    let cc = crm.client();
+    let _ = sqlx::query(
+        "TRUNCATE bench_crm_activities, bench_crm_deals, bench_crm_leads, \
+         bench_crm_contacts, bench_crm_companies CASCADE",
+    )
+    .execute(crm.db_pool())
+    .await;
+
+    // Seed: 20 companies for relation benchmarks
+    let mut company_ids = Vec::new();
+    for i in 0..20 {
+        let mut d = HashMap::new();
+        d.insert("name".into(), json!(format!("Bench Corp {i}")));
+        d.insert("website".into(), json!(format!("https://bench{i}.com")));
+        d.insert("domain".into(), json!(format!("bench{i}.com")));
+        d.insert("industry".into(), json!("SaaS"));
+        d.insert("leadCount".into(), json!(i));
+        d.insert("openDealValue".into(), json!(i * 10000));
+        let r = cc.create("Company", &d, &[], Some("bench")).await.unwrap();
+        company_ids.push(id_of(&r));
+    }
+
+    // Seed: 100 contacts spread across companies
+    let mut contact_ids = Vec::new();
+    for i in 0..100 {
+        let mut d = HashMap::new();
+        d.insert("firstName".into(), json!(format!("First{i}")));
+        d.insert("lastName".into(), json!(format!("Last{i}")));
+        d.insert("email".into(), json!(format!("contact{i}@bench.test")));
+        d.insert("companyId".into(), json!(&company_ids[i % 20]));
+        let r = cc.create("Contact", &d, &[], Some("bench")).await.unwrap();
+        contact_ids.push(id_of(&r));
+    }
+
+    // CRM: create Company (many fields)
+    let crm_iters = iters.min(500);
+    let mut t = Vec::with_capacity(crm_iters);
+    for i in 0..crm_iters {
+        let mut d = HashMap::new();
+        d.insert("name".into(), json!(format!("CrmBench Co {i}")));
+        d.insert("website".into(), json!(format!("https://crmbench{i}.io")));
+        d.insert("domain".into(), json!(format!("crmbench{i}.io")));
+        d.insert("industry".into(), json!("Technology"));
+        d.insert("leadCount".into(), json!(0));
+        d.insert("openDealValue".into(), json!(0));
+        let s = Instant::now();
+        cc.create("Company", &d, &[], Some("bench")).await.unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push(("crm: create Company (7 fields)".into(), stats(t)));
+
+    // CRM: create Contact with relation FK
+    let mut t = Vec::with_capacity(crm_iters);
+    for i in 0..crm_iters {
+        let mut d = HashMap::new();
+        d.insert("firstName".into(), json!(format!("CF{i}")));
+        d.insert("lastName".into(), json!(format!("CL{i}")));
+        d.insert("email".into(), json!(format!("crm-c{i}@bench.test")));
+        d.insert("phone".into(), json!("+1-555-0000"));
+        d.insert("companyId".into(), json!(&company_ids[i % 20]));
+        let s = Instant::now();
+        cc.create("Contact", &d, &[], Some("bench")).await.unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push(("crm: create Contact (6 fields + FK)".into(), stats(t)));
+
+    // CRM: create_many Lead batch
+    let lead_batch = 50usize;
+    let lead_batches = (crm_iters / lead_batch).max(1);
+    let mut t = Vec::with_capacity(lead_batches);
+    let sources = ["website", "referral", "event", "import", "outbound"];
+    let statuses = ["new", "qualified", "disqualified", "converted"];
+    for b in 0..lead_batches {
+        let batch: Vec<_> = (0..lead_batch)
+            .map(|i| {
+                let mut d = HashMap::new();
+                d.insert("email".into(), json!(format!("lead-{b}-{i}@bench.test")));
+                d.insert("source".into(), json!(sources[i % 5]));
+                d.insert("status".into(), json!(statuses[i % 4]));
+                d.insert("score".into(), json!((i * 7) % 100));
+                d.insert("companyId".into(), json!(&company_ids[i % 20]));
+                d.insert("contactId".into(), json!(&contact_ids[i % 100]));
+                d
+            })
+            .collect();
+        let s = Instant::now();
+        cc.create_many("Lead", &batch, Some("bench")).await.unwrap();
+        t.push(s.elapsed() / lead_batch as u32);
+    }
+    rows.push((
+        format!("crm: create_many Lead (per row, batch={lead_batch})"),
+        stats(t),
+    ));
+
+    // CRM: find_many Lead filtered by status (hot)
+    let status_filter = vec![WhereClause {
+        field: "status".to_string(),
+        operator: WhereOperator::Equals,
+        value: json!("qualified"),
+    }];
+    cc.find_many("Lead", &status_filter, &[], Some(20), Some(0), &[])
+        .await
+        .unwrap();
+    let mut t = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let s = Instant::now();
+        cc.find_many("Lead", &status_filter, &[], Some(20), Some(0), &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "crm: find_many Lead WHERE status='qualified' hot".into(),
+        stats(t),
+    ));
+
+    // CRM: find_many Contact by companyId (hot)
+    let company_filter = vec![WhereClause {
+        field: "companyId".to_string(),
+        operator: WhereOperator::Equals,
+        value: json!(&company_ids[0]),
+    }];
+    cc.find_many("Contact", &company_filter, &[], Some(20), Some(0), &[])
+        .await
+        .unwrap();
+    let mut t = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let s = Instant::now();
+        cc.find_many("Contact", &company_filter, &[], Some(20), Some(0), &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "crm: find_many Contact WHERE companyId=X hot".into(),
+        stats(t),
+    ));
+
+    // CRM: find_unique Contact by id (hot)
+    let contact_by_id = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: json!(&contact_ids[0]),
+    }];
+    cc.find_unique("Contact", &contact_by_id, &[])
+        .await
+        .unwrap();
+    let mut t = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let s = Instant::now();
+        cc.find_unique("Contact", &contact_by_id, &[]).await.unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "crm: find_unique Contact by id hot".into(),
+        stats(t),
+    ));
+
+    // CRM: mixed workload (create Deal + read Leads — simulates real app)
+    let mix_iters = crm_iters.min(200);
+    let mut t = Vec::with_capacity(mix_iters);
+    for i in 0..mix_iters {
+        let mut d = HashMap::new();
+        d.insert("title".into(), json!(format!("Deal {i}")));
+        d.insert("value".into(), json!(50000 + i * 1000));
+        d.insert("stage".into(), json!("prospecting"));
+        d.insert("companyId".into(), json!(&company_ids[i % 20]));
+        d.insert("contactId".into(), json!(&contact_ids[i % 100]));
+        let s = Instant::now();
+        cc.create("Deal", &d, &[], Some("bench")).await.unwrap();
+        cc.find_many("Lead", &status_filter, &[], Some(20), Some(0), &[])
+            .await
+            .unwrap();
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "crm: mixed (create Deal + find_many Lead)".into(),
+        stats(t),
+    ));
+
     // ----- Report -----
     println!("\n## Atomo engine benchmarks (in-process)\n");
     println!("iterations: {iters} · engine-level latencies (exclude HTTP/network/GraphQL)\n");
@@ -532,4 +794,10 @@ async fn main() {
     let _ = sqlx::query("TRUNCATE bench_notes, bench_rel_notes, bench_rel_tags, bench_ev_notes")
         .execute(atomo.db_pool())
         .await;
+    let _ = sqlx::query(
+        "TRUNCATE bench_crm_activities, bench_crm_deals, bench_crm_leads, \
+         bench_crm_contacts, bench_crm_companies CASCADE",
+    )
+    .execute(crm.db_pool())
+    .await;
 }
