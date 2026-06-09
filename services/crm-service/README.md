@@ -60,12 +60,16 @@ pnpm --filter @atomo-cc/client-sdk build
 
 ```
 services/crm-service/
-├── atomo.config.ts     # ⚙️  Atomo 平台配置
-├── schema.ts           # 📊  CRM 数据模型定义
+├── schema.ts           # 📊  CRM 数据模型 + events + actions
+├── workers/            # 🔧  外部 TypeScript workers (处理 side effects)
+│   ├── contact-worker.ts   # onNewContact
+│   └── deal-worker.ts      # onDealStageChange
+├── generated/          # 🤖  codegen 输出 (TypedClient, ActionHandlers)
+│   └── client.ts
 ├── workflows/          # 🔄  业务流程自动化
-├── plugins/            # 🧩  业务扩展插件
 ├── admin/              # 🎨  后台界面定制
-└── Dockerfile          # 🐳  部署配置
+├── migrations/         # 📦  数据库迁移
+└── tsconfig.json       # TypeScript 配置
 ```
 
 ## 🚀 核心理念
@@ -139,23 +143,42 @@ pnpm --filter atomo-crm-service generate
 - 运行 `pnpm --filter @atomo-cc/client-sdk build`
 - 在 Admin UI dev server 中检查 schema/metadata 消费效果
 
-### 4. 添加业务逻辑
+### 4. 启动 Workers
 
-在 `plugins/` 目录下创建 TypeScript 文件：
+Workers 是处理 side effects 的外部 TypeScript 进程。Schema 中声明的 events 会触发 actions，actions 入队后由 workers 处理。
 
-```typescript
-// plugins/validate-email/index.ts
-import { onEvent } from "@atomo-cc/plugin-sdk";
+```bash
+# Terminal 2: contact worker
+CONTACT_WORKER_TOKEN=<token> npx tsx workers/contact-worker.ts
 
-onEvent("Contact.Created", async (event) => {
-  const { email } = event.payload;
-  if (email && !isValidEmail(email)) {
-    throw new Error("Invalid email address");
-  }
-});
+# Terminal 3: deal worker
+DEAL_WORKER_TOKEN=<token> npx tsx workers/deal-worker.ts
 ```
 
-事件触发后 action 分发器会自动将任务入队，由外部 worker 处理。
+Worker tokens 需要最小权限：
+
+```bash
+# contact-worker: 只需读写 Contact 和创建 Activity
+atomo worker-token create --name "contact-worker" \
+  --capabilities "crud:Contact:read,update,crud:Activity:create,action:onNewContact"
+
+# deal-worker: 只需读 Deal 和创建 Activity
+atomo worker-token create --name "deal-worker" \
+  --capabilities "crud:Deal:read,crud:Activity:create,action:onDealStageChange"
+```
+
+### Event → Action 流程
+
+```
+Contact created → onNewContact action → contact-worker
+  → logs Activity, could enrich from external API
+
+Deal.stage changed → onDealStageChange action → deal-worker
+  → logs Activity on contact timeline (won/lost/progression)
+  → origin: "onDealStageChange" prevents re-enqueue loop
+```
+
+详见 `docs/guide/workers.md` 完整 API 文档。
 
 ## 🎨 后台界面定制
 
