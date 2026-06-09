@@ -1,7 +1,0 @@
-name = "js-emit-denied"
-version = "0.1.0"
-description = "JS effect plugin (denied)"
-author = "test"
-entry_point = "../../emit-shared.wasm"
-permissions = []
-runtime = "js"

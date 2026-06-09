@@ -112,12 +112,6 @@ jobs:
       - name: Wait for crates.io
         run: sleep 30
 
-      - name: Publish atomo_wasm_runtime
-        run: cargo publish -p atomo_wasm_runtime --token ${{ secrets.CARGO_TOKEN }}
-
-      - name: Wait for crates.io
-        run: sleep 30
-
       - name: Publish atomo_projectors
         run: cargo publish -p atomo_projectors --token ${{ secrets.CARGO_TOKEN }}
 

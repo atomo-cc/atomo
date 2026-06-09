@@ -583,7 +583,7 @@ export async function loadSchemaMetadata(): Promise<SchemaMetadata> {
  * tableName/primaryKey/fields/relationships/validation; we fill ui + searchable locally.
  */
 async function loadFromMetaSchema(): Promise<SchemaMetadata> {
-  const url = window.location.port === '5173' ? 'http://localhost:3000/meta/schema' : '/meta/schema'
+  const url = '/meta/schema'
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`/meta/schema HTTP ${response.status}`)
@@ -621,45 +621,10 @@ async function loadFromMetaSchema(): Promise<SchemaMetadata> {
 
 
 
-/**
- * Schema loader with a retry mechanism.
- * 🎯 In development, try several possible backend ports.
- */
 async function loadSchemaWithRetry(): Promise<string> {
-  const currentPort = window.location.port
-  const currentHost = window.location.hostname
-  
-  // If not on port 5173, use a relative path directly
-  if (currentPort !== '5173') {
-    const response = await fetch('/schema.ts')
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
-    return response.text()
+  const response = await fetch('/schema.ts')
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
   }
-  
-  // On port 5173, try several possible backend ports
-  const possiblePorts = ['3001', '3000', '8000', '8080', '4000']
-  let lastError: Error | null = null
-  
-  for (const port of possiblePorts) {
-    try {
-      const url = `http://${currentHost}:${port}/schema.ts`
-      console.log(`Attempting to load schema from ${url}...`)
-      
-      const response = await fetch(url)
-      if (response.ok) {
-        console.log(`✅ Successfully loaded schema from port ${port}`)
-        return response.text()
-      }
-      
-      lastError = new Error(`HTTP ${response.status}: ${response.statusText}`)
-    } catch (error) {
-      lastError = error as Error
-      console.warn(`Failed to connect to port ${port}:`, error)
-      continue
-    }
-  }
-  
-  throw lastError || new Error('Unable to connect to any backend service port')
+  return response.text()
 }

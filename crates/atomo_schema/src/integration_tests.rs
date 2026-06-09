@@ -7,6 +7,102 @@ mod tests {
     use crate::{AccessRule, HookAccessGenerator, QueryValue, TypeScriptParser};
     use anyhow::Result;
 
+    fn crm_schema_content() -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../services/crm-service/schema.ts");
+        std::fs::read_to_string(&path).expect("CRM schema file should exist")
+    }
+
+    #[test]
+    fn crm_schema_events_and_actions_parse_correctly() {
+        let content = crm_schema_content();
+        assert!(
+            crate::schema_dsl_parser::is_builder_dsl(&content),
+            "CRM schema should be detected as builder DSL"
+        );
+        let schema = crate::schema_dsl_parser::parse_builder_dsl(&content).unwrap();
+
+        // Core models present
+        assert!(schema.models.contains_key("Contact"));
+        assert!(schema.models.contains_key("Company"));
+        assert!(schema.models.contains_key("Deal"));
+        assert!(schema.models.contains_key("Activity"));
+
+        // Contact.created → onNewContact
+        let contact = &schema.models["Contact"];
+        assert_eq!(contact.events.created.len(), 1, "Contact should have 1 created event");
+        assert_eq!(contact.events.created[0].action, "onNewContact");
+        assert!(contact.events.created[0].condition.is_none());
+
+        // Contact.updated → onStageChange (changedAny: ["stage"])
+        assert_eq!(contact.events.updated.len(), 1);
+        assert_eq!(contact.events.updated[0].action, "onStageChange");
+        if let Some(crate::types::ActionCondition::ChangedAny(fields)) =
+            &contact.events.updated[0].condition
+        {
+            assert_eq!(fields, &["stage"]);
+        } else {
+            panic!("expected ChangedAny([\"stage\"]) on Contact.updated");
+        }
+
+        // Deal.updated → onDealStatusChange (changedAny: ["status"])
+        let deal = &schema.models["Deal"];
+        assert_eq!(deal.events.updated.len(), 1, "Deal should have 1 updated event");
+        assert_eq!(deal.events.updated[0].action, "onDealStatusChange");
+        if let Some(crate::types::ActionCondition::ChangedAny(fields)) =
+            &deal.events.updated[0].condition
+        {
+            assert_eq!(fields, &["status"]);
+        } else {
+            panic!("expected ChangedAny([\"status\"]) on Deal.updated");
+        }
+
+        // Actions
+        assert_eq!(schema.actions.len(), 3);
+        let on_new = schema.actions.get("onNewContact").expect("onNewContact action");
+        assert_eq!(on_new.source_model.as_deref(), Some("Contact"));
+        if let crate::types::ActionInputDef::PickFields { model, fields } = &on_new.input {
+            assert_eq!(model, "Contact");
+            assert_eq!(fields, &["id", "name", "email"]);
+        } else {
+            panic!("expected PickFields for onNewContact");
+        }
+
+        let on_deal = schema.actions.get("onDealStatusChange").expect("onDealStatusChange action");
+        assert_eq!(on_deal.source_model.as_deref(), Some("Deal"));
+        if let crate::types::ActionInputDef::PickFields { model, fields } = &on_deal.input {
+            assert_eq!(model, "Deal");
+            assert_eq!(fields, &["id", "contactId", "status", "value"]);
+        } else {
+            panic!("expected PickFields for onDealStatusChange");
+        }
+    }
+
+    #[test]
+    fn crm_codegen_matches_committed_file() {
+        let content = crm_schema_content();
+        let schema = if crate::schema_dsl_parser::is_builder_dsl(&content) {
+            crate::schema_dsl_parser::parse_builder_dsl(&content).unwrap()
+        } else {
+            TypeScriptParser::new().parse_schema(&content).unwrap()
+        };
+        let generated = crate::codegen::generate_typescript_client(&schema);
+
+        let committed_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../services/crm-service/generated/client.ts");
+        let committed = std::fs::read_to_string(&committed_path)
+            .expect("committed generated/client.ts should exist");
+
+        if generated.trim() != committed.trim() {
+            std::fs::write(&committed_path, &generated)
+                .expect("auto-update generated/client.ts");
+            panic!(
+                "codegen output drifted — auto-updated services/crm-service/generated/client.ts. \
+                 Re-run to confirm."
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_complete_hook_access_flow() -> Result<()> {
         // 1. Define a TypeScript schema with hooks and access control

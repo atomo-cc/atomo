@@ -1,12 +1,12 @@
 ---
 title: Benchmarks
-description: Reproducible engine-level benchmarks for Atomo's core paths — data layer, durable job lease engine, and the plugin (WASM/JS) hook tax.
+description: Reproducible engine-level benchmarks for Atomo's core paths — data layer and durable job lease engine.
 ---
 
 # Benchmarks
 
 These are **honest, reproducible, engine-level** numbers. They measure the cost of Atomo's core
-operations **in-process** — the data layer, the durable job lease engine, and the plugin hook path —
+operations **in-process** — the data layer and the durable job lease engine —
 and deliberately **exclude** HTTP framing, the network, and GraphQL resolution. They answer *"what
 does each core operation cost?"*, not *"requests/sec through the full stack."*
 
@@ -23,6 +23,13 @@ Atomo harness (release, gated on a real Postgres):
 ```bash
 DATABASE_URL=postgres://… \
   cargo run --release -p atomo_server --example bench   # BENCH_ITERS=5000 to override (default 2000)
+```
+
+Action overhead harness (measures incremental cost of the event-to-action pipeline):
+
+```bash
+DATABASE_URL=postgres://… \
+  cargo run --release -p atomo_server --example action_overhead   # BENCH_ITERS=500 to override
 ```
 
 Node baseline (`node-postgres`, raw SQL):
@@ -84,8 +91,11 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **data layer: find_many eventual** | same as find_many hot but with `ATOMO_CACHE_MODE=eventual` — writes interleaved between reads do NOT invalidate the cache, showing cache staying hot under mixed load |
 | **job lease: 1 worker** | `JobStore::lease` throughput draining a queue (cap 50/call) |
 | **job lease: 8 workers** | concurrent `SELECT … FOR UPDATE SKIP LOCKED` dispatch — shows lock-free scaling |
-| **plugin hook tax: JS/Javy** | a `before_create` hook through `WasmHookRunner` (the real CRUD-hook path): the per-operation cost of crossing into the **JS (Javy/QuickJS)** sandbox + JSON marshalling |
 | **HTTP request throughput** | a bare endpoint under `k6` concurrency — Atomo's axum server vs Fastify; isolates the request runtime (see Full-stack HTTP below) |
+| **action overhead: baseline CRUD** | `create` with no event bindings — the floor (`action_overhead` example) |
+| **action overhead: event emission** | `create` with events declared but no dispatcher — isolates event construction + broadcast cost |
+| **action overhead: dispatch + enqueue** | `create` with a live action dispatcher — measures binding match + job INSERT overhead |
+| **action overhead: worker CRUD callback** | HTTP round-trip through `/api/worker/crud/:model` via `oneshot` — measures auth + capability check + CRUD + JSON serialization |
 
 ## Results
 
@@ -117,7 +127,6 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 | data layer: find_many eventual (hot through writes) | 42.5 | 37 | 73 | 112 | 23 528 |
 | job lease: 1 worker | 104 | — | — | — | 9 634 |
 | job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 31 658 |
-| plugin hook tax: JS/Javy `before_create` (load 413 ms once) | 178 | 166 | 237 | 331 | 5 630 |
 
 **Batch inserts:** `create_many` commits a 100-row batch via **two multi-row `INSERT`s** (the rows,
 then their events) in **one** transaction — so the per-row cost drops from **~3.9 ms to ~77 µs —
@@ -183,7 +192,7 @@ machine, same DB, same serial-latency method.
 - **Where Atomo wins:** hot reads (list cache ~40×, point-read cache **~1.2 M ops/s**), **footprint**
   (a 9.8 MB binary vs a Node install), and **capabilities Node has no built-in answer for** — the
   durable job lease engine (28 k leases/s, scaling **3×** from 1→8 workers via `SKIP LOCKED`), event
-  sourcing, and the plugin sandbox.
+  sourcing, and the action dispatcher.
 - **The trade, stated plainly:** Atomo costs ~2× a bare insert on writes (both Postgres-`fsync`-bound)
   in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, sub-µs
   point-read caching (1.2 M ops/s), and a typed, schema-driven backend (API + admin) out of the
@@ -193,10 +202,6 @@ machine, same DB, same serial-latency method.
 > **Why co-located matters (a cautionary data point):** an earlier run with Postgres on a *separate*
 > host (Windows → WSL2 over the LAN) showed Atomo `create` at ~9 ms — but that was the **network
 > hop**, not Atomo. Always measure with a local DB; a remote DB inflates every write.
-
-Other portable takeaways: the **JS plugin load** (Javy/QuickJS instantiate) is a one-time ~400 ms at
-boot, not per-call; the **JS hook tax** (~178 µs/call here on Linux; was ~424 µs on Windows — wasmtime
-is slower there) is CPU-only and DB-independent.
 
 ## Head-to-head: Atomo vs Prisma, co-located
 
@@ -230,7 +235,7 @@ an external layer). Atomo's in-process cache is what makes reads lopsided.
   not hand-written SQL. Atomo vs Prisma is the comparison someone evaluating both would actually make.
 - **What Prisma has that Atomo doesn't (yet):** a mature ecosystem, broad ORM features (raw queries,
   nested writes, aggregations), Prisma Studio, Prisma Accelerate (hosted cache/pool). **What Atomo
-  has that Prisma doesn't:** built-in event sourcing, WASM plugin hooks, durable job engine, admin
+  has that Prisma doesn't:** built-in event sourcing, hooks, durable job engine, admin
   UI, a 9.8 MB single binary, and the cache that makes this comparison lopsided on reads.
 
 ## Head-to-head: Atomo vs Payload CMS, co-located
@@ -268,7 +273,7 @@ hits the database.
   Cold count (~1111 µs) is still heavier than Payload's 393 µs due to RLS scoping.
 - **Payload is the closest "apples-to-apples" competitor** — both are schema-driven backend
   frameworks with admin UI, hooks, and relation resolution. The difference: Atomo is a compiled Rust
-  binary with an in-process cache; Payload is a Node.js CMS with a richer plugin/admin ecosystem.
+  binary with an in-process cache; Payload is a Node.js CMS with a richer extension/admin ecosystem.
   For read-heavy workloads the gap is decisive; for write-heavy workloads with heavy hook logic,
   Payload's JS ecosystem may be the right trade.
 
@@ -362,20 +367,6 @@ DATABASE_URL=postgres://… ./bench/authed-load/docker-run.sh
 k6 run -e BASE=http://127.0.0.1:3099 -e SCENARIO=read-only bench/authed-load/load.js
 ```
 
-## Reading the plugin hook tax (for migrators)
-
-If you're evaluating Atomo for a **custom-logic-heavy** project, the hook tax is the number that
-matters: it's what each plugin-touched operation costs on top of the bare data layer.
-
-- The measured figure is for a **JS (Javy/QuickJS)** hook — the easy "drop in a `.js`, no toolchain"
-  path, and the **upper bound** of the tax. **Compiled-WASM** plugins execute faster than interpreted
-  JS (precise compiled-WASM numbers are a follow-up).
-- **This does not change the [external-workers](/guide/advanced/jobs-and-workers) guidance.** The
-  sandbox tax is about logic that *fits* the sandbox (validation, transforms, domain rules). Work
-  that touches the **outside world** — provider APIs, browser automation, `ffmpeg`, long polling,
-  native deps — **can't run in the sandbox at all**, regardless of speed, and belongs in a worker.
-  The hook tax just tells you the cost of the in-sandbox logic that *does* fit.
-
 ## When to use what
 
 The benchmarks above measure cost. This section maps cost to product decisions — when do those
@@ -388,15 +379,15 @@ numbers matter, and when don't they?
 | **Lightweight self-hosted backend** (SaaS API, internal tools) | **Atomo** | A **9.8 MB** static binary with auth, event sourcing, durable jobs, schema-driven API, and admin UI. No Node runtime, no `node_modules`, no process manager. Deploy a single binary + Postgres. |
 | **High-concurrency mixed workload** | **Atomo** | The authed load test shows **2 384 req/s at p95 13.8 ms** under 50 VUs (JWT + GraphQL + cache + events). The in-process cache means reads don't contend for DB connections. |
 | **Content team CMS / editorial workflow** | **Payload** | Payload's admin UI is a polished React app with live preview, rich text (Lexical/Slate), media library, draft/publish workflow, and localization — built for content editors, not developers. Atomo's admin is functional but developer-oriented. |
-| **Plugin ecosystem / custom admin extensions** | **Payload** | Payload has a mature plugin ecosystem (SEO, form builder, nested docs, redirects, search) and a React-based admin that supports custom field components, views, and providers. Atomo's extension model is WASM plugins — powerful but earlier-stage. |
-| **Write-heavy with complex hooks** | **Either** | Single-row writes are fsync-bound in both (~4–8 ms). Atomo is ~1.4–1.9× faster per write (includes event sourcing), but if your hooks need npm packages, browser APIs, or native deps, Payload's JS runtime is the pragmatic choice — Atomo's WASM sandbox can't reach the outside world. |
+| **Plugin ecosystem / custom admin extensions** | **Payload** | Payload has a mature plugin ecosystem (SEO, form builder, nested docs, redirects, search) and a React-based admin that supports custom field components, views, and providers. Atomo's extension model is actions & workers — powerful but earlier-stage. |
+| **Write-heavy with complex hooks** | **Either** | Single-row writes are fsync-bound in both (~4–8 ms). Atomo is ~1.4–1.9× faster per write (includes event sourcing), but if your hooks need npm packages or native deps, Payload's JS runtime is the pragmatic choice. |
 | **Durable background jobs** | **Atomo** | Built-in job engine with `SKIP LOCKED` lease dispatch: **31 658 leases/s** (8 workers). Payload has no built-in job queue — you'd add BullMQ, pg-boss, or similar. |
 
 ### What this table is not
 
 This is not "Atomo replaces Payload." They overlap on schema-driven CRUD + admin but diverge on
 audience: Atomo is a **backend runtime** (API-first, event-sourced, small footprint); Payload is a
-**headless CMS** (content-first, editor-friendly, plugin-rich). The benchmark numbers inform which
+**headless CMS** (content-first, editor-friendly, extension-rich). The benchmark numbers inform which
 trade-offs matter for a given project — they don't make the choice for you.
 
 - If your team is **content editors** who need rich text, media management, and a polished admin

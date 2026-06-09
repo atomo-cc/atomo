@@ -7,7 +7,6 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
 - CLI: `atomo_cli` orchestrates codegen, dev runtime, build, deploy.
 - Schema: `atomo_schema` parses `schema.ts` (SWC) and generates code.
 - Projectors: `atomo_projectors` build read models from the event log.
-- Plugins: `atomo_wasm_runtime` executes sandboxed WASM extensions.
 - Realtime: `atomo_realtime` is a transport-agnostic, in-memory hub for the
   ephemeral, high-frequency tier (channels, presence, fan-out); `atomo_server`
   mounts its WebSocket transport at `/realtime/ws`. It never touches the event
@@ -20,6 +19,6 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
 Pillars (from Atomo About & Paper):
 - River of Events: all changes are immutable events (audit/time travel).
 - Flowing Canvas: rich content blocks and flexible composition.
-- Energy Hub: open integrations via events and WASM plugins.
+- Energy Hub: open integrations via events and external workers.
 
 Data flows: `schema.ts` → codegen → GraphQL API + Admin UI + SDK types.

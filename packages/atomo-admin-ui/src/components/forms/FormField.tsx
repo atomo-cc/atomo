@@ -16,7 +16,6 @@ import { TagInput } from './TagInput'
 import { BlocksEditor } from './BlocksEditor'
 import { JsonEditor } from './JsonEditor'
 import { MediaUploader } from '../upload/MediaUploader'
-import { WasmPlugin, WasmPluginConfig } from '../plugins/WasmPluginSystem'
 import { getFieldLabel } from '../../lib/utils'
 
 interface FormFieldProps {
@@ -294,40 +293,6 @@ export function FormField({
               maxFileSize={10 * 1024 * 1024}
               multiple={true}
               showPreview={true}
-            />
-          )
-        }
-        
-        if (fieldConfig.component && fieldConfig.component.startsWith('wasm:')) {
-          // WASM plugin component
-          const pluginId = fieldConfig.component.replace('wasm:', '')
-          const pluginConfig: WasmPluginConfig = {
-            id: pluginId,
-            name: `Field Plugin: ${field.name}`,
-            version: '1.0.0',
-            isDevelopment: (import.meta as any).env?.DEV || false,
-            jsUrl: (import.meta as any).env?.DEV 
-              ? `/plugins/${pluginId}/index.js` 
-              : undefined,
-            wasmUrl: !(import.meta as any).env?.DEV 
-              ? `/plugins/${pluginId}/index.wasm` 
-              : undefined
-          }
-          
-          return (
-            <WasmPlugin
-              config={pluginConfig}
-              props={{
-                field: field.name,
-                value: value,
-                disabled: disabled,
-                placeholder: placeholder
-              }}
-              onEvent={(event, data) => {
-                if (event === 'change') {
-                  onChange(data.value)
-                }
-              }}
             />
           )
         }

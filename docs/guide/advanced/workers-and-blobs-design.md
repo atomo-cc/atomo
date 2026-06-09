@@ -9,12 +9,11 @@ description: Two additive primitives that let Atomo own side-effect-heavy worklo
 > **additive** primitives — a durable **job + external-worker** system and a **blob/asset** store —
 > that extend Atomo from "a schema-driven data/content core" to "a core that can also *own*
 > side-effect-heavy workloads" (third-party API orchestration, browser automation, media
-> generation) **without weakening the plugin sandbox**.
+> generation) **without complicating the action system**.
 
 ## Summary
 
-Atomo's extension model today is a **sandbox**: fuel-metered WASM plugins and embedded JS
-(Javy/QuickJS) with permission-gated effects. That sandbox is exactly right for *portable,
+Atomo's extension model today is a **sandbox**: event-triggered actions with durable job enqueue. That sandbox is exactly right for *portable,
 untrusted, deterministic, short* extension code. It is exactly wrong for the opposite shape of work:
 **long-running, native-dependency, side-effect-heavy, first-party orchestration** — calling flaky
 external AI providers, driving a headless browser, running an image/video pipeline, polling a job
@@ -77,10 +76,9 @@ workload, not merely match it.
 ### Non-goals
 
 - **Not** a public, run-other-people's-code compute platform. Workers are *operator-owned, trusted*
-  programs. Untrusted/portable extension code still belongs in the WASM/JS sandbox — this does not
-  replace or relax it.
+  programs. Extension logic runs in external workers (TypeScript processes).
 - **Not** an in-core media transform library. The core stores and serves bytes; transcoding/resizing
-  happens in a worker (with `ffmpeg`/`sharp`) or an optional plugin. Atomo will not bundle native
+  happens in a worker (with `ffmpeg`/`sharp`). Atomo will not bundle native
   media tooling.
 - **Not** a distribution lever. Like the multi-project work, this lowers build cost for a class of
   app; it does not acquire users. Evaluate on build-velocity and ownership.
@@ -89,7 +87,7 @@ workload, not merely match it.
 
 | Approach | Verdict | Why |
 | --- | --- | --- |
-| **Widen the sandbox** (let JS/WASM plugins spawn processes, open sockets, touch the FS) | ✗ rejected | Destroys the sandbox's safety guarantee for *every* plugin to serve one trusted workload; still can't run a persistent browser profile or stream 50 MB. |
+| **WASM plugin sandbox** | ✗ removed | Removed in favor of external workers; sandbox approach was too restrictive for real workloads (can't run persistent processes, stream large files). |
 | **In-process native handlers** (trusted Rust compiled into a custom server build) | ✗ rejected for this | Possible, but couples messy I/O to the server's crash domain, loses hot-reload, and forces Rust for provider-glue/browser code that is far easier in TS. Blocks the request/boot path. |
 | **Out-of-process trusted workers + durable jobs** | ✓ chosen | Decouples crash domains; workers scale independently; written in the right language with the full ecosystem; the event-sourced job stream is the payoff. |
 
@@ -102,7 +100,7 @@ additive plane, not a core rewrite.
 ```
    GraphQL mutation ─┐
    Workflow step    ─┤ enqueue        ┌──────────────────────────────────────┐
-   Plugin effect    ─┤───────────────▶│            atomo-server               │
+   Action trigger   ─┤───────────────▶│            atomo-server               │
    Control-plane API ┘                │  (the event-sourced brain)            │
                                       │                                        │
    ┌──────────────────────┐  lease    │  • event store  ← job lifecycle events │
@@ -124,8 +122,8 @@ Three roles, deliberately separated by trust:
    data-model logic. Never runs the untrusted-shaped side-effects itself.
 2. **Worker (hands)** — trusted, out-of-process, least-privilege. Pulls jobs, does native I/O,
    reports results. Holds a scoped **worker token**, not a user session.
-3. **Sandbox (unchanged)** — WASM/JS plugins keep doing in-data-path hooks. A plugin may *enqueue* a
-   job (an effect) but never *becomes* a worker.
+3. **Actions (unchanged)** — Actions handle in-data-path event triggers. An action may *enqueue* a
+   job but never *becomes* a worker.
 
 ---
 
@@ -226,8 +224,8 @@ The data-model side stays in the core/sandbox; only the *dispatch* crosses the b
 | Seam | Shape | Use |
 | --- | --- | --- |
 | **GraphQL mutation** | `enqueueJob(queue, kind, payload, idempotencyKey)` | app/UI/mobile kicks off work |
-| **Workflow step** | a new `Job` step type alongside HTTP/Mutation/Plugin steps | orchestrated pipelines |
-| **Plugin effect** | `enqueueJob(...)` host effect (permission-gated, like `emit`/`http`) | a CRUD hook spawns async work |
+| **Workflow step** | a new `Job` step type alongside HTTP/Mutation steps | orchestrated pipelines |
+| **Action trigger** | action dispatcher enqueues jobs when event conditions match | a CRUD event spawns async work |
 | **Control-plane / SDK** | direct API | batch/backfill/admin |
 
 A common pattern: a GraphQL mutation creates a domain record *and* enqueues the job in one
@@ -414,7 +412,7 @@ per media app remains the rational default.
 - **Secrets:** worker tokens and provider credentials live in AWS SSM (per the multi-project secrets
   model), injected into the worker's env — never in the registry or the core.
 - **Security boundary:** the only new trusted principal is the worker, and it is capability-scoped.
-  The plugin sandbox is untouched; a plugin can *enqueue* but never *execute* worker-class effects.
+  The action system is untouched; an action can *enqueue* but never *execute* worker-class effects.
 
 ## Phased delivery plan
 
@@ -462,16 +460,15 @@ per media app remains the rational default.
 - **Done — workflow `Job` step:** a no-code workflow can enqueue a job
   (`{ "Job": { queue, kind, payload?, idempotency_key? } }`); the new job id lands in the workflow
   context as `job_id`. Wired via the `JobExecutor` seam (engine-defined, server-injected like the
-  Mutation/Plugin seams); unit-tested in `atomo::workflow`.
+  Mutation seams); unit-tested in `atomo::workflow`.
 - **Done — `JobProgress` → realtime:** `POST /jobs/{id}/progress` (worker token) extends the lease
   and publishes an ephemeral update to the realtime hub on channel `job:{id}` (not the event log);
   the SDK exposes `ctx.progress(...)`. Proven end-to-end (`jobs_http_progress_publishes_to_realtime`).
 - **Done — GraphQL `enqueueJob` mutation:** enqueue from GraphQL (auth-required, tenant-stamped) via
   a `JobStore` in the schema context. Postgres-tested (`jobs_graphql`).
-- **Done — plugin `enqueueJob` effect:** a WASM/JS plugin returns
-  `{ enqueueJob: { queue, kind, payload?, idempotencyKey? } }` (gated by `WriteDatabase`), on both the
-  CRUD-hook and route-handler effect paths. DB-tested. **All enqueue seams are now complete** (REST /
-  GraphQL / workflow / plugin / Rust).
+- **Done — action `enqueueJob`:** the action dispatcher can enqueue jobs when event conditions
+  match. **All enqueue seams are now complete** (REST /
+  GraphQL / workflow / action / Rust).
 - **Remaining:** Rust worker crate.
 - **Deliverable:** write a handler body, get a production-grade worker; jobs kick off from data/UI.
 
@@ -483,7 +480,7 @@ per media app remains the rational default.
 
 ### Phase 5 — Operability & optional extensions (build on real need)
 - Admin job views (list/inspect-stream/retry/dead-letter), blob GC/retention, queue metrics.
-- **Scheduled jobs** (cron-enqueue reusing the queue), media **transform plugin/worker** recipes,
+- **Scheduled jobs** (cron-enqueue reusing the queue), media **transform worker** recipes,
   multi-region blob.
 
 ## Sizing & risk

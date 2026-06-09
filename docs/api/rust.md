@@ -8,7 +8,6 @@ Rust crates live in `crates/` and expose Atomo’s core capabilities.
 - `crates/atomo_server` — Axum-based server + GraphQL
 - `crates/atomo_cli` — Developer CLI
 - `crates/atomo_schema` — TS schema parsing and codegen
-- `crates/atomo_wasm_runtime` — WASM plugin runtime
 
 ## Build & Docs
 ```bash

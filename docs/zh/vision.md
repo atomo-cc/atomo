@@ -5,7 +5,7 @@ description: Atomo 内容核心——愿景、哲学与技术架构。
 
 # 愿景与架构
 
-Atomo 是下一代 Content Core（内容核心，简称 cc）：它不是被动的 CMS“仓库”，而是驱动业务的“方舟反应堆”。Atomo 将内容视为“活的事件流”，用强类型的可组合内容块来构建体验，并提供一个可扩展的“能量枢纽”（预留 WASM）以承载自动化与集成。它以 Rust 为基石，追求性能、安全与“可运营的确定性”；并以“Schema 驱动”的方式，将声明转化为可运行的系统。
+Atomo 是下一代 Content Core（内容核心，简称 cc）：它不是被动的 CMS“仓库”，而是驱动业务的“方舟反应堆”。Atomo 将内容视为“活的事件流”，用强类型的可组合内容块来构建体验，并提供一个可扩展的”能量枢纽”（Actions & Workers）以承载自动化与集成。它以 Rust 为基石，追求性能、安全与“可运营的确定性”；并以“Schema 驱动”的方式，将声明转化为可运行的系统。
 
 - Content Core，而非 CMS：从“存内容”走向“以内容驱动业务”。
 - Rust 基石：高吞吐、低时延、内存安全。
@@ -16,7 +16,7 @@ Atomo 是下一代 Content Core（内容核心，简称 cc）：它不是被动�
 - 方舟反应堆（Arc Reactor）：Rust + 事件溯源构成可靠、高性能的核心。
 - 事件之河（River of Events）：将状态变更建模为不可变事件，解锁审计、时间旅行与可靠读模型。
 - 流动的画布（Flowing Canvas）：Notion‑like 的强类型块，突破表单束缚，实现自由组合。
-- 能量枢纽（Energy Hub）：标准化、可治理的扩展面（WASM 设计），承载业务逻辑与集成。
+- 能量枢纽（Energy Hub）：标准化、可治理的扩展面（Actions & Workers），承载业务逻辑与集成。
 
 ## 指导哲学（Guiding Philosophy）
 
@@ -28,9 +28,9 @@ Atomo 是下一代 Content Core（内容核心，简称 cc）：它不是被动�
 
 ### Monorepo 与模块（Monorepo and Modules）
 
-- `crates/`：Rust 工作区——`atomo_core`、`atomo_server`、`atomo_cli`、schema/代码生成工具、WASM 运行时脚手架。
+- `crates/`：Rust 工作区——`atomo_core`、`atomo_server`、`atomo_cli`、schema/代码生成工具、actions/workers 框架。
 - `packages/`：Admin UI 与 TypeScript SDK。
-- `services/`：服务实例（如 CRM），包含 `schema.ts`、插件、工作流与生成物。
+- `services/`：服务实例（如 CRM），包含 `schema.ts`、workers、工作流与生成物。
 - `docs/`：VitePress 文档；`tests/`、`migrations/` 共享资产。
 
 ### 核心运行时：事件溯源 + CQRS（Core Runtime: ES + CQRS）
@@ -164,12 +164,11 @@ export const workflow = defineWorkflow('OrderFlow')
 
 状态与边界（Status & boundaries）
 - 状态：设计/规划中（当前已落地 Admin UI 动态渲染路径）。
-- 边界：WASM 暴露状态/副作用通道；平台渲染器只负责 UI 转绘，不直接写业务，提升可测与可替换性。
+- 边界：平台渲染器只负责 UI 转绘，不直接写业务，提升可测与可替换性。
 
-### 扩展性与插件（Extensibility and Plugins）
+### 扩展性与钩子（Extensibility and Hooks）
 
-- WASM 运行时（进行中）：已定义 Manifest/Permission/PluginContext；计划以 wasmtime 提供沙箱执行。
-- 生命周期钩子：在关键点注入类型安全逻辑。
+- 生命周期钩子：通过 `HookRunner` trait 在关键点注入类型安全逻辑。
 - ABI 考量：事件/模型接口力求稳定，支持多语言（Rust/TS/Go/C#）。
 
 能力模型与清单（示例）
@@ -185,7 +184,7 @@ export const workflow = defineWorkflow('OrderFlow')
   "events": ["ContentCreated", "ContentUpdated"]
 }
 ```
-- 资源预算：为插件设置 CPU/内存上限与超时；越界即终止，防噪声邻居。
+- 资源预算：为 worker 设置 CPU/内存上限与超时；越界即终止，防噪声邻居。
 - 审核/签名：建议签名与来源校验，降低供应链风险。
 
 ## 安全、认证与权限（Security, Auth, and Permissions）
@@ -268,13 +267,13 @@ flowchart LR
 - 指南 → 开发运行时与工作区：`/guide/dev-runtime`
 - 指南 → 基于 Schema 的开发：`/guide/schema-driven`
 - 指南 → 安全与认证：`/guide/advanced/security`
-- 指南 → 插件（WASM）：`/guide/plugins`
+- 指南 → Workers：`/guide/workers`
 
 ## 策略速览（Strategy Snapshot）
 
 - 目标用户：高级全栈开发者；追求类型安全/性能/可扩展的团队；重视审计与“可运营确定性”的企业。
-- 生态方向：“解决方案即代码”模板，WASM 插件接口与市场。
-- Why Atomo vs CMS：强类型可组合块；ES/CQRS 审计；Rust 性能；Schema→运行时自动化；WASM 扩展；开发者优先的 DX。
+- 生态方向：”解决方案即代码”模板，Actions & Workers 自动化框架。
+- Why Atomo vs CMS：强类型可组合块；ES/CQRS 审计；Rust 性能；Schema→运行时自动化；Actions/Workers 扩展；开发者优先的 DX。
 
 ## 与路线图的关系（Relationship to Roadmap）
 

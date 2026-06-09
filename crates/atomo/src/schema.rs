@@ -8,23 +8,20 @@ use std::collections::HashMap;
 
 // Re-export from atomo_schema for compatibility
 pub use atomo_schema::{
-    Field, FieldAttribute, FieldType, Model, ModelConstraint, Schema, TypeScriptParser,
+    ActionCondition, ActionDef, ActionInputDef, ActionInputField, ActionReturn,
+    EventActionBinding, Field, FieldAttribute, FieldType, Model, ModelConstraint, ModelEvents,
+    Schema, TypeScriptParser, is_builder_dsl, parse_builder_dsl,
 };
 
-/// Parse a TypeScript schema string into a Schema object
+/// Parse a schema string into a Schema object. Auto-detects the builder DSL
+/// (`@atomo/schema` imports) vs the legacy TypeScript-interface format.
 pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
-    let parser = TypeScriptParser::new();
-    let models = parser.parse(content)?;
-
-    // Convert Vec<Model> to HashMap<String, Model>
-    let mut schema_models = HashMap::new();
-    for model in models {
-        schema_models.insert(model.name.clone(), model);
+    if is_builder_dsl(content) {
+        parse_builder_dsl(content)
+    } else {
+        let parser = TypeScriptParser::new();
+        parser.parse_schema(content)
     }
-
-    Ok(Schema {
-        models: schema_models,
-    })
 }
 
 /// Generate database migrations from schema
@@ -219,7 +216,98 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         }
     }
 
+    // Validation-rule-to-CHECK pass: compile each model's `validation` entries into
+    // SQL CHECK constraints so the database enforces the same invariants as the Rust
+    // runtime validator (belt-and-suspenders). Emitted as guarded ALTERs (idempotent).
+    for model in schema.models.values() {
+        let table = crate::query::sql_builder::table_name_for(model);
+        for (field_name, rules) in &model.validation {
+            let field = match model.fields.get(field_name) {
+                Some(f) => f,
+                None => continue, // validation rule references unknown field — skip
+            };
+            let checks = validation_checks(&table, field_name, field, rules);
+            migrations.extend(checks);
+        }
+    }
+
     Ok(migrations)
+}
+
+/// Convert a pipe-separated validation rule string into SQL CHECK constraint DDL.
+///
+/// Rules that already have SQL-level equivalents (`required` -> NOT NULL, `unique` -> UNIQUE,
+/// `exists:*` -> FK) are intentionally skipped — they are handled elsewhere.
+fn validation_checks(table: &str, field_name: &str, field: &Field, rules: &str) -> Vec<String> {
+    let col = to_snake_case(field_name);
+    let is_number = matches!(field.field_type, FieldType::Number);
+    let optional = field.optional;
+    let mut stmts = Vec::new();
+
+    for rule in rules.split('|') {
+        let (rule_name, param) = if let Some(idx) = rule.find(':') {
+            (&rule[..idx], Some(&rule[idx + 1..]))
+        } else {
+            (rule, None)
+        };
+
+        let expr = match rule_name {
+            // `required` → NOT NULL (already on non-optional columns; no extra CHECK).
+            // `unique` → column UNIQUE constraint (handled in column generation).
+            // `exists:*` → FK (handled in the FK pass).
+            // `numeric` / `in` / custom → not expressible as a simple CHECK; skip.
+            "required" | "unique" | "numeric" | "in" => continue,
+            _ if rule_name == "exists" => continue,
+
+            "email" => format!("{col} ~ '^[^@]+@[^@]+\\.[^@]+$'"),
+
+            "url" => format!("{col} ~ '^https?://'"),
+
+            "min" => {
+                let n = match param.and_then(|p| p.parse::<i64>().ok()) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if is_number {
+                    format!("{col} >= {n}")
+                } else {
+                    format!("length({col}) >= {n}")
+                }
+            }
+
+            "max" => {
+                let n = match param.and_then(|p| p.parse::<i64>().ok()) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                if is_number {
+                    format!("{col} <= {n}")
+                } else {
+                    format!("length({col}) <= {n}")
+                }
+            }
+
+            // Unknown/unsupported rules — skip silently.
+            _ => continue,
+        };
+
+        // Optional fields must allow NULLs through the CHECK.
+        let full_expr = if optional {
+            format!("{col} IS NULL OR ({expr})")
+        } else {
+            expr
+        };
+
+        let cname = format!("chk_{table}_{col}_{rule_name}");
+        stmts.push(format!(
+            "DO $$ BEGIN \
+             IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
+             ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({full_expr}); \
+             END IF; END $$;"
+        ));
+    }
+
+    stmts
 }
 
 /// Convert FieldType to SQL type
@@ -301,6 +389,7 @@ mod tests {
             table_name: Some(table.to_string()),
             relationships: rels.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
             constraints: Vec::new(),
+            events: Default::default(),
         }
     }
 
@@ -331,7 +420,7 @@ mod tests {
         let mut models = HashMap::new();
         models.insert("Contact".into(), contact);
         models.insert("Deal".into(), deal);
-        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
         // Every table gets soft-delete + tenant columns.
         assert!(
@@ -390,7 +479,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
-        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
         // @unique -> column UNIQUE constraint.
         assert!(
@@ -404,6 +493,198 @@ mod tests {
             ),
             "index missing:\n{sql}"
         );
+    }
+
+    /// Helper: build a model with validation rules for testing the CHECK pass.
+    fn model_with_validation(
+        name: &str,
+        table: &str,
+        fields: Vec<(String, Field)>,
+        validation: HashMap<String, String>,
+    ) -> Model {
+        Model {
+            name: name.to_string(),
+            fields: fields.into_iter().collect(),
+            access: None,
+            hooks: None,
+            validation,
+            table_name: Some(table.to_string()),
+            relationships: HashMap::new(),
+            constraints: Vec::new(),
+            events: Default::default(),
+        }
+    }
+
+    #[test]
+    fn validation_email_generates_regex_check() {
+        let validation: HashMap<String, String> =
+            [("email".to_string(), "email".to_string())].into_iter().collect();
+        let m = model_with_validation(
+            "User", "users",
+            vec![field("id", FieldType::EntityId, false), field("email", FieldType::String, false)],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("User".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        assert!(
+            sql.contains("chk_users_email_email"),
+            "email CHECK constraint name missing:\n{sql}"
+        );
+        assert!(
+            sql.contains("email ~ '^[^@]+@[^@]+\\.[^@]+$'"),
+            "email regex CHECK missing:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn validation_min_max_string_generates_length_check() {
+        let validation: HashMap<String, String> =
+            [("title".to_string(), "min:1|max:100".to_string())].into_iter().collect();
+        let m = model_with_validation(
+            "Post", "posts",
+            vec![field("id", FieldType::EntityId, false), field("title", FieldType::String, false)],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("Post".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        assert!(
+            sql.contains("chk_posts_title_min") && sql.contains("length(title) >= 1"),
+            "min length CHECK missing:\n{sql}"
+        );
+        assert!(
+            sql.contains("chk_posts_title_max") && sql.contains("length(title) <= 100"),
+            "max length CHECK missing:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn validation_min_max_number_generates_value_check() {
+        let validation: HashMap<String, String> =
+            [("amount".to_string(), "min:0|max:1000".to_string())].into_iter().collect();
+        let m = model_with_validation(
+            "Payment", "payments",
+            vec![field("id", FieldType::EntityId, false), field("amount", FieldType::Number, false)],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("Payment".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        assert!(
+            sql.contains("chk_payments_amount_min") && sql.contains("amount >= 0"),
+            "min value CHECK missing:\n{sql}"
+        );
+        assert!(
+            sql.contains("chk_payments_amount_max") && sql.contains("amount <= 1000"),
+            "max value CHECK missing:\n{sql}"
+        );
+        // Ensure it uses value comparison, not length.
+        assert!(
+            !sql.contains("length(amount)"),
+            "number field should not use length():\n{sql}"
+        );
+    }
+
+    #[test]
+    fn validation_url_generates_regex_check() {
+        let validation: HashMap<String, String> =
+            [("website".to_string(), "url".to_string())].into_iter().collect();
+        let m = model_with_validation(
+            "Company", "companies",
+            vec![field("id", FieldType::EntityId, false), field("website", FieldType::String, false)],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("Company".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        assert!(
+            sql.contains("chk_companies_website_url"),
+            "url CHECK constraint name missing:\n{sql}"
+        );
+        assert!(
+            sql.contains("website ~ '^https?://'"),
+            "url regex CHECK missing:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn validation_optional_field_wraps_with_is_null() {
+        let validation: HashMap<String, String> =
+            [("website".to_string(), "url".to_string())].into_iter().collect();
+        let m = model_with_validation(
+            "Company", "companies",
+            vec![field("id", FieldType::EntityId, false), field("website", FieldType::String, true)],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("Company".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        assert!(
+            sql.contains("website IS NULL OR (website ~ '^https?://')"),
+            "optional field should be wrapped with IS NULL OR:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn validation_skips_required_unique_exists() {
+        let validation: HashMap<String, String> = [
+            ("email".to_string(), "required".to_string()),
+            ("slug".to_string(), "unique".to_string()),
+            ("authorId".to_string(), "exists:User".to_string()),
+        ].into_iter().collect();
+        let m = model_with_validation(
+            "Post", "posts",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("email", FieldType::String, false),
+                field("slug", FieldType::String, false),
+                field("authorId", FieldType::String, false),
+            ],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("Post".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        // None of these rules should produce CHECK constraints.
+        assert!(
+            !sql.contains("chk_posts_email_required"),
+            "required should not generate a CHECK:\n{sql}"
+        );
+        assert!(
+            !sql.contains("chk_posts_slug_unique"),
+            "unique should not generate a CHECK:\n{sql}"
+        );
+        assert!(
+            !sql.contains("chk_posts_author_id_exists"),
+            "exists should not generate a CHECK:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn validation_combined_rules_generate_multiple_checks() {
+        let validation: HashMap<String, String> =
+            [("email".to_string(), "required|email|min:5|max:255".to_string())].into_iter().collect();
+        let m = model_with_validation(
+            "User", "users",
+            vec![field("id", FieldType::EntityId, false), field("email", FieldType::String, false)],
+            validation,
+        );
+        let mut models = HashMap::new();
+        models.insert("User".into(), m);
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+
+        // `required` should be skipped, but the other three should each produce a CHECK.
+        assert!(!sql.contains("chk_users_email_required"), "required should be skipped");
+        assert!(sql.contains("chk_users_email_email"), "email CHECK missing:\n{sql}");
+        assert!(sql.contains("chk_users_email_min"), "min CHECK missing:\n{sql}");
+        assert!(sql.contains("chk_users_email_max"), "max CHECK missing:\n{sql}");
     }
 
     #[test]
@@ -426,7 +707,7 @@ mod tests {
         ];
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
-        let sql = generate_migrations(&Schema { models }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
         // Composite unique -> UNIQUE INDEX (the idempotency key).
         assert!(

@@ -11,6 +11,7 @@ struct ModelMetadata {
     validation: HashMap<String, String>,
     access: Option<AccessControl>,
     relationships: HashMap<String, Relationship>,
+    events: ModelEvents,
 }
 
 /// TypeScript parser that implements true "Dual-Mode Schema"
@@ -23,6 +24,8 @@ struct ModelMetadata {
 /// - Relationship inference
 /// - Generic type handling
 /// - Hook and Access Control DSL parsing
+/// - Event/action binding extraction from schema metadata
+/// - Action definition parsing (input types, source model resolution)
 pub struct TypeScriptParser {
     /// Cache for parsed enum types
     pub enums: HashMap<String, Vec<String>>,
@@ -102,6 +105,9 @@ impl TypeScriptParser {
                 if !m.relationships.is_empty() {
                     model.relationships = m.relationships;
                 }
+                if !m.events.is_empty() {
+                    model.events = m.events;
+                }
             }
         }
 
@@ -179,10 +185,25 @@ impl TypeScriptParser {
                     }
                 }
             }
+            // events: { created: [...], updated: [...], deleted: [...] }
+            if let Some(eblock) = Self::sub_block(&block, "events") {
+                let mut events = ModelEvents::default();
+                if let Some(arr) = Self::sub_array(&eblock, "created") {
+                    events.created = Self::parse_event_bindings(&arr);
+                }
+                if let Some(arr) = Self::sub_array(&eblock, "updated") {
+                    events.updated = Self::parse_event_bindings(&arr);
+                }
+                if let Some(arr) = Self::sub_array(&eblock, "deleted") {
+                    events.deleted = Self::parse_event_bindings(&arr);
+                }
+                m.events = events;
+            }
             if m.table_name.is_some()
                 || !m.validation.is_empty()
                 || m.access.is_some()
                 || !m.relationships.is_empty()
+                || !m.events.is_empty()
             {
                 result.insert(name, m);
             }
@@ -240,6 +261,170 @@ impl TypeScriptParser {
             out.push((name, block[start..j.saturating_sub(1)].to_string()));
         }
         out
+    }
+
+    /// Return the bracket-balanced body of `key: [ ... ]`, or None.
+    fn sub_array(content: &str, key: &str) -> Option<String> {
+        let key_re = Regex::new(&format!(r"{}\s*:\s*\[", regex::escape(key))).ok()?;
+        let m = key_re.find(content)?;
+        let bytes = content.as_bytes();
+        let mut depth = 1usize;
+        let mut j = m.end();
+        let start = j;
+        while j < bytes.len() && depth > 0 {
+            match bytes[j] {
+                b'[' => depth += 1,
+                b']' => depth -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        Some(content[start..j.saturating_sub(1)].to_string())
+    }
+
+    fn parse_string_array(content: &str) -> Vec<String> {
+        let re = Regex::new(r#"['"]([^'"]+)['"]"#).unwrap();
+        re.captures_iter(content)
+            .map(|c| c[1].to_string())
+            .collect()
+    }
+
+    fn parse_event_bindings(array_content: &str) -> Vec<EventActionBinding> {
+        let mut bindings = Vec::new();
+        let bytes = array_content.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'{' {
+                let start = i + 1;
+                let mut depth = 1usize;
+                i += 1;
+                while i < bytes.len() && depth > 0 {
+                    match bytes[i] {
+                        b'{' => depth += 1,
+                        b'}' => depth -= 1,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                let obj = &array_content[start..i.saturating_sub(1)];
+                if let Some(binding) = Self::parse_single_binding(obj) {
+                    bindings.push(binding);
+                }
+            } else {
+                i += 1;
+            }
+        }
+        bindings
+    }
+
+    fn parse_single_binding(obj: &str) -> Option<EventActionBinding> {
+        let action_re = Regex::new(r#"action\s*:\s*['"]([^'"]+)['"]"#).ok()?;
+        let action = action_re.captures(obj)?.get(1)?.as_str().to_string();
+        let condition = Self::parse_binding_condition(obj);
+        Some(EventActionBinding { action, condition })
+    }
+
+    fn parse_binding_condition(obj: &str) -> Option<ActionCondition> {
+        let cond_block = Self::sub_block(obj, "condition")?;
+        if let Some(arr) = Self::sub_array(&cond_block, "changedAny") {
+            let fields = Self::parse_string_array(&arr);
+            if !fields.is_empty() {
+                return Some(ActionCondition::ChangedAny(fields));
+            }
+        }
+        if let Some(fe_block) = Self::sub_block(&cond_block, "fieldEquals") {
+            let field_re = Regex::new(r#"field\s*:\s*['"]([^'"]+)['"]"#).ok()?;
+            let field = field_re.captures(&fe_block)?.get(1)?.as_str().to_string();
+            let value =
+                if let Some(c) = Regex::new(r#"value\s*:\s*['"]([^'"]+)['"]"#)
+                    .ok()?
+                    .captures(&fe_block)
+                {
+                    serde_json::Value::String(c[1].to_string())
+                } else if let Some(c) = Regex::new(r"value\s*:\s*(true|false)")
+                    .ok()?
+                    .captures(&fe_block)
+                {
+                    serde_json::Value::Bool(&c[1] == "true")
+                } else if let Some(c) = Regex::new(r"value\s*:\s*(-?\d+(?:\.\d+)?)")
+                    .ok()?
+                    .captures(&fe_block)
+                {
+                    serde_json::json!(c[1].parse::<f64>().ok()?)
+                } else {
+                    return None;
+                };
+            return Some(ActionCondition::FieldEquals { field, value });
+        }
+        None
+    }
+
+    /// Parse top-level `actions: { name: { input: ... }, ... }` from the schema object.
+    pub fn parse_actions(content: &str) -> HashMap<String, ActionDef> {
+        let mut actions = HashMap::new();
+        let actions_block = match Self::sub_block(content, "actions") {
+            Some(b) => b,
+            None => return actions,
+        };
+        for (name, block) in Self::top_level_entries(&actions_block) {
+            if let Some(def) = Self::parse_single_action(&name, &block) {
+                actions.insert(name, def);
+            }
+        }
+        actions
+    }
+
+    fn parse_single_action(name: &str, block: &str) -> Option<ActionDef> {
+        let input = Self::parse_action_input(block)?;
+        let source_model = match &input {
+            ActionInputDef::PickFields { model, .. } => Some(model.clone()),
+            ActionInputDef::Object { .. } => None,
+        };
+        Some(ActionDef {
+            name: name.to_string(),
+            input,
+            returns: None,
+            source_model,
+        })
+    }
+
+    fn parse_action_input(block: &str) -> Option<ActionInputDef> {
+        let input_block = Self::sub_block(block, "input")?;
+        if let Some(pick_block) = Self::sub_block(&input_block, "pick") {
+            let model_re = Regex::new(r#"model\s*:\s*['"]([^'"]+)['"]"#).ok()?;
+            let model = model_re
+                .captures(&pick_block)?
+                .get(1)?
+                .as_str()
+                .to_string();
+            if let Some(fields_arr) = Self::sub_array(&pick_block, "fields") {
+                let fields = Self::parse_string_array(&fields_arr);
+                return Some(ActionInputDef::PickFields { model, fields });
+            }
+        }
+        None
+    }
+
+    /// Parse a full Schema from TypeScript content, including models, events, and actions.
+    ///
+    /// Only models declared in the `export const schema = { models: { ... } }` block are
+    /// included. Auxiliary interfaces (content blocks, enum pseudo-models) are excluded so
+    /// that codegen and migrations only target actual schema-declared models.
+    pub fn parse_schema(&self, content: &str) -> Result<Schema> {
+        let models = self.parse(content)?;
+        let actions = Self::parse_actions(content);
+        let meta_keys: std::collections::HashSet<String> =
+            Self::parse_model_metadata(content).into_keys().collect();
+        let mut schema_models = HashMap::new();
+        for model in models {
+            if meta_keys.contains(&model.name) {
+                schema_models.insert(model.name.clone(), model);
+            }
+        }
+        Ok(Schema {
+            models: schema_models,
+            actions,
+        })
     }
 
     /// Collect enum and type alias definitions
@@ -342,6 +527,7 @@ impl TypeScriptParser {
                 table_name: None,
                 relationships: std::collections::HashMap::new(),
                 constraints: Vec::new(),
+                events: Default::default(),
             });
         }
 
@@ -437,6 +623,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         table_name: None,
         relationships: std::collections::HashMap::new(),
         constraints,
+        events: Default::default(),
     };
     let lines_consumed = i - start_index;
 
@@ -882,5 +1069,142 @@ mod validation_tests {
             AccessDecision::Allow,
             "admin can delete"
         );
+    }
+
+    #[test]
+    fn parses_events_from_schema_metadata() {
+        let content = r#"
+        export interface Post { id: string; title: string; status: string; }
+        export const schema = { models: { Post: {
+          tableName: "posts",
+          events: {
+            created: [{ action: "processPost" }],
+            updated: [
+              { action: "onStatusChange", condition: { changedAny: ["status"] } },
+              { action: "processPost" },
+            ],
+          },
+        } } };
+        "#;
+        let models = TypeScriptParser::new().parse(content).unwrap();
+        let p = models.iter().find(|m| m.name == "Post").unwrap();
+        assert_eq!(p.events.created.len(), 1);
+        assert_eq!(p.events.created[0].action, "processPost");
+        assert!(p.events.created[0].condition.is_none());
+        assert_eq!(p.events.updated.len(), 2);
+        assert_eq!(p.events.updated[0].action, "onStatusChange");
+        if let Some(ActionCondition::ChangedAny(fields)) = &p.events.updated[0].condition {
+            assert_eq!(fields, &["status"]);
+        } else {
+            panic!("expected ChangedAny condition");
+        }
+        assert_eq!(p.events.updated[1].action, "processPost");
+        assert!(p.events.updated[1].condition.is_none());
+        assert!(p.events.deleted.is_empty());
+    }
+
+    #[test]
+    fn parses_field_equals_condition() {
+        let content = r#"
+        export interface Post { id: string; status: string; }
+        export const schema = { models: { Post: {
+          events: {
+            updated: [{ action: "onPublish", condition: { fieldEquals: { field: "status", value: "published" } } }],
+          },
+        } } };
+        "#;
+        let models = TypeScriptParser::new().parse(content).unwrap();
+        let p = models.iter().find(|m| m.name == "Post").unwrap();
+        assert_eq!(p.events.updated.len(), 1);
+        assert_eq!(p.events.updated[0].action, "onPublish");
+        if let Some(ActionCondition::FieldEquals { field, value }) = &p.events.updated[0].condition
+        {
+            assert_eq!(field, "status");
+            assert_eq!(value, &serde_json::Value::String("published".into()));
+        } else {
+            panic!("expected FieldEquals condition");
+        }
+    }
+
+    #[test]
+    fn parses_actions_from_schema() {
+        let content = r#"
+        export interface Post { id: string; title: string; status: string; }
+        export const schema = { models: { Post: { tableName: "posts" } },
+          actions: {
+            processPost: {
+              input: { pick: { model: "Post", fields: ["id", "title"] } },
+            },
+            onStatusChange: {
+              input: { pick: { model: "Post", fields: ["id", "status"] } },
+            },
+          },
+        };
+        "#;
+        let actions = TypeScriptParser::parse_actions(content);
+        assert_eq!(actions.len(), 2);
+        let pp = actions.get("processPost").unwrap();
+        assert_eq!(pp.name, "processPost");
+        assert_eq!(pp.source_model.as_deref(), Some("Post"));
+        if let ActionInputDef::PickFields { model, fields } = &pp.input {
+            assert_eq!(model, "Post");
+            assert_eq!(fields, &["id", "title"]);
+        } else {
+            panic!("expected PickFields");
+        }
+        let osc = actions.get("onStatusChange").unwrap();
+        assert_eq!(osc.name, "onStatusChange");
+        if let ActionInputDef::PickFields { model, fields } = &osc.input {
+            assert_eq!(model, "Post");
+            assert_eq!(fields, &["id", "status"]);
+        } else {
+            panic!("expected PickFields");
+        }
+    }
+
+    #[test]
+    fn parse_schema_returns_full_schema() {
+        let content = r#"
+        export interface Post { id: string; title: string; status: string; }
+        export const schema = {
+          models: {
+            Post: {
+              tableName: "posts",
+              events: {
+                created: [{ action: "processPost" }],
+                updated: [
+                  { action: "onStatusChange", condition: { changedAny: ["status"] } },
+                  { action: "processPost" },
+                ],
+              },
+            },
+          },
+          actions: {
+            processPost: { input: { pick: { model: "Post", fields: ["id", "title"] } } },
+            onStatusChange: { input: { pick: { model: "Post", fields: ["id", "status"] } } },
+          },
+        };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert_eq!(schema.models.len(), 1);
+        assert_eq!(schema.actions.len(), 2);
+        let post = schema.models.get("Post").unwrap();
+        assert_eq!(post.events.created.len(), 1);
+        assert_eq!(post.events.updated.len(), 2);
+        assert!(schema.actions.contains_key("processPost"));
+        assert!(schema.actions.contains_key("onStatusChange"));
+    }
+
+    #[test]
+    fn no_events_or_actions_still_works() {
+        let content = r#"
+        export interface User { id: string; name: string; }
+        export const schema = { models: { User: { tableName: "users" } } };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert_eq!(schema.models.len(), 1);
+        assert!(schema.actions.is_empty());
+        let user = schema.models.get("User").unwrap();
+        assert!(user.events.is_empty());
     }
 }

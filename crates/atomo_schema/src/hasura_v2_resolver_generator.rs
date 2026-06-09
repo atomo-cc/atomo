@@ -1,3 +1,4 @@
+use crate::hasura_v2_type_generator::safe_ident;
 use crate::operation_definitions::OperationDefinitions;
 use crate::types::*;
 use anyhow::Result;
@@ -685,6 +686,9 @@ pub struct Mutation;
             let struct_field_name = self.camel_to_snake_case(field_name);
             field_mappings.push(db_field_name.clone());
 
+            let ident = safe_ident(field_name);
+            let struct_ident = safe_ident(&struct_field_name);
+
             // Generate field binding logic
             let field_binding = if !field.optional {
                 // Required field - provide default if None
@@ -692,22 +696,20 @@ pub struct Mutation;
                     crate::types::FieldType::String => {
                         format!(
                             "let {} = object.{}.unwrap_or_else(|| \"\".to_string());",
-                            field_name, struct_field_name
+                            ident, struct_ident
                         )
                     }
                     crate::types::FieldType::Array(inner) => {
                         // Check if this array will be converted to JSON in type generation
                         match inner.as_ref() {
                             crate::types::FieldType::Custom(name) if name.contains("Block") => {
-                                // Block arrays become serde_json::Value, so use JSON array default
-                                format!("let {} = object.{}.unwrap_or_else(|| serde_json::Value::Array(Vec::new()));", field_name, struct_field_name)
+                                format!("let {} = object.{}.unwrap_or_else(|| serde_json::Value::Array(Vec::new()));", ident, struct_ident)
                             }
                             _ => {
-                                // Regular arrays stay as Vec<T>, so use Vec::new() and create JSON for DB binding
                                 format!(
                                     r#"let {} = object.{}.unwrap_or_else(|| Vec::new());
         let {}_json = serde_json::to_value(&{})?;"#,
-                                    field_name, struct_field_name, field_name, field_name
+                                    ident, struct_ident, field_name, ident
                                 )
                             }
                         }
@@ -715,19 +717,19 @@ pub struct Mutation;
                     crate::types::FieldType::Json => {
                         format!(
                             "let {} = object.{}.unwrap_or_else(|| serde_json::json!({{}}));",
-                            field_name, struct_field_name
+                            ident, struct_ident
                         )
                     }
                     _ => {
                         format!(
                             "let {} = object.{}.unwrap_or_default();",
-                            field_name, struct_field_name
+                            ident, struct_ident
                         )
                     }
                 }
             } else {
                 // Optional field
-                format!("let {} = object.{};", field_name, struct_field_name)
+                format!("let {} = object.{};", ident, struct_ident)
             };
 
             field_bindings.push((field_binding, field_name.clone(), field.clone()));
@@ -742,23 +744,21 @@ pub struct Mutation;
             binding_code.push_str(binding);
             binding_code.push('\n');
 
+            let ident = safe_ident(field_name);
             // Add to bind fields
             match &field.field_type {
                 crate::types::FieldType::Array(inner) => {
-                    // Check if this array will be converted to JSON in type generation
                     match inner.as_ref() {
                         crate::types::FieldType::Custom(name) if name.contains("Block") => {
-                            // Block arrays are already JSON values, bind directly
-                            bind_fields.push(field_name.clone());
+                            bind_fields.push(ident);
                         }
                         _ => {
-                            // Regular arrays need JSON conversion, use _json variable
                             bind_fields.push(format!("{}_json", field_name));
                         }
                     }
                 }
                 _ => {
-                    bind_fields.push(field_name.clone());
+                    bind_fields.push(ident);
                 }
             }
         }
@@ -912,6 +912,8 @@ pub struct Mutation;
 
             let db_field_name = self.camel_to_snake_case(field_name);
             let struct_field_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(field_name);
+            let struct_ident = safe_ident(&struct_field_name);
 
             let update_logic = match field.field_type {
                 crate::types::FieldType::Array(_) => {
@@ -920,10 +922,10 @@ pub struct Mutation;
             let {}_json = serde_json::to_value(&{})?;
             query_builder.push(", {} = ").push_bind({}_json);
         }}"#,
+                        ident,
+                        struct_ident,
                         field_name,
-                        struct_field_name,
-                        field_name,
-                        field_name,
+                        ident,
                         db_field_name,
                         field_name
                     )
@@ -933,7 +935,7 @@ pub struct Mutation;
                         r#"        if let Some({}) = set_input.{} {{
             query_builder.push(", {} = ").push_bind({});
         }}"#,
-                        field_name, struct_field_name, db_field_name, field_name
+                        ident, struct_ident, db_field_name, ident
                     )
                 }
             };
@@ -1014,6 +1016,8 @@ pub struct Mutation;
 
             let db_field_name = self.camel_to_snake_case(field_name);
             let struct_field_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(field_name);
+            let struct_ident = safe_ident(&struct_field_name);
 
             let update_logic = match field.field_type {
                 crate::types::FieldType::Array(_) => {
@@ -1022,10 +1026,10 @@ pub struct Mutation;
             let {}_json = serde_json::to_value(&{})?;
             query_builder.push(", {} = ").push_bind({}_json);
         }}"#,
+                        ident,
+                        struct_ident,
                         field_name,
-                        struct_field_name,
-                        field_name,
-                        field_name,
+                        ident,
                         db_field_name,
                         field_name
                     )
@@ -1035,7 +1039,7 @@ pub struct Mutation;
                         r#"        if let Some({}) = set_input.{} {{
             query_builder.push(", {} = ").push_bind({});
         }}"#,
-                        field_name, struct_field_name, db_field_name, field_name
+                        ident, struct_ident, db_field_name, ident
                     )
                 }
             };
@@ -1266,5 +1270,410 @@ pub fn build_schema() -> async_graphql::Schema<Query, Mutation, async_graphql::E
         // For now, use the existing resolvers generation
         // In the future, this will use the unified operation definitions for query generation
         self.generate_resolvers(models)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Field, FieldType, Model, ModelEvents};
+    use std::collections::HashMap;
+
+    /// Helper to create a field tuple for insertion into a model's field map.
+    fn field(name: &str, ty: FieldType, optional: bool) -> (String, Field) {
+        (
+            name.to_string(),
+            Field {
+                name: name.to_string(),
+                field_type: ty,
+                optional,
+                attributes: vec![],
+            },
+        )
+    }
+
+    /// Build a minimal Model with the given name and fields.
+    fn make_model(name: &str, fields: Vec<(String, Field)>) -> Model {
+        Model {
+            name: name.to_string(),
+            fields: fields.into_iter().collect(),
+            access: None,
+            hooks: None,
+            validation: HashMap::new(),
+            table_name: None,
+            relationships: HashMap::new(),
+            constraints: Vec::new(),
+            events: ModelEvents::default(),
+        }
+    }
+
+    // ── camel_to_snake_case ────────────────────────────────────────────────
+
+    #[test]
+    fn camel_to_snake_case_converts_correctly() {
+        let gen = HasuraV2ResolverGenerator::new();
+        assert_eq!(gen.camel_to_snake_case("createdAt"), "created_at");
+        assert_eq!(gen.camel_to_snake_case("firstName"), "first_name");
+        assert_eq!(gen.camel_to_snake_case("id"), "id");
+        assert_eq!(gen.camel_to_snake_case("companyId"), "company_id");
+        assert_eq!(gen.camel_to_snake_case("HTMLParser"), "h_t_m_l_parser");
+    }
+
+    // ── Basic resolver generation ──────────────────────────────────────────
+
+    #[test]
+    fn basic_model_generates_query_and_mutation_structs() {
+        let person = make_model(
+            "Person",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("name", FieldType::String, false),
+                field("age", FieldType::Number, true),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[person]).unwrap();
+
+        // Header defines Query and Mutation structs
+        assert!(output.contains("pub struct Query;"), "should define Query struct");
+        assert!(output.contains("pub struct Mutation;"), "should define Mutation struct");
+
+        // Query impl block with list query
+        assert!(output.contains("impl Query"), "should have Query impl block");
+        assert!(
+            output.contains("async fn persons("),
+            "should generate list query named after pluralized lowercase model"
+        );
+
+        // By-pk query
+        assert!(
+            output.contains("async fn person_by_pk("),
+            "should generate find-by-pk query"
+        );
+
+        // Mutation impl block with CRUD mutations
+        assert!(output.contains("impl Mutation"), "should have Mutation impl block");
+        assert!(
+            output.contains("async fn insert_person_one("),
+            "should generate insert_one mutation"
+        );
+        assert!(
+            output.contains("async fn insert_person("),
+            "should generate insert (batch) mutation"
+        );
+        assert!(
+            output.contains("async fn update_person_by_pk("),
+            "should generate update_by_pk mutation"
+        );
+        assert!(
+            output.contains("async fn update_person("),
+            "should generate update (batch) mutation"
+        );
+        assert!(
+            output.contains("async fn delete_person_by_pk("),
+            "should generate delete_by_pk mutation"
+        );
+        assert!(
+            output.contains("async fn delete_person("),
+            "should generate delete (batch) mutation"
+        );
+    }
+
+    #[test]
+    fn field_names_are_snake_cased_in_sql() {
+        let model = make_model(
+            "Item",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("displayName", FieldType::String, false),
+                field("createdAt", FieldType::DateTime, false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[model]).unwrap();
+
+        // The valid_columns list in the list query should contain snake_case names
+        assert!(
+            output.contains("\"display_name\""),
+            "displayName should be snake_cased to display_name in valid_columns"
+        );
+        assert!(
+            output.contains("\"created_at\""),
+            "createdAt should be snake_cased to created_at in valid_columns"
+        );
+    }
+
+    // ── Pagination ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn list_query_includes_limit_and_offset() {
+        let model = make_model(
+            "Task",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("title", FieldType::String, false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[model]).unwrap();
+
+        // The list query signature should accept limit and offset parameters
+        assert!(
+            output.contains("limit: Option<i32>"),
+            "list query should accept limit parameter"
+        );
+        assert!(
+            output.contains("offset: Option<i32>"),
+            "list query should accept offset parameter"
+        );
+
+        // The generated SQL should push LIMIT and OFFSET clauses
+        assert!(
+            output.contains("LIMIT"),
+            "should generate LIMIT clause in SQL"
+        );
+        assert!(
+            output.contains("OFFSET"),
+            "should generate OFFSET clause in SQL"
+        );
+    }
+
+    // ── Relationship (Reference) fields ────────────────────────────────────
+
+    #[test]
+    fn reference_field_appears_in_resolver_columns() {
+        let model = make_model(
+            "Deal",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("title", FieldType::String, false),
+                field("companyId", FieldType::Reference("Company".into()), false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[model]).unwrap();
+
+        // The reference field should be included in the valid columns as snake_case
+        assert!(
+            output.contains("\"company_id\""),
+            "Reference field companyId should appear as company_id in valid_columns"
+        );
+
+        // The insert mutation should handle the reference field
+        assert!(
+            output.contains("insert_deal_one"),
+            "should generate insert mutation for model with reference field"
+        );
+
+        // The update mutation should handle the reference field
+        assert!(
+            output.contains("update_deal_by_pk"),
+            "should generate update mutation for model with reference field"
+        );
+    }
+
+    // ── Empty model (id-only) ──────────────────────────────────────────────
+
+    #[test]
+    fn id_only_model_generates_valid_resolvers() {
+        let model = make_model(
+            "Tag",
+            vec![field("id", FieldType::EntityId, false)],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[model]).unwrap();
+
+        // Should still produce a valid resolver file with Query and Mutation
+        assert!(output.contains("pub struct Query;"));
+        assert!(output.contains("pub struct Mutation;"));
+        assert!(output.contains("async fn tags("), "list query for id-only model");
+        assert!(output.contains("async fn tag_by_pk("), "by-pk query for id-only model");
+        assert!(
+            output.contains("async fn insert_tag_one("),
+            "insert mutation for id-only model"
+        );
+        assert!(
+            output.contains("async fn delete_tag_by_pk("),
+            "delete mutation for id-only model"
+        );
+    }
+
+    // ── Enum-type models are skipped ───────────────────────────────────────
+
+    #[test]
+    fn enum_type_models_are_skipped() {
+        let enum_model = make_model(
+            "Status",
+            vec![
+                field("_enum_type", FieldType::String, false),
+                field("ACTIVE", FieldType::String, false),
+            ],
+        );
+        // The generator detects enums by the presence of the _enum_type key
+        let normal = make_model(
+            "Account",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("email", FieldType::String, false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[enum_model, normal]).unwrap();
+
+        // Enum model should NOT get resolvers
+        assert!(
+            !output.contains("async fn statuss("),
+            "enum model should not generate list query"
+        );
+        assert!(
+            !output.contains("insert_status_one"),
+            "enum model should not generate mutations"
+        );
+
+        // Normal model should still get resolvers
+        assert!(output.contains("async fn accounts("));
+        assert!(output.contains("insert_account_one"));
+    }
+
+    // ── Block-suffixed models are skipped ──────────────────────────────────
+
+    #[test]
+    fn block_models_are_skipped() {
+        let block = make_model(
+            "ParagraphBlock",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("text", FieldType::String, false),
+            ],
+        );
+        let normal = make_model(
+            "Post",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("title", FieldType::String, false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[block, normal]).unwrap();
+
+        assert!(
+            !output.contains("async fn paragraphblocks("),
+            "Block model should be skipped"
+        );
+        assert!(
+            output.contains("async fn posts("),
+            "Normal model should still get resolvers"
+        );
+    }
+
+    // ── Aggregate query ────────────────────────────────────────────────────
+
+    #[test]
+    fn aggregate_query_is_generated() {
+        let model = make_model(
+            "Order",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("total", FieldType::Number, false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[model]).unwrap();
+
+        assert!(
+            output.contains("async fn orders_aggregate("),
+            "should generate aggregate query"
+        );
+        assert!(
+            output.contains("OrderAggregate"),
+            "aggregate query should return the Aggregate type"
+        );
+        assert!(
+            output.contains("SELECT COUNT(*)"),
+            "aggregate query should use COUNT(*)"
+        );
+    }
+
+    // ── Schema registration ────────────────────────────────────────────────
+
+    #[test]
+    fn build_schema_function_is_generated() {
+        let model = make_model(
+            "Widget",
+            vec![field("id", FieldType::EntityId, false)],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub fn build_schema()"),
+            "should generate build_schema function"
+        );
+        assert!(
+            output.contains("Schema::build(Query, Mutation"),
+            "build_schema should wire Query and Mutation"
+        );
+    }
+
+    // ── Multiple models ────────────────────────────────────────────────────
+
+    #[test]
+    fn multiple_models_each_get_resolvers() {
+        let contact = make_model(
+            "Contact",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("email", FieldType::String, false),
+            ],
+        );
+        let company = make_model(
+            "Company",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("name", FieldType::String, false),
+            ],
+        );
+
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen.generate_resolvers(&[contact, company]).unwrap();
+
+        assert!(output.contains("async fn contacts("));
+        assert!(output.contains("async fn contact_by_pk("));
+        assert!(output.contains("async fn insert_contact_one("));
+
+        assert!(output.contains("async fn companys("));
+        assert!(output.contains("async fn company_by_pk("));
+        assert!(output.contains("async fn insert_company_one("));
+    }
+
+    // ── generate_resolvers_with_operations delegates correctly ──────────────
+
+    #[test]
+    fn generate_resolvers_with_operations_produces_output() {
+        let model = make_model(
+            "Note",
+            vec![
+                field("id", FieldType::EntityId, false),
+                field("body", FieldType::String, false),
+            ],
+        );
+        let ops = OperationDefinitions::hasura_v2_standard();
+        let gen = HasuraV2ResolverGenerator::new();
+        let output = gen
+            .generate_resolvers_with_operations(&[model], &ops)
+            .unwrap();
+
+        // Should produce the same output as generate_resolvers since it delegates
+        assert!(output.contains("async fn notes("));
+        assert!(output.contains("async fn insert_note_one("));
     }
 }

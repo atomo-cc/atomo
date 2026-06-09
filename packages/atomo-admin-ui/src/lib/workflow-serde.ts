@@ -11,7 +11,6 @@
  *   step: { name, action, condition: Condition|null, on_failure }
  *   action: { SetVariable:{key,value} } | { Delay:{seconds} }
  *          | { Http:{method,url,body} } | { Mutation:{query,variables} }
- *          | { Plugin:{plugin_name,function} }
  *   condition: { field, operator, value }
  *   on_failure: "Stop" | "Continue" | { Retry: { max_attempts } }
  */
@@ -27,7 +26,6 @@ export type StepAction =
   | { Delay: { seconds: number } }
   | { Http: { method: string; url: string; body?: any } }
   | { Mutation: { query: string; variables: Record<string, any> } }
-  | { Plugin: { plugin_name: string; function: string } }
 
 export interface Condition {
   field: string
@@ -101,8 +99,6 @@ export function defaultStep(kind: string): WorkflowStep {
         ? { Http: { method: 'GET', url: '' } }
         : kind === 'Mutation'
           ? { Mutation: { query: '', variables: {} } }
-          : kind === 'Plugin'
-            ? { Plugin: { plugin_name: '', function: '' } }
-            : { SetVariable: { key: '', value: null } }
+          : { SetVariable: { key: '', value: null } }
   return { name: 'step', action, condition: null, on_failure: 'Continue' }
 }

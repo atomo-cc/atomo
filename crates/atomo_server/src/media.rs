@@ -354,6 +354,7 @@ impl MediaState {
             timestamp: chrono::Utc::now().to_rfc3339(),
             event_id: uuid::Uuid::new_v4().to_string(),
             actor: Some(actor.to_string()),
+            origin: None,
         });
     }
 }

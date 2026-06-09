@@ -517,7 +517,7 @@ async fn jobs_http_progress_publishes_to_realtime() {
         .unwrap();
     let lease_id = leased[0].lease_id.clone();
     let (_tok_id, token) = workers
-        .mint("w", std::slice::from_ref(&queue))
+        .mint("w", std::slice::from_ref(&queue), &[])
         .await
         .unwrap();
 

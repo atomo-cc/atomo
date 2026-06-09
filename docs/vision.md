@@ -5,7 +5,7 @@ description: The Atomo Content Core — vision, philosophy, and technical archit
 
 # Vision & Architecture
 
-Atomo is a next‑generation Content Core (cc) — not a passive CMS “warehouse”, but the arc reactor that powers your business. Atomo treats content as living events, composes experiences from strongly‑typed blocks, and exposes an extensible energy hub (WASM‑ready) for automation and integration. It is built on Rust for performance, safety, and operational certainty, and it is driven by schemas to turn declarations into running systems.
+Atomo is a next‑generation Content Core (cc) — not a passive CMS “warehouse”, but the arc reactor that powers your business. Atomo treats content as living events, composes experiences from strongly‑typed blocks, and exposes an extensible action system for automation and integration. It is built on Rust for performance, safety, and operational certainty, and it is driven by schemas to turn declarations into running systems.
 
 - Content Core, not CMS: from content storage to business driver.
 - Rust foundation: high throughput, low latency, memory safety.
@@ -21,7 +21,7 @@ Quick Nav
   - GraphQL and Admin UI (#graphql-and-admin-ui)
   - SDKs and Local‑First (#sdks-and-local-first-runtime)
   - Hydra UI (#hydra-ui-design)
-  - Extensibility and Plugins (#extensibility-and-plugins)
+  - Extensibility: Actions & Workers (#extensibility-actions--workers)
 - Security & Permissions (#security-auth-and-permissions)
 - Control Tower (#operations--observability-control-tower)
 - Developer Experience (#developer-experience-dx)
@@ -33,7 +33,7 @@ Quick Nav
 - Arc Reactor: the reliable, high‑performance core (Rust + event sourcing) that powers the platform.
 - River of Events: state changes are immutable events, enabling audit, time travel, and resilient read models.
 - Flowing Canvas: Notion‑like, strongly‑typed blocks allow freeform composition beyond rigid forms.
-- Energy Hub: a standardized, permissioned extension surface (WASM design) for business logic and integrations.
+- Energy Hub: a standardized extension surface — **actions** dispatched to external workers for business logic and integrations.
 
 ## Guiding Philosophy
 
@@ -45,9 +45,9 @@ Quick Nav
 
 ### Monorepo and Modules
 
-- `crates/`: Rust workspace — `atomo_core`, `atomo_server`, `atomo_cli`, schema/codegen tools, WASM runtime scaffolding.
+- `crates/`: Rust workspace — `atomo_core`, `atomo_server`, `atomo_cli`, schema/codegen tools.
 - `packages/`: Admin UI and TypeScript SDK.
-- `services/`: service instances (e.g., CRM) with `schema.ts`, plugins, workflows, and generated artifacts.
+- `services/`: service instances (e.g., CRM) with `schema.ts`, workers, workflows, and generated artifacts.
 - `docs/`: VitePress documentation; `tests/` and `migrations/` shared assets.
 
 ### Core Runtime: Event Sourcing + CQRS
@@ -183,29 +183,23 @@ Details
 
 Status and boundaries
 - Status: design/planning (Admin UI dynamic rendering is the current landed path).
-- Boundaries: WASM exposes state/effect channels; platform renderers only render and forward effects — no business writes — maximizing testability and replaceability.
+- Boundaries: platform renderers only render and forward effects — no business writes — maximizing testability and replaceability.
 
-### Extensibility and Plugins
+### Extensibility: Actions & Workers
 
-- WASM runtime (in progress): manifest, permissions, and plugin context types are defined; execution sandbox is planned via wasmtime.
-- Lifecycle hooks: service code can inject validated logic at well‑defined points.
-- ABI considerations: event and model interfaces aim for stable cross‑language contracts (Rust, TS, Go, C# in the future).
+The single user-facing extension concept is the **action**. Normal CRUD stays pure Rust (hot path);
+complex side effects (external APIs, media pipelines, browser automation) run in external
+**workers** written in TypeScript.
 
-Capability model and manifest (example)
-```json
-{
-  "name": "content-auto-tag",
-  "version": "0.1.0",
-  "permissions": [
-    { "cap": "net.fetch", "domains": ["https://api.example.com"] },
-    { "cap": "clock.now" },
-    { "cap": "env.read", "vars": ["OPENAI_API_KEY"] }
-  ],
-  "events": ["ContentCreated", "ContentUpdated"]
-}
-```
-- Resource budgets: per‑plugin CPU/memory caps and timeouts; terminate on overuse to avoid noisy neighbors.
-- Review/signing: recommend signed artifacts and source verification to reduce supply‑chain risks.
+- **Lifecycle actions**: declared in the schema as event bindings (`on.created: [processPost]`)
+  with optional conditions (`ChangedAny`, `FieldEquals`). When a matching event commits, the
+  action dispatcher enqueues a durable job.
+- **Direct actions**: invoked via `POST /api/actions/:name`; callable actions return a value,
+  void actions enqueue async.
+- **Workers**: pull jobs via the lease API (`@atomo-cc/worker-sdk`), run the handler, report
+  success/failure. At-least-once delivery with retry/backoff/dead-letter.
+- **No JS/RPC in the CRUD path**: the Rust data layer never blocks on external code. Side effects
+  are always async, durable, and observable via the job queue.
 
 ## Security, Auth, and Permissions
 
@@ -287,13 +281,13 @@ See also
 - Guide → Dev Runtime & Workspace: `/guide/dev-runtime`
 - Guide → Schema‑Driven Development: `/guide/schema-driven`
 - Guide → Security & Auth: `/guide/advanced/security`
-- Guide → Plugins (WASM): `/guide/plugins`
+- Guide → Jobs & Workers: `/guide/advanced/jobs-and-workers`
 
 ## Strategy Snapshot
 
 - Audiences: advanced full‑stack developers; teams needing typed content, performance, and extensibility; enterprises seeking auditability and certainty.
-- Ecosystem direction: “solutions as code” templates, WASM plugin interfaces, and a marketplace.
-- Why Atomo vs CMS: typed composable blocks; ES/CQRS auditability; Rust performance; schema‑to‑runtime automation; WASM extensibility; developer‑first DX.
+- Ecosystem direction: “solutions as code” templates, action/worker interfaces, and a marketplace.
+- Why Atomo vs CMS: typed composable blocks; ES/CQRS auditability; Rust performance; schema‑to‑runtime automation; action extensibility; developer‑first DX.
 
 ## Relationship to Roadmap
 

@@ -75,8 +75,8 @@ trusted/system API (request path goes through `*_checked`).
 **Remaining backlog, with the honest blocker for each** (these are *not* minimal-code items):
 - **RBAC** — ✅ data-layer enforcement landed (`*_checked`); unchecked variants are the documented
   trusted/system API (seeding/migrations). No further lockdown without breaking legit system use.
-- **Workflow Plugin/JS steps** — `Mutation` now runs (item3); `Plugin` needs the plugin-manager
-  wired into the engine; JS steps (`sales-pipeline.yml`) need a JS step runtime (Javy is the base).
+- **Workflow JS steps** — `Mutation` now runs via injected executor (item3); Plugin step was removed
+  [Note: WASM plugin system was removed; replaced by actions & workers]. JS steps (`sales-pipeline.yml`) still need a JS step runtime.
 - **S3c event-store tenant scoping + PG row-level-security** — **design fork**: RLS needs a
   per-connection `SET app.tenant_id` read by `CREATE POLICY`, but the shared pool means a
   half-implementation could leak across pooled connections; safe impl = per-tx set/reset +
@@ -113,8 +113,8 @@ trusted/system API (request path goes through `*_checked`).
 | Subscriptions (WebSocket) | yes | ✅ | S2 auth (connection_init JWT + read-gating) + S3a tenant-filter; SDK `SubscriptionBuilder` now filters by model+event-type (`stream_filters_by_model_and_event_type`) |
 | RBAC enforcement | yes | ✅ | S1 parse + decide seam; data-layer enforced via `*_checked` (GraphQL routes through them). Unchecked variants = documented trusted/system API (item4) |
 | Audit logging | yes | ✅ | B4: model-agnostic listener works through CRM models (`test_crm_mutation_audited_with_actor`) — already worked, no fix |
-| Workflows | yes | 🟡 mostly | B1 YAML + HTTP step; item3: `Mutation` step now runs via injected GraphQL executor (`mutation_step_runs_via_injected_executor`). Plugin/JS steps still placeholders |
-| WASM/JS plugins | yes | ✅ | `host_api`, `js_*`, `boot_wiring`, `example_plugin` |
+| Workflows | yes | 🟡 mostly | B1 YAML + HTTP step; item3: `Mutation` step now runs via injected GraphQL executor (`mutation_step_runs_via_injected_executor`). Plugin step removed; JS steps still placeholders |
+| Actions & workers | yes | ✅ | action dispatcher, worker CRUD API, typed SDK, lifecycle test |
 | Caching (TTL + invalidation) | yes | ✅ | C4: populate + invalidate-on-create confirmed via CRM (dogfood 7b). LOW polish deferred (find_unique uncached, no eviction) |
 | CQRS projections / aggregate | yes | ✅ | B2: Deleted removes rows; non-string columns via `value_to_text`; B2a rebuild now replays from `event_log` (`projection_correctness` 2 tests) |
 | AI / pgvector | partial | ✅ CI | D2/item5: `crm_ai.rs` embeds Contact notes → cosine search ranks nearest (needs pgvector; runs in CI, `#[ignore]` locally) |
@@ -181,7 +181,7 @@ targets is the bulk of the work.
   (e2e: viewer denied, admin allowed). **CAVEAT: data-layer `client.create/update/delete` does
   NOT yet enforce** — it has no role context (only `actor` user_id); the decide() seam is shared
   and ready, but plumbing role through the data-layer API is a follow-up. GraphQL is the external
-  boundary, so the API-level bypass is closed; direct SDK/internal/plugin callers still bypass.
+  boundary, so the API-level bypass is closed; direct SDK/internal callers still bypass.
 - [x] S2. **WebSocket auth** (✅ done): `/graphql/ws` now routes to an authenticated handler
   (`graphql_ws_handler`) that verifies a JWT from the `connection_init` payload
   (`{"authorization":"Bearer <jwt>"}` / bare `token`) and injects `UserRoleCtx`/`UserIdCtx` —
@@ -212,11 +212,10 @@ targets is the bulk of the work.
   (real HTTP to a local listener). **DEFERRED — the CRM's own `sales-pipeline.yml` still cannot
   run**: its steps are *inline JavaScript* (`await sendNotification(...)`, `throw new Error(...)`)
   with `type: validation|action|data_transformation` — a shape the engine has no execution model
-  for. Making it run needs a JS step runtime; the Javy plugin system (Phase-2 scripting) is the
-  natural foundation for that, but it's a large separate feature, not a B1 fix.
-  - [~] B1a. `Mutation`/`Plugin` steps now **fail loudly** (was silent no-op "success" — a
-    facade). Actually executing them needs a GraphQL executor / plugin-manager wired into the
-    engine (it holds only `Option<pool>`); dep-cycle risk — a real follow-up, not minimal.
+  for. Making it run needs a JS step runtime; this is a standalone feature not dependent on the
+  removed plugin system [Note: WASM plugin system was removed; replaced by actions & workers].
+  - [~] B1a. `Mutation` step now **runs via injected executor** (was silent no-op "success" — a
+    facade). Plugin step was removed. JS step runtime still TODO.
   - [ ] B1b. A JS-step execution model so the CRM's literal `sales-pipeline.yml` runs.
 - [~] B2. **Projections — corruption fixed, rebuild deferred**: (1) ✅ Deleted now removes the
   projection row — `soft_delete` gained `RETURNING id` and `delete_many` emits a Deleted event
@@ -318,7 +317,7 @@ written present-tense as open gaps; updated as each was closed.)
 
 - DB-gated tests are slow (~20s each with fuel-metered plugins); a full run is minutes. Keep it manual-dispatch, not per-push.
 - **`http_e2e` tests share one `atomo_test` DB and FAIL under parallel execution** (they seed users / create tables and clobber each other) — run with `--test-threads=1`. Same shared-DB-singleton constraint that prevents parallel *implementation*. Worth fixing with per-test DBs/schemas eventually.
-- Disk is finite (wasmtime builds + `.wasm` fixtures); watch `target/` size.
+- Disk is finite; watch `target/` size.
 - This is a multi-week effort — correct *if* the goal is a trustworthy platform; the wrong call if the near-term goal is shipping features fast. That's a product decision.
 - Findings are mostly subagent reports with file:line; RBAC + tenant_id were spot-verified by direct read. **Reconfirm each via its conformance test before trusting** — a couple may be partially inaccurate. Do not treat "implemented" as "working" until a test says so.
 - The docs/roadmap currently claim several of these as "✅ implemented" / "✅ completed" — those claims are **misleading** and should be corrected as each is fixed+tested.

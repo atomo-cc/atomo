@@ -65,14 +65,30 @@ curl -s -X POST http://localhost:3000/graphql \
 # -> errors: [{ extensions: { code: "FORBIDDEN" } }]
 ```
 
-## Hooks (plugins)
+## Lifecycle Actions
 
-Lifecycle hooks (`before_create`, `after_create`, ...) are provided by **plugins**, not an inline
-access DSL — see [Plugins](/guide/plugins) for the WASM/JS hook ABI (transform records, emit
-permission-gated effects). Field-level access and attribute/owner-based (ABAC) rules are not yet
-implemented; today's model is operation-level role checks as above.
+Side effects after mutations (calling external APIs, sending notifications, running pipelines) are
+handled by **actions** — not inline hooks. Declare event bindings on a model:
+
+```ts
+events: {
+  created: [{ action: 'processPost' }],
+  updated: [{ action: 'onStatusChange', condition: { ChangedAny: ['status'] } }],
+}
+```
+
+When the matching event commits, the **action dispatcher** enqueues a durable job. An external
+**worker** (TypeScript, via `@atomo-cc/worker-sdk`) picks it up, runs your code, and reports
+success or failure. The CRUD path stays pure Rust — no JS/RPC in the hot path.
+
+Direct (non-lifecycle) actions are invoked via `POST /api/actions/:name`.
+
+See [Jobs & Workers](/guide/advanced/jobs-and-workers) for the full worker model.
+
+Field-level access and attribute/owner-based (ABAC) rules are not yet implemented; today's model
+is operation-level role checks as above.
 
 ## See also
 - [Validation Rules](/guide/advanced/validation) — declarative field validation
 - [Multi-tenant](/guide/advanced/multi-tenant) — tenant scoping
-- [Plugins](/guide/plugins) — lifecycle hooks
+- [Jobs & Workers](/guide/advanced/jobs-and-workers) — external workers and durable jobs

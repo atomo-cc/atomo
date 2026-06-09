@@ -366,6 +366,7 @@ mod tests {
             table_name: table.map(|s| s.to_string()),
             relationships: std::collections::HashMap::new(),
             constraints: Vec::new(),
+            events: Default::default(),
         }
     }
 

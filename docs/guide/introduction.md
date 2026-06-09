@@ -73,7 +73,7 @@ In Atomo's world, data isn't static snapshots but a flowing river of events:
 Break free from rigid forms with Notion-like content editing:
 - **Block-based composition** - mix text, media, data
 - **AI-powered assistance** - intelligent content suggestions
-- **Plugin extensibility** - custom blocks via WASM
+- **Action extensibility** - lifecycle and direct actions via external workers
 - **Collaborative editing** - real-time co-creation
 
 ## Architecture Overview
@@ -87,7 +87,7 @@ graph TB
     
     Backend --> EventStore[Event Store]
     Backend --> GraphQL[GraphQL API]
-    Backend --> Plugins[WASM Plugins]
+    Backend --> Plugins[External Workers]
     
     UI --> Collaboration[Real-time Collaboration]
     SDK --> Sync[Local-First Sync]

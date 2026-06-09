@@ -124,6 +124,12 @@ pub struct ModelEvent {
     pub event_id: String,
     #[graphql(default)]
     pub actor: Option<String>, // user_id of the actor that caused the event, if known
+    /// The action that caused this event (e.g. "processPost"). Set when a worker's CRUD
+    /// call triggers an event — the action dispatcher uses it to avoid re-enqueuing the
+    /// originating action (loop prevention).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[graphql(default)]
+    pub origin: Option<String>,
 }
 
 #[cfg(test)]
@@ -139,6 +145,7 @@ mod tests {
             timestamp: String::new(),
             event_id: String::new(),
             actor: None,
+            origin: None,
         }
     }
 

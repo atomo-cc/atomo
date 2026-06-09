@@ -43,11 +43,6 @@ pub enum StepAction {
         query: String,
         variables: HashMap<String, Value>,
     },
-    /// Call a WASM plugin function
-    Plugin {
-        plugin_name: String,
-        function: String,
-    },
     /// Enqueue a durable job for an external worker (the job id is stored in `context["job_id"]`).
     Job {
         queue: String,
@@ -111,7 +106,6 @@ pub struct WorkflowEngine {
     /// holds the GraphQL schema) and injected here, so the engine stays decoupled from the
     /// GraphQL/server layer (no dependency cycle).
     mutation_executor: Option<Arc<dyn MutationExecutor>>,
-    plugin_executor: Option<Arc<dyn PluginExecutor>>,
     job_executor: Option<Arc<dyn JobExecutor>>,
 }
 
@@ -137,20 +131,6 @@ pub trait MutationExecutor: Send + Sync {
     async fn execute(&self, query: &str, variables: &HashMap<String, Value>) -> Result<()>;
 }
 
-/// Seam for executing a workflow `Plugin` step. The server implements it against the
-/// WasmPluginManager (which handles both WASM + Javy/JS plugins via `call_hook`).
-#[async_trait::async_trait]
-pub trait PluginExecutor: Send + Sync {
-    /// Call `function` on `plugin_name`, passing the workflow context as JSON; returns the output
-    /// (or None if the plugin returned nothing/identity).
-    async fn execute(
-        &self,
-        plugin_name: &str,
-        function: &str,
-        context_json: &str,
-    ) -> Result<Option<String>>;
-}
-
 impl Default for WorkflowEngine {
     fn default() -> Self {
         Self::new()
@@ -163,7 +143,6 @@ impl WorkflowEngine {
             workflows: std::sync::RwLock::new(HashMap::new()),
             pool: None,
             mutation_executor: None,
-            plugin_executor: None,
             job_executor: None,
         }
     }
@@ -174,7 +153,6 @@ impl WorkflowEngine {
             workflows: std::sync::RwLock::new(HashMap::new()),
             pool: Some(pool),
             mutation_executor: None,
-            plugin_executor: None,
             job_executor: None,
         }
     }
@@ -182,11 +160,6 @@ impl WorkflowEngine {
     /// Inject the executor that runs `Mutation` steps (set at server boot).
     pub fn set_mutation_executor(&mut self, exec: Arc<dyn MutationExecutor>) {
         self.mutation_executor = Some(exec);
-    }
-
-    /// Inject the executor that runs `Plugin` steps (set at server boot).
-    pub fn set_plugin_executor(&mut self, exec: Arc<dyn PluginExecutor>) {
-        self.plugin_executor = Some(exec);
     }
 
     /// Inject the executor that runs `Job` steps (set at server boot).
@@ -306,7 +279,6 @@ impl WorkflowEngine {
                 &step.action,
                 &mut execution.context,
                 self.mutation_executor.as_ref(),
-                self.plugin_executor.as_ref(),
                 self.job_executor.as_ref(),
             )
             .await
@@ -329,7 +301,6 @@ impl WorkflowEngine {
                                     &step.action,
                                     &mut execution.context,
                                     self.mutation_executor.as_ref(),
-                                    self.plugin_executor.as_ref(),
                                     self.job_executor.as_ref(),
                                 )
                                 .await
@@ -459,7 +430,6 @@ async fn execute_step(
     action: &StepAction,
     context: &mut HashMap<String, Value>,
     mutation_executor: Option<&Arc<dyn MutationExecutor>>,
-    plugin_executor: Option<&Arc<dyn PluginExecutor>>,
     job_executor: Option<&Arc<dyn JobExecutor>>,
 ) -> Result<()> {
     match action {
@@ -499,24 +469,6 @@ async fn execute_step(
                 ),
             }
         }
-        StepAction::Plugin {
-            plugin_name,
-            function,
-        } => match plugin_executor {
-            Some(exec) => {
-                let ctx_json = serde_json::to_string(&*context).unwrap_or_default();
-                let output = exec.execute(plugin_name, function, &ctx_json).await?;
-                if let Some(out) = output {
-                    context.insert(
-                        "plugin_output".to_string(),
-                        serde_json::from_str(&out).unwrap_or(Value::String(out)),
-                    );
-                }
-            }
-            None => anyhow::bail!(
-                "workflow Plugin step: no executor configured (server must inject one)"
-            ),
-        },
         StepAction::Job {
             queue,
             kind,
@@ -759,50 +711,6 @@ mod tests {
         let exec = engine.execute("test_wf", HashMap::new()).await.unwrap();
         assert_eq!(exec.status, ExecutionStatus::Completed);
         assert_eq!(exec.context.get("done"), Some(&json!(true)));
-    }
-
-    #[tokio::test]
-    async fn plugin_step_runs_via_injected_executor() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        struct MockPlugin(std::sync::Arc<AtomicBool>);
-        #[async_trait::async_trait]
-        impl PluginExecutor for MockPlugin {
-            async fn execute(&self, name: &str, func: &str, _ctx: &str) -> Result<Option<String>> {
-                assert_eq!(name, "normalize-contact");
-                assert_eq!(func, "on_create");
-                self.0.store(true, Ordering::SeqCst);
-                Ok(Some(r#"{"normalized":true}"#.to_string()))
-            }
-        }
-        let hit = std::sync::Arc::new(AtomicBool::new(false));
-        let mut engine = WorkflowEngine::new();
-        engine.set_plugin_executor(std::sync::Arc::new(MockPlugin(hit.clone())));
-        engine.register(Workflow {
-            name: "plugin_wf".to_string(),
-            trigger: WorkflowTrigger::Manual,
-            steps: vec![WorkflowStep {
-                name: "plug".to_string(),
-                action: StepAction::Plugin {
-                    plugin_name: "normalize-contact".into(),
-                    function: "on_create".into(),
-                },
-                condition: None,
-                on_failure: FailurePolicy::Stop,
-            }],
-        });
-        let exec = engine.execute("plugin_wf", HashMap::new()).await.unwrap();
-        assert_eq!(
-            exec.status,
-            ExecutionStatus::Completed,
-            "errors: {:?}",
-            exec.errors
-        );
-        assert!(hit.load(Ordering::SeqCst), "plugin executor must have run");
-        assert_eq!(
-            exec.context.get("plugin_output"),
-            Some(&json!({"normalized": true})),
-            "plugin output stored in context"
-        );
     }
 
     #[tokio::test]

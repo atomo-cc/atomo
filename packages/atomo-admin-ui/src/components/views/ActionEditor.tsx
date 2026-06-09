@@ -114,26 +114,6 @@ export function ActionEditor({ action, onChange }: ActionEditorProps) {
         </>
       )
 
-    case 'Plugin':
-      return (
-        <>
-          <Input
-            label="Plugin Name"
-            value={body.plugin_name}
-            onChange={(e) =>
-              onChange({ Plugin: { ...body, plugin_name: e.target.value } })
-            }
-          />
-          <Input
-            label="Function"
-            value={body.function}
-            onChange={(e) =>
-              onChange({ Plugin: { ...body, function: e.target.value } })
-            }
-          />
-        </>
-      )
-
     default:
       return null
   }

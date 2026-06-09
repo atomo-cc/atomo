@@ -429,24 +429,68 @@ impl JobStore {
             timestamp: chrono::Utc::now().to_rfc3339(),
             event_id: uuid::Uuid::new_v4().to_string(),
             actor: None,
+            origin: None,
         });
     }
 }
 
-/// A verified worker principal. `queues` is its capability set: which queues it may lease from
-/// (`["*"]` = any). A worker is trusted *relative to the sandbox* but still least-privilege —
-/// the token scopes what it can pull.
+/// A verified worker principal. Capabilities use a hierarchical scheme:
+///
+/// - `crud:*` — full CRUD on all models
+/// - `crud:Post` — all operations on Post
+/// - `crud:Post:read` — only read on Post
+/// - `crud:Post:read,update` — read + update on Post
+/// - `action:*` — may handle any action
+/// - `action:processPost` — may handle only processPost
 #[derive(Debug, Clone)]
 pub struct WorkerIdentity {
     pub id: String,
     pub name: String,
     pub queues: Vec<String>,
+    pub capabilities: Vec<String>,
 }
 
 impl WorkerIdentity {
     /// Whether this worker may lease from `queue`.
     pub fn may_lease(&self, queue: &str) -> bool {
         self.queues.iter().any(|q| q == "*" || q == queue)
+    }
+
+    /// Whether this worker may perform `op` (create/read/update/delete) on `model`.
+    ///
+    /// Matches against capabilities in order of specificity:
+    /// `crud:*` > `crud:Model` > `crud:Model:op` > `crud:Model:op1,op2`
+    pub fn may_crud(&self, model: &str, op: &str) -> bool {
+        self.capabilities.iter().any(|c| {
+            if c == "crud:*" {
+                return true;
+            }
+            let parts: Vec<&str> = c.splitn(3, ':').collect();
+            if parts.first() != Some(&"crud") {
+                return false;
+            }
+            match parts.len() {
+                2 => parts[1] == model,
+                3 => {
+                    parts[1] == model
+                        && parts[2].split(',').any(|o| o.eq_ignore_ascii_case(op))
+                }
+                _ => false,
+            }
+        })
+    }
+
+    /// Whether this worker may handle a specific action kind.
+    ///
+    /// Matches: `action:*` or `action:processPost`.
+    pub fn may_action(&self, action: &str) -> bool {
+        self.capabilities.iter().any(|c| {
+            if c == "action:*" {
+                return true;
+            }
+            let parts: Vec<&str> = c.splitn(2, ':').collect();
+            parts.first() == Some(&"action") && parts.get(1) == Some(&action)
+        })
     }
 }
 
@@ -465,36 +509,49 @@ impl WorkerTokenStore {
     pub async fn init(&self) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS worker_tokens (
-                id           TEXT PRIMARY KEY,
-                name         TEXT NOT NULL,
-                token_sha256 TEXT NOT NULL UNIQUE,
-                queues       TEXT[] NOT NULL DEFAULT '{}',
-                is_revoked   BOOLEAN NOT NULL DEFAULT false,
-                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                token_sha256  TEXT NOT NULL UNIQUE,
+                queues        TEXT[] NOT NULL DEFAULT '{}',
+                capabilities  TEXT[] NOT NULL DEFAULT '{}',
+                is_revoked    BOOLEAN NOT NULL DEFAULT false,
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "ALTER TABLE worker_tokens ADD COLUMN IF NOT EXISTS capabilities TEXT[] NOT NULL DEFAULT '{}'",
         )
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
-    /// Mint a new worker token scoped to `queues` (use `["*"]` for any). Returns
-    /// `(id, plaintext_token)` — the plaintext is **not recoverable later**, only its hash is stored.
-    pub async fn mint(&self, name: &str, queues: &[String]) -> Result<(String, String)> {
+    /// Mint a new worker token scoped to `queues` (use `["*"]` for any) and `capabilities`
+    /// (e.g. `["crud:*"]`). Returns `(id, plaintext_token)` — the plaintext is **not recoverable
+    /// later**, only its hash is stored.
+    pub async fn mint(
+        &self,
+        name: &str,
+        queues: &[String],
+        capabilities: &[String],
+    ) -> Result<(String, String)> {
         let id = uuid::Uuid::new_v4().to_string();
-        // High-entropy secret (~244 bits across two v4 UUIDs); prefix marks it as a worker token.
         let token = format!(
             "wkr_{}{}",
             uuid::Uuid::new_v4().simple(),
             uuid::Uuid::new_v4().simple()
         );
         sqlx::query(
-            "INSERT INTO worker_tokens (id, name, token_sha256, queues) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO worker_tokens (id, name, token_sha256, queues, capabilities)
+             VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(&id)
         .bind(name)
         .bind(sha256_hex(&token))
         .bind(queues)
+        .bind(capabilities)
         .execute(&self.pool)
         .await?;
         Ok((id, token))
@@ -503,7 +560,7 @@ impl WorkerTokenStore {
     /// Verify a presented token; returns the worker identity (with its allowed queues) or None.
     pub async fn verify(&self, token: &str) -> Result<Option<WorkerIdentity>> {
         let row = sqlx::query(
-            "SELECT id, name, queues FROM worker_tokens
+            "SELECT id, name, queues, capabilities FROM worker_tokens
              WHERE token_sha256 = $1 AND is_revoked = false",
         )
         .bind(sha256_hex(token))
@@ -513,6 +570,7 @@ impl WorkerTokenStore {
             id: r.get("id"),
             name: r.get("name"),
             queues: r.get("queues"),
+            capabilities: r.get("capabilities"),
         }))
     }
 
@@ -530,7 +588,7 @@ impl WorkerTokenStore {
     /// List all worker tokens (metadata only — never the secret/hash), newest first.
     pub async fn list(&self) -> Result<Vec<WorkerTokenInfo>> {
         let rows = sqlx::query(
-            "SELECT id, name, queues, is_revoked, created_at
+            "SELECT id, name, queues, capabilities, is_revoked, created_at
              FROM worker_tokens ORDER BY created_at DESC",
         )
         .fetch_all(&self.pool)
@@ -541,6 +599,7 @@ impl WorkerTokenStore {
                 id: r.get("id"),
                 name: r.get("name"),
                 queues: r.get("queues"),
+                capabilities: r.get("capabilities"),
                 is_revoked: r.get("is_revoked"),
                 created_at: r.get("created_at"),
             })
@@ -554,6 +613,7 @@ pub struct WorkerTokenInfo {
     pub id: String,
     pub name: String,
     pub queues: Vec<String>,
+    pub capabilities: Vec<String>,
     pub is_revoked: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -573,19 +633,108 @@ fn sha256_hex(s: &str) -> String {
 mod tests {
     use super::{backoff_secs, decide_on_fail, sha256_hex, FailOutcome, WorkerIdentity};
 
+    fn w(caps: &[&str]) -> WorkerIdentity {
+        WorkerIdentity {
+            id: "1".into(),
+            name: "test".into(),
+            queues: vec!["*".into()],
+            capabilities: caps.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
     #[test]
-    fn worker_capability_scoping() {
-        let w = WorkerIdentity {
+    fn crud_star_grants_all() {
+        let worker = w(&["crud:*"]);
+        assert!(worker.may_crud("Post", "create"));
+        assert!(worker.may_crud("User", "delete"));
+        assert!(worker.may_crud("Any", "read"));
+    }
+
+    #[test]
+    fn crud_model_grants_all_ops_on_that_model() {
+        let worker = w(&["crud:Post"]);
+        assert!(worker.may_crud("Post", "create"));
+        assert!(worker.may_crud("Post", "read"));
+        assert!(worker.may_crud("Post", "update"));
+        assert!(worker.may_crud("Post", "delete"));
+        assert!(!worker.may_crud("User", "read"), "different model denied");
+    }
+
+    #[test]
+    fn crud_model_op_grants_single_operation() {
+        let worker = w(&["crud:Post:read"]);
+        assert!(worker.may_crud("Post", "read"));
+        assert!(!worker.may_crud("Post", "create"), "other op denied");
+        assert!(!worker.may_crud("Post", "update"), "other op denied");
+        assert!(!worker.may_crud("User", "read"), "different model denied");
+    }
+
+    #[test]
+    fn crud_model_multi_op_grants_listed_operations() {
+        let worker = w(&["crud:Post:read,update"]);
+        assert!(worker.may_crud("Post", "read"));
+        assert!(worker.may_crud("Post", "update"));
+        assert!(!worker.may_crud("Post", "create"), "unlisted op denied");
+        assert!(!worker.may_crud("Post", "delete"), "unlisted op denied");
+    }
+
+    #[test]
+    fn multiple_caps_combine() {
+        let worker = w(&["crud:Post:read", "crud:User", "crud:Comment:create,delete"]);
+        assert!(worker.may_crud("Post", "read"));
+        assert!(!worker.may_crud("Post", "update"));
+        assert!(worker.may_crud("User", "create"));
+        assert!(worker.may_crud("User", "delete"));
+        assert!(worker.may_crud("Comment", "create"));
+        assert!(worker.may_crud("Comment", "delete"));
+        assert!(!worker.may_crud("Comment", "read"));
+    }
+
+    #[test]
+    fn empty_caps_deny_all() {
+        let worker = w(&[]);
+        assert!(!worker.may_crud("Post", "create"));
+        assert!(!worker.may_action("processPost"));
+    }
+
+    #[test]
+    fn action_star_grants_all_actions() {
+        let worker = w(&["action:*"]);
+        assert!(worker.may_action("processPost"));
+        assert!(worker.may_action("onStatusChange"));
+        assert!(worker.may_action("anything"));
+    }
+
+    #[test]
+    fn action_specific_grants_single_action() {
+        let worker = w(&["action:processPost"]);
+        assert!(worker.may_action("processPost"));
+        assert!(!worker.may_action("onStatusChange"));
+    }
+
+    #[test]
+    fn unrelated_cap_does_not_grant_crud_or_action() {
+        let worker = w(&["audit:read", "action:processPost"]);
+        assert!(!worker.may_crud("Post", "create"));
+        assert!(worker.may_action("processPost"));
+        assert!(!worker.may_action("onStatusChange"));
+    }
+
+    #[test]
+    fn queue_scoping() {
+        let worker = WorkerIdentity {
             id: "1".into(),
             name: "media".into(),
             queues: vec!["media-gen".into()],
+            capabilities: vec![],
         };
-        assert!(w.may_lease("media-gen"));
-        assert!(!w.may_lease("billing"));
+        assert!(worker.may_lease("media-gen"));
+        assert!(!worker.may_lease("billing"));
         let star = WorkerIdentity {
             id: "2".into(),
             name: "any".into(),
             queues: vec!["*".into()],
+            capabilities: vec![],
         };
         assert!(star.may_lease("anything"));
     }

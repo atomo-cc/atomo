@@ -3,21 +3,17 @@
 //! Optional: BENCH_ITERS=5000 (default 2000).
 //!
 //! **Honest scope:** these are **engine-level, in-process** latencies (data layer, job lease
-//! engine, plugin hook path) — they isolate component cost and deliberately exclude HTTP framing,
+//! engine) — they isolate component cost and deliberately exclude HTTP framing,
 //! the network, and GraphQL resolution. They answer "what does each core operation cost," not
 //! "requests/sec through the full stack." See `docs/guide/advanced/benchmarks.md` for method +
 //! recorded results on a stated machine.
 
-use atomo::hooks::{HookContext, HookRunner};
 use atomo::query::{WhereClause, WhereOperator};
 use atomo_server::jobs::JobStore;
-use atomo_server::wasm_hooks::WasmHookRunner;
-use atomo_server::wasm_plugins::WasmPluginManager;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
 
 struct Stats {
     n: usize,
@@ -51,18 +47,6 @@ fn rec(title: &str) -> HashMap<String, Value> {
     let mut m = HashMap::new();
     m.insert("title".to_string(), json!(title));
     m
-}
-
-fn make_ctx() -> HookContext {
-    let mut data = HashMap::new();
-    data.insert("email".to_string(), json!("a@b.com"));
-    data.insert("tags".to_string(), json!(["x"]));
-    HookContext {
-        model_name: "Contact".to_string(),
-        operation: "create".to_string(),
-        data,
-        user_id: None,
-    }
 }
 
 #[tokio::main]
@@ -519,35 +503,6 @@ async fn main() {
             ops_per_s: total as f64 / conc.as_secs_f64(),
         },
     ));
-
-    // ----- Plugin hook tax: JS (Javy/QuickJS) via the real hook path -----
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hook");
-    let mut mgr = WasmPluginManager::new(&fixtures).unwrap();
-    let load_s = Instant::now();
-    let loaded = mgr.discover_and_load().await.unwrap_or_default();
-    let js_load = load_s.elapsed();
-    if loaded.iter().any(|p| p == "js-hook") {
-        let runner = WasmHookRunner::new(Arc::new(Mutex::new(mgr)));
-        for _ in 0..50 {
-            let _ = runner.run_before("before_create", &make_ctx()).await;
-        }
-        let mut t = Vec::with_capacity(iters);
-        for _ in 0..iters {
-            let ctx = make_ctx();
-            let s = Instant::now();
-            runner.run_before("before_create", &ctx).await.unwrap();
-            t.push(s.elapsed());
-        }
-        rows.push((
-            format!(
-                "plugin hook tax: JS/Javy before_create (load {:.1}ms)",
-                js_load.as_secs_f64() * 1000.0
-            ),
-            stats(t),
-        ));
-    } else {
-        eprintln!("(skipped JS hook bench — js-hook fixture not loaded)");
-    }
 
     // ----- Report -----
     println!("\n## Atomo engine benchmarks (in-process)\n");

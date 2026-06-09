@@ -108,16 +108,8 @@ class AtomoApiClient {
       return envUrl
     }
 
-    // In development, try common backend ports
-    if ((import.meta as any).env?.DEV) {
-      const currentHost = window.location.hostname
-      // Try CRM service port first (most common)
-      return `http://${currentHost}:3000`
-    }
-
-    // In production the SPA is served same-origin (e.g. by atomo-server at
-    // /admin), so call the API at the root of the current origin: '' yields
-    // root-relative URLs like /graphql and /media, matching the server routes.
+    // Both dev (Vite proxy) and production (same-origin via atomo-server /admin)
+    // use root-relative URLs like /graphql and /media.
     return ''
   }
 

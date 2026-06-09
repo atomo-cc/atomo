@@ -60,12 +60,16 @@ pnpm --filter @atomo-cc/client-sdk build
 
 ```
 services/crm-service/
-├── atomo.config.ts     # ⚙️  Atomo 平台配置
-├── schema.ts           # 📊  CRM 数据模型定义
+├── schema.ts           # 📊  CRM 数据模型 + events + actions
+├── workers/            # 🔧  外部 TypeScript workers (处理 side effects)
+│   ├── contact-worker.ts   # onNewContact
+│   └── deal-worker.ts      # onDealStatusChange
+├── generated/          # 🤖  codegen 输出 (TypedClient, ActionHandlers)
+│   └── client.ts
 ├── workflows/          # 🔄  业务流程自动化
-├── plugins/            # 🧩  WASM 业务插件
 ├── admin/              # 🎨  后台界面定制
-└── Dockerfile          # 🐳  部署配置
+├── migrations/         # 📦  数据库迁移
+└── tsconfig.json       # TypeScript 配置
 ```
 
 ## 🚀 核心理念
@@ -76,24 +80,16 @@ services/crm-service/
 - **数据库**: 由 Atomo 根据模型定义自动创建和迁移
 - **GraphQL API**: 完全自动生成，包含所有 CRUD 操作
 - **后台界面**: 基于 `atomo-admin-ui` 自动渲染，支持定制
-- **业务逻辑**: 通过 WASM 插件和工作流扩展
+- **业务逻辑**: 通过 actions、外部 workers 和工作流扩展
 
 ## 📊 数据模型
 
 ### 核心实体
 
-- **Contact (联系人)**: 客户的基本信息和联系方式
 - **Company (公司)**: 客户所属的公司或组织
-- **Deal (商机)**: 销售机会和交易记录
-
-### 可组合内容块
-
-所有富文本字段（notes, description）支持 Atomo 的"流动画布"内容块：
-
-- `ParagraphBlock`: 普通文本段落
-- `CallLogBlock`: 通话记录
-- `MeetingNoteBlock`: 会议纪要
-- `TaskBlock`: 任务和待办事项
+- **Contact (联系人)**: 客户的基本信息和联系方式
+- **Deal (商机)**: 销售机会和交易记录（状态: open/won/lost）
+- **Activity (活动)**: 联系人和商机的时间线活动记录（类型: call/email/meeting）
 
 ## 🛠️ 开发工作流
 
@@ -113,7 +109,7 @@ pnpm --filter atomo-crm-service generate
 - 自动创建/迁移数据库表
 - 生成完整的 GraphQL API
 - 启动后台管理界面
-- 热加载 WASM 插件
+- 启动 action 分发器
 
 - 启动 Admin UI 开发服务器
 - 让 TypeScript SDK 进入 watch/build 循环
@@ -139,23 +135,42 @@ pnpm --filter atomo-crm-service generate
 - 运行 `pnpm --filter @atomo-cc/client-sdk build`
 - 在 Admin UI dev server 中检查 schema/metadata 消费效果
 
-### 4. 添加业务逻辑
+### 4. 启动 Workers
 
-在 `plugins/` 目录下创建 TypeScript 文件：
+Workers 是处理 side effects 的外部 TypeScript 进程。Schema 中声明的 events 会触发 actions，actions 入队后由 workers 处理。
 
-```typescript
-// plugins/validate-email/index.ts
-import { onEvent } from "@atomo-cc/plugin-sdk";
+```bash
+# Terminal 2: contact worker
+CONTACT_WORKER_TOKEN=<token> npx tsx workers/contact-worker.ts
 
-onEvent("Contact.Created", async (event) => {
-  const { email } = event.payload;
-  if (email && !isValidEmail(email)) {
-    throw new Error("Invalid email address");
-  }
-});
+# Terminal 3: deal worker
+DEAL_WORKER_TOKEN=<token> npx tsx workers/deal-worker.ts
 ```
 
-插件会自动编译为 WASM 并热加载。
+Worker tokens 需要最小权限：
+
+```bash
+# contact-worker: 只需读写 Contact 和创建 Activity
+atomo worker-token create --name "contact-worker" \
+  --capabilities "crud:Contact:read,update,crud:Activity:create,action:onNewContact"
+
+# deal-worker: 只需读 Deal 和创建 Activity
+atomo worker-token create --name "deal-worker" \
+  --capabilities "crud:Deal:read,crud:Activity:create,action:onDealStatusChange"
+```
+
+### Event → Action 流程
+
+```
+Contact created → onNewContact action → contact-worker
+  → logs Activity, could enrich from external API
+
+Deal.status changed → onDealStatusChange action → deal-worker
+  → logs Activity on contact timeline (won/lost)
+  → origin: "onDealStatusChange" prevents re-enqueue loop
+```
+
+详见 `docs/guide/workers.md` 完整 API 文档。
 
 ## 🎨 后台界面定制
 
@@ -248,19 +263,15 @@ pnpm seed:sql --filter ./services/crm-service
 脚本会重置并插入一组完整演示数据：
 
 - 4 个公司和 4 个联系人，联系人通过 `company_id` 关联公司
-- 12 个商机，覆盖 `lead`、`qualified`、`proposal`、`negotiation`、`won`、`lost` 六个阶段
-- 每个阶段使用从 0 开始的 `deal.position`，用于看板列内排序
-- 6 条 Activity 时间线记录，覆盖 note、call、meeting、email、task 类型
-
-> 提示：`deal.position` 为数值型（NUMERIC），与代码生成类型保持一致；看板拖拽后通过批量变更 mutation `updateDealPositions` 持久化顺序。
+- 多个商机，覆盖 `open`、`won`、`lost` 三种状态
+- 6 条 Activity 时间线记录，覆盖 call、email、meeting 类型
 
 ### 演示检查脚本
 
 1. 运行 seed 后打开 Admin UI，先进入 Contacts，确认 John/Jane/Peter/Maya 都显示公司。
 2. 进入 Companies，打开任意公司并检查关联联系人和商机。
-3. 进入 Deals/Kanban，确认六个阶段都有卡片，且同列卡片按 `position` 从小到大排列。
-4. 将一个 Deal 拖到另一列，再刷新页面确认阶段和顺序保持。
-5. 打开联系人时间线，确认联系人 notes 与 Activity 记录按时间倒序一起展示。
+3. 进入 Deals，确认 open/won/lost 三种状态都有记录。
+4. 打开联系人时间线，确认 Activity 记录按时间倒序展示。
 
 ### 单元测试
 
@@ -292,18 +303,18 @@ pnpm deploy --service crm --env production
 
 ### 添加新模型
 
-1. 在 `schema.ts` 中定义新的接口
-2. 添加到 `schema.models` 配置中
+1. 在 `schema.ts` 中用 `model()` builder 定义新模型
+2. 运行 `atomo codegen` 重新生成类型
 3. 重启开发服务器
 
 ### 集成外部 API
 
-在 `plugins/` 目录下创建集成插件：
+通过 worker 处理外部集成：
 
 ```typescript
-// plugins/integrate-salesforce/index.ts
-onEvent("Deal.Updated", async (event) => {
-  await syncToSalesforce(event.payload);
+// workers/sync-worker.ts
+worker.on("onDealStatusChange", async (ctx) => {
+  await syncToExternalCRM(ctx.job.payload.input);
 });
 ```
 

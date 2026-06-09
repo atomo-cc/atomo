@@ -2,6 +2,18 @@ use crate::operation_definitions::OperationDefinitions;
 use crate::types::*;
 use anyhow::Result;
 
+pub fn safe_ident(name: &str) -> String {
+    match name {
+        "type" | "match" | "move" | "ref" | "self" | "super" | "crate" | "mod" | "fn"
+        | "struct" | "enum" | "trait" | "impl" | "pub" | "use" | "let" | "mut" | "const"
+        | "static" | "loop" | "for" | "while" | "if" | "else" | "return" | "break"
+        | "continue" | "as" | "in" | "where" | "async" | "await" | "dyn" | "abstract"
+        | "become" | "box" | "do" | "final" | "macro" | "override" | "priv" | "try"
+        | "typeof" | "unsafe" | "unsized" | "virtual" | "yield" => format!("r#{}", name),
+        _ => name.to_string(),
+    }
+}
+
 /// Hasura v2 Style Type Generator
 /// Generates GraphQL types following Hasura v2 conventions
 pub struct HasuraV2TypeGenerator;
@@ -500,8 +512,8 @@ impl From<AuditLogEntryRow> for AuditLogEntry {
 
         for (field_name, field) in &model.fields {
             let field_type = self.convert_field_type(&field.field_type, field.optional);
-
-            fields.push(format!("    pub {}: {}", field_name, field_type));
+            let ident = safe_ident(field_name);
+            fields.push(format!("    pub {}: {}", ident, field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -526,7 +538,8 @@ pub struct {model_name} {{
 
         for (field_name, field) in &model.fields {
             let field_type = self.convert_field_type(&field.field_type, field.optional);
-            fields.push(format!("    pub {}: {}", field_name, field_type));
+            let ident = safe_ident(field_name);
+            fields.push(format!("    pub {}: {}", ident, field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -622,7 +635,7 @@ impl From<{model_name}> for {core_type} {{
             let db_field_name = self.camel_to_snake_case(field_name);
             let field_type = self.convert_field_type_for_db(&field.field_type, field.optional);
 
-            fields.push(format!("    pub {}: {}", db_field_name, field_type));
+            fields.push(format!("    pub {}: {}", safe_ident(&db_field_name), field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -631,57 +644,59 @@ impl From<{model_name}> for {core_type} {{
         let mut from_fields = Vec::new();
         for (field_name, field) in &model.fields {
             let db_field_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(field_name);
+            let db_ident = safe_ident(&db_field_name);
 
             // Handle BigDecimal to f64 conversion for numeric fields
             let conversion = match &field.field_type {
                 FieldType::Number if field.optional => {
-                    format!("            {}: row.{}.map(|v| v.to_string().parse::<f64>().unwrap_or(0.0))", field_name, db_field_name)
+                    format!("            {}: row.{}.map(|v| v.to_string().parse::<f64>().unwrap_or(0.0))", ident, db_ident)
                 }
                 FieldType::Number => {
                     format!(
                         "            {}: row.{}.to_string().parse::<f64>().unwrap_or(0.0)",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 FieldType::Blocks if field.optional => {
-                    format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                    format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", ident, db_ident)
                 }
                 FieldType::Blocks => {
                     format!(
                         "            {}: serde_json::from_value(row.{}).unwrap_or_default()",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 FieldType::Array(inner) => match inner.as_ref() {
                     FieldType::Custom(name) if name == "ContentBlock" || name.contains("Block") => {
                         if field.optional {
-                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", ident, db_ident)
                         } else {
-                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", ident, db_ident)
                         }
                     }
                     _ => {
                         if field.optional {
-                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: row.{}.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()", ident, db_ident)
                         } else {
-                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", field_name, db_field_name)
+                            format!("            {}: serde_json::from_value(row.{}).unwrap_or_default()", ident, db_ident)
                         }
                     }
                 },
                 FieldType::Custom(_custom_type) if field.optional => {
                     format!(
                         "            {}: row.{}.map(|s| s.parse().unwrap_or_default())",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 FieldType::Custom(_custom_type) => {
                     format!(
                         "            {}: row.{}.parse().unwrap_or_default()",
-                        field_name, db_field_name
+                        ident, db_ident
                     )
                 }
                 _ => {
-                    format!("            {}: row.{}", field_name, db_field_name)
+                    format!("            {}: row.{}", ident, db_ident)
                 }
             };
 
@@ -752,17 +767,17 @@ impl From<{model_name}Row> for {model_name} {{
         for (field_name, field) in &model.fields {
             let snake_case_name = self.camel_to_snake_case(field_name);
             let comparison_type = self.get_field_comparison_type(&field.field_type);
+            let ident = safe_ident(&snake_case_name);
 
             if snake_case_name != *field_name {
-                // If the field name changes from camelCase to snake_case, add GraphQL rename
                 fields.push(format!(
                     "    #[graphql(name = \"{}\")]\n    pub {}: Option<{}>",
-                    field_name, snake_case_name, comparison_type
+                    field_name, ident, comparison_type
                 ));
             } else {
                 fields.push(format!(
                     "    pub {}: Option<{}>",
-                    snake_case_name, comparison_type
+                    ident, comparison_type
                 ));
             }
         }
@@ -790,15 +805,15 @@ pub struct {model_name}BoolExp {{
         // Use GraphQL field renames to maintain camelCase for GraphQL but snake_case for Rust
         for field_name in model.fields.keys() {
             let snake_case_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(&snake_case_name);
 
             if snake_case_name != *field_name {
-                // If the field name changes from camelCase to snake_case, add GraphQL rename
                 fields.push(format!(
                     "    #[graphql(name = \"{}\")]\n    pub {}: Option<OrderBy>",
-                    field_name, snake_case_name
+                    field_name, ident
                 ));
             } else {
-                fields.push(format!("    pub {}: Option<OrderBy>", snake_case_name));
+                fields.push(format!("    pub {}: Option<OrderBy>", ident));
             }
         }
 
@@ -825,7 +840,7 @@ pub struct {model_name}OrderBy {{
         // Use snake_case field names for Hasura v2 compatibility
         for field_name in model.fields.keys() {
             let snake_case_name = self.camel_to_snake_case(field_name);
-            variants.push(snake_case_name);
+            variants.push(safe_ident(&snake_case_name));
         }
 
         let variants_str = variants.join(",\n    ");
@@ -856,10 +871,11 @@ pub enum {model_name}SelectColumn {{
 
             // Use snake_case field names for Hasura v2 compatibility
             let snake_case_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(&snake_case_name);
             let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
             fields.push(format!(
                 "    pub {}: Option<{}>",
-                snake_case_name, field_type
+                ident, field_type
             ));
         }
 
@@ -891,10 +907,11 @@ pub struct {model_name}InsertInput {{
 
             // Use snake_case field names for Hasura v2 compatibility
             let snake_case_name = self.camel_to_snake_case(field_name);
+            let ident = safe_ident(&snake_case_name);
             let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
             fields.push(format!(
                 "    pub {}: Option<{}>",
-                snake_case_name, field_type
+                ident, field_type
             ));
         }
 
@@ -1841,5 +1858,578 @@ input GenericComparisonExp {
         }
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Field, FieldType, Model, ModelEvents};
+    use std::collections::HashMap;
+
+    /// Helper: build a Model with the given name and fields slice.
+    /// Each tuple is (field_name, FieldType, optional).
+    fn make_model(name: &str, fields: &[(&str, FieldType, bool)]) -> Model {
+        let mut field_map = HashMap::new();
+        for (fname, ftype, optional) in fields {
+            field_map.insert(
+                fname.to_string(),
+                Field {
+                    name: fname.to_string(),
+                    field_type: ftype.clone(),
+                    optional: *optional,
+                    attributes: vec![],
+                },
+            );
+        }
+        Model {
+            name: name.to_string(),
+            fields: field_map,
+            access: None,
+            hooks: None,
+            validation: HashMap::new(),
+            table_name: None,
+            relationships: HashMap::new(),
+            constraints: Vec::new(),
+            events: ModelEvents::default(),
+        }
+    }
+
+    /// Helper: build a Model that represents an enum (has `_enum_type` marker
+    /// and `_enum_value_N` entries).
+    fn make_enum_model(name: &str, values: &[&str]) -> Model {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "_enum_type".to_string(),
+            Field {
+                name: "_enum_type".to_string(),
+                field_type: FieldType::String,
+                optional: false,
+                attributes: vec![],
+            },
+        );
+        for (i, value) in values.iter().enumerate() {
+            fields.insert(
+                format!("_enum_value_{}", i),
+                Field {
+                    name: value.to_string(),
+                    field_type: FieldType::String,
+                    optional: false,
+                    attributes: vec![],
+                },
+            );
+        }
+        Model {
+            name: name.to_string(),
+            fields,
+            access: None,
+            hooks: None,
+            validation: HashMap::new(),
+            table_name: None,
+            relationships: HashMap::new(),
+            constraints: Vec::new(),
+            events: ModelEvents::default(),
+        }
+    }
+
+    // =========================================================================
+    // 1. Basic type generation
+    // =========================================================================
+
+    #[test]
+    fn basic_model_generates_object_type() {
+        let model = make_model(
+            "Customer",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("name", FieldType::String, false),
+                ("email", FieldType::String, true),
+                ("score", FieldType::Number, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        // Object type struct
+        assert!(
+            output.contains("pub struct Customer"),
+            "should generate a Customer struct"
+        );
+
+        // Field type mappings
+        assert!(
+            output.contains("pub name: String"),
+            "text field should map to String"
+        );
+        assert!(
+            output.contains("pub score: f64"),
+            "number field should map to f64"
+        );
+        assert!(
+            output.contains("pub id: ID"),
+            "EntityId field should map to ID"
+        );
+    }
+
+    #[test]
+    fn basic_model_generates_insert_and_set_inputs() {
+        let model = make_model(
+            "Customer",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("name", FieldType::String, false),
+                ("email", FieldType::String, true),
+                ("score", FieldType::Number, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        // Insert input
+        assert!(
+            output.contains("pub struct CustomerInsertInput"),
+            "should generate insert input"
+        );
+        // Set (update) input
+        assert!(
+            output.contains("pub struct CustomerSetInput"),
+            "should generate set input"
+        );
+    }
+
+    #[test]
+    fn basic_model_generates_mutation_response() {
+        let model = make_model(
+            "Customer",
+            &[("id", FieldType::EntityId, false)],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct CustomerMutationResponse"),
+            "should generate mutation response"
+        );
+        assert!(
+            output.contains("pub affected_rows: i32"),
+            "mutation response should have affected_rows"
+        );
+        assert!(
+            output.contains("pub returning: Vec<Customer>"),
+            "mutation response should have returning"
+        );
+    }
+
+    // =========================================================================
+    // 2. Enum / select field generation
+    // =========================================================================
+
+    #[test]
+    fn enum_model_generates_enum_type() {
+        let enum_model = make_enum_model("Priority", &["Low", "Medium", "High"]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[enum_model]).unwrap();
+
+        assert!(
+            output.contains("pub enum Priority"),
+            "should generate Priority enum"
+        );
+        assert!(output.contains("Low"), "should contain Low variant");
+        assert!(output.contains("Medium"), "should contain Medium variant");
+        assert!(output.contains("High"), "should contain High variant");
+    }
+
+    #[test]
+    fn enum_model_generates_display_and_fromstr() {
+        let enum_model = make_enum_model("Status", &["Active", "Inactive"]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[enum_model]).unwrap();
+
+        assert!(
+            output.contains("impl std::fmt::Display for Status"),
+            "should generate Display impl"
+        );
+        assert!(
+            output.contains("impl std::str::FromStr for Status"),
+            "should generate FromStr impl"
+        );
+    }
+
+    #[test]
+    fn enum_model_is_not_treated_as_regular_model() {
+        // An enum model should NOT produce an insert/set/bool_exp, etc.
+        let enum_model = make_enum_model("Color", &["Red", "Green", "Blue"]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[enum_model]).unwrap();
+
+        assert!(
+            !output.contains("pub struct ColorInsertInput"),
+            "enum should not get insert input"
+        );
+        assert!(
+            !output.contains("pub struct ColorBoolExp"),
+            "enum should not get bool exp"
+        );
+    }
+
+    #[test]
+    fn model_with_custom_enum_field_references_enum_name() {
+        // A regular model that has a Custom(EnumName) field
+        let model = make_model(
+            "Task",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("priority", FieldType::Custom("Priority".to_string()), false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub priority: Priority"),
+            "custom field should reference the enum type name"
+        );
+    }
+
+    // =========================================================================
+    // 3. Comparison expression types
+    // =========================================================================
+
+    #[test]
+    fn generates_string_comparison_exp() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct StringComparisonExp"),
+            "should generate StringComparisonExp"
+        );
+        assert!(
+            output.contains("pub _like: Option<String>"),
+            "StringComparisonExp should have _like"
+        );
+        assert!(
+            output.contains("pub _ilike: Option<String>"),
+            "StringComparisonExp should have _ilike"
+        );
+    }
+
+    #[test]
+    fn generates_int_comparison_exp() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct IntComparisonExp"),
+            "should generate IntComparisonExp"
+        );
+    }
+
+    #[test]
+    fn generates_float_comparison_exp() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct FloatComparisonExp"),
+            "should generate FloatComparisonExp"
+        );
+    }
+
+    #[test]
+    fn generates_boolean_comparison_exp() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct BooleanComparisonExp"),
+            "should generate BooleanComparisonExp"
+        );
+    }
+
+    #[test]
+    fn generates_datetime_comparison_exp() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct DateTimeComparisonExp"),
+            "should generate DateTimeComparisonExp"
+        );
+    }
+
+    #[test]
+    fn generates_numeric_comparison_exp() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct NumericComparisonExp"),
+            "should generate NumericComparisonExp"
+        );
+    }
+
+    // =========================================================================
+    // 4. Optional vs required fields
+    // =========================================================================
+
+    #[test]
+    fn optional_field_wraps_in_option() {
+        let model = make_model(
+            "Person",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("nickname", FieldType::String, true),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub nickname: Option<String>"),
+            "optional String field should be Option<String>"
+        );
+    }
+
+    #[test]
+    fn required_field_is_not_wrapped() {
+        let model = make_model(
+            "Person",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("name", FieldType::String, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        // The struct should have `pub name: String` (not Option<String>)
+        assert!(
+            output.contains("pub name: String"),
+            "required String field should be bare String"
+        );
+    }
+
+    #[test]
+    fn optional_number_wraps_in_option() {
+        let model = make_model(
+            "Metric",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("value", FieldType::Number, true),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub value: Option<f64>"),
+            "optional Number field should be Option<f64>"
+        );
+    }
+
+    #[test]
+    fn optional_boolean_wraps_in_option() {
+        let model = make_model(
+            "Feature",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("enabled", FieldType::Boolean, true),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub enabled: Option<bool>"),
+            "optional Boolean field should be Option<bool>"
+        );
+    }
+
+    #[test]
+    fn optional_datetime_wraps_in_option() {
+        let model = make_model(
+            "Event",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("archivedAt", FieldType::DateTime, true),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("Option<DateTime<Utc>>"),
+            "optional DateTime field should be Option<DateTime<Utc>>"
+        );
+    }
+
+    // =========================================================================
+    // Additional structural checks
+    // =========================================================================
+
+    #[test]
+    fn generates_bool_exp_with_logical_operators() {
+        let model = make_model(
+            "Item",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("title", FieldType::String, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct ItemBoolExp"),
+            "should generate BoolExp for the model"
+        );
+        assert!(
+            output.contains("pub and: Option<Vec<ItemBoolExp>>"),
+            "BoolExp should have _and"
+        );
+        assert!(
+            output.contains("pub or: Option<Vec<ItemBoolExp>>"),
+            "BoolExp should have _or"
+        );
+        assert!(
+            output.contains("pub not: Option<Box<ItemBoolExp>>"),
+            "BoolExp should have _not"
+        );
+    }
+
+    #[test]
+    fn generates_order_by_type() {
+        let model = make_model(
+            "Item",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("title", FieldType::String, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct ItemOrderBy"),
+            "should generate OrderBy input"
+        );
+        assert!(
+            output.contains("Option<OrderBy>"),
+            "OrderBy fields should be Option<OrderBy>"
+        );
+    }
+
+    #[test]
+    fn generates_row_type_for_model() {
+        let model = make_model(
+            "Customer",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("name", FieldType::String, false),
+                ("score", FieldType::Number, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("pub struct CustomerRow"),
+            "should generate a Row type"
+        );
+        assert!(
+            output.contains("impl From<CustomerRow> for Customer"),
+            "should generate From<Row> impl"
+        );
+    }
+
+    #[test]
+    fn generates_header_with_imports() {
+        let model = make_model("Stub", &[("id", FieldType::EntityId, false)]);
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("use async_graphql"),
+            "header should import async_graphql"
+        );
+        assert!(
+            output.contains("use serde::{Deserialize, Serialize}"),
+            "header should import serde"
+        );
+    }
+
+    #[test]
+    fn field_comparison_type_for_string_is_string_comparison_exp() {
+        let model = make_model(
+            "Note",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("body", FieldType::String, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        // In the BoolExp for Note, the `body` field should use StringComparisonExp
+        assert!(
+            output.contains("StringComparisonExp"),
+            "String field should use StringComparisonExp in BoolExp"
+        );
+    }
+
+    #[test]
+    fn field_comparison_type_for_number_is_numeric() {
+        let model = make_model(
+            "Metric",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("value", FieldType::Number, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[model]).unwrap();
+
+        assert!(
+            output.contains("NumericComparisonExp"),
+            "Number field should use NumericComparisonExp in BoolExp"
+        );
+    }
+
+    #[test]
+    fn multiple_models_all_generate() {
+        let m1 = make_model(
+            "Alpha",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("label", FieldType::String, false),
+            ],
+        );
+        let m2 = make_model(
+            "Beta",
+            &[
+                ("id", FieldType::EntityId, false),
+                ("count", FieldType::Number, false),
+            ],
+        );
+        let gen = HasuraV2TypeGenerator::new();
+        let output = gen.generate_types(&[m1, m2]).unwrap();
+
+        assert!(output.contains("pub struct Alpha"), "Alpha struct present");
+        assert!(output.contains("pub struct Beta"), "Beta struct present");
+        assert!(
+            output.contains("pub struct AlphaInsertInput"),
+            "Alpha insert input present"
+        );
+        assert!(
+            output.contains("pub struct BetaInsertInput"),
+            "Beta insert input present"
+        );
     }
 }

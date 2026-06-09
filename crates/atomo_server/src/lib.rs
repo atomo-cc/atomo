@@ -8,6 +8,9 @@
 #![allow(dead_code)]
 #![allow(clippy::too_many_arguments, clippy::match_like_matches_macro)]
 
+pub mod action_dispatcher;
+pub mod action_routes;
+pub mod crud_routes;
 pub mod aggregate;
 pub mod audit;
 pub mod auth;
@@ -23,8 +26,6 @@ pub mod models_ext;
 pub mod oauth;
 pub mod platform_graphql;
 pub mod platform_models;
-pub mod plugin_routes;
-pub mod plugins;
 pub mod projector_routes;
 pub mod rate_limit;
 pub mod realtime;
@@ -35,8 +36,6 @@ pub mod schema_metadata;
 pub mod server;
 pub mod storage;
 pub mod tracing_middleware;
-pub mod wasm_hooks;
-pub mod wasm_plugins;
 
 pub use aggregate::*;
 pub use audit::*;

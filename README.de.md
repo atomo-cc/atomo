@@ -8,7 +8,7 @@
 [![Release](https://github.com/atomo-cc/atomo/workflows/Release/badge.svg)](https://github.com/atomo-cc/atomo/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Atomo Content Core ist ein quelloffenes, selbst hostbares **event-sourced Backend** für content-getriebene Apps. Definiere dein Datenmodell in einer TypeScript-`schema.ts`, und Atomo liefert dir eine **GraphQL-API**, **Authentifizierung + RBAC**, **Realtime** und eine generierte **Admin-UI** — erweiterbar mit **WASM/JS-Plugins** und per **Docker** bereitstellbar (ohne Rust-Toolchain). Betrachte es als selbstgehostete **Firebase/Supabase-Alternative**, die auf deinem eigenen Postgres läuft.
+Atomo Content Core ist ein quelloffenes, selbst hostbares **event-sourced Backend** für content-getriebene Apps. Definiere dein Datenmodell in einer TypeScript-`schema.ts`, und Atomo liefert dir eine **GraphQL-API**, **Authentifizierung + RBAC**, **Realtime** und eine generierte **Admin-UI** — erweiterbar mit **Actions und externen Workers** und per **Docker** bereitstellbar (ohne Rust-Toolchain). Betrachte es als selbstgehostete **Firebase/Supabase-Alternative**, die auf deinem eigenen Postgres läuft.
 
 ## ✨ Kernfunktionen
 
@@ -17,8 +17,8 @@ Atomo Content Core ist ein quelloffenes, selbst hostbares **event-sourced Backen
 - 🎯 **Flaggschiff-App-getrieben**: Plattformentwicklung, angetrieben von einer echten CRM-Anwendung
 - 🔧 **Dual-Mode-Definition**: TypeScript-Schema + Rust-Codegenerierung
 - 🚀 **Hohe Leistung**: Rust-Backend + ein moderner Frontend-Stack
-- 🔌 **Plugin-fähige Architektur**: WASM-Plugin-System mit mehrsprachiger Erweiterungsunterstützung
-- 🧩 **Erweitern ohne Fork**: deklarierbare Schema-Constraints (`@unique` / `@@check` / partiell) + von Plugins bereitgestellte benutzerdefinierte HTTP-Routen (`/ext/<plugin>`)
+- 🔌 **Actions & Workers**: Lifecycle-Actions im Schema deklarieren (`on.created`, `on.updated`) mit Bedingungen — Atomo verteilt dauerhafte Jobs automatisch an externe TypeScript-Worker
+- 🧩 **Erweitern ohne Fork**: deklarierbare Schema-Constraints (`@unique` / `@@check` / partiell) + direkte Action-API (`POST /api/actions/:name`)
 - 📊 **Echtzeit-Zusammenarbeit**: WebSocket-gesteuerte Echtzeit-Datensynchronisation
 
 ## 🚀 Schnellstart
@@ -99,8 +99,7 @@ atomo/
 │   ├── atomo_server/         # 🌐 Webserver
 │   ├── atomo_schema/         # 📝 Schema-Parser
 │   ├── atomo_projectors/     # 📊 Event-Projektoren
-│   ├── atomo_realtime/       # 📡 Flüchtige Echtzeit-Kanäle und Präsenz
-│   └── atomo_wasm_runtime/   # 🔌 WASM-Plugin-Runtime
+│   └── atomo_realtime/       # 📡 Flüchtige Echtzeit-Kanäle und Präsenz
 ├── packages/                  # Frontend-Pakete
 │   ├── atomo-client-sdk/     # 📚 Client-SDK
 │   └── atomo-admin-ui/       # 🎛️  Admin-Oberfläche
@@ -126,9 +125,9 @@ graph TD
     D --> E[Abfrage]
 
     B --> F[Event-Bus]
-    F --> G[KI-Prozessor]
-    F --> H[Benachrichtigungsdienst]
-    F --> I[WASM-Plugins]
+    F --> G[Action Dispatcher]
+    G --> H[Job Queue]
+    H --> I[Externe Workers]
 ```
 
 ### Technologie-Stack
@@ -240,19 +239,6 @@ pnpm --filter atomo-crm-service generate
    }
    ```
 
-### Plugin-Entwicklung
-
-```rust
-// WASM-Plugin-Beispiel
-use atomo_wasm_runtime::*;
-
-#[wasm_bindgen]
-pub fn process_content(content: &str) -> String {
-    // Eigene Logik zur Inhaltsverarbeitung
-    content.to_uppercase()
-}
-```
-
 Die detaillierte Roadmap und den aktuellen Fortschritt findest du in docs/roadmap.md; die Plattformvision und Architektur in docs/vision.md.
 
 ## 📊 Leistungsziele
@@ -280,8 +266,8 @@ Die detaillierte Roadmap und den aktuellen Fortschritt findest du in docs/roadma
 - [x] Ratenbegrenzung, Request-Tracing
 
 ### Phase 2: Intelligenz-Upgrade (größtenteils abgeschlossen)
-- [x] WASM-Plugin-System (Sandbox, Berechtigungen, Lifecycle-Hooks) + JS-Skript-Plugins (Javy)
-- [x] Erweiterbarkeit ohne Fork: deklarierbare Schema-Constraints (`@unique`/`@index`/`@@check`, inkl. partiell mit `WHERE`) + von Plugins bereitgestellte benutzerdefinierte HTTP-Routen (`/ext/<plugin>`)
+- [x] Actions & Workers: Lifecycle-Event-Bindings (`ModelEvents`), Action Dispatcher, direkte Action-API, Worker SDK (`@atomo-cc/worker-sdk`)
+- [x] Erweiterbarkeit ohne Fork: deklarierbare Schema-Constraints (`@unique`/`@index`/`@@check`, inkl. partiell mit `WHERE`)
 - [x] CQRS-Read-Projektionen (eventgesteuerte materialisierte Views; Löschungen/numerische Korrekturen siehe B2)
 - [x] Read-Cache (TTL + Event-Invalidierung)
 - [x] Datei-Upload/-Speicherung (`File`-Feld, multipart, Content-Type-Validierung + Magic-Byte-Sniffing, event-sourced; lokales Backend ✅, S3-Backend hinter dem `storage-s3`-Feature; siehe docs/guide/advanced/upload-storage-plan)

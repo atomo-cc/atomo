@@ -1,7 +1,0 @@
-name = "normalize-contact"
-version = "0.1.0"
-description = "Normalizes Contact email/name and emits a welcome notification"
-author = "atomo"
-entry_point = "plugin.wasm"
-permissions = ["WriteEvents"]
-runtime = "js"

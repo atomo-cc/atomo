@@ -66,7 +66,6 @@ export default defineConfig({
             { text: 'Dev Runtime & Workspace', link: '/guide/dev-runtime' },
             { text: 'Server Routes in Dev', link: '/guide/server-routes-dev' },
             { text: 'Configuration', link: '/guide/configuration' },
-            { text: 'WASM & JS Plugins', link: '/guide/plugins' },
             { text: 'Testing', link: '/guide/testing' },
             { text: 'Real-time Collaboration (planned)', link: '/guide/collaboration' },
             { text: 'Local-First (planned)', link: '/guide/local-first' }
@@ -77,7 +76,6 @@ export default defineConfig({
           items: [
             { text: 'Building a CRM', link: '/guide/tutorials/crm' },
             { text: 'Custom Content Types', link: '/guide/tutorials/content-types' },
-            { text: 'Plugin Development', link: '/guide/tutorials/plugin-dev' },
             { text: 'Deployment Guide', link: '/guide/tutorials/deployment' }
           ]
         },
@@ -89,14 +87,12 @@ export default defineConfig({
             { text: 'Validation Rules', link: '/guide/advanced/validation' },
             { text: 'Multi-tenant', link: '/guide/advanced/multi-tenant' },
             { text: 'Durable Jobs & Workers', link: '/guide/advanced/jobs-and-workers' },
+            { text: 'TypedWorker API', link: '/guide/workers' },
             { text: 'AI & Vector Search', link: '/guide/advanced/ai-vector' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },
             { text: 'Performance Tuning', link: '/guide/advanced/performance' },
             { text: 'Benchmarks', link: '/guide/advanced/benchmarks' },
-            { text: 'Writing Plugins', link: '/guide/advanced/writing-plugins' },
-            { text: 'Proposal: Scripting Plugins', link: '/guide/advanced/scripting-plugins-proposal' },
-            { text: 'Proposal: Plugin Marketplace', link: '/guide/advanced/plugin-marketplace-proposal' },
             { text: 'Proposal: Workflow Designer', link: '/guide/advanced/workflow-designer-proposal' },
             { text: 'Proposal: Realtime Channels & Presence', link: '/guide/advanced/realtime-channels-proposal' },
             { text: 'Proposal: Custom HTTP Routes', link: '/guide/advanced/custom-routes-proposal' },
@@ -125,7 +121,6 @@ export default defineConfig({
             { text: 'Content Blocks', link: '/api/content-blocks' },
             { text: 'TypeScript SDK', link: '/api/typescript-sdk' },
             { text: 'Rust APIs', link: '/api/rust' },
-            { text: 'Plugin APIs', link: '/api/plugins' }
           ]
         }
       ],

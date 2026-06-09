@@ -34,6 +34,7 @@ pub fn scope_by_tenant(where_clauses: &[WhereClause], tenant_id: Option<&str>) -
 // back to the plain pool path, unchanged.
 tokio::task_local! {
     static TENANT_SCOPE: Option<String>;
+    static ACTION_ORIGIN: Option<String>;
 }
 
 /// Run `fut` with `tenant` bound as the request's RLS tenant scope.
@@ -53,6 +54,22 @@ pub async fn with_tenant_scope<F: std::future::Future>(
 /// The current request's tenant scope, if one is active on this task.
 fn current_tenant() -> Option<String> {
     TENANT_SCOPE.try_with(|t| t.clone()).ok().flatten()
+}
+
+/// Run `fut` with `origin` bound as the action origin for loop prevention.
+///
+/// When a worker calls back into CRUD, its action name is set here so the resulting
+/// ModelEvents carry `origin = Some("processPost")`. The action dispatcher then skips
+/// re-enqueuing the originating action, preventing infinite loops.
+pub async fn with_action_origin<F: std::future::Future>(
+    origin: Option<String>,
+    fut: F,
+) -> F::Output {
+    ACTION_ORIGIN.scope(origin, fut).await
+}
+
+fn current_origin() -> Option<String> {
+    ACTION_ORIGIN.try_with(|o| o.clone()).ok().flatten()
 }
 
 /// Whether DB-enforced RLS is enabled (`ATOMO_ENABLE_RLS`). Mirrors `atomo_server::rls`.
@@ -401,6 +418,7 @@ impl AtomoClient {
             timestamp: chrono::Utc::now().to_rfc3339(),
             event_id: uuid::Uuid::new_v4().to_string(),
             actor: actor.map(|s| s.to_string()),
+            origin: current_origin(),
         };
         self.event_store.persist_in(&mut *tx, &event).await?;
         tx.commit().await?;
@@ -489,6 +507,7 @@ impl AtomoClient {
                 out
             };
         // Events: one multi-row INSERT into event_log for the whole batch.
+        let origin = current_origin();
         let events: Vec<ModelEvent> = records_out
             .iter()
             .map(|record| ModelEvent {
@@ -499,6 +518,7 @@ impl AtomoClient {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
                 actor: actor.map(|s| s.to_string()),
+                origin: origin.clone(),
             })
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
@@ -580,6 +600,7 @@ impl AtomoClient {
         }
         let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
         let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
+        let origin = current_origin();
         let events: Vec<ModelEvent> = records
             .iter()
             .map(|record| ModelEvent {
@@ -590,6 +611,7 @@ impl AtomoClient {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 event_id: uuid::Uuid::new_v4().to_string(),
                 actor: actor.map(|s| s.to_string()),
+                origin: origin.clone(),
             })
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
@@ -651,6 +673,7 @@ impl AtomoClient {
         }
         let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
         let count = rows.len();
+        let origin = current_origin();
         let events: Vec<ModelEvent> = rows
             .iter()
             .map(|row| {
@@ -667,6 +690,7 @@ impl AtomoClient {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     event_id: uuid::Uuid::new_v4().to_string(),
                     actor: actor.map(|s| s.to_string()),
+                    origin: origin.clone(),
                 }
             })
             .collect();
@@ -708,6 +732,7 @@ impl AtomoClient {
         }
         let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
         let count = rows.len();
+        let origin = current_origin();
         let events: Vec<ModelEvent> = rows
             .iter()
             .map(|row| {
@@ -724,6 +749,7 @@ impl AtomoClient {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     event_id: uuid::Uuid::new_v4().to_string(),
                     actor: actor.map(|s| s.to_string()),
+                    origin: origin.clone(),
                 }
             })
             .collect();
@@ -760,6 +786,7 @@ impl AtomoClient {
         }
         let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
         let count = rows.len();
+        let origin = current_origin();
         let events: Vec<ModelEvent> = rows
             .iter()
             .map(|row| {
@@ -776,6 +803,7 @@ impl AtomoClient {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     event_id: uuid::Uuid::new_v4().to_string(),
                     actor: actor.map(|s| s.to_string()),
+                    origin: origin.clone(),
                 }
             })
             .collect();
@@ -1281,5 +1309,33 @@ fn capitalize(s: &str) -> String {
     match c.next() {
         None => String::new(),
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn action_origin_scopes_and_clears() {
+        // Outside any scope, current_origin is None.
+        assert_eq!(current_origin(), None);
+
+        // Inside with_action_origin, it returns the set value.
+        let inside = with_action_origin(Some("myAction".into()), async {
+            current_origin()
+        }).await;
+        assert_eq!(inside, Some("myAction".to_string()));
+
+        // After the scope, it's None again.
+        assert_eq!(current_origin(), None);
+    }
+
+    #[tokio::test]
+    async fn action_origin_none_scope_returns_none() {
+        let inside = with_action_origin(None, async {
+            current_origin()
+        }).await;
+        assert_eq!(inside, None);
     }
 }

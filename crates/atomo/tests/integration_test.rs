@@ -48,9 +48,10 @@ fn test_schema() -> atomo_schema::Schema {
             table_name: None,
             relationships: std::collections::HashMap::new(),
             constraints: Vec::new(),
+            events: Default::default(),
         },
     );
-    atomo_schema::Schema { models }
+    atomo_schema::Schema { models, actions: std::collections::HashMap::new() }
 }
 
 #[tokio::test]
