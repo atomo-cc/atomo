@@ -687,5 +687,6 @@ Each handler should do one thing. If an action needs multiple steps, break them 
 
 ## Further reading
 
-- `examples/action-worker-demo/` -- the canonical end-to-end example with schema, worker, and generated types
+- `examples/action-worker-demo/` -- minimal end-to-end example with schema, worker, and generated types
+- `services/crm-service/workers/` -- multi-model CRM workers demonstrating cross-model writes, Activity logging, and least-privilege capabilities
 - [Architecture overview](/guide/architecture) -- how workers fit into the broader Atomo platform

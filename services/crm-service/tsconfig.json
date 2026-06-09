@@ -10,5 +10,5 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["*.ts", "workers/*.ts", "generated/*.ts"]
+  "include": ["*.ts", "workers/*.ts", "generated/*.ts", "admin/*.ts"]
 }

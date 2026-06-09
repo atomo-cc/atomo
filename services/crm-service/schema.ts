@@ -186,6 +186,9 @@ export const schema = {
         firstName: "required|min:1|max:100",
         lastName: "max:100",
       },
+      events: {
+        created: [{ action: "onNewContact" }],
+      },
       ui: {
         displayField: ["firstName", "lastName"],
         listView: ["firstName", "lastName", "email", "company", "createdAt"],
@@ -263,6 +266,14 @@ export const schema = {
         value: "numeric|min:0",
         contactId: "required|exists:contact,id",
       },
+      events: {
+        updated: [
+          {
+            action: "onDealStageChange",
+            condition: { changedAny: ["stage"] },
+          },
+        ],
+      },
       ui: {
         displayField: "title",
         listView: [
@@ -313,6 +324,15 @@ export const schema = {
         listView: ["activityType", "title", "contact", "createdAt"],
         editForm: ["activityType", "title", "content", "contactId", "metadata"],
       },
+    },
+  },
+
+  actions: {
+    onNewContact: {
+      input: { pick: { model: "Contact", fields: ["id", "firstName", "lastName", "email"] } },
+    },
+    onDealStageChange: {
+      input: { pick: { model: "Deal", fields: ["id", "stage", "value", "contactId"] } },
     },
   },
 
