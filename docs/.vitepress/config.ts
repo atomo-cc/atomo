@@ -87,6 +87,7 @@ export default defineConfig({
             { text: 'Validation Rules', link: '/guide/advanced/validation' },
             { text: 'Multi-tenant', link: '/guide/advanced/multi-tenant' },
             { text: 'Durable Jobs & Workers', link: '/guide/advanced/jobs-and-workers' },
+            { text: 'TypedWorker API', link: '/guide/workers' },
             { text: 'AI & Vector Search', link: '/guide/advanced/ai-vector' },
             { text: 'Security & Auth', link: '/guide/advanced/security' },
             { text: 'Production Readiness', link: '/guide/advanced/production-readiness' },

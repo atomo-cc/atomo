@@ -311,3 +311,115 @@ async fn lifecycle_create_enqueue_worker_crud_update_origin_loop_prevention() {
         .await
         .ok();
 }
+
+// ── Granular capability scoping at HTTP level ─────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn crud_capability_scoping_denies_unauthorized_operations() {
+    let (_atomo, _job_store, worker_tokens, app) = setup().await;
+
+    // Mint a token that can only read and update Post — no create, no delete.
+    let (_, narrow_token) = worker_tokens
+        .mint(
+            "scoped-worker",
+            &["actions".into()],
+            &["crud:Post:read,update".into()],
+        )
+        .await
+        .unwrap();
+
+    // Mint a broad token for setup.
+    let (_, broad_token) = worker_tokens
+        .mint(
+            "broad-worker",
+            &["actions".into()],
+            &["crud:*".into()],
+        )
+        .await
+        .unwrap();
+
+    // ── create with narrow token → 403 ─────────────────────────────────
+    let create_req = Request::builder()
+        .uri("/api/worker/crud/Post")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("x-worker-token", &narrow_token)
+        .body(Body::from(
+            json!({"data": {"title": "Should Fail", "status": "draft"}}).to_string(),
+        ))
+        .unwrap();
+    let (status, body) = send(&app, create_req).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "narrow token should not be able to create: {:?}",
+        body
+    );
+
+    // ── create with broad token → 201 (setup for read/update/delete tests)
+    let create_req = Request::builder()
+        .uri("/api/worker/crud/Post")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("x-worker-token", &broad_token)
+        .body(Body::from(
+            json!({"data": {"title": "Test Post", "status": "draft"}}).to_string(),
+        ))
+        .unwrap();
+    let (status, body) = send(&app, create_req).await;
+    assert_eq!(status, StatusCode::CREATED, "broad token should create: {:?}", body);
+    let post_id = body["id"].as_str().unwrap().to_string();
+
+    // ── read with narrow token → 200 ───────────────────────────────────
+    let read_req = Request::builder()
+        .uri(format!("/api/worker/crud/Post/{}", post_id))
+        .method("GET")
+        .header("x-worker-token", &narrow_token)
+        .body(Body::empty())
+        .unwrap();
+    let (status, _) = send(&app, read_req).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "narrow token should be able to read"
+    );
+
+    // ── update with narrow token → 200 ─────────────────────────────────
+    let update_req = Request::builder()
+        .uri(format!("/api/worker/crud/Post/{}", post_id))
+        .method("PATCH")
+        .header("content-type", "application/json")
+        .header("x-worker-token", &narrow_token)
+        .body(Body::from(
+            json!({"data": {"status": "published"}}).to_string(),
+        ))
+        .unwrap();
+    let (status, _) = send(&app, update_req).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "narrow token should be able to update"
+    );
+
+    // ── delete with narrow token → 403 ─────────────────────────────────
+    let delete_req = Request::builder()
+        .uri(format!("/api/worker/crud/Post/{}", post_id))
+        .method("DELETE")
+        .header("x-worker-token", &narrow_token)
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = send(&app, delete_req).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "narrow token should not be able to delete: {:?}",
+        body
+    );
+
+    // ── different model → 403 ──────────────────────────────────────────
+    // The token is scoped to Post, not any other model.
+    // This hits model_check (model not in schema) which returns 404, not 403,
+    // because the test schema only has Post. That's correct — an unknown model
+    // is a 404 regardless of capabilities.
+}
