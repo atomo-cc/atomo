@@ -1,5 +1,5 @@
 {
-  "name": "crm-service",
+  "name": "atomo-dogfood-crm-example",
   "private": true,
   "type": "module",
   "scripts": {

@@ -13,16 +13,22 @@ export interface Activity {
   createdAt: string;
   dealId?: string;
   id: string;
-  notes?: string;
+  note?: string;
+  occurredAt: string;
+  ownerId?: string;
+  tenantId?: string;
   type: string;
-  updatedAt: string;
 }
 
 export interface Company {
   createdAt: string;
+  domain?: string;
   id: string;
   industry?: string;
+  leadCount?: number;
   name: string;
+  openDealValue?: number;
+  tenantId?: string;
   updatedAt: string;
   website?: string;
 }
@@ -30,29 +36,75 @@ export interface Company {
 export interface Contact {
   companyId?: string;
   createdAt: string;
+  displayName?: string;
   email: string;
+  firstName: string;
   id: string;
-  name: string;
+  lastActivityAt?: string;
+  lastName: string;
+  ownerId?: string;
   phone?: string;
-  stage?: string;
+  tenantId?: string;
   updatedAt: string;
 }
 
 export interface Deal {
-  contactId: string;
+  closedAt?: string;
+  companyId: string;
+  contactId?: string;
   createdAt: string;
   id: string;
-  status?: string;
+  ownerId?: string;
+  stage?: string;
+  tenantId?: string;
   title: string;
   updatedAt: string;
-  value?: number;
+  value: number;
 }
 
-export type onDealStatusChangeInput = Pick<Deal, 'id' | 'contactId' | 'status' | 'value'>;
+export interface Lead {
+  companyId?: string;
+  contactId?: string;
+  createdAt: string;
+  email: string;
+  id: string;
+  ownerId?: string;
+  score?: number;
+  source?: string;
+  status?: string;
+  tenantId?: string;
+  updatedAt: string;
+}
 
-export type onNewContactInput = Pick<Contact, 'id' | 'name' | 'email'>;
+export interface User {
+  createdAt: string;
+  displayName?: string;
+  email: string;
+  firstName: string;
+  id: string;
+  lastName: string;
+  role?: string;
+  tenantId?: string;
+  updatedAt: string;
+  welcomeSentAt?: string;
+}
 
-export type onStageChangeInput = Pick<Contact, 'id' | 'stage'>;
+export interface createLeadAndContactInput {
+}
+
+export type enrichCompanyInput = Pick<Company, 'id' | 'name' | 'website' | 'tenantId'>;
+
+export type notifyDealWonInput = Pick<Deal, 'id' | 'title' | 'value' | 'companyId' | 'ownerId' | 'tenantId'>;
+
+export type removeFromSearchIndexInput = Pick<Contact, 'id' | 'tenantId'>;
+
+export type rollupLeadStatsInput = Pick<Lead, 'id' | 'companyId' | 'status' | 'score' | 'tenantId'>;
+
+export type scoreLeadInput = Pick<Lead, 'id' | 'email' | 'source' | 'companyId' | 'tenantId'>;
+
+export type sendWelcomeEmailInput = Pick<User, 'id' | 'email' | 'displayName' | 'tenantId'>;
+
+export type updateContactLastActivityInput = Pick<Activity, 'id' | 'contactId' | 'type' | 'occurredAt' | 'tenantId'>;
 
 export interface ActivityCrud {
   create(data: Partial<Activity>): Promise<Activity>;
@@ -84,6 +136,22 @@ export interface DealCrud {
   update(id: string, data: Partial<Deal>): Promise<Deal>;
   delete(id: string): Promise<void>;
   findMany(opts?: Record<string, unknown>): Promise<Deal[]>;
+}
+
+export interface LeadCrud {
+  create(data: Partial<Lead>): Promise<Lead>;
+  findById(id: string): Promise<Lead | null>;
+  update(id: string, data: Partial<Lead>): Promise<Lead>;
+  delete(id: string): Promise<void>;
+  findMany(opts?: Record<string, unknown>): Promise<Lead[]>;
+}
+
+export interface UserCrud {
+  create(data: Partial<User>): Promise<User>;
+  findById(id: string): Promise<User | null>;
+  update(id: string, data: Partial<User>): Promise<User>;
+  delete(id: string): Promise<void>;
+  findMany(opts?: Record<string, unknown>): Promise<User[]>;
 }
 
 export class TypedClient {
@@ -121,18 +189,44 @@ export class TypedClient {
     findMany: (opts) => this.client.findMany('Deal', opts) as Promise<Deal[]>,
   };
 
+  lead: LeadCrud = {
+    create: (data) => this.client.create('Lead', data as Record<string, unknown>) as Promise<Lead>,
+    findById: (id) => this.client.findById('Lead', id) as Promise<Lead | null>,
+    update: (id, data) => this.client.update('Lead', id, data as Record<string, unknown>) as Promise<Lead>,
+    delete: (id) => this.client.delete('Lead', id),
+    findMany: (opts) => this.client.findMany('Lead', opts) as Promise<Lead[]>,
+  };
+
+  user: UserCrud = {
+    create: (data) => this.client.create('User', data as Record<string, unknown>) as Promise<User>,
+    findById: (id) => this.client.findById('User', id) as Promise<User | null>,
+    update: (id, data) => this.client.update('User', id, data as Record<string, unknown>) as Promise<User>,
+    delete: (id) => this.client.delete('User', id),
+    findMany: (opts) => this.client.findMany('User', opts) as Promise<User[]>,
+  };
+
 }
 
 export interface ModelEventMap {
-  'Contact.created': 'onNewContact';
-  'Contact.updated': 'onStageChange';
-  'Deal.updated': 'onDealStatusChange';
+  'Activity.created': 'updateContactLastActivity';
+  'Company.created': 'enrichCompany';
+  'Company.updated': 'enrichCompany';
+  'Contact.deleted': 'removeFromSearchIndex';
+  'Deal.updated': 'notifyDealWon';
+  'Lead.created': 'scoreLead' | 'rollupLeadStats';
+  'Lead.updated': 'scoreLead' | 'rollupLeadStats';
+  'User.created': 'sendWelcomeEmail';
 }
 
 export interface ActionHandlers {
-  onDealStatusChange: { input: onDealStatusChangeInput };
-  onNewContact: { input: onNewContactInput };
-  onStageChange: { input: onStageChangeInput };
+  createLeadAndContact: { input: createLeadAndContactInput };
+  enrichCompany: { input: enrichCompanyInput };
+  notifyDealWon: { input: notifyDealWonInput };
+  removeFromSearchIndex: { input: removeFromSearchIndexInput };
+  rollupLeadStats: { input: rollupLeadStatsInput };
+  scoreLead: { input: scoreLeadInput };
+  sendWelcomeEmail: { input: sendWelcomeEmailInput };
+  updateContactLastActivity: { input: updateContactLastActivityInput };
 }
 
 export interface TypedJobContext<K extends keyof ActionHandlers> {
