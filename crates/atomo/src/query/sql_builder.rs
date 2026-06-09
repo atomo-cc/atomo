@@ -72,8 +72,13 @@ impl SqlBuilder {
         let mut params = Vec::new();
 
         for (i, (key, val)) in data.iter().enumerate() {
-            columns.push(to_snake_case(key));
-            placeholders.push(format!("${}", i + 1));
+            let snake = to_snake_case(key);
+            let is_datetime = model.fields.get(key).map_or(false, |f| {
+                matches!(f.field_type, crate::schema::FieldType::DateTime)
+            });
+            let cast = if is_datetime { "::timestamptz" } else { "" };
+            columns.push(snake);
+            placeholders.push(format!("${}{}", i + 1, cast));
             params.push(val.clone());
         }
 
@@ -148,7 +153,11 @@ impl SqlBuilder {
         let mut params = Vec::new();
 
         for (i, (key, val)) in data.iter().enumerate() {
-            set_clauses.push(format!("{} = ${}", to_snake_case(key), i + 1));
+            let is_datetime = model.fields.get(key).map_or(false, |f| {
+                matches!(f.field_type, crate::schema::FieldType::DateTime)
+            });
+            let cast = if is_datetime { "::timestamptz" } else { "" };
+            set_clauses.push(format!("{} = ${}{}", to_snake_case(key), i + 1, cast));
             params.push(val.clone());
         }
 

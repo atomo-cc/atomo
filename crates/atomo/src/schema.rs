@@ -100,16 +100,28 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         if !declared.contains("updated_at") {
             columns.push("  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
         }
-        // Add soft delete column
-        columns.push("  deleted_at TIMESTAMPTZ".to_string());
-        // Multi-tenant scoping column. Nullable so single-tenant deployments (no TenantCtx)
-        // simply insert NULL and the tenant WHERE clause is never added — fully backward
-        // compatible. When a TenantCtx is present, writes set it and reads filter on it.
-        columns.push("  tenant_id TEXT".to_string());
+        if !declared.contains("deleted_at") {
+            columns.push("  deleted_at TIMESTAMPTZ".to_string());
+        }
+        if !declared.contains("tenant_id") {
+            columns.push("  tenant_id TEXT".to_string());
+        }
         sql.push_str(&columns.join(",\n"));
         sql.push_str("\n);");
 
         migrations.push(sql);
+
+        // Ensure auto-appended columns exist on tables that were created before
+        // these columns were introduced (e.g. the platform `users` table).
+        for col_def in [
+            ("deleted_at", "TIMESTAMPTZ"),
+            ("tenant_id", "TEXT"),
+        ] {
+            migrations.push(format!(
+                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {} {};",
+                col_def.0, col_def.1
+            ));
+        }
 
         // Secondary indexes from `@index` annotations (idempotent).
         for col in &index_cols {
