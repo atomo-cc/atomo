@@ -19,6 +19,7 @@ Environment (set in `.env`):
 - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — seeds an admin user on first boot
 - `JWT_SECRET` — token signing key (defaults to insecure dev secret if unset)
 - `PORT` — service port (default `3000`)
+- `CORS_ORIGINS` — allowed origins for CORS (e.g. `*` for dev; omit for same-origin only)
 
 ## Workspace mode
 
