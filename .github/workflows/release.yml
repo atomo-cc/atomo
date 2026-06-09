@@ -86,43 +86,44 @@ jobs:
           asset_name: ${{ matrix.asset_name }}
           asset_content_type: application/octet-stream
 
-  publish-crates:
-    name: Publish to crates.io
-    needs: build-release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          cache: false
-
-      - name: Publish atomo_core
-        run: cargo publish -p atomo_core --token ${{ secrets.CARGO_TOKEN }}
-
-      - name: Wait for crates.io
-        run: sleep 30
-
-      - name: Publish atomo_schema
-        run: cargo publish -p atomo_schema --token ${{ secrets.CARGO_TOKEN }}
-
-      - name: Wait for crates.io
-        run: sleep 30
-
-      - name: Publish atomo_projectors
-        run: cargo publish -p atomo_projectors --token ${{ secrets.CARGO_TOKEN }}
-
-      - name: Wait for crates.io
-        run: sleep 30
-
-      - name: Publish atomo_server
-        run: cargo publish -p atomo_server --token ${{ secrets.CARGO_TOKEN }}
-
-      - name: Wait for crates.io
-        run: sleep 30
-
-      - name: Publish atomo_cli
-        run: cargo publish -p atomo_cli --token ${{ secrets.CARGO_TOKEN }}
+  # NOTE: crates.io publish disabled — re-enable when ready for public release.
+  # publish-crates:
+  #   name: Publish to crates.io
+  #   needs: build-release
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout sources
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Install Rust toolchain
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         cache: false
+  #
+  #     - name: Publish atomo_core
+  #       run: cargo publish -p atomo_core --token ${{ secrets.CARGO_TOKEN }}
+  #
+  #     - name: Wait for crates.io
+  #       run: sleep 30
+  #
+  #     - name: Publish atomo_schema
+  #       run: cargo publish -p atomo_schema --token ${{ secrets.CARGO_TOKEN }}
+  #
+  #     - name: Wait for crates.io
+  #       run: sleep 30
+  #
+  #     - name: Publish atomo_projectors
+  #       run: cargo publish -p atomo_projectors --token ${{ secrets.CARGO_TOKEN }}
+  #
+  #     - name: Wait for crates.io
+  #       run: sleep 30
+  #
+  #     - name: Publish atomo_server
+  #       run: cargo publish -p atomo_server --token ${{ secrets.CARGO_TOKEN }}
+  #
+  #     - name: Wait for crates.io
+  #       run: sleep 30
+  #
+  #     - name: Publish atomo_cli
+  #       run: cargo publish -p atomo_cli --token ${{ secrets.CARGO_TOKEN }}
