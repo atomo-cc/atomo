@@ -21,7 +21,7 @@ resumable/chunked uploads, CDN integration.
 
 ## 2. Architecture — mirror the registry pattern
 
-Atomo already has a precedent: the plugin registry (`RegistryStore` + `registry_routes` +
+Atomo already has a precedent: the worker token registry (`WorkerTokenStore` + `job_routes` +
 read-only blob dir). The upload feature follows that shape plus a write path.
 
 ### 2a. Storage abstraction (`crates/atomo_server/src/storage.rs`)

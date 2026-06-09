@@ -5,6 +5,8 @@ description: How a plugin route handler can do an atomic read-modify-write in on
 
 # Design: Custom Routes Phase 3 — Synchronous Transactional DB
 
+> **Historical note:** This design doc references the WASM/JS plugin system which has been removed. The transactional route pattern described here may inform future worker or action route designs. See [Actions & Workers](/guide/workers) for the current extensibility model.
+
 > Status: **Implemented (Option B)** · Builds on [Custom HTTP Routes](/guide/advanced/custom-routes-proposal)
 > (phase 2 shipped) · Pull trigger: a real consumer running billing in a sidecar
 > **solely** because a route handler can't do a transactional read-modify-write.

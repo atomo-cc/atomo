@@ -35,19 +35,19 @@ Type-safe client library for frontend applications:
 Core platform APIs for advanced customization:
 - **Event sourcing** - Event store and stream management
 - **Authentication** - User management and authorization
-- **Plugin system** - WASM runtime and plugin interfaces
+- **Actions & workers** — event-triggered automation and external worker SDK
 - **Content management** - Rich content and block APIs
 
 [→ Rust APIs](/api/rust)
 
-### 🧩 Plugin APIs
-WebAssembly plugin development interfaces:
-- **Event handlers** - React to domain events
-- **Content processors** - Transform and enrich content
-- **External integrations** - Connect to third-party services
-- **Custom UI components** - Extend the admin interface
+### 🧩 Actions & Workers
+Event-triggered automation and external worker interfaces:
+- **Actions** — event handlers with conditions, enqueue durable jobs
+- **Workers** — external TypeScript processes that lease jobs via HTTP
+- **Typed SDK** — `@atomo-cc/worker-sdk` for building workers
+- **Direct invocation** — `POST /api/actions/:name` for callable actions
 
-[→ Plugin APIs](/api/plugins)
+[→ Workers Guide](/guide/workers)
 
 ## Quick Reference
 

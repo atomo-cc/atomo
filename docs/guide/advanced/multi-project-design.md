@@ -40,7 +40,7 @@ applied across two axes, and it matches how Supabase (dedicated database per pro
 ### Non-goals
 
 - This is **not** a public, sell-it-to-other-developers PaaS (no untrusted-tenant DDL, no
-  customer-supplied code sandboxing beyond the existing WASM plugin model). It targets an operator
+  customer-supplied code sandboxing beyond the existing action/worker model). It targets an operator
   running *their own* portfolio of projects on shared infra.
 - It does **not** replace per-project distribution. A better engine lowers build cost; it does not
   acquire users. Evaluate this work on build-velocity and ownership, not revenue.
@@ -269,7 +269,7 @@ The control plane provisions and routes; it has **no say over a project's intern
 project keeps full freedom to define:
 
 - its own `schema.ts` (entirely different data models per project),
-- its own WASM/JS **plugins** and custom `/ext/<plugin>` **routes**,
+- its own **actions** and **workers**,
 - its own **workflows**, auth configuration, feature flags, CORS — even its own atomo version.
 
 A bespoke feature in one project is invisible to the others. There is no shared schema or shared
@@ -305,7 +305,7 @@ favors a lean per-project unit.
 | Per-project runtime | **1 static Rust binary (~tens of MB)** + Postgres | Node.js + `node_modules` (hundreds of MB–~1 GB) per app | ~8–10 containers (auth, REST, realtime, storage, gateway, studio…), multi-GB | multi-container stack (DB, cache, proxy, executors…), multi-GB |
 | RAM per project | Low (lightweight process) | Higher (a Node runtime each) | the whole stack (shared) | the whole stack (shared) |
 | Dev loop | edit `schema.ts` → ~2s reload, auto-migrate, GraphQL + admin | define collections in TS → instant admin + APIs (very mature DX) | SQL/Studio → instant REST/GraphQL + auth | console/SDKs → instant DB/auth/storage |
-| Batteries out of the box | auth, RBAC, audit, realtime, media, workflows, **event-sourcing**, **WASM plugins** | rich (mature field types, hooks, access control, large ecosystem) | auth, **RLS**, storage, edge functions, pgvector | auth, DB, storage, functions, **native multi-project** |
+| Batteries out of the box | auth, RBAC, audit, realtime, media, workflows, **event-sourcing**, **actions & workers** | rich (mature field types, hooks, access control, large ecosystem) | auth, **RLS**, storage, edge functions, pgvector | auth, DB, storage, functions, **native multi-project** |
 | Multi-project model | **silo via this design** (planned) | run N heavy instances | project = dedicated DB/instance | **native, many projects per instance** |
 | Honest gaps | billing, **RLS (in progress)**, smaller ecosystem | heavy footprint; not natively multi-project | heavy self-host; vendor pull if hosted | heavy footprint |
 
@@ -318,7 +318,7 @@ batteries-rich alternatives.
 Supabase's already-shipped RLS and feature surface, and Appwrite's native multi-project are real
 present-day advantages. The trade is deliberate: a small, fast, owned, event-sourced core in
 exchange for ecosystem breadth. It pays off when those properties (footprint, ownership,
-event-sourcing, WASM extensibility) matter; for plain generic CRUD with no such needs, a mature
+event-sourcing, actions & workers extensibility) matter; for plain generic CRUD with no such needs, a mature
 batteries-included tool still wins on day one.
 
 ## Cross-cutting concerns
@@ -508,7 +508,7 @@ schema_ref = {
 
 This control plane is real engineering whose payoff is **build velocity + ownership**, a cost-side
 win — it does **not** acquire users or solve distribution, which remains the binding constraint.
-Build it when the project count and Atomo's specific edge (event-sourcing / audit / WASM plugins)
+Build it when the project count and Atomo's specific edge (event-sourcing / audit / actions & workers)
 justify owning the stack over renting an off-the-shelf backend per app. The architecture does not
 expire; phase it in when the count makes it pay.
 

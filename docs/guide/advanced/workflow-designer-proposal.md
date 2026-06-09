@@ -15,7 +15,7 @@ serialized to the exact JSON the existing REST API accepts.
 ## What already exists (build on, don't rebuild)
 
 - Backend engine: `WorkflowEngine` with triggers (`OnEvent`, `Manual`, `Schedule{cron}`),
-  step actions (`Mutation`, `Plugin`, `Http`, `Delay`, `SetVariable`), conditions, and
+  step actions (`Mutation`, `Http`, `Delay`, `SetVariable`, `Job`), conditions, and
   failure policies (`Stop`, `Continue`, `Retry`). Persisted to a `workflows` table.
 - REST API: `GET/POST /workflows`, `GET/DELETE /workflows/{name}`, `POST /workflows/{name}/run`.
 - Admin UI `WorkflowsView`: list / run / register-via-JSON / edit (load JSON) / delete.
@@ -53,7 +53,7 @@ Explicitly out of scope for v1 (avoid scope creep):
   `workflowToGraph(wf): WorkflowGraph`, unit-tested for round-trip equality. This is the
   riskiest part and must be tested first.
 - Node editors: one small form per `StepAction` variant; a discriminated union keyed by
-  the action tag (`SetVariable | Delay | Http | Mutation | Plugin`).
+  the action tag (`SetVariable | Delay | Http | Mutation | Job`).
 
 ## Data contract (must match backend exactly)
 

@@ -5,7 +5,7 @@ description: Enqueue durable, event-sourced jobs and run them in trusted out-of-
 
 # Durable Jobs & External Workers
 
-Atomo's plugin sandbox (WASM / JS) is deliberately restrictive — great for short, safe, in-data-path
+Atomo's action system is event-driven — great for short, safe, in-data-path
 hooks, wrong for **long-running, side-effect-heavy** work (calling flaky external APIs, browser
 automation, `ffmpeg`/image pipelines, minute-long polling, large binaries).
 
@@ -77,8 +77,7 @@ mutation { enqueueJob(queue: "media-gen", kind: "video.generate") }
                        "payload": { "prompt": "…" }, "idempotency_key": "deal-42" } } }
 ```
 
-**From a plugin** (WASM/JS): return an `{ "enqueueJob": { "queue", "kind", "payload"?, "idempotencyKey"? } }`
-effect (needs the `WriteDatabase` grant). See [Writing Plugins](/guide/advanced/writing-plugins).
+**From an action**: the action dispatcher automatically enqueues jobs when event conditions match.
 
 **From Rust** (in-process): `JobStore::enqueue(queue, kind, payload, idempotency_key, max_attempts, priority, tenant_id)`.
 
@@ -150,7 +149,7 @@ own tenant's jobs.
 ## Security boundary
 
 A worker is **trusted relative to the sandbox** but still least-privilege: its token is scoped to
-specific queues, distinct from user JWTs, and revocable. The plugin sandbox is untouched — a plugin
+specific queues, distinct from user JWTs, and revocable. The action system is untouched — an action
 can *enqueue* a job but never *becomes* a worker.
 
 ## See also

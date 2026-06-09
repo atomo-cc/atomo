@@ -5,6 +5,8 @@ description: Let plugins register HTTP endpoints served by atomo-server, so app/
 
 # Proposal: Custom HTTP Routes
 
+> **Historical note:** This proposal was written when Atomo had a WASM/JS plugin system. That system has been removed and replaced with [actions & workers](/guide/workers). Custom HTTP routes for workers are now served via the `/api/worker/crud/` endpoints and direct action API (`POST /api/actions/:name`). The architectural ideas below may inform future route extensibility.
+
 > Status: **Phase 2 implemented** (registration + dispatch shipped; phase 3
 > transactional DB access still RFC) · Layer: **Atomo core** (`atomo_server` + the
 > plugin runtime) · Pull trigger: a real consumer that today works around the gap
@@ -19,9 +21,8 @@ description: Let plugins register HTTP endpoints served by atomo-server, so app/
 ## Where it fits
 
 Atomo already exposes built-in routes — `/graphql`, `/auth`, `/media`,
-`/realtime`, `/workflows`, `/audit` — and a plugin system
-([Scripting Plugins](/guide/advanced/scripting-plugins-proposal)) whose plugins
-hook into the CRUD lifecycle and emit **effects** (`emit` / `dbQuery` / `http`).
+`/realtime`, `/workflows`, `/audit` — and an [actions & workers](/guide/workers)
+system that hooks into the CRUD lifecycle via event-triggered automation.
 
 What's missing is a way to **own an endpoint**. Today, adding a custom endpoint
 means editing `atomo_server` and recompiling — i.e. forking. Anything that needs

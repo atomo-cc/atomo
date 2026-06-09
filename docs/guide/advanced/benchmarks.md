@@ -192,7 +192,7 @@ machine, same DB, same serial-latency method.
 - **Where Atomo wins:** hot reads (list cache ~40×, point-read cache **~1.2 M ops/s**), **footprint**
   (a 9.8 MB binary vs a Node install), and **capabilities Node has no built-in answer for** — the
   durable job lease engine (28 k leases/s, scaling **3×** from 1→8 workers via `SKIP LOCKED`), event
-  sourcing, and the plugin sandbox.
+  sourcing, and the action dispatcher.
 - **The trade, stated plainly:** Atomo costs ~2× a bare insert on writes (both Postgres-`fsync`-bound)
   in exchange for a **10 MB self-contained binary with event sourcing, hooks, durable jobs, sub-µs
   point-read caching (1.2 M ops/s), and a typed, schema-driven backend (API + admin) out of the
@@ -273,7 +273,7 @@ hits the database.
   Cold count (~1111 µs) is still heavier than Payload's 393 µs due to RLS scoping.
 - **Payload is the closest "apples-to-apples" competitor** — both are schema-driven backend
   frameworks with admin UI, hooks, and relation resolution. The difference: Atomo is a compiled Rust
-  binary with an in-process cache; Payload is a Node.js CMS with a richer plugin/admin ecosystem.
+  binary with an in-process cache; Payload is a Node.js CMS with a richer extension/admin ecosystem.
   For read-heavy workloads the gap is decisive; for write-heavy workloads with heavy hook logic,
   Payload's JS ecosystem may be the right trade.
 
@@ -379,7 +379,7 @@ numbers matter, and when don't they?
 | **Lightweight self-hosted backend** (SaaS API, internal tools) | **Atomo** | A **9.8 MB** static binary with auth, event sourcing, durable jobs, schema-driven API, and admin UI. No Node runtime, no `node_modules`, no process manager. Deploy a single binary + Postgres. |
 | **High-concurrency mixed workload** | **Atomo** | The authed load test shows **2 384 req/s at p95 13.8 ms** under 50 VUs (JWT + GraphQL + cache + events). The in-process cache means reads don't contend for DB connections. |
 | **Content team CMS / editorial workflow** | **Payload** | Payload's admin UI is a polished React app with live preview, rich text (Lexical/Slate), media library, draft/publish workflow, and localization — built for content editors, not developers. Atomo's admin is functional but developer-oriented. |
-| **Plugin ecosystem / custom admin extensions** | **Payload** | Payload has a mature plugin ecosystem (SEO, form builder, nested docs, redirects, search) and a React-based admin that supports custom field components, views, and providers. Atomo's extension model is Rust hooks — powerful but earlier-stage. |
+| **Plugin ecosystem / custom admin extensions** | **Payload** | Payload has a mature plugin ecosystem (SEO, form builder, nested docs, redirects, search) and a React-based admin that supports custom field components, views, and providers. Atomo's extension model is actions & workers — powerful but earlier-stage. |
 | **Write-heavy with complex hooks** | **Either** | Single-row writes are fsync-bound in both (~4–8 ms). Atomo is ~1.4–1.9× faster per write (includes event sourcing), but if your hooks need npm packages or native deps, Payload's JS runtime is the pragmatic choice. |
 | **Durable background jobs** | **Atomo** | Built-in job engine with `SKIP LOCKED` lease dispatch: **31 658 leases/s** (8 workers). Payload has no built-in job queue — you'd add BullMQ, pg-boss, or similar. |
 
@@ -387,7 +387,7 @@ numbers matter, and when don't they?
 
 This is not "Atomo replaces Payload." They overlap on schema-driven CRUD + admin but diverge on
 audience: Atomo is a **backend runtime** (API-first, event-sourced, small footprint); Payload is a
-**headless CMS** (content-first, editor-friendly, plugin-rich). The benchmark numbers inform which
+**headless CMS** (content-first, editor-friendly, extension-rich). The benchmark numbers inform which
 trade-offs matter for a given project — they don't make the choice for you.
 
 - If your team is **content editors** who need rich text, media management, and a polished admin

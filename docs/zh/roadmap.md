@@ -18,7 +18,7 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 - 认证（JWT + RBAC）：已实现；密码哈希为开发占位（见说明）
 - 审计日志：已实现（REST 端点 + 平台 GraphQL）
 - TypeScript SDK：已实现（类型与 React hooks）
-- WASM 插件运行时：清单与权限类型已实现；运行时执行集成待完成
+- Actions 与 Workers：事件触发自动化（v1 架构）已实现；TypeScript Worker SDK 已发布
 - 实时协作：基础已具备；WebSocket/CRDT 集成待完成
 
 ## 已交付亮点
@@ -42,7 +42,7 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 ## 近期已完成
 
-- WASM 运行时：燃料计量、权限校验的宿主函数、插件生命周期、CRUD 钩子
+- Actions & Workers（v1）：事件触发的 action dispatcher、外部 worker SDK、worker CRUD API
 - 生产级密码哈希（argon2id，兼容验证旧的 bcrypt 哈希）
 - 实时 GraphQL 订阅（WebSocket，按模型过滤）
 - AI 集成（pgvector EmbeddingStore，相似度搜索）
@@ -61,7 +61,7 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 - 密码哈希：默认 argon2id；兼容验证旧的 bcrypt 哈希
 - 限流：按 IP 令牌桶中间件，通过 RATE_LIMIT_RPS / RATE_LIMIT_WINDOW_SECS 配置
-- WASM 插件：完整生命周期，含燃料计量、权限校验、宿主函数
+- Actions & Workers：v1 架构，含事件触发 dispatcher 与外部 worker SDK
 - 订阅：通过 /graphql/ws 工作，支持按模型过滤
 - 验证：CRUD → 事件存储 → 订阅链路已对 PostgreSQL 做集成测试
 
@@ -77,17 +77,17 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
   - 认证与授权（JWT + RBAC）、元数据 API
   - 基于 Schema 的动态渲染引擎
 - P2 可扩展性与 AI 基础（部分）
-  - Hook/Access DSL 与插件接口
-  - WASM 运行时脚手架
+  - Hook/Access DSL 与 action 接口
+  - Actions & Workers 框架（事件触发自动化、外部 worker SDK）
   - 无需 fork 的扩展能力：可声明的 schema 约束
     （`@unique`/`@index`/`@@unique`/`@@index`/`@@check`，含带 `WHERE` 的部分索引），
-    以及插件提供的自定义 HTTP 路由（`/ext/<plugin>`）；事务型路由处理器已完成设计（第 3 阶段）
+    以及 worker 提供的自定义集成；事务型路由处理器已完成设计（第 3 阶段）
   - AI 基础（pgvector、内容 API）
 
 ### 第 2 阶段 — 认知与边缘（6–9 个月）
 - ES/CQRS 成熟度（回放、可观测、运维预案）
 - 本地优先同步（SDK alpha）、实时订阅
-- 后端 WASM 运行时（权限与沙箱）
+- Actions & Workers：事件触发自动化与外部 worker SDK
 - 边缘投影（Workers/Vercel KV）、相似度检索
 
 ### 第 3 阶段 — 生态与解决方案（8–12 个月）
@@ -112,11 +112,11 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 - 协作
   - CRDT 支撑的模型，实现无冲突的实时编辑
-- 插件与工作流
-  - 更丰富的 WASM 宿主 API（数据库/HTTP 能力），超越当前钩子 ABI
+- Actions & Workers
+  - Worker → Rust CRUD API（第 2 阶段）：让 worker 通过引擎读写数据
   - 可视化工作流设计器 UI；定时（cron）触发执行
 - 生态
-  - 插件市场 / 注册中心（发现、安装、发布）
+  - Worker 注册中心与发现机制改进
   - Atomo Cloud 托管平台
 - 加固
   - 集中化权限检查；扩展服务启动路径的集成测试覆盖

@@ -21,7 +21,7 @@ Quick Nav
   - GraphQL and Admin UI (#graphql-and-admin-ui)
   - SDKs and Local‑First (#sdks-and-local-first-runtime)
   - Hydra UI (#hydra-ui-design)
-  - Extensibility and Plugins (#extensibility-and-plugins)
+  - Extensibility: Actions & Workers (#extensibility-actions--workers)
 - Security & Permissions (#security-auth-and-permissions)
 - Control Tower (#operations--observability-control-tower)
 - Developer Experience (#developer-experience-dx)
@@ -47,7 +47,7 @@ Quick Nav
 
 - `crates/`: Rust workspace — `atomo_core`, `atomo_server`, `atomo_cli`, schema/codegen tools.
 - `packages/`: Admin UI and TypeScript SDK.
-- `services/`: service instances (e.g., CRM) with `schema.ts`, plugins, workflows, and generated artifacts.
+- `services/`: service instances (e.g., CRM) with `schema.ts`, workers, workflows, and generated artifacts.
 - `docs/`: VitePress documentation; `tests/` and `migrations/` shared assets.
 
 ### Core Runtime: Event Sourcing + CQRS
