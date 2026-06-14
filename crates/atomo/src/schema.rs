@@ -111,6 +111,31 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
 
         migrations.push(sql);
 
+        // Forward-migrate declared fields for tables created from an older schema.
+        // Required fields intentionally keep NOT NULL so populated tables require
+        // an explicit backfill migration instead of silently weakening the schema.
+        for field in model.fields.values() {
+            let col = to_snake_case(&field.name);
+            let is_primary = field.name == "id"
+                || field
+                    .attributes
+                    .iter()
+                    .any(|a| matches!(a, FieldAttribute::Primary));
+            if is_primary {
+                continue;
+            }
+            let column_type = field_type_to_sql(&field.field_type);
+            let default = match (col.as_str(), &field.field_type) {
+                ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()",
+                (_, FieldType::Array(_) | FieldType::Blocks) => " DEFAULT '[]'::jsonb",
+                _ => "",
+            };
+            let nullable = if field.optional { "" } else { " NOT NULL" };
+            migrations.push(format!(
+                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {column_type}{default}{nullable};"
+            ));
+        }
+
         // Ensure auto-appended columns exist on tables that were created before
         // these columns were introduced (e.g. the platform `users` table).
         for col_def in [
@@ -463,6 +488,32 @@ mod tests {
             sql.contains("ALTER TABLE deal ADD CONSTRAINT fk_deal_contact_id FOREIGN KEY (contact_id) REFERENCES contact(id)"),
             "FK not emitted:\n{}", sql
         );
+    }
+
+    #[test]
+    fn generate_migrations_forward_migrates_declared_fields() {
+        let schema = parse_typescript_schema(
+            r#"
+            import { model, text, datetime } from '@atomo/schema'
+            export const Upload = model('uploads', {
+              fields: {
+                id: text().id(),
+                sessionHash: text().required(),
+                consumedAt: datetime().optional(),
+              },
+            })
+            "#,
+        )
+        .unwrap();
+
+        let sql = generate_migrations(&schema).unwrap().join("\n");
+        assert!(sql.contains(
+            "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS session_hash TEXT NOT NULL;"
+        ));
+        assert!(sql.contains(
+            "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;"
+        ));
+        assert!(!sql.contains("ALTER TABLE uploads ADD COLUMN IF NOT EXISTS id"));
     }
 
     #[test]
