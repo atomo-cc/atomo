@@ -44,7 +44,8 @@ COPY --from=planner /src/recipe.json recipe.json
 RUN cargo chef cook --release -p atomo_server --recipe-path recipe.json
 # Only the workspace crates recompile after this; deps are already built.
 COPY . .
-RUN cargo build --release -p atomo_server
+RUN cargo build --release -p atomo_server \
+    && mkdir -p /src/.atomo-media
 
 # ---- Runtime: distroless (glibc). ~25M base vs ~75M for debian-slim; ships CA
 # certs + a `nonroot` user, so no apt layer. No shell — debug with the `:debug`
@@ -53,6 +54,7 @@ RUN cargo build --release -p atomo_server
 FROM gcr.io/distroless/cc-debian12 AS runtime
 WORKDIR /app
 COPY --from=builder /src/target/release/atomo-server /usr/local/bin/atomo-server
+COPY --chown=nonroot:nonroot --from=builder /src/.atomo-media /app/.atomo/media
 # Generic Admin UI — served at /admin (ATOMO_ADMIN_DIR). Unset the env to disable.
 COPY --from=admin-builder /repo/packages/atomo-admin-ui/dist /app/admin
 # Build/version stamps surfaced by GET /version — passed as build args by CI so a
