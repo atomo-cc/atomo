@@ -703,6 +703,8 @@ pub struct UserInfo {
     pub role: String,
     pub first_name: String,
     pub last_name: String,
+    /// Tenant binding (for the client to send as X-Tenant-ID). None = unscoped.
+    pub tenant_id: Option<String>,
 }
 
 /// Auth handlers
@@ -729,9 +731,9 @@ pub mod handlers {
                     .await
                     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-                // Fetch user details
-                let user_details = sqlx::query_as::<_, (String, String)>(
-                    "SELECT first_name, last_name FROM users WHERE id = $1",
+                // Fetch user details (incl. tenant binding for X-Tenant-ID).
+                let user_details = sqlx::query_as::<_, (String, String, Option<String>)>(
+                    "SELECT first_name, last_name, tenant_id FROM users WHERE id = $1",
                 )
                 .bind(user.id.to_string())
                 .fetch_one(auth_service.db_pool())
@@ -747,12 +749,89 @@ pub mod handlers {
                         role: user.role.to_string(),
                         first_name: user_details.0,
                         last_name: user_details.1,
+                        tenant_id: user_details.2,
                     },
                 }))
             }
             Ok(None) => Err(StatusCode::UNAUTHORIZED),
             Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
         }
+    }
+
+    /// Self-serve registration request.
+    #[derive(Deserialize)]
+    #[allow(non_snake_case)]
+    pub struct RegisterRequest {
+        pub email: String,
+        pub password: String,
+        pub firstName: Option<String>,
+        pub lastName: Option<String>,
+    }
+
+    /// Register handler — creates a login-capable user (argon2id-hashed password)
+    /// and immediately issues tokens. New users get the `viewer` role.
+    pub async fn register(
+        State(auth_service): State<HttpAuthService>,
+        Json(req): Json<RegisterRequest>,
+    ) -> Result<Json<LoginResponse>, StatusCode> {
+        let email = req.email.trim().to_lowercase();
+        if email.is_empty() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        // Enforce the configured password policy (length/complexity).
+        auth_service
+            .validate_password_policy(&req.password)
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let pool = auth_service.db_pool();
+        let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+            .bind(&email)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if existing.is_some() {
+            return Err(StatusCode::CONFLICT);
+        }
+
+        let id = atomo_core::types::EntityId::new().to_string();
+        let hash = auth_service
+            .hash_password(&req.password)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let first = req.firstName.unwrap_or_default();
+        let last = req.lastName.unwrap_or_default();
+
+        // Each self-registered user is its own tenant (tenant_id = user id), so
+        // sameTenant access scopes their data away from other users/admin.
+        sqlx::query(
+            "INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, 'viewer', true, $1)",
+        )
+        .bind(&id)
+        .bind(&email)
+        .bind(&hash)
+        .bind(&first)
+        .bind(&last)
+        .execute(pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let (token, refresh_token) = auth_service
+            .issue_tokens(&id, &email, "viewer")
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(Json(LoginResponse {
+            token,
+            refresh_token: Some(refresh_token),
+            user: UserInfo {
+                tenant_id: Some(id.clone()),
+                id,
+                email,
+                role: "viewer".to_string(),
+                first_name: first,
+                last_name: last,
+            },
+        }))
     }
 
     /// Logout handler
@@ -793,6 +872,7 @@ pub mod handlers {
             role: user.role.to_string(),
             first_name: "".to_string(), // TODO: Fetch from database
             last_name: "".to_string(),  // TODO: Fetch from database
+            tenant_id: user.tenant_id.clone(),
         }))
     }
 
@@ -817,6 +897,7 @@ pub mod handlers {
                     role: user.role.to_string(),
                     first_name: user.first_name.unwrap_or_default(),
                     last_name: user.last_name.unwrap_or_default(),
+                    tenant_id: None,
                 },
             })),
             Err(_) => Err(StatusCode::UNAUTHORIZED),

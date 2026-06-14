@@ -421,6 +421,7 @@ pub fn create_router(
             "/auth",
             Router::new()
                 .route("/login", post(handlers::login))
+                .route("/register", post(handlers::register))
                 .route("/refresh", post(handlers::refresh))
                 .merge(
                     Router::new()
