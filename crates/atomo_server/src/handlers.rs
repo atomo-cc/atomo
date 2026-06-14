@@ -305,10 +305,16 @@ pub async fn public_records(
         .and_then(|value| value.parse::<i32>().ok())
         .unwrap_or(100)
         .clamp(1, 100);
-    let where_value = params
-        .get("slug")
-        .map(|slug| serde_json::json!({ "slug": { "equals": slug } }))
-        .unwrap_or_else(|| serde_json::json!({}));
+    let mut where_value = serde_json::Map::from_iter([(
+        "status".to_string(),
+        serde_json::json!({ "equals": "published" }),
+    )]);
+    if let Some(slug) = params.get("slug") {
+        where_value.insert(
+            "slug".to_string(),
+            serde_json::json!({ "equals": slug }),
+        );
+    }
     let request = async_graphql::Request::new(
         r#"query($model: String!, $where: JSON!, $limit: Int!) {
             records(model: $model, where: $where, limit: $limit)
@@ -316,7 +322,7 @@ pub async fn public_records(
     )
     .variables(async_graphql::Variables::from_json(serde_json::json!({
         "model": model,
-        "where": where_value,
+        "where": Value::Object(where_value),
         "limit": limit,
     })));
     let response = schema.execute(request).await;
@@ -820,5 +826,19 @@ mod tests {
         assert!(model_in_public_read_allowlist(config, "PublicListing"));
         assert!(!model_in_public_read_allowlist(config, "PublicationRecord"));
         assert!(!model_in_public_read_allowlist(config, "Public"));
+    }
+
+    #[test]
+    fn public_projection_filter_is_not_client_controllable() {
+        let mut filter = serde_json::Map::from_iter([(
+            "status".to_string(),
+            serde_json::json!({ "equals": "published" }),
+        )]);
+        filter.insert(
+            "slug".to_string(),
+            serde_json::json!({ "equals": "requested" }),
+        );
+        assert_eq!(filter["status"]["equals"], "published");
+        assert_eq!(filter["slug"]["equals"], "requested");
     }
 }
