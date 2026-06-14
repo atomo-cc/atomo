@@ -169,7 +169,7 @@ impl AtomoServer {
             self.atomo.event_sender(),
         ));
         media_state.init().await?;
-        let media_router = crate::media::media_router(media_state, auth_service.clone());
+        let media_router = crate::media::media_router(media_state.clone(), auth_service.clone());
         info!("   ✓ Media storage ready");
 
         // Ephemeral realtime hub — created here (before the job wiring) so the job-progress
@@ -209,6 +209,7 @@ impl AtomoServer {
         let public_demo_router = crate::public_demo_routes::public_demo_router(
             job_store.clone(),
             self.atomo.db_pool().clone(),
+            media_state,
         );
         // Crash recovery: periodically return expired leases (dead/stalled workers) to the queue.
         {
