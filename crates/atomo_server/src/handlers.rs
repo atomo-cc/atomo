@@ -255,6 +255,83 @@ pub async fn graphql_handler(
     resp.into()
 }
 
+fn public_read_model_allowed(model: &str) -> bool {
+    model_in_public_read_allowlist(
+        &std::env::var("ATOMO_PUBLIC_READ_MODELS").unwrap_or_default(),
+        model,
+    )
+}
+
+fn model_in_public_read_allowlist(config: &str, model: &str) -> bool {
+    config
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .any(|value| value == model)
+}
+
+fn model_declares_public_read(atomo: &Atomo, model: &str) -> bool {
+    let Some(rule) = atomo
+        .schema()
+        .models
+        .get(model)
+        .and_then(|model| model.access.as_ref())
+        .and_then(|access| access.read.as_ref())
+    else {
+        return false;
+    };
+    serde_json::to_value(rule)
+        .ok()
+        .is_some_and(|value| value == serde_json::json!({ "Boolean": "public" }))
+}
+
+/// Narrow anonymous read surface for explicitly allowlisted projection models.
+///
+/// The resolver still evaluates the model's read access rule, so an allowlisted
+/// model must also declare `read: allow.public()`. This route intentionally
+/// exposes neither mutations nor arbitrary GraphQL.
+pub async fn public_records(
+    axum::extract::Path(model): axum::extract::Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    Extension(schema): Extension<AtomoGraphQLSchema>,
+    Extension(atomo): Extension<Atomo>,
+) -> Result<Json<Value>, StatusCode> {
+    if !public_read_model_allowed(&model) || !model_declares_public_read(&atomo, &model) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let limit = params
+        .get("limit")
+        .and_then(|value| value.parse::<i32>().ok())
+        .unwrap_or(100)
+        .clamp(1, 100);
+    let where_value = params
+        .get("slug")
+        .map(|slug| serde_json::json!({ "slug": { "equals": slug } }))
+        .unwrap_or_else(|| serde_json::json!({}));
+    let request = async_graphql::Request::new(
+        r#"query($model: String!, $where: JSON!, $limit: Int!) {
+            records(model: $model, where: $where, limit: $limit)
+        }"#,
+    )
+    .variables(async_graphql::Variables::from_json(serde_json::json!({
+        "model": model,
+        "where": where_value,
+        "limit": limit,
+    })));
+    let response = schema.execute(request).await;
+    if !response.errors.is_empty() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let data = response
+        .data
+        .into_json()
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    Ok(Json(serde_json::json!({
+        "items": data.get("records").cloned().unwrap_or_else(|| serde_json::json!([]))
+    })))
+}
+
 pub async fn graphql_playground() -> Html<String> {
     let source = async_graphql::http::playground_source(
         async_graphql::http::GraphQLPlaygroundConfig::new("/graphql"),
@@ -402,6 +479,7 @@ pub fn create_router(
         .route("/version", get(version_info))
         .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
+        .route("/public/records/{model}", get(public_records))
         .route(
             "/graphql/ws",
             get({
@@ -721,7 +799,7 @@ async fn run_workflow(
 
 #[cfg(test)]
 mod tests {
-    use super::tenant_header_allowed;
+    use super::{model_in_public_read_allowlist, tenant_header_allowed};
 
     // S3b: a user bound to a tenant may only use its own; an unbound user may use any.
     #[test]
@@ -734,5 +812,13 @@ mod tests {
         );
         // Unbound user (no users.tenant_id): may pass any (legacy/single-tenant-admin).
         assert!(tenant_header_allowed(None, "tenant-a"));
+    }
+
+    #[test]
+    fn public_read_model_allowlist_is_exact() {
+        let config = "PublicListing, PublicArticle";
+        assert!(model_in_public_read_allowlist(config, "PublicListing"));
+        assert!(!model_in_public_read_allowlist(config, "PublicationRecord"));
+        assert!(!model_in_public_read_allowlist(config, "Public"));
     }
 }
