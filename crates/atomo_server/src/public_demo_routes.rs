@@ -289,11 +289,13 @@ async fn create_run(
     let source_token_hash = sha256_hex(&request.source_asset_token);
     let source_asset = sqlx::query(
         "UPDATE public_demo_uploads SET consumed_at = NOW(), updated_at = NOW()
-         WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
+         WHERE token_hash = $1 AND anonymous_session_hash = $2
+           AND consumed_at IS NULL AND expires_at > NOW()
            AND deleted_at IS NULL
          RETURNING asset_id",
     )
     .bind(source_token_hash)
+    .bind(&request.anonymous_session_hash)
     .fetch_optional(&state.pool)
     .await;
     let Ok(Some(source_asset)) = source_asset else {
