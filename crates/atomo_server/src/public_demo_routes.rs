@@ -130,24 +130,28 @@ fn configured_limit(name: &str, fallback: i64) -> i64 {
         .unwrap_or(fallback)
 }
 
-fn configured_budget(name: &str) -> Option<f64> {
+fn cost_micros(value: f64) -> Option<i64> {
+    let micros = value * 1_000_000.0;
+    (value.is_finite() && value > 0.0 && micros <= i64::MAX as f64)
+        .then(|| micros.round() as i64)
+}
+
+fn configured_budget(name: &str) -> Option<i64> {
     std::env::var(name)
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value > 0.0)
+        .and_then(cost_micros)
 }
 
 fn queue_has_capacity(queued: i64, leased: i64, max_queued: i64, max_concurrent: i64) -> bool {
     queued < max_queued && leased < max_concurrent
 }
 
-fn budget_has_capacity(spent: f64, estimated_cost: f64, limit: f64) -> bool {
-    spent.is_finite()
-        && estimated_cost.is_finite()
-        && limit.is_finite()
-        && spent >= 0.0
-        && estimated_cost > 0.0
-        && spent + estimated_cost <= limit
+fn budget_has_capacity(spent: i64, estimated_cost: i64, limit: i64) -> bool {
+    spent >= 0
+        && estimated_cost > 0
+        && limit > 0
+        && spent.checked_add(estimated_cost).is_some_and(|total| total <= limit)
 }
 
 async fn create_run(
@@ -249,20 +253,20 @@ async fn create_run(
         "SELECT
            COALESCE(SUM(COALESCE(actual_cost, estimated_cost)) FILTER (
              WHERE created_at > NOW() - INTERVAL '1 hour'
-           ), 0) AS hourly,
+           ), 0)::bigint AS hourly,
            COALESCE(SUM(COALESCE(actual_cost, estimated_cost)) FILTER (
              WHERE created_at > NOW() - INTERVAL '24 hours'
-           ), 0) AS daily,
+           ), 0)::bigint AS daily,
            COALESCE(SUM(COALESCE(actual_cost, estimated_cost)) FILTER (
              WHERE created_at > NOW() - INTERVAL '24 hours' AND public_listing_id = $1
-           ), 0) AS app_daily,
+           ), 0)::bigint AS app_daily,
            COUNT(*) FILTER (
              WHERE created_at > NOW() - INTERVAL '1 hour' AND actual_cost > $2
            ) AS over_hard_limit
          FROM public_demo_runs WHERE deleted_at IS NULL",
     )
     .bind(&listing_id)
-    .bind(configured_budget("ATOMO_PUBLIC_DEMO_HARD_RUN_COST").unwrap_or(0.08))
+    .bind(configured_budget("ATOMO_PUBLIC_DEMO_HARD_RUN_COST").unwrap_or(80_000))
     .fetch_one(&state.pool)
     .await;
     let Ok(spend) = spend else {
@@ -387,7 +391,8 @@ async fn run_status(
         .result
         .as_ref()
         .and_then(|value| value.get("actualCost"))
-        .and_then(Value::as_f64);
+        .and_then(Value::as_f64)
+        .and_then(cost_micros);
     let _ = sqlx::query(
         "UPDATE public_demo_runs
          SET status = $2, sanitized_stage = $3, sanitized_error_code = $4,
@@ -516,8 +521,8 @@ pub fn public_demo_router(jobs: Arc<JobStore>, pool: PgPool, media: Arc<MediaSta
 #[cfg(test)]
 mod tests {
     use super::{
-        budget_has_capacity, constant_time_eq, preset_allowed, queue_has_capacity, sha256_hex,
-        signature_hex, valid_opaque_token,
+        budget_has_capacity, constant_time_eq, cost_micros, preset_allowed, queue_has_capacity,
+        sha256_hex, signature_hex, valid_opaque_token,
     };
 
     #[test]
@@ -558,10 +563,17 @@ mod tests {
 
     #[test]
     fn budget_capacity_includes_next_run() {
-        assert!(budget_has_capacity(9.90, 0.05, 10.0));
-        assert!(budget_has_capacity(9.95, 0.05, 10.0));
-        assert!(!budget_has_capacity(9.96, 0.05, 10.0));
-        assert!(!budget_has_capacity(0.0, 0.0, 10.0));
+        assert!(budget_has_capacity(9_900_000, 50_000, 10_000_000));
+        assert!(budget_has_capacity(9_950_000, 50_000, 10_000_000));
+        assert!(!budget_has_capacity(9_960_000, 50_000, 10_000_000));
+        assert!(!budget_has_capacity(0, 0, 10_000_000));
+    }
+
+    #[test]
+    fn cost_is_stored_as_integer_micro_usd() {
+        assert_eq!(cost_micros(0.05), Some(50_000));
+        assert_eq!(cost_micros(10.0), Some(10_000_000));
+        assert_eq!(cost_micros(0.0), None);
     }
 
     #[test]
