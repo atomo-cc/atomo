@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Safe schema forward-migration semantics.** Migration generation now reconciles an existing
+  database to an evolved schema deterministically: a new field with a default (declared `.default(..)`,
+  timestamps, or JSON arrays) is added with that `DEFAULT` so it **backfills existing rows** (a
+  required-with-default field is therefore safe on a populated table); declared defaults, `@unique`
+  (now a reconcilable `CREATE UNIQUE INDEX`, not an inline constraint), and `@index` are applied to
+  pre-existing tables too. Adding a **required field with no default to a populated table** no longer
+  emits a bare `NOT NULL` add that fails opaquely at startup — it emits a guarded statement that adds
+  the column when the table is empty and otherwise raises an **actionable message** pointing at the
+  fix (declare a default, or write an explicit backfill). New guide:
+  `/guide/advanced/schema-migration`. Real-PostgreSQL evolution tests in
+  `crates/atomo/tests/schema_evolution.rs`. **Behavior change:** `@unique` fields are now enforced by
+  a `uq_<table>_<col>` unique index rather than an inline column `UNIQUE`.
 - **Metered command primitives (`atomo_server::metered`).** Generic, consumer-neutral building
   blocks for *metered* commands (a credit/billing debit, a rate-limited public command): an
   **expiring single-use token store** (`ExpiringTokenStore` — opaque tokens stored only as SHA-256,
