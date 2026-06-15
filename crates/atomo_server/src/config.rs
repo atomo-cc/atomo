@@ -19,6 +19,11 @@ pub struct ServerConfig {
     /// when on, the server installs `CREATE POLICY` per model table at boot and the data layer
     /// binds `atomo.tenant_id` per request. See `docs/guide/advanced/multi-tenant.md`.
     pub enable_rls: bool,
+    /// Initialize the generic metered-command primitives (`ATOMO_ENABLE_METERED_COMMANDS`).
+    /// Default on; creates the `expiring_tokens` and `budget_ledger` tables at boot so a consumer
+    /// can compose atomic metered commands. Set false to skip them on deployments that do not use
+    /// the feature. See `docs/guide/advanced/metered-command-primitives.md`.
+    pub enable_metered_commands: bool,
 }
 
 impl Default for ServerConfig {
@@ -34,6 +39,7 @@ impl Default for ServerConfig {
             enable_subscriptions: true,
             enable_realtime: true,
             enable_rls: false,
+            enable_metered_commands: true,
         }
     }
 }
@@ -71,6 +77,10 @@ impl ServerConfig {
             enable_rls: std::env::var("ATOMO_ENABLE_RLS")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
+            enable_metered_commands: std::env::var("ATOMO_ENABLE_METERED_COMMANDS")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
         }
     }
 }

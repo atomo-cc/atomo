@@ -202,12 +202,17 @@ impl AtomoServer {
         worker_tokens.init().await?;
         // Generic metered-command primitives (expiring single-use tokens + integer-unit budget
         // ledger). Library primitives a consumer composes transactionally with the job queue; the
-        // tables self-init at boot like the other stores so they are available to compose.
-        let expiring_tokens = crate::metered::ExpiringTokenStore::new(self.atomo.db_pool().clone());
-        expiring_tokens.init().await?;
-        let budget_ledger = crate::metered::BudgetLedger::new(self.atomo.db_pool().clone());
-        budget_ledger.init().await?;
-        info!("   ✓ Metered-command primitives ready");
+        // tables self-init at boot like the other stores so they are available to compose. Gated by
+        // ATOMO_ENABLE_METERED_COMMANDS (default on) so deployments that don't use them can skip the
+        // tables.
+        if self.config.enable_metered_commands {
+            let expiring_tokens =
+                crate::metered::ExpiringTokenStore::new(self.atomo.db_pool().clone());
+            expiring_tokens.init().await?;
+            let budget_ledger = crate::metered::BudgetLedger::new(self.atomo.db_pool().clone());
+            budget_ledger.init().await?;
+            info!("   ✓ Metered-command primitives ready");
+        }
         let jobs_router = crate::job_routes::jobs_router(
             job_store.clone(),
             worker_tokens.clone(),
