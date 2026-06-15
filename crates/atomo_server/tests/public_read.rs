@@ -64,7 +64,13 @@ async fn build_app() -> axum::Router {
     atomo_server::ensure_platform_tables(atomo.db_pool())
         .await
         .unwrap();
-    atomo_server::handlers::create_router(gql, atomo, auth, audit)
+    atomo_server::handlers::create_router(
+        gql,
+        atomo,
+        auth,
+        audit,
+        atomo_server::auth::RegistrationConfig::disabled(),
+    )
 }
 
 async fn get(app: &axum::Router, uri: &str) -> (StatusCode, serde_json::Value) {

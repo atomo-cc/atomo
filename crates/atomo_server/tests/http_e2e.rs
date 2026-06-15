@@ -56,7 +56,13 @@ export default schema;
     .await
     .unwrap();
 
-    let app = atomo_server::handlers::create_router(gql, atomo, auth.clone(), audit);
+    let app = atomo_server::handlers::create_router(
+        gql,
+        atomo,
+        auth.clone(),
+        audit,
+        atomo_server::auth::RegistrationConfig::disabled(),
+    );
     (app, auth)
 }
 
