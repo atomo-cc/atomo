@@ -211,10 +211,14 @@ impl AtomoClient {
         let pool = pool_from_env(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
 
-        // Auto-create tables
+        // Auto-create tables (wrapped in a transaction so partial failures roll back)
         let migrations = crate::schema::generate_migrations(schema)?;
-        for sql in &migrations {
-            sqlx::query(sql).execute(&pool).await.ok();
+        {
+            let mut tx = pool.begin().await?;
+            for sql in &migrations {
+                sqlx::query(sql).execute(&mut *tx).await?;
+            }
+            tx.commit().await?;
         }
 
         let event_store = EventStore::new(pool.clone());
@@ -1178,12 +1182,14 @@ impl AtomoClientBuilder {
         let event_store = EventStore::new(pool.clone());
         event_store.init().await?;
 
-        // Run migrations if enabled
+        // Run migrations if enabled (wrapped in a transaction so partial failures roll back)
         if self.enable_migrations {
             let migrations = crate::schema::generate_migrations(schema)?;
+            let mut tx = pool.begin().await?;
             for sql in &migrations {
-                sqlx::query(sql).execute(&pool).await.ok();
+                sqlx::query(sql).execute(&mut *tx).await?;
             }
+            tx.commit().await?;
         }
 
         let embedding_store = if self.enable_ai {

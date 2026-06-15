@@ -20,15 +20,20 @@ pub struct ServerConfig {
     /// binds `atomo.tenant_id` per request. See `docs/guide/advanced/multi-tenant.md`.
     pub enable_rls: bool,
     /// Initialize the generic metered-command primitives (`ATOMO_ENABLE_METERED_COMMANDS`).
-    /// Default on; creates the `expiring_tokens` and `budget_ledger` tables at boot so a consumer
-    /// can compose atomic metered commands. Set false to skip them on deployments that do not use
-    /// the feature. See `docs/guide/advanced/metered-command-primitives.md`.
+    /// **Default off**; when enabled, creates the `expiring_tokens` and `budget_ledger` tables at
+    /// boot so a consumer can compose atomic metered commands. See
+    /// `docs/guide/advanced/metered-command-primitives.md`.
     pub enable_metered_commands: bool,
     /// Allow anonymous self-registration via `POST /auth/register`
     /// (`ATOMO_ENABLE_SELF_REGISTRATION`). **Default off** — when disabled the route is not mounted.
     /// Provisioning (granted role, tenant binding) is configured separately; see
     /// `crate::auth::RegistrationConfig` and `docs/api/auth.md`.
     pub enable_self_registration: bool,
+    /// Comma-separated model names allowed for anonymous public read via
+    /// `GET /public/records/{model}` (`ATOMO_PUBLIC_READ_MODELS`). Empty = no public reads.
+    /// Per-model filters and query fields are configured via `ATOMO_PUBLIC_READ_FILTER_<Model>`
+    /// and `ATOMO_PUBLIC_READ_FIELDS_<Model>`.
+    pub public_read_models: Vec<String>,
 }
 
 impl Default for ServerConfig {
@@ -44,8 +49,9 @@ impl Default for ServerConfig {
             enable_subscriptions: true,
             enable_realtime: true,
             enable_rls: false,
-            enable_metered_commands: true,
+            enable_metered_commands: false,
             enable_self_registration: false,
+            public_read_models: Vec::new(),
         }
     }
 }
@@ -69,27 +75,29 @@ impl ServerConfig {
                 .map(|s| s.trim().to_string())
                 .collect(),
             enable_ai: std::env::var("ATOMO_ENABLE_AI")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()
+                .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
             enable_subscriptions: std::env::var("ATOMO_ENABLE_SUBSCRIPTIONS")
-                .unwrap_or_else(|_| "true".to_string())
-                .parse()
+                .map(|v| v == "true" || v == "1")
                 .unwrap_or(true),
             enable_realtime: std::env::var("ATOMO_ENABLE_REALTIME")
-                .unwrap_or_else(|_| "true".to_string())
-                .parse()
+                .map(|v| v == "true" || v == "1")
                 .unwrap_or(true),
             enable_rls: std::env::var("ATOMO_ENABLE_RLS")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
             enable_metered_commands: std::env::var("ATOMO_ENABLE_METERED_COMMANDS")
-                .unwrap_or_else(|_| "true".to_string())
-                .parse()
-                .unwrap_or(true),
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
             enable_self_registration: std::env::var("ATOMO_ENABLE_SELF_REGISTRATION")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
+            public_read_models: std::env::var("ATOMO_PUBLIC_READ_MODELS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
         }
     }
 }

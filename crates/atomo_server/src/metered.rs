@@ -37,13 +37,18 @@ fn sha256_hex(s: &str) -> String {
     out
 }
 
-/// Derive a stable 64-bit advisory-lock key from an opaque scope string (first 8 bytes of its
-/// SHA-256, big-endian). Used to serialize budget reservations per scope without a schema lock.
-fn advisory_key(scope: &str) -> i64 {
+/// Fixed namespace for Atomo metered-command advisory locks (the two-arg form of
+/// `pg_advisory_xact_lock` avoids collisions with other advisory-lock users in the same database).
+const ADVISORY_LOCK_NAMESPACE: i32 = 0x41544F4D; // "ATOM" in ASCII
+
+/// Derive a stable 32-bit advisory-lock key from an opaque scope string (first 4 bytes of its
+/// SHA-256, big-endian). Combined with [`ADVISORY_LOCK_NAMESPACE`] in the two-arg form of
+/// `pg_advisory_xact_lock(namespace, key)` to avoid collisions with other lock users.
+fn advisory_key(scope: &str) -> i32 {
     let digest = Sha256::digest(scope.as_bytes());
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&digest[..8]);
-    i64::from_be_bytes(bytes)
+    let mut bytes = [0u8; 4];
+    bytes.copy_from_slice(&digest[..4]);
+    i32::from_be_bytes(bytes)
 }
 
 /// Issues and consumes **single-use, expiring opaque tokens**. Only the SHA-256 of each token is
@@ -230,7 +235,8 @@ impl BudgetLedger {
         }
         // Per-scope serialization for the read-then-insert. Transaction-scoped: auto-released at
         // commit/rollback, so a caller cannot leak the lock.
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        sqlx::query("SELECT pg_advisory_xact_lock($1, $2)")
+            .bind(ADVISORY_LOCK_NAMESPACE)
             .bind(advisory_key(scope))
             .execute(&mut *conn)
             .await?;

@@ -70,6 +70,7 @@ async fn build_app() -> axum::Router {
         auth,
         audit,
         atomo_server::auth::RegistrationConfig::disabled(),
+        vec!["PublicListing".to_string()],
     )
 }
 

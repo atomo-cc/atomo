@@ -38,7 +38,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         for field in model.fields.values() {
             let col = to_snake_case(&field.name);
             let column_type = field_type_to_sql(&field.field_type);
-            // Primary key: id is TEXT (EntityId is a ULID string; matches CRM `id: string`).
+            // Primary key: id is TEXT (EntityId is a ULID string).
             // Default generates a value DB-side so inserts without an explicit id still work.
             let is_primary = field.name == "id"
                 || field
@@ -131,7 +131,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                 migrations.push(format!(
                     "DO $$ BEGIN \
                      IF NOT EXISTS (SELECT 1 FROM information_schema.columns \
-                       WHERE table_name = '{table}' AND column_name = '{col}') THEN \
+                       WHERE table_schema = current_schema() AND table_name = '{table}' AND column_name = '{col}') THEN \
                        IF EXISTS (SELECT 1 FROM {table} LIMIT 1) THEN \
                          RAISE EXCEPTION 'atomo: cannot add required column {table}.{col} with no default to a populated table; declare a .default(...) on the field, or write an explicit backfill migration (add it nullable, backfill, then SET NOT NULL)'; \
                        ELSE \

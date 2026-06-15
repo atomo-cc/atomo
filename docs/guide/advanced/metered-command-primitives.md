@@ -124,10 +124,11 @@ Two idempotently-created tables (self-initialized at boot like the other operati
 
 ## Configuration
 
-`ATOMO_ENABLE_METERED_COMMANDS` (`ServerConfig::enable_metered_commands`, **default `true`**)
-controls whether the two tables are created at boot. Leave it on to make the primitives available;
-set it to `false` to skip them on deployments that don't use the feature. There are no other env
-vars — scopes, purposes, limits, windows, and units are all passed by the caller at the call site.
+`ATOMO_ENABLE_METERED_COMMANDS` (`ServerConfig::enable_metered_commands`, **default `false`**)
+controls whether the two tables are created at boot. Set it to `true` to make the primitives
+available; leave it off to skip them on deployments that don't use the feature. There are no other
+env vars — scopes, purposes, limits, windows, and units are all passed by the caller at the call
+site.
 
 ## Tests
 

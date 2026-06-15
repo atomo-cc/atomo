@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   append-only signed amounts per opaque scope, with advisory-lock-serialized windowed reservation
   that concurrent callers can never over-commit). Both `consume`/`try_reserve` take `&mut
   PgConnection` so they compose inside the caller's transaction. Tables (`expiring_tokens`,
-  `budget_ledger`) self-init at boot, gated by `ATOMO_ENABLE_METERED_COMMANDS` (default on). Library
+  `budget_ledger`) self-init at boot, gated by `ATOMO_ENABLE_METERED_COMMANDS` (default off). Library
   APIs only (no HTTP surface, by design). 2 unit tests +
   8 Postgres-gated integration tests (single-use, scope/expiry rejection, windowed limit,
   concurrent no-over-commit, all-or-nothing atomicity). Guide:

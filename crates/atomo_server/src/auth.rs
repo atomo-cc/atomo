@@ -850,7 +850,7 @@ pub mod handlers {
         Json(req): Json<RegisterRequest>,
     ) -> Result<Json<LoginResponse>, StatusCode> {
         let email = req.email.trim().to_lowercase();
-        if email.is_empty() {
+        if email.is_empty() || !email.contains('@') || email.len() > 254 {
             return Err(StatusCode::BAD_REQUEST);
         }
         // Enforce the configured password policy (length/complexity).
@@ -964,18 +964,28 @@ pub mod handlers {
         Json(req): Json<RefreshRequest>,
     ) -> Result<Json<LoginResponse>, StatusCode> {
         match auth_service.refresh_access_token(&req.refreshToken).await {
-            Ok((token, new_refresh, user)) => Ok(Json(LoginResponse {
-                token,
-                refresh_token: Some(new_refresh),
-                user: UserInfo {
-                    id: user.id.to_string(),
-                    email: user.email,
-                    role: user.role.to_string(),
-                    first_name: user.first_name.unwrap_or_default(),
-                    last_name: user.last_name.unwrap_or_default(),
-                    tenant_id: None,
-                },
-            })),
+            Ok((token, new_refresh, user)) => {
+                let tenant_id: Option<String> = sqlx::query_scalar(
+                    "SELECT tenant_id FROM users WHERE id = $1",
+                )
+                .bind(user.id.to_string())
+                .fetch_optional(auth_service.db_pool())
+                .await
+                .ok()
+                .flatten();
+                Ok(Json(LoginResponse {
+                    token,
+                    refresh_token: Some(new_refresh),
+                    user: UserInfo {
+                        id: user.id.to_string(),
+                        email: user.email,
+                        role: user.role.to_string(),
+                        first_name: user.first_name.unwrap_or_default(),
+                        last_name: user.last_name.unwrap_or_default(),
+                        tenant_id,
+                    },
+                }))
+            }
             Err(_) => Err(StatusCode::UNAUTHORIZED),
         }
     }

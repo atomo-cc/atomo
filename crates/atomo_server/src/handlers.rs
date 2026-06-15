@@ -255,13 +255,6 @@ pub async fn graphql_handler(
     resp.into()
 }
 
-fn public_read_model_allowed(model: &str) -> bool {
-    model_in_public_read_allowlist(
-        &std::env::var("ATOMO_PUBLIC_READ_MODELS").unwrap_or_default(),
-        model,
-    )
-}
-
 fn model_in_public_read_allowlist(config: &str, model: &str) -> bool {
     config
         .split(',')
@@ -363,8 +356,10 @@ pub async fn public_records(
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
     Extension(schema): Extension<AtomoGraphQLSchema>,
     Extension(atomo): Extension<Atomo>,
+    Extension(allowed): Extension<PublicReadModels>,
 ) -> Result<Json<Value>, StatusCode> {
-    if !public_read_model_allowed(&model) || !model_declares_public_read(&atomo, &model) {
+    let model_allowed = allowed.0.iter().any(|m| m == &model);
+    if !model_allowed || !model_declares_public_read(&atomo, &model) {
         return Err(StatusCode::NOT_FOUND);
     }
 
@@ -514,12 +509,17 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
 
     Json(extended_metadata)
 }
+/// Shared list of model names allowed for anonymous public read (from `ServerConfig`).
+#[derive(Clone)]
+pub struct PublicReadModels(pub Vec<String>);
+
 pub fn create_router(
     schema: AtomoGraphQLSchema,
     atomo: Atomo,
     auth_service: crate::auth::HttpAuthService,
     audit_service: crate::audit::HttpAuditService,
     registration: crate::auth::RegistrationConfig,
+    public_read_models: Vec<String>,
 ) -> Router {
     use crate::auth::{auth_middleware, handlers, optional_auth_middleware};
     use axum::middleware;
@@ -617,6 +617,7 @@ pub fn create_router(
         .layer(Extension(schema))
         .layer(Extension(atomo))
         .layer(Extension(registration))
+        .layer(Extension(PublicReadModels(public_read_models)))
 }
 
 // ============================================================================

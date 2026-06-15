@@ -62,6 +62,7 @@ export default schema;
         auth.clone(),
         audit,
         atomo_server::auth::RegistrationConfig::disabled(),
+        vec![],
     );
     (app, auth)
 }

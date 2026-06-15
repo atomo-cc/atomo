@@ -81,6 +81,9 @@ impl AtomoServer {
         info!("   Host: {}", self.config.host);
         info!("   Port: {}", self.config.port);
         info!("   Database: {}", self.config.database_url);
+        if !self.config.public_read_models.is_empty() {
+            info!("   Public-read models: {:?}", self.config.public_read_models);
+        }
 
         // Fail loud on silent half-registration (consumer feedback #1): a model with
         // no `id` field gets its TABLE created, but is NOT registered as a model —
@@ -454,12 +457,14 @@ impl AtomoServer {
 
         let registration =
             crate::auth::RegistrationConfig::new(self.config.enable_self_registration);
+        let public_read_models = self.config.public_read_models.clone();
         let mut app = create_router(
             graphql_schema,
             self.atomo,
             auth_service,
             audit_service,
             registration,
+            public_read_models,
         )
         .merge(crate::handlers::workflow_router(workflow_engine.clone()))
         .merge(crate::projector_routes::projector_router(

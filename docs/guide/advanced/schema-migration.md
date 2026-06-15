@@ -60,10 +60,15 @@ You have two ways forward:
 ## Limits (v1)
 
 Forward migration is **additive**. It does not drop or rename columns, narrow types, or remove
-constraints — those need an explicit migration so data loss is always a deliberate choice. Note also
-that the builder DSL currently captures field-level `.default('...')` (string values) and not
-field-level `.unique()`/`.index()`; declare uniqueness/indexes via model-level `@@unique`/`@@index`
-(or the typescript-interface schema) until field-level parsing lands.
+constraints — those need an explicit migration so data loss is always a deliberate choice.
+
+Current v1 limitations:
+
+- **Enum types** are not yet forward-migrated. Adding a variant to an existing Postgres `ENUM` type
+  requires a manual `ALTER TYPE ... ADD VALUE` migration.
+- The builder DSL currently captures field-level `.default('...')` (string values) and not
+  field-level `.unique()`/`.index()`; declare uniqueness/indexes via model-level `@@unique`/`@@index`
+  (or the typescript-interface schema) until field-level parsing lands.
 
 ## Testing
 
