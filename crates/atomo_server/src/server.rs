@@ -81,6 +81,9 @@ impl AtomoServer {
         info!("   Host: {}", self.config.host);
         info!("   Port: {}", self.config.port);
         info!("   Database: {}", self.config.database_url);
+        if !self.config.public_read_models.is_empty() {
+            info!("   Public-read models: {:?}", self.config.public_read_models);
+        }
 
         // Fail loud on silent half-registration (consumer feedback #1): a model with
         // no `id` field gets its TABLE created, but is NOT registered as a model —
@@ -169,7 +172,7 @@ impl AtomoServer {
             self.atomo.event_sender(),
         ));
         media_state.init().await?;
-        let media_router = crate::media::media_router(media_state, auth_service.clone());
+        let media_router = crate::media::media_router(media_state.clone(), auth_service.clone());
         info!("   ✓ Media storage ready");
 
         // Ephemeral realtime hub — created here (before the job wiring) so the job-progress
@@ -200,11 +203,29 @@ impl AtomoServer {
             self.atomo.db_pool().clone(),
         ));
         worker_tokens.init().await?;
+        // Generic metered-command primitives (expiring single-use tokens + integer-unit budget
+        // ledger). Library primitives a consumer composes transactionally with the job queue; the
+        // tables self-init at boot like the other stores so they are available to compose. Gated by
+        // ATOMO_ENABLE_METERED_COMMANDS (default on) so deployments that don't use them can skip the
+        // tables.
+        if self.config.enable_metered_commands {
+            let expiring_tokens =
+                crate::metered::ExpiringTokenStore::new(self.atomo.db_pool().clone());
+            expiring_tokens.init().await?;
+            let budget_ledger = crate::metered::BudgetLedger::new(self.atomo.db_pool().clone());
+            budget_ledger.init().await?;
+            info!("   ✓ Metered-command primitives ready");
+        }
         let jobs_router = crate::job_routes::jobs_router(
             job_store.clone(),
             worker_tokens.clone(),
             auth_service.clone(),
             job_progress_publisher,
+        );
+        let public_demo_router = crate::public_demo_routes::public_demo_router(
+            job_store.clone(),
+            self.atomo.db_pool().clone(),
+            media_state,
         );
         // Crash recovery: periodically return expired leases (dead/stalled workers) to the queue.
         {
@@ -434,18 +455,29 @@ impl AtomoServer {
             worker_tokens.clone(),
         );
 
-        let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
-            .merge(crate::handlers::workflow_router(workflow_engine.clone()))
-            .merge(crate::projector_routes::projector_router(
-                projector_manager.clone(),
-            ))
-            .merge(crate::registry_routes::registry_router(
-                registry_store.clone(),
-            ))
-            .merge(media_router)
-            .merge(jobs_router)
-            .merge(action_router)
-            .merge(crud_router);
+        let registration =
+            crate::auth::RegistrationConfig::new(self.config.enable_self_registration);
+        let public_read_models = self.config.public_read_models.clone();
+        let mut app = create_router(
+            graphql_schema,
+            self.atomo,
+            auth_service,
+            audit_service,
+            registration,
+            public_read_models,
+        )
+        .merge(crate::handlers::workflow_router(workflow_engine.clone()))
+        .merge(crate::projector_routes::projector_router(
+            projector_manager.clone(),
+        ))
+        .merge(crate::registry_routes::registry_router(
+            registry_store.clone(),
+        ))
+        .merge(media_router)
+        .merge(jobs_router)
+        .merge(public_demo_router)
+        .merge(action_router)
+        .merge(crud_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }

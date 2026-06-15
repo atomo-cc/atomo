@@ -8,6 +8,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Optional, configurable self-registration.** `POST /auth/register` is now **default-off** and
+  mounted only when `ATOMO_ENABLE_SELF_REGISTRATION=true` (`ServerConfig::enable_self_registration`),
+  so the platform no longer exposes an open sign-up surface unconditionally. Provisioning is generic,
+  not hardcoded: `ATOMO_SELF_REGISTRATION_ROLE` (default `viewer`) and `ATOMO_SELF_REGISTRATION_TENANT`
+  (`none` default / `per-user` / a fixed tenant id) via `crate::auth::RegistrationConfig`. Duplicate
+  emails are handled race-safely through the `users.email` unique constraint (409, not a second
+  user). `create_router` gains a `RegistrationConfig` parameter. Auth API docs, `.env.example`, and
+  DB-gated HTTP tests (`crates/atomo_server/tests/self_registration.rs`) added. **Behavior change:**
+  `/auth/register` is no longer available unless explicitly enabled.
+- **Generic public-read policy (`GET /public/records/{model}`).** The anonymous read route no longer
+  assumes a `status`/`slug` convention. It keeps dual approval (operator `ATOMO_PUBLIC_READ_MODELS`
+  allowlist **and** schema `read: allow.public()`, default deny) and now takes explicit per-model
+  policy: `ATOMO_PUBLIC_READ_FILTER_<Model>` (fixed equality filters, applied last so a client can't
+  override them) and `ATOMO_PUBLIC_READ_FIELDS_<Model>` (the only query fields a client may filter
+  on; others ignored). No mutation surface. New API doc `/api/public-read`, `.env.example`, unit
+  tests, and DB-gated HTTP tests (`crates/atomo_server/tests/public_read.rs`).
+- **Safe schema forward-migration semantics.** Migration generation now reconciles an existing
+  database to an evolved schema deterministically: a new field with a default (declared `.default(..)`,
+  timestamps, or JSON arrays) is added with that `DEFAULT` so it **backfills existing rows** (a
+  required-with-default field is therefore safe on a populated table); declared defaults, `@unique`
+  (now a reconcilable `CREATE UNIQUE INDEX`, not an inline constraint), and `@index` are applied to
+  pre-existing tables too. Adding a **required field with no default to a populated table** no longer
+  emits a bare `NOT NULL` add that fails opaquely at startup — it emits a guarded statement that adds
+  the column when the table is empty and otherwise raises an **actionable message** pointing at the
+  fix (declare a default, or write an explicit backfill). New guide:
+  `/guide/advanced/schema-migration`. Real-PostgreSQL evolution tests in
+  `crates/atomo/tests/schema_evolution.rs`. **Behavior change:** `@unique` fields are now enforced by
+  a `uq_<table>_<col>` unique index rather than an inline column `UNIQUE`.
+- **Metered command primitives (`atomo_server::metered`).** Generic, consumer-neutral building
+  blocks for *metered* commands (a credit/billing debit, a rate-limited public command): an
+  **expiring single-use token store** (`ExpiringTokenStore` — opaque tokens stored only as SHA-256,
+  consumed exactly once before expiry) and an **integer-unit budget ledger** (`BudgetLedger` —
+  append-only signed amounts per opaque scope, with advisory-lock-serialized windowed reservation
+  that concurrent callers can never over-commit). Both `consume`/`try_reserve` take `&mut
+  PgConnection` so they compose inside the caller's transaction. Tables (`expiring_tokens`,
+  `budget_ledger`) self-init at boot, gated by `ATOMO_ENABLE_METERED_COMMANDS` (default off). Library
+  APIs only (no HTTP surface, by design). 2 unit tests +
+  8 Postgres-gated integration tests (single-use, scope/expiry rejection, windowed limit,
+  concurrent no-over-commit, all-or-nothing atomicity). Guide:
+  `/guide/advanced/metered-command-primitives`.
+- **`JobStore::enqueue_tx` + `emit_enqueued`.** Transactional job enqueue that joins a
+  caller-supplied connection/transaction, so an enqueue can be atomic with the caller's other writes
+  (reserve budget, consume a token, insert a mapping row). Idempotent on `(queue, idempotency_key)`
+  like `enqueue`; emits no event until the caller commits and calls `emit_enqueued`. `enqueue` now
+  delegates to it, so existing behavior and events are unchanged.
 - **Action system (Phase 1 of v1 architecture).** First-class `ActionDef` and `ModelEvents` types
   in the schema: declare lifecycle event bindings (`on.created`, `on.updated`, `on.deleted`) with
   optional conditions (`ChangedAny`, `FieldEquals`), and the new **action dispatcher** automatically

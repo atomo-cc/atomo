@@ -90,6 +90,10 @@ impl MediaState {
         Ok(())
     }
 
+    pub fn max_size(&self) -> usize {
+        self.max_size
+    }
+
     /// Store bytes + metadata + emit a `Media` Created event. Returns `(id, checksum)`.
     ///
     /// **Content-addressed dedup:** the sha256 of the bytes is recorded as `checksum`. If a live
@@ -371,7 +375,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Content types we will store + serve. Excludes inline-XSS-risky types (svg, html).
-fn content_type_allowed(ct: &str) -> bool {
+pub(crate) fn content_type_allowed(ct: &str) -> bool {
     if ct == "image/svg+xml" || ct.starts_with("text/html") {
         return false;
     }
@@ -391,7 +395,7 @@ fn content_type_allowed(ct: &str) -> bool {
 /// Defense-in-depth: for types with a well-known file signature, the declared content-type must
 /// match the actual leading bytes (blocks e.g. an executable/HTML declared as image/png). Types
 /// without a reliable signature (text/*, json, octet-stream, most audio) are not sniffed.
-fn content_matches(ct: &str, bytes: &[u8]) -> bool {
+pub(crate) fn content_matches(ct: &str, bytes: &[u8]) -> bool {
     let starts = |sig: &[u8]| bytes.len() >= sig.len() && &bytes[..sig.len()] == sig;
     match ct {
         "image/png" => starts(&[0x89, 0x50, 0x4E, 0x47]),

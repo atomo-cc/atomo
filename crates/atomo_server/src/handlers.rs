@@ -255,6 +255,147 @@ pub async fn graphql_handler(
     resp.into()
 }
 
+fn model_in_public_read_allowlist(config: &str, model: &str) -> bool {
+    config
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .any(|value| value == model)
+}
+
+/// Fixed equality filters always applied to a public-read model, read from
+/// `ATOMO_PUBLIC_READ_FILTER_<Model>` (e.g. `status:published,kind:app`). This replaces any
+/// hardcoded publication convention: the operator declares per model which rows are public. A model
+/// with no filter config exposes all of its public rows — restricting to e.g. published rows is an
+/// explicit choice the operator makes here.
+fn public_read_fixed_filters(model: &str) -> Vec<(String, String)> {
+    parse_public_read_filters(
+        &std::env::var(format!("ATOMO_PUBLIC_READ_FILTER_{model}")).unwrap_or_default(),
+    )
+}
+
+fn parse_public_read_filters(config: &str) -> Vec<(String, String)> {
+    config
+        .split(',')
+        .filter_map(|pair| {
+            let (field, value) = pair.trim().split_once(':')?;
+            let field = field.trim();
+            if field.is_empty() {
+                None
+            } else {
+                Some((field.to_string(), value.trim().to_string()))
+            }
+        })
+        .collect()
+}
+
+/// Query fields a client may filter on for a public-read model, read from
+/// `ATOMO_PUBLIC_READ_FIELDS_<Model>` (e.g. `slug,category`). A query parameter not in this list is
+/// ignored, so a client can never widen the exposed rows beyond the operator's allowance, and a
+/// model with no field config accepts no client filters at all.
+fn public_read_query_fields(model: &str) -> Vec<String> {
+    parse_public_read_fields(
+        &std::env::var(format!("ATOMO_PUBLIC_READ_FIELDS_{model}")).unwrap_or_default(),
+    )
+}
+
+fn parse_public_read_fields(config: &str) -> Vec<String> {
+    config
+        .split(',')
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// Build the `where` object for a public read: the client may only filter on operator-approved
+/// query fields, and the operator's fixed filters are applied last so a client cannot override them
+/// (e.g. cannot flip `status` away from a forced `published`).
+fn build_public_where(
+    fixed: Vec<(String, String)>,
+    allowed_fields: &[String],
+    params: &std::collections::HashMap<String, String>,
+) -> serde_json::Map<String, Value> {
+    let mut where_value = serde_json::Map::new();
+    for field in allowed_fields {
+        if let Some(value) = params.get(field) {
+            where_value.insert(field.clone(), serde_json::json!({ "equals": value }));
+        }
+    }
+    for (field, value) in fixed {
+        where_value.insert(field, serde_json::json!({ "equals": value }));
+    }
+    where_value
+}
+
+fn model_declares_public_read(atomo: &Atomo, model: &str) -> bool {
+    let Some(rule) = atomo
+        .schema()
+        .models
+        .get(model)
+        .and_then(|model| model.access.as_ref())
+        .and_then(|access| access.read.as_ref())
+    else {
+        return false;
+    };
+    serde_json::to_value(rule)
+        .ok()
+        .is_some_and(|value| value == serde_json::json!({ "Boolean": "public" }))
+}
+
+/// Narrow anonymous read surface for explicitly allowlisted projection models.
+///
+/// Dual approval (default deny): a model is readable only when the operator lists it in
+/// `ATOMO_PUBLIC_READ_MODELS` **and** it declares `read: allow.public()` (the resolver still
+/// evaluates that rule). Which rows and which client filters are exposed is explicit per-model
+/// configuration — `ATOMO_PUBLIC_READ_FILTER_<Model>` (fixed filters) and
+/// `ATOMO_PUBLIC_READ_FIELDS_<Model>` (allowed query fields) — so the route assumes no `status` or
+/// `slug` convention. It exposes neither mutations nor arbitrary GraphQL.
+pub async fn public_records(
+    axum::extract::Path(model): axum::extract::Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    Extension(schema): Extension<AtomoGraphQLSchema>,
+    Extension(atomo): Extension<Atomo>,
+    Extension(allowed): Extension<PublicReadModels>,
+) -> Result<Json<Value>, StatusCode> {
+    let model_allowed = allowed.0.iter().any(|m| m == &model);
+    if !model_allowed || !model_declares_public_read(&atomo, &model) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let limit = params
+        .get("limit")
+        .and_then(|value| value.parse::<i32>().ok())
+        .unwrap_or(100)
+        .clamp(1, 100);
+    let where_value = build_public_where(
+        public_read_fixed_filters(&model),
+        &public_read_query_fields(&model),
+        &params,
+    );
+    let request = async_graphql::Request::new(
+        r#"query($model: String!, $where: JSON!, $limit: Int!) {
+            records(model: $model, where: $where, limit: $limit)
+        }"#,
+    )
+    .variables(async_graphql::Variables::from_json(serde_json::json!({
+        "model": model,
+        "where": Value::Object(where_value),
+        "limit": limit,
+    })));
+    let response = schema.execute(request).await;
+    if !response.errors.is_empty() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let data = response
+        .data
+        .into_json()
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    Ok(Json(serde_json::json!({
+        "items": data.get("records").cloned().unwrap_or_else(|| serde_json::json!([]))
+    })))
+}
+
 pub async fn graphql_playground() -> Html<String> {
     let source = async_graphql::http::playground_source(
         async_graphql::http::GraphQLPlaygroundConfig::new("/graphql"),
@@ -368,11 +509,17 @@ pub async fn schema_metadata(Extension(atomo): Extension<Atomo>) -> Json<Value> 
 
     Json(extended_metadata)
 }
+/// Shared list of model names allowed for anonymous public read (from `ServerConfig`).
+#[derive(Clone)]
+pub struct PublicReadModels(pub Vec<String>);
+
 pub fn create_router(
     schema: AtomoGraphQLSchema,
     atomo: Atomo,
     auth_service: crate::auth::HttpAuthService,
     audit_service: crate::audit::HttpAuditService,
+    registration: crate::auth::RegistrationConfig,
+    public_read_models: Vec<String>,
 ) -> Router {
     use crate::auth::{auth_middleware, handlers, optional_auth_middleware};
     use axum::middleware;
@@ -402,6 +549,7 @@ pub fn create_router(
         .route("/version", get(version_info))
         .route("/metrics", get(metrics))
         .route("/info", get(atomo_info))
+        .route("/public/records/{model}", get(public_records))
         .route(
             "/graphql/ws",
             get({
@@ -417,11 +565,17 @@ pub fn create_router(
         // tokens). `/me` + `/logout` REQUIRE an authenticated user: they read an
         // `AuthUser` from request extensions, which only `auth_middleware` injects —
         // so they must carry that layer, or they 401 unconditionally (they did).
-        .nest(
-            "/auth",
-            Router::new()
+        .nest("/auth", {
+            // `/login` + `/refresh` are public (mint/rotate tokens). `/register` is mounted only
+            // when self-registration is enabled (default off) so the platform never exposes an
+            // open sign-up surface by default. `/me` + `/logout` require an authenticated user.
+            let mut public = Router::new()
                 .route("/login", post(handlers::login))
-                .route("/refresh", post(handlers::refresh))
+                .route("/refresh", post(handlers::refresh));
+            if registration.enabled {
+                public = public.route("/register", post(handlers::register));
+            }
+            public
                 .merge(
                     Router::new()
                         .route("/me", get(handlers::me))
@@ -431,8 +585,8 @@ pub fn create_router(
                             auth_middleware,
                         )),
                 )
-                .with_state(auth_service.clone()),
-        )
+                .with_state(auth_service.clone())
+        })
         // OAuth routes
         .nest(
             "/auth/oauth",
@@ -462,6 +616,8 @@ pub fn create_router(
         .with_state(auth_service)
         .layer(Extension(schema))
         .layer(Extension(atomo))
+        .layer(Extension(registration))
+        .layer(Extension(PublicReadModels(public_read_models)))
 }
 
 // ============================================================================
@@ -720,7 +876,11 @@ async fn run_workflow(
 
 #[cfg(test)]
 mod tests {
-    use super::tenant_header_allowed;
+    use super::{
+        build_public_where, model_in_public_read_allowlist, parse_public_read_fields,
+        parse_public_read_filters, tenant_header_allowed,
+    };
+    use std::collections::HashMap;
 
     // S3b: a user bound to a tenant may only use its own; an unbound user may use any.
     #[test]
@@ -733,5 +893,62 @@ mod tests {
         );
         // Unbound user (no users.tenant_id): may pass any (legacy/single-tenant-admin).
         assert!(tenant_header_allowed(None, "tenant-a"));
+    }
+
+    #[test]
+    fn public_read_model_allowlist_is_exact() {
+        let config = "PublicListing, PublicArticle";
+        assert!(model_in_public_read_allowlist(config, "PublicListing"));
+        assert!(!model_in_public_read_allowlist(config, "PublicationRecord"));
+        assert!(!model_in_public_read_allowlist(config, "Public"));
+    }
+
+    #[test]
+    fn public_read_filter_config_parses_field_value_pairs() {
+        let parsed = parse_public_read_filters("status:published, kind:app");
+        assert_eq!(
+            parsed,
+            vec![
+                ("status".to_string(), "published".to_string()),
+                ("kind".to_string(), "app".to_string()),
+            ]
+        );
+        // Empty / malformed entries are ignored.
+        assert!(parse_public_read_filters("").is_empty());
+        assert!(parse_public_read_filters("noseparator").is_empty());
+    }
+
+    #[test]
+    fn public_read_fields_config_parses_list() {
+        assert_eq!(
+            parse_public_read_fields("slug, category"),
+            vec!["slug".to_string(), "category".to_string()]
+        );
+        assert!(parse_public_read_fields("").is_empty());
+    }
+
+    #[test]
+    fn build_public_where_honors_only_allowed_fields_and_fixed_filters_win() {
+        let params: HashMap<String, String> = [
+            ("slug".to_string(), "logo-maker".to_string()),
+            ("category".to_string(), "design".to_string()),
+            // Not in the allowed list -> must be ignored.
+            ("secret".to_string(), "x".to_string()),
+            // Attempts to override a fixed filter -> must not win.
+            ("status".to_string(), "draft".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        let fixed = vec![("status".to_string(), "published".to_string())];
+        let allowed = vec!["slug".to_string(), "status".to_string()];
+        let where_value = build_public_where(fixed, &allowed, &params);
+
+        // Allowed query field passes through.
+        assert_eq!(where_value["slug"]["equals"], "logo-maker");
+        // Fixed filter overrides a client attempt to change it.
+        assert_eq!(where_value["status"]["equals"], "published");
+        // Non-allowlisted query field is never exposed.
+        assert!(!where_value.contains_key("category"));
+        assert!(!where_value.contains_key("secret"));
     }
 }

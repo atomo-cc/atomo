@@ -703,6 +703,80 @@ pub struct UserInfo {
     pub role: String,
     pub first_name: String,
     pub last_name: String,
+    /// Tenant binding (for the client to send as X-Tenant-ID). None = unscoped.
+    pub tenant_id: Option<String>,
+}
+
+/// How a self-registered user is assigned a tenant. The platform deliberately does **not** force a
+/// one-user-one-tenant convention; the operator chooses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TenantProvisioning {
+    /// No tenant binding (`tenant_id = NULL`). The neutral default.
+    None,
+    /// Each new user becomes its own tenant (`tenant_id = user id`).
+    PerUser,
+    /// All new users share one fixed tenant id.
+    Fixed(String),
+}
+
+impl TenantProvisioning {
+    /// Parse `ATOMO_SELF_REGISTRATION_TENANT`: empty/`none` (default) | `per-user`/`self` | any
+    /// other non-empty value = a fixed tenant id shared by all registrants.
+    pub fn from_env() -> Self {
+        match std::env::var("ATOMO_SELF_REGISTRATION_TENANT")
+            .unwrap_or_default()
+            .trim()
+        {
+            "" | "none" => TenantProvisioning::None,
+            "per-user" | "self" => TenantProvisioning::PerUser,
+            other => TenantProvisioning::Fixed(other.to_string()),
+        }
+    }
+
+    /// The `tenant_id` to store for a new user, or `None` for an unscoped user.
+    pub fn tenant_id_for(&self, user_id: &str) -> Option<String> {
+        match self {
+            TenantProvisioning::None => None,
+            TenantProvisioning::PerUser => Some(user_id.to_string()),
+            TenantProvisioning::Fixed(tenant) => Some(tenant.clone()),
+        }
+    }
+}
+
+/// Self-registration policy. Default-off; the granted role and tenant provisioning are configurable
+/// so the platform imposes no product-specific convention. The `enabled` flag is owned by
+/// `ServerConfig` (`ATOMO_ENABLE_SELF_REGISTRATION`); the provisioning policy comes from
+/// `ATOMO_SELF_REGISTRATION_ROLE` (default `viewer`) and `ATOMO_SELF_REGISTRATION_TENANT`.
+#[derive(Debug, Clone)]
+pub struct RegistrationConfig {
+    pub enabled: bool,
+    pub role: String,
+    pub tenant: TenantProvisioning,
+}
+
+impl RegistrationConfig {
+    /// Build from the enable flag plus the env-configured provisioning policy.
+    pub fn new(enabled: bool) -> Self {
+        let role = std::env::var("ATOMO_SELF_REGISTRATION_ROLE")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "viewer".to_string());
+        Self {
+            enabled,
+            role,
+            tenant: TenantProvisioning::from_env(),
+        }
+    }
+
+    /// A disabled policy — the default for callers/tests that do not enable self-registration.
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            role: "viewer".to_string(),
+            tenant: TenantProvisioning::None,
+        }
+    }
 }
 
 /// Auth handlers
@@ -729,9 +803,9 @@ pub mod handlers {
                     .await
                     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-                // Fetch user details
-                let user_details = sqlx::query_as::<_, (String, String)>(
-                    "SELECT first_name, last_name FROM users WHERE id = $1",
+                // Fetch user details (incl. tenant binding for X-Tenant-ID).
+                let user_details = sqlx::query_as::<_, (String, String, Option<String>)>(
+                    "SELECT first_name, last_name, tenant_id FROM users WHERE id = $1",
                 )
                 .bind(user.id.to_string())
                 .fetch_one(auth_service.db_pool())
@@ -747,12 +821,93 @@ pub mod handlers {
                         role: user.role.to_string(),
                         first_name: user_details.0,
                         last_name: user_details.1,
+                        tenant_id: user_details.2,
                     },
                 }))
             }
             Ok(None) => Err(StatusCode::UNAUTHORIZED),
             Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
         }
+    }
+
+    /// Self-serve registration request.
+    #[derive(Deserialize)]
+    #[allow(non_snake_case)]
+    pub struct RegisterRequest {
+        pub email: String,
+        pub password: String,
+        pub firstName: Option<String>,
+        pub lastName: Option<String>,
+    }
+
+    /// Register handler — creates a login-capable user (argon2id-hashed password) and immediately
+    /// issues tokens. The granted role and tenant binding follow the configured
+    /// [`RegistrationConfig`] provisioning policy (no hardcoded role/tenant). Only mounted when
+    /// self-registration is enabled (see `create_router`).
+    pub async fn register(
+        State(auth_service): State<HttpAuthService>,
+        axum::Extension(registration): axum::Extension<super::RegistrationConfig>,
+        Json(req): Json<RegisterRequest>,
+    ) -> Result<Json<LoginResponse>, StatusCode> {
+        let email = req.email.trim().to_lowercase();
+        if email.is_empty() || !email.contains('@') || email.len() > 254 {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        // Enforce the configured password policy (length/complexity).
+        auth_service
+            .validate_password_policy(&req.password)
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let pool = auth_service.db_pool();
+        let id = atomo_core::types::EntityId::new().to_string();
+        let hash = auth_service
+            .hash_password(&req.password)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let first = req.firstName.unwrap_or_default();
+        let last = req.lastName.unwrap_or_default();
+        let role = registration.role.as_str();
+        let tenant_id = registration.tenant.tenant_id_for(&id);
+
+        // Race-safe: rely on the `users.email` UNIQUE constraint instead of a check-then-insert, so
+        // two concurrent registrations for the same email cannot both succeed — a duplicate maps to
+        // 409 rather than a second user (or a 500).
+        let inserted = sqlx::query(
+            "INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active, tenant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, true, $7)",
+        )
+        .bind(&id)
+        .bind(&email)
+        .bind(&hash)
+        .bind(&first)
+        .bind(&last)
+        .bind(role)
+        .bind(tenant_id.as_deref())
+        .execute(pool)
+        .await;
+        if let Err(err) = inserted {
+            if matches!(&err, sqlx::Error::Database(db) if db.is_unique_violation()) {
+                return Err(StatusCode::CONFLICT);
+            }
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+
+        let (token, refresh_token) = auth_service
+            .issue_tokens(&id, &email, role)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(Json(LoginResponse {
+            token,
+            refresh_token: Some(refresh_token),
+            user: UserInfo {
+                tenant_id,
+                id,
+                email,
+                role: role.to_string(),
+                first_name: first,
+                last_name: last,
+            },
+        }))
     }
 
     /// Logout handler
@@ -793,6 +948,7 @@ pub mod handlers {
             role: user.role.to_string(),
             first_name: "".to_string(), // TODO: Fetch from database
             last_name: "".to_string(),  // TODO: Fetch from database
+            tenant_id: user.tenant_id.clone(),
         }))
     }
 
@@ -808,17 +964,28 @@ pub mod handlers {
         Json(req): Json<RefreshRequest>,
     ) -> Result<Json<LoginResponse>, StatusCode> {
         match auth_service.refresh_access_token(&req.refreshToken).await {
-            Ok((token, new_refresh, user)) => Ok(Json(LoginResponse {
-                token,
-                refresh_token: Some(new_refresh),
-                user: UserInfo {
-                    id: user.id.to_string(),
-                    email: user.email,
-                    role: user.role.to_string(),
-                    first_name: user.first_name.unwrap_or_default(),
-                    last_name: user.last_name.unwrap_or_default(),
-                },
-            })),
+            Ok((token, new_refresh, user)) => {
+                let tenant_id: Option<String> = sqlx::query_scalar(
+                    "SELECT tenant_id FROM users WHERE id = $1",
+                )
+                .bind(user.id.to_string())
+                .fetch_optional(auth_service.db_pool())
+                .await
+                .ok()
+                .flatten();
+                Ok(Json(LoginResponse {
+                    token,
+                    refresh_token: Some(new_refresh),
+                    user: UserInfo {
+                        id: user.id.to_string(),
+                        email: user.email,
+                        role: user.role.to_string(),
+                        first_name: user.first_name.unwrap_or_default(),
+                        last_name: user.last_name.unwrap_or_default(),
+                        tenant_id,
+                    },
+                }))
+            }
             Err(_) => Err(StatusCode::UNAUTHORIZED),
         }
     }

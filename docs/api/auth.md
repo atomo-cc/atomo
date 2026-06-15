@@ -28,6 +28,28 @@ Response
 { "token": "<jwt>", "refresh_token": "<refresh>", "user": { "id": "...", "email": "...", "role": "viewer" } }
 ```
 
+Self-registration (optional, default off)
+- `POST /auth/register` is mounted **only** when `ATOMO_ENABLE_SELF_REGISTRATION=true`; otherwise the
+  route does not exist (`404`). The platform never exposes an open sign-up surface by default.
+- Provisioning is configurable so the platform imposes no convention:
+  - `ATOMO_SELF_REGISTRATION_ROLE` — role granted to new users (default `viewer`).
+  - `ATOMO_SELF_REGISTRATION_TENANT` — `none` (default; unscoped `tenant_id = NULL`), `per-user`/`self`
+    (each user is its own tenant), or any other value used as a fixed shared tenant id.
+- Duplicate emails are race-safe: registration relies on the `users.email` unique constraint, so a
+  duplicate returns `409 Conflict` rather than creating a second user.
+
+```http
+POST /auth/register     # only when ATOMO_ENABLE_SELF_REGISTRATION=true
+Content-Type: application/json
+
+{ "email": "user@example.com", "password": "secret123", "firstName": "A", "lastName": "B" }
+```
+
+Response (same shape as login; role/tenant follow the configured policy)
+```json
+{ "token": "<jwt>", "refresh_token": "<refresh>", "user": { "id": "...", "email": "...", "role": "viewer", "tenant_id": null } }
+```
+
 ```http
 POST /auth/logout
 Authorization: Bearer <jwt>
