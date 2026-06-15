@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Optional, configurable self-registration.** `POST /auth/register` is now **default-off** and
+  mounted only when `ATOMO_ENABLE_SELF_REGISTRATION=true` (`ServerConfig::enable_self_registration`),
+  so the platform no longer exposes an open sign-up surface unconditionally. Provisioning is generic,
+  not hardcoded: `ATOMO_SELF_REGISTRATION_ROLE` (default `viewer`) and `ATOMO_SELF_REGISTRATION_TENANT`
+  (`none` default / `per-user` / a fixed tenant id) via `crate::auth::RegistrationConfig`. Duplicate
+  emails are handled race-safely through the `users.email` unique constraint (409, not a second
+  user). `create_router` gains a `RegistrationConfig` parameter. Auth API docs, `.env.example`, and
+  DB-gated HTTP tests (`crates/atomo_server/tests/self_registration.rs`) added. **Behavior change:**
+  `/auth/register` is no longer available unless explicitly enabled.
 - **Generic public-read policy (`GET /public/records/{model}`).** The anonymous read route no longer
   assumes a `status`/`slug` convention. It keeps dual approval (operator `ATOMO_PUBLIC_READ_MODELS`
   allowlist **and** schema `read: allow.public()`, default deny) and now takes explicit per-model
