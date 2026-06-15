@@ -452,19 +452,27 @@ impl AtomoServer {
             worker_tokens.clone(),
         );
 
-        let mut app = create_router(graphql_schema, self.atomo, auth_service, audit_service)
-            .merge(crate::handlers::workflow_router(workflow_engine.clone()))
-            .merge(crate::projector_routes::projector_router(
-                projector_manager.clone(),
-            ))
-            .merge(crate::registry_routes::registry_router(
-                registry_store.clone(),
-            ))
-            .merge(media_router)
-            .merge(jobs_router)
-            .merge(public_demo_router)
-            .merge(action_router)
-            .merge(crud_router);
+        let registration =
+            crate::auth::RegistrationConfig::new(self.config.enable_self_registration);
+        let mut app = create_router(
+            graphql_schema,
+            self.atomo,
+            auth_service,
+            audit_service,
+            registration,
+        )
+        .merge(crate::handlers::workflow_router(workflow_engine.clone()))
+        .merge(crate::projector_routes::projector_router(
+            projector_manager.clone(),
+        ))
+        .merge(crate::registry_routes::registry_router(
+            registry_store.clone(),
+        ))
+        .merge(media_router)
+        .merge(jobs_router)
+        .merge(public_demo_router)
+        .merge(action_router)
+        .merge(crud_router);
         if let Some(realtime_router) = realtime_router {
             app = app.merge(realtime_router);
         }

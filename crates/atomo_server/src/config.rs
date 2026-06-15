@@ -24,6 +24,11 @@ pub struct ServerConfig {
     /// can compose atomic metered commands. Set false to skip them on deployments that do not use
     /// the feature. See `docs/guide/advanced/metered-command-primitives.md`.
     pub enable_metered_commands: bool,
+    /// Allow anonymous self-registration via `POST /auth/register`
+    /// (`ATOMO_ENABLE_SELF_REGISTRATION`). **Default off** — when disabled the route is not mounted.
+    /// Provisioning (granted role, tenant binding) is configured separately; see
+    /// `crate::auth::RegistrationConfig` and `docs/api/auth.md`.
+    pub enable_self_registration: bool,
 }
 
 impl Default for ServerConfig {
@@ -40,6 +45,7 @@ impl Default for ServerConfig {
             enable_realtime: true,
             enable_rls: false,
             enable_metered_commands: true,
+            enable_self_registration: false,
         }
     }
 }
@@ -81,6 +87,9 @@ impl ServerConfig {
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
                 .unwrap_or(true),
+            enable_self_registration: std::env::var("ATOMO_ENABLE_SELF_REGISTRATION")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
         }
     }
 }

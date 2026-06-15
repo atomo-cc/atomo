@@ -519,6 +519,7 @@ pub fn create_router(
     atomo: Atomo,
     auth_service: crate::auth::HttpAuthService,
     audit_service: crate::audit::HttpAuditService,
+    registration: crate::auth::RegistrationConfig,
 ) -> Router {
     use crate::auth::{auth_middleware, handlers, optional_auth_middleware};
     use axum::middleware;
@@ -564,12 +565,17 @@ pub fn create_router(
         // tokens). `/me` + `/logout` REQUIRE an authenticated user: they read an
         // `AuthUser` from request extensions, which only `auth_middleware` injects —
         // so they must carry that layer, or they 401 unconditionally (they did).
-        .nest(
-            "/auth",
-            Router::new()
+        .nest("/auth", {
+            // `/login` + `/refresh` are public (mint/rotate tokens). `/register` is mounted only
+            // when self-registration is enabled (default off) so the platform never exposes an
+            // open sign-up surface by default. `/me` + `/logout` require an authenticated user.
+            let mut public = Router::new()
                 .route("/login", post(handlers::login))
-                .route("/register", post(handlers::register))
-                .route("/refresh", post(handlers::refresh))
+                .route("/refresh", post(handlers::refresh));
+            if registration.enabled {
+                public = public.route("/register", post(handlers::register));
+            }
+            public
                 .merge(
                     Router::new()
                         .route("/me", get(handlers::me))
@@ -579,8 +585,8 @@ pub fn create_router(
                             auth_middleware,
                         )),
                 )
-                .with_state(auth_service.clone()),
-        )
+                .with_state(auth_service.clone())
+        })
         // OAuth routes
         .nest(
             "/auth/oauth",
@@ -610,6 +616,7 @@ pub fn create_router(
         .with_state(auth_service)
         .layer(Extension(schema))
         .layer(Extension(atomo))
+        .layer(Extension(registration))
 }
 
 // ============================================================================
