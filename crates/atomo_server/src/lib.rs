@@ -21,6 +21,7 @@ pub mod handlers;
 pub mod job_routes;
 pub mod jobs;
 pub mod media;
+pub mod metered;
 pub mod model_registry;
 pub mod models_ext;
 pub mod oauth;
