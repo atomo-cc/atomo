@@ -276,6 +276,7 @@ For the detailed roadmap and current progress see docs/roadmap.md; for the platf
 - [x] CQRS read projections (event-driven materialized views; deletes/numeric corrections see B2)
 - [x] Read cache (TTL + event invalidation)
 - [x] File upload/storage (`File` field, multipart, content-type validation + magic-byte sniffing, event-sourced; local backend ✅, S3 backend behind the `storage-s3` feature; see docs/guide/advanced/upload-storage-plan)
+- [x] Metered command primitives (`atomo_server::metered`: expiring single-use token store + integer-unit budget ledger + transactional `JobStore::enqueue_tx`) — compose a metered command atomically; library-only, no business policy; see docs/guide/advanced/metered-command-primitives
 - [~] Workflow engine (triggers, conditions, retries, YAML loading, HTTP steps; Mutation/Plugin steps TBD)
 - [~] Multi-tenant isolation (`tenant_id` column + read/write isolation; subscription filtering / user binding / PG RLS TBD)
 - [~] AI workflow integration (pgvector EmbeddingStore; not yet end-to-end verified, needs a pgvector environment)

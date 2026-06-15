@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Metered command primitives (`atomo_server::metered`).** Generic, consumer-neutral building
+  blocks for *metered* commands (a credit/billing debit, a rate-limited public command): an
+  **expiring single-use token store** (`ExpiringTokenStore` — opaque tokens stored only as SHA-256,
+  consumed exactly once before expiry) and an **integer-unit budget ledger** (`BudgetLedger` —
+  append-only signed amounts per opaque scope, with advisory-lock-serialized windowed reservation
+  that concurrent callers can never over-commit). Both `consume`/`try_reserve` take `&mut
+  PgConnection` so they compose inside the caller's transaction. Tables (`expiring_tokens`,
+  `budget_ledger`) self-init at boot. Library APIs only (no HTTP surface, by design). 2 unit tests +
+  8 Postgres-gated integration tests (single-use, scope/expiry rejection, windowed limit,
+  concurrent no-over-commit, all-or-nothing atomicity). Guide:
+  `/guide/advanced/metered-command-primitives`.
+- **`JobStore::enqueue_tx` + `emit_enqueued`.** Transactional job enqueue that joins a
+  caller-supplied connection/transaction, so an enqueue can be atomic with the caller's other writes
+  (reserve budget, consume a token, insert a mapping row). Idempotent on `(queue, idempotency_key)`
+  like `enqueue`; emits no event until the caller commits and calls `emit_enqueued`. `enqueue` now
+  delegates to it, so existing behavior and events are unchanged.
 - **Action system (Phase 1 of v1 architecture).** First-class `ActionDef` and `ModelEvents` types
   in the schema: declare lifecycle event bindings (`on.created`, `on.updated`, `on.deleted`) with
   optional conditions (`ChangedAny`, `FieldEquals`), and the new **action dispatcher** automatically

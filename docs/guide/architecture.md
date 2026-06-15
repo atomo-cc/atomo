@@ -15,6 +15,10 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
   infrastructure — a per-project database + `atomo-server` instance, managed by a
   registry, provisioner, and gateway. Purely additive: it sits *in front of*
   unmodified servers. See [Multi-Project Platform](/guide/advanced/multi-project-design).
+- Metered commands: `atomo_server::metered` — generic primitives (expiring single-use token store,
+  integer-unit budget ledger) that compose transactionally with `atomo_server::jobs`
+  (`JobStore::enqueue_tx`) so a consumer's metered command commits or rolls back as one unit. No
+  business policy; library-only. See [Metered Command Primitives](/guide/advanced/metered-command-primitives).
 
 Pillars (from Atomo About & Paper):
 - River of Events: all changes are immutable events (audit/time travel).

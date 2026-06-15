@@ -19,6 +19,7 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 - 审计日志：已实现（REST 端点 + 平台 GraphQL）
 - TypeScript SDK：已实现（类型与 React hooks）
 - Actions 与 Workers：事件触发自动化（v1 架构）已实现；TypeScript Worker SDK 已发布
+- 计量命令原语：已实现 `atomo_server::metered` —— 过期一次性令牌存储 + 整数单位预算账本 + 事务性 `JobStore::enqueue_tx`，将"预留预算 · 消费令牌 · 入队任务"组合为一个全有或全无的计量命令。通用、仅库 API（无 HTTP 接口、无业务策略）；已用 Postgres 测试（单次使用、窗口限额、并发不超额、事务回滚）。指南：`/guide/advanced/metered-command-primitives`
 - 实时协作：基础已具备；WebSocket/CRDT 集成待完成
 
 ## 已交付亮点
