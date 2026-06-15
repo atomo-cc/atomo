@@ -168,6 +168,46 @@ impl JobStore {
         priority: i32,
         tenant_id: Option<&str>,
     ) -> Result<String> {
+        let mut conn = self.pool.acquire().await?;
+        let (id, created) = self
+            .enqueue_tx(
+                &mut conn,
+                queue,
+                kind,
+                payload,
+                idempotency_key,
+                max_attempts,
+                priority,
+                tenant_id,
+            )
+            .await?;
+        if created {
+            self.emit_enqueued(&id, queue, kind);
+        }
+        Ok(id)
+    }
+
+    /// Enqueue within a caller-supplied connection/transaction so the enqueue is atomic with the
+    /// caller's other writes — reserve budget, consume a single-use token, insert a mapping row (see
+    /// [`crate::metered`]). Idempotent on `(queue, idempotency_key)` exactly like
+    /// [`enqueue`](Self::enqueue): a second enqueue for the same `(queue, key)` returns the existing
+    /// id with `created = false`.
+    ///
+    /// **Emits no event.** Pass `&mut *tx`; after the transaction commits, call
+    /// [`emit_enqueued`](Self::emit_enqueued) when `created` is true — so a rolled-back transaction
+    /// never leaks a phantom `Job` Created event.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn enqueue_tx(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        queue: &str,
+        kind: &str,
+        payload: Value,
+        idempotency_key: Option<&str>,
+        max_attempts: i32,
+        priority: i32,
+        tenant_id: Option<&str>,
+    ) -> Result<(String, bool)> {
         let id = uuid::Uuid::new_v4().to_string();
         let inserted: Option<String> = sqlx::query(
             "INSERT INTO jobs (id, queue, kind, status, payload, idempotency_key, max_attempts, priority, tenant_id)
@@ -184,31 +224,34 @@ impl JobStore {
         .bind(max_attempts)
         .bind(priority)
         .bind(tenant_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *conn)
         .await?
         .map(|r| r.get::<String, _>("id"));
 
         match inserted {
-            Some(new_id) => {
-                let mut extra = HashMap::new();
-                extra.insert("queue".to_string(), json!(queue));
-                extra.insert("kind".to_string(), json!(kind));
-                extra.insert("status".to_string(), json!("queued"));
-                self.emit(EventType::Created, &new_id, extra);
-                Ok(new_id)
-            }
+            Some(new_id) => Ok((new_id, true)),
             // Conflict: a job with this (queue, key) already exists — return its id.
             None => {
                 let existing: String =
                     sqlx::query("SELECT id FROM jobs WHERE queue = $1 AND idempotency_key = $2")
                         .bind(queue)
                         .bind(idempotency_key)
-                        .fetch_one(&self.pool)
+                        .fetch_one(&mut *conn)
                         .await?
                         .get("id");
-                Ok(existing)
+                Ok((existing, false))
             }
         }
+    }
+
+    /// Emit the `Job` Created event for a freshly enqueued job. Call **after** the enclosing
+    /// transaction commits, when [`enqueue_tx`](Self::enqueue_tx) returned `created = true`.
+    pub fn emit_enqueued(&self, id: &str, queue: &str, kind: &str) {
+        let mut extra = HashMap::new();
+        extra.insert("queue".to_string(), json!(queue));
+        extra.insert("kind".to_string(), json!(kind));
+        extra.insert("status".to_string(), json!("queued"));
+        self.emit(EventType::Created, id, extra);
     }
 
     /// Atomically lease up to `capacity` eligible jobs from any of `queues`, giving each a fresh
