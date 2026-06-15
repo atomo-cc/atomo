@@ -27,7 +27,6 @@ pub mod models_ext;
 pub mod oauth;
 pub mod platform_graphql;
 pub mod platform_models;
-pub mod public_demo_routes;
 pub mod projector_routes;
 pub mod rate_limit;
 pub mod realtime;

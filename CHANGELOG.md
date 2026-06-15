@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Product-specific public-demo route removed from core** (`atomo_server::public_demo_routes`). The
+  generic server no longer carries a consumer's Demo command surface or its `public_*`/named-consumer
+  assumptions; metered anonymous commands are composed by a consumer service from the generic
+  primitives (transactional `JobStore::enqueue_tx`, `metered::ExpiringTokenStore`,
+  `metered::BudgetLedger`, media, and the public-read boundary). **Gated:** apply only after the
+  consumer replacement is verified end-to-end (see `ATOMO_PLATFORM_HANDOFF.md` AT1); the integration
+  branch keeps the route until that cutover.
+
 ### Added
 - **Optional, configurable self-registration.** `POST /auth/register` is now **default-off** and
   mounted only when `ATOMO_ENABLE_SELF_REGISTRATION=true` (`ServerConfig::enable_self_registration`),
