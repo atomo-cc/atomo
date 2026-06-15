@@ -15,6 +15,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Schema → Rust/GraphQL/codegen: ✅ implemented with hot reload
 - Schema forward-migration: ✅ additive auto-migration reconciles new columns, declared defaults (with row backfill), `@unique` (as a reconcilable unique index) and `@index` on existing tables; a required-no-default add to a populated table fails with an actionable message instead of an opaque startup error. Postgres-tested (`schema_evolution`). Guide: `/guide/advanced/schema-migration`
 - GraphQL API: ✅ full CRUD with where/orderBy parsing, pagination, relationships
+- Public read (anonymous): ✅ `GET /public/records/{model}` — default-deny dual approval (operator allowlist + schema `allow.public()`), explicit per-model fixed filters + allowed query fields (no assumed status/slug), read-only. Unit + Postgres HTTP tests (`public_read`). API: `/api/public-read`
 - Admin UI: ✅ dynamic rendering with aligned API client
 - Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforced in GraphQL resolvers (parsed from schema + conformance-tested in S1; **data-layer callers not yet gated**), OAuth2/OIDC SSO
 - Audit logs: ✅ REST endpoints + platform GraphQL; conformance-tested through CRM models (B4)

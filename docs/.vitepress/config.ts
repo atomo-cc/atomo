@@ -115,6 +115,7 @@ export default defineConfig({
             { text: 'GraphQL Schema', link: '/api/graphql' },
             { text: 'Platform GraphQL', link: '/api/platform' },
             { text: 'Auth (REST)', link: '/api/auth' },
+            { text: 'Public Read (REST)', link: '/api/public-read' },
             { text: 'Audit (REST)', link: '/api/audit' },
             { text: 'Workflows (REST)', link: '/api/workflows' },
             { text: 'Jobs (REST)', link: '/api/jobs' },

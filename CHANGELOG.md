@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Generic public-read policy (`GET /public/records/{model}`).** The anonymous read route no longer
+  assumes a `status`/`slug` convention. It keeps dual approval (operator `ATOMO_PUBLIC_READ_MODELS`
+  allowlist **and** schema `read: allow.public()`, default deny) and now takes explicit per-model
+  policy: `ATOMO_PUBLIC_READ_FILTER_<Model>` (fixed equality filters, applied last so a client can't
+  override them) and `ATOMO_PUBLIC_READ_FIELDS_<Model>` (the only query fields a client may filter
+  on; others ignored). No mutation surface. New API doc `/api/public-read`, `.env.example`, unit
+  tests, and DB-gated HTTP tests (`crates/atomo_server/tests/public_read.rs`).
 - **Safe schema forward-migration semantics.** Migration generation now reconciles an existing
   database to an evolved schema deterministically: a new field with a default (declared `.default(..)`,
   timestamps, or JSON arrays) is added with that `DEFAULT` so it **backfills existing rows** (a
