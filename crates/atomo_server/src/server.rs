@@ -222,11 +222,6 @@ impl AtomoServer {
             auth_service.clone(),
             job_progress_publisher,
         );
-        let public_demo_router = crate::public_demo_routes::public_demo_router(
-            job_store.clone(),
-            self.atomo.db_pool().clone(),
-            media_state,
-        );
         // Crash recovery: periodically return expired leases (dead/stalled workers) to the queue.
         {
             let store = job_store.clone();
@@ -475,7 +470,6 @@ impl AtomoServer {
         ))
         .merge(media_router)
         .merge(jobs_router)
-        .merge(public_demo_router)
         .merge(action_router)
         .merge(crud_router);
         if let Some(realtime_router) = realtime_router {
