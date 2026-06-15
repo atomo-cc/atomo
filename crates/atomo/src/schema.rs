@@ -34,6 +34,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
 
         let mut columns = Vec::new();
         let mut index_cols: Vec<String> = Vec::new();
+        let mut unique_cols: Vec<String> = Vec::new();
         for field in model.fields.values() {
             let col = to_snake_case(&field.name);
             let column_type = field_type_to_sql(&field.field_type);
@@ -51,29 +52,21 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                 ));
                 continue;
             }
-            // Defaults: timestamps -> NOW(); JSON array-ish fields (arrays/blocks) -> '[]'
-            // so a required `notes: ContentBlock[]` doesn't force every insert to pass it.
-            let default = match (col.as_str(), &field.field_type) {
-                ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()".to_string(),
-                (_, FieldType::Array(_) | FieldType::Blocks) => " DEFAULT '[]'::jsonb".to_string(),
-                _ => String::new(),
-            };
+            // Declared `.default(..)` plus the timestamp/JSON-array conventions (see
+            // column_default_clause): a `status: text().default('draft')` or a required
+            // `notes: ContentBlock[]` doesn't force every insert to pass it.
+            let default = column_default_clause(field);
             let nullable = if field.optional { "" } else { " NOT NULL" };
-            // `@unique` annotation -> column UNIQUE constraint.
-            let unique = if field
+            columns.push(format!("  {} {}{}{}", col, column_type, default, nullable));
+            // `@unique`/`@index` annotations are reconciled as post-table indexes (idempotent and
+            // applicable to tables created before the annotation existed), not inline constraints.
+            if field
                 .attributes
                 .iter()
                 .any(|a| matches!(a, FieldAttribute::Unique))
             {
-                " UNIQUE"
-            } else {
-                ""
-            };
-            columns.push(format!(
-                "  {} {}{}{}{}",
-                col, column_type, default, nullable, unique
-            ));
-            // `@index` annotation -> a CREATE INDEX emitted after the table.
+                unique_cols.push(col.clone());
+            }
             if field
                 .attributes
                 .iter()
@@ -111,9 +104,12 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
 
         migrations.push(sql);
 
-        // Forward-migrate declared fields for tables created from an older schema.
-        // Required fields intentionally keep NOT NULL so populated tables require
-        // an explicit backfill migration instead of silently weakening the schema.
+        // Forward-migrate declared fields for tables created from an older schema. Optional fields
+        // and fields with a default add safely — a `DEFAULT` backfills existing rows, so even a
+        // required-with-default column is safe on a populated table. A required field with *no*
+        // default cannot be added to a populated table; instead of a raw `NOT NULL` add that fails
+        // at startup with an opaque error, emit a guarded statement that adds the column when the
+        // table is empty and otherwise raises an actionable message pointing at the fix.
         for field in model.fields.values() {
             let col = to_snake_case(&field.name);
             let is_primary = field.name == "id"
@@ -125,15 +121,25 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                 continue;
             }
             let column_type = field_type_to_sql(&field.field_type);
-            let default = match (col.as_str(), &field.field_type) {
-                ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()",
-                (_, FieldType::Array(_) | FieldType::Blocks) => " DEFAULT '[]'::jsonb",
-                _ => "",
-            };
-            let nullable = if field.optional { "" } else { " NOT NULL" };
-            migrations.push(format!(
-                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {column_type}{default}{nullable};"
-            ));
+            let default = column_default_clause(field);
+            if field.optional || !default.is_empty() {
+                let nullable = if field.optional { "" } else { " NOT NULL" };
+                migrations.push(format!(
+                    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {column_type}{default}{nullable};"
+                ));
+            } else {
+                migrations.push(format!(
+                    "DO $$ BEGIN \
+                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns \
+                       WHERE table_name = '{table}' AND column_name = '{col}') THEN \
+                       IF EXISTS (SELECT 1 FROM {table} LIMIT 1) THEN \
+                         RAISE EXCEPTION 'atomo: cannot add required column {table}.{col} with no default to a populated table; declare a .default(...) on the field, or write an explicit backfill migration (add it nullable, backfill, then SET NOT NULL)'; \
+                       ELSE \
+                         ALTER TABLE {table} ADD COLUMN {col} {column_type} NOT NULL; \
+                       END IF; \
+                     END IF; END $$;"
+                ));
+            }
         }
 
         // Ensure auto-appended columns exist on tables that were created before
@@ -145,6 +151,15 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             migrations.push(format!(
                 "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {} {};",
                 col_def.0, col_def.1
+            ));
+        }
+
+        // Per-field uniqueness from `@unique` annotations, as a UNIQUE INDEX (idempotent). Emitted
+        // here rather than as an inline column constraint so it reconciles on tables created before
+        // the column was unique, mirroring the @index pass.
+        for col in &unique_cols {
+            migrations.push(format!(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{col} ON {table} ({col});"
             ));
         }
 
@@ -365,6 +380,38 @@ fn field_type_to_sql(field_type: &FieldType) -> &'static str {
     }
 }
 
+/// SQL `DEFAULT <literal>` clause for a column, or an empty string when it has none.
+///
+/// A schema-declared `.default(..)` wins; otherwise the platform conventions apply
+/// (`created_at`/`updated_at` -> `NOW()`, JSON array/block fields -> `'[]'`). Used by both the
+/// CREATE TABLE path and the forward-migration ALTER path so a column's default is reconciled the
+/// same way however the table came to exist — and so a forward-added column with a default backfills
+/// existing rows instead of failing.
+fn column_default_clause(field: &Field) -> String {
+    if let Some(value) = field.attributes.iter().find_map(|a| match a {
+        FieldAttribute::Default(v) => Some(v.as_str()),
+        _ => None,
+    }) {
+        return format!(" DEFAULT {}", default_literal(value, &field.field_type));
+    }
+    let col = to_snake_case(&field.name);
+    match (col.as_str(), &field.field_type) {
+        ("created_at" | "updated_at", FieldType::DateTime) => " DEFAULT NOW()".to_string(),
+        (_, FieldType::Array(_) | FieldType::Blocks) => " DEFAULT '[]'::jsonb".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Render a declared default value as a SQL literal. Numbers and booleans are emitted raw; every
+/// other type becomes a single-quoted string literal (with `'` escaped), which Postgres casts to
+/// the column type.
+fn default_literal(value: &str, field_type: &FieldType) -> String {
+    match field_type {
+        FieldType::Number | FieldType::Boolean => value.to_string(),
+        _ => format!("'{}'", value.replace('\'', "''")),
+    }
+}
+
 /// Convert camelCase to snake_case
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
@@ -507,13 +554,84 @@ mod tests {
         .unwrap();
 
         let sql = generate_migrations(&schema).unwrap().join("\n");
-        assert!(sql.contains(
-            "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS session_hash TEXT NOT NULL;"
-        ));
-        assert!(sql.contains(
-            "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;"
-        ));
+        // Required field with no default: a guarded add that raises an actionable message on a
+        // populated table and adds the column only when the table is empty — never a bare NOT NULL
+        // add that would fail at startup with an opaque error.
+        assert!(
+            sql.contains("RAISE EXCEPTION 'atomo: cannot add required column uploads.session_hash"),
+            "guarded required-add missing:\n{sql}"
+        );
+        assert!(
+            sql.contains("ALTER TABLE uploads ADD COLUMN session_hash TEXT NOT NULL;"),
+            "empty-table branch missing:\n{sql}"
+        );
+        assert!(
+            !sql.contains("ADD COLUMN IF NOT EXISTS session_hash TEXT NOT NULL;"),
+            "must not emit an unguarded NOT NULL add:\n{sql}"
+        );
+        // Optional field: a plain nullable add.
+        assert!(
+            sql.contains("ALTER TABLE uploads ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;")
+        );
         assert!(!sql.contains("ALTER TABLE uploads ADD COLUMN IF NOT EXISTS id"));
+    }
+
+    #[test]
+    fn generate_migrations_reconciles_declared_string_default() {
+        let schema = parse_typescript_schema(
+            r#"
+            import { model, text } from '@atomo/schema'
+            export const Listing = model('listings', {
+              fields: {
+                id: text().id(),
+                status: text().default('draft'),
+              },
+            })
+            "#,
+        )
+        .unwrap();
+        let sql = generate_migrations(&schema).unwrap().join("\n");
+        // CREATE TABLE column carries the declared default...
+        assert!(
+            sql.contains("status TEXT DEFAULT 'draft'"),
+            "create-table default missing:\n{sql}"
+        );
+        // ...and the forward-migration add carries it too, so it backfills existing rows.
+        assert!(
+            sql.contains(
+                "ALTER TABLE listings ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'draft';"
+            ),
+            "forward-migration default missing:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn generate_migrations_required_field_with_default_adds_safely() {
+        let schema = parse_typescript_schema(
+            r#"
+            import { model, text } from '@atomo/schema'
+            export const Listing = model('listings', {
+              fields: {
+                id: text().id(),
+                status: text().required().default('draft'),
+              },
+            })
+            "#,
+        )
+        .unwrap();
+        let sql = generate_migrations(&schema).unwrap().join("\n");
+        // A required field WITH a default is safe on a populated table (the default backfills),
+        // so it is a plain idempotent add, not a guarded one.
+        assert!(
+            sql.contains(
+                "ALTER TABLE listings ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'draft' NOT NULL;"
+            ),
+            "safe required-with-default add missing:\n{sql}"
+        );
+        assert!(
+            !sql.contains("cannot add required column listings.status"),
+            "must not guard a required field that has a default:\n{sql}"
+        );
     }
 
     #[test]
@@ -544,10 +662,18 @@ mod tests {
         models.insert("CreditLedger".into(), ledger);
         let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
 
-        // @unique -> column UNIQUE constraint.
+        // @unique -> UNIQUE INDEX (reconcilable on existing tables, not an inline constraint).
         assert!(
-            sql.contains("idempotency_key TEXT NOT NULL UNIQUE"),
-            "unique column missing:\n{sql}"
+            sql.contains(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_idempotency_key ON credit_ledger (idempotency_key)"
+            ),
+            "unique index missing:\n{sql}"
+        );
+        // The column is still emitted (now without the inline UNIQUE keyword).
+        assert!(
+            sql.contains("idempotency_key TEXT NOT NULL")
+                && !sql.contains("idempotency_key TEXT NOT NULL UNIQUE"),
+            "unique column should be emitted without an inline UNIQUE:\n{sql}"
         );
         // @index -> CREATE INDEX.
         assert!(
