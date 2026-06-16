@@ -56,6 +56,10 @@ export default schema;
     .await
     .unwrap();
 
+    let redirect_store = std::sync::Arc::new(
+        atomo_server::public_read_redirects::RedirectStore::new(atomo.db_pool().clone()),
+    );
+    redirect_store.init().await.unwrap();
     let app = atomo_server::handlers::create_router(
         gql,
         atomo,
@@ -63,6 +67,7 @@ export default schema;
         audit,
         atomo_server::auth::RegistrationConfig::disabled(),
         vec![],
+        redirect_store,
     );
     (app, auth)
 }

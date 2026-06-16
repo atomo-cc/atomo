@@ -64,6 +64,10 @@ async fn build_app() -> axum::Router {
     atomo_server::ensure_platform_tables(atomo.db_pool())
         .await
         .unwrap();
+    let redirect_store = std::sync::Arc::new(
+        atomo_server::public_read_redirects::RedirectStore::new(atomo.db_pool().clone()),
+    );
+    redirect_store.init().await.unwrap();
     atomo_server::handlers::create_router(
         gql,
         atomo,
@@ -71,6 +75,7 @@ async fn build_app() -> axum::Router {
         audit,
         atomo_server::auth::RegistrationConfig::disabled(),
         vec!["PublicListing".to_string()],
+        redirect_store,
     )
 }
 
@@ -151,4 +156,83 @@ async fn public_read_denies_model_not_in_allowlist_even_if_public() {
     let app = build_app().await;
     let (status, _) = get(&app, "/public/records/PubDoc").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+#[ignore]
+async fn public_read_limit_clamped_to_100() {
+    std::env::set_var("ATOMO_PUBLIC_READ_MODELS", "PubDoc");
+    std::env::set_var("ATOMO_PUBLIC_READ_FILTER_PubDoc", "status:published");
+    std::env::set_var("ATOMO_PUBLIC_READ_FIELDS_PubDoc", "slug");
+    let app = build_app().await;
+
+    // limit=0 should clamp to 1 (minimum), not return zero rows or error.
+    let (status, body) = get(&app, "/public/records/PubDoc?limit=0").await;
+    assert_eq!(status, StatusCode::OK);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "limit=0 should clamp to 1");
+
+    // limit=999 should clamp to 100 (the maximum).
+    let (status, _) = get(&app, "/public/records/PubDoc?limit=999").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Negative limit falls back to default (non-parseable).
+    let (status, body) = get(&app, "/public/records/PubDoc?limit=-5").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["items"].as_array().unwrap().len() <= 100);
+
+    std::env::remove_var("ATOMO_PUBLIC_READ_MODELS");
+    std::env::remove_var("ATOMO_PUBLIC_READ_FILTER_PubDoc");
+    std::env::remove_var("ATOMO_PUBLIC_READ_FIELDS_PubDoc");
+}
+
+#[tokio::test]
+#[ignore]
+async fn public_read_no_filter_config_exposes_all_rows() {
+    // Allowlisted but no fixed filter and no query fields — all rows visible, no client filtering.
+    std::env::set_var("ATOMO_PUBLIC_READ_MODELS", "PubDoc");
+    std::env::remove_var("ATOMO_PUBLIC_READ_FILTER_PubDoc");
+    std::env::remove_var("ATOMO_PUBLIC_READ_FIELDS_PubDoc");
+    let app = build_app().await;
+
+    let (status, body) = get(&app, "/public/records/PubDoc").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        slugs(&body),
+        vec!["logo-maker", "photo-editor", "secret-draft"],
+        "without fixed filter, all rows (including draft) should be exposed"
+    );
+
+    // Client filter param is ignored when no query fields are configured.
+    let (_, body) = get(&app, "/public/records/PubDoc?slug=logo-maker").await;
+    assert_eq!(
+        slugs(&body).len(),
+        3,
+        "slug param should be ignored when ATOMO_PUBLIC_READ_FIELDS is not set"
+    );
+
+    std::env::remove_var("ATOMO_PUBLIC_READ_MODELS");
+}
+
+#[tokio::test]
+#[ignore]
+async fn public_read_fixed_filter_overrides_client_attempt() {
+    // Even when a field appears in both the fixed filter and allowed query fields, the fixed value
+    // wins — a client can never override the operator's forced filter.
+    std::env::set_var("ATOMO_PUBLIC_READ_MODELS", "PubDoc");
+    std::env::set_var("ATOMO_PUBLIC_READ_FILTER_PubDoc", "status:published");
+    std::env::set_var("ATOMO_PUBLIC_READ_FIELDS_PubDoc", "slug,status");
+    let app = build_app().await;
+
+    let (_, body) = get(&app, "/public/records/PubDoc?status=draft").await;
+    let s = slugs(&body);
+    assert!(
+        !s.contains(&"secret-draft".to_string()),
+        "fixed filter must override client's status=draft attempt: got {s:?}"
+    );
+    assert_eq!(s, vec!["logo-maker", "photo-editor"]);
+
+    std::env::remove_var("ATOMO_PUBLIC_READ_MODELS");
+    std::env::remove_var("ATOMO_PUBLIC_READ_FILTER_PubDoc");
+    std::env::remove_var("ATOMO_PUBLIC_READ_FIELDS_PubDoc");
 }

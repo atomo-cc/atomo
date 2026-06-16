@@ -164,6 +164,12 @@ impl AtomoServer {
         registry_store.init().await?;
         info!("   ✓ Plugin registry ready");
 
+        let redirect_store = std::sync::Arc::new(
+            crate::public_read_redirects::RedirectStore::new(self.atomo.db_pool().clone()),
+        );
+        redirect_store.init().await?;
+        info!("   ✓ Public read redirects ready");
+
         // Media upload/storage (POST/GET/DELETE /media). Built before create_router consumes
         // self.atomo: grab the event sender + pool now.
         let media_state = std::sync::Arc::new(crate::media::MediaState::new(
@@ -460,6 +466,7 @@ impl AtomoServer {
             audit_service,
             registration,
             public_read_models,
+            redirect_store,
         )
         .merge(crate::handlers::workflow_router(workflow_engine.clone()))
         .merge(crate::projector_routes::projector_router(

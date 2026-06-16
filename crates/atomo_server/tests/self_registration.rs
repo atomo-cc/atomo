@@ -38,7 +38,11 @@ async fn build_app(reg: RegistrationConfig) -> (axum::Router, sqlx::PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    let app = atomo_server::handlers::create_router(gql, atomo, auth, audit, reg, vec![]);
+    let redirect_store = std::sync::Arc::new(
+        atomo_server::public_read_redirects::RedirectStore::new(pool.clone()),
+    );
+    redirect_store.init().await.unwrap();
+    let app = atomo_server::handlers::create_router(gql, atomo, auth, audit, reg, vec![], redirect_store);
     (app, pool)
 }
 

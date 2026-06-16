@@ -11,8 +11,8 @@ use axum::http::{header, HeaderMap};
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
-    response::{Html, Json},
-    routing::{get, post},
+    response::{Html, IntoResponse, Json},
+    routing::{get, post, delete},
     Router,
 };
 use prometheus::{Encoder, TextEncoder};
@@ -357,7 +357,8 @@ pub async fn public_records(
     Extension(schema): Extension<AtomoGraphQLSchema>,
     Extension(atomo): Extension<Atomo>,
     Extension(allowed): Extension<PublicReadModels>,
-) -> Result<Json<Value>, StatusCode> {
+    Extension(redirects): Extension<std::sync::Arc<crate::public_read_redirects::RedirectStore>>,
+) -> Result<axum::response::Response, StatusCode> {
     let model_allowed = allowed.0.iter().any(|m| m == &model);
     if !model_allowed || !model_declares_public_read(&atomo, &model) {
         return Err(StatusCode::NOT_FOUND);
@@ -391,9 +392,88 @@ pub async fn public_records(
         .data
         .into_json()
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    Ok(Json(serde_json::json!({
-        "items": data.get("records").cloned().unwrap_or_else(|| serde_json::json!([]))
-    })))
+    let items = data
+        .get("records")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+
+    // When a slug query returns empty, check for a redirect before returning.
+    let items_array = items.as_array();
+    if items_array.map_or(true, |a| a.is_empty()) {
+        if let Some(slug) = params.get("slug") {
+            if let Ok(Some(redirect)) = redirects.lookup(&model, slug).await {
+                let mut target_params = params.clone();
+                target_params.insert("slug".to_string(), redirect.to_slug.clone());
+                let query = target_params
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
+                    .collect::<Vec<_>>()
+                    .join("&");
+                let location = format!("/public/records/{}?{}", model, query);
+                let status = if redirect.permanent {
+                    StatusCode::MOVED_PERMANENTLY
+                } else {
+                    StatusCode::FOUND
+                };
+                return Ok((
+                    status,
+                    [(header::LOCATION, location)],
+                )
+                    .into_response());
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "items": items })).into_response())
+}
+
+// --- Redirect management (admin-only) ---
+
+#[derive(serde::Deserialize)]
+pub struct CreateRedirectBody {
+    pub model: String,
+    pub from_slug: String,
+    pub to_slug: String,
+    #[serde(default = "default_permanent")]
+    pub permanent: bool,
+}
+fn default_permanent() -> bool { true }
+
+pub async fn create_redirect(
+    Extension(redirects): Extension<std::sync::Arc<crate::public_read_redirects::RedirectStore>>,
+    Json(body): Json<CreateRedirectBody>,
+) -> Result<StatusCode, StatusCode> {
+    redirects
+        .upsert(&body.model, &body.from_slug, &body.to_slug, body.permanent)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::CREATED)
+}
+
+pub async fn delete_redirect(
+    axum::extract::Path((model, slug)): axum::extract::Path<(String, String)>,
+    Extension(redirects): Extension<std::sync::Arc<crate::public_read_redirects::RedirectStore>>,
+) -> Result<StatusCode, StatusCode> {
+    let removed = redirects
+        .remove(&model, &slug)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if removed {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+pub async fn list_redirects(
+    axum::extract::Path(model): axum::extract::Path<String>,
+    Extension(redirects): Extension<std::sync::Arc<crate::public_read_redirects::RedirectStore>>,
+) -> Result<Json<Value>, StatusCode> {
+    let items = redirects
+        .list(&model)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({ "redirects": items })))
 }
 
 pub async fn graphql_playground() -> Html<String> {
@@ -520,6 +600,7 @@ pub fn create_router(
     audit_service: crate::audit::HttpAuditService,
     registration: crate::auth::RegistrationConfig,
     public_read_models: Vec<String>,
+    redirect_store: std::sync::Arc<crate::public_read_redirects::RedirectStore>,
 ) -> Router {
     use crate::auth::{auth_middleware, handlers, optional_auth_middleware};
     use axum::middleware;
@@ -609,6 +690,18 @@ pub fn create_router(
                 .route("/statistics", get(get_audit_statistics))
                 .with_state(audit_service.clone()),
         )
+        // Admin-only redirect management (requires auth)
+        .nest(
+            "/public/redirects",
+            Router::new()
+                .route("/", post(create_redirect))
+                .route("/{model}/{slug}", delete(delete_redirect))
+                .route("/{model}", get(list_redirects))
+                .route_layer(middleware::from_fn_with_state(
+                    auth_service.clone(),
+                    auth_middleware,
+                )),
+        )
         // Merge protected and semi-protected routes
         .merge(protected_routes)
         .merge(semi_protected_routes)
@@ -618,6 +711,7 @@ pub fn create_router(
         .layer(Extension(atomo))
         .layer(Extension(registration))
         .layer(Extension(PublicReadModels(public_read_models)))
+        .layer(Extension(redirect_store))
 }
 
 // ============================================================================
