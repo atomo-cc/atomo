@@ -74,6 +74,31 @@ When a real consumer pulls a feature, capture the *generic* gap it surfaced — 
 its name. If you catch a leaked name, genericize it in the working tree; for full
 removal from history a maintainer can scrub it with `git filter-repo`.
 
+## Release Checklist
+
+When cutting a new version (e.g. v0.5.7), follow **every** step in order. Do not
+skip steps silently — if one doesn't apply, say so.
+
+1. **CHANGELOG cutover** — rename `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` and add a
+   fresh empty `## [Unreleased]` section above it.
+2. **Bump crate versions** — update `version` in all 9 `crates/*/Cargo.toml` files.
+3. **Regenerate Cargo.lock** — `cargo check --workspace` (ensures the lockfile matches).
+4. **Commit + PR + merge** — branch, commit (`chore: release vX.Y.Z`), open a PR,
+   squash-merge, delete the branch. Never push directly to main.
+5. **Tag** — `git tag vX.Y.Z && git push origin vX.Y.Z` (from the merged main).
+6. **GitHub release** — `gh release create vX.Y.Z` with release notes summarizing
+   the changelog section.
+7. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
+   - `docker.yml -f tag=vX.Y.Z` — server image `:vX.Y.Z`
+   - `docker.yml -f tag=latest` — server image `:latest`
+   - `docs.yml` — deploy documentation
+   - `release.yml -f tag=vX.Y.Z` — build CLI binaries (Linux/macOS/Windows) and
+     attach to the GitHub release *(optional — skip if CLI unchanged)*
+8. **Verify** — confirm workflow runs succeed in the Actions tab.
+
+> **Not yet active (commented out):** crates.io publish (in `release.yml`) and npm
+> publish (`@atomo-cc/*` packages). Enable when ready for public distribution.
+
 ## Security & Configuration Tips
 - Use `.env` for local secrets; never commit secrets. Copy from `.env.example`.
 - Run DB ops via `pnpm atomo migrate -- --service <name>` and seed with `pnpm atomo seed -- --service <name>`.
