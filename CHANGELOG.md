@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-06-17
+
 ### Added
 - **Worker-token media upload.** `POST /media` now accepts an `X-Worker-Token` in addition to a
   user JWT, so external workers can store generated artifacts (e.g. processed images, rendered
