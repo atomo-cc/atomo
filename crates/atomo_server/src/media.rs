@@ -5,6 +5,8 @@
 //! unguessable uuid key (public). `DELETE /media/{id}` (auth) soft-deletes + emits Deleted.
 
 use crate::auth::{optional_auth_middleware, AuthUser, HttpAuthService};
+use crate::job_routes::optional_worker_auth_middleware;
+use crate::jobs::{WorkerIdentity, WorkerTokenStore};
 use crate::storage::StorageBackend;
 use anyhow::Result;
 use atomo::events::{EventType, ModelEvent};
@@ -34,6 +36,9 @@ pub struct MediaState {
     /// When true, GET /media/{id} requires auth and the caller's tenant must match the media's
     /// (opt-in via STORAGE_PRIVATE_READS). Default false = public-by-unguessable-key.
     private_reads: bool,
+    /// Lets `POST /media` accept an `X-Worker-Token` in addition to a user JWT, so external workers
+    /// can store generated artifacts. Verified lazily (only when the header is present).
+    workers: Arc<WorkerTokenStore>,
 }
 
 impl MediaState {
@@ -49,12 +54,14 @@ impl MediaState {
         let private_reads = std::env::var("STORAGE_PRIVATE_READS")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+        let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
         Self {
             pool,
             storage,
             sender,
             max_size,
             private_reads,
+            workers,
         }
     }
 
@@ -518,17 +525,27 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
             auth,
             optional_auth_middleware,
         ))
+        // Also accept a worker token (non-fatal: only verifies when X-Worker-Token is present), so
+        // external workers can store generated artifacts without a user session.
+        .route_layer(middleware::from_fn_with_state(
+            state.workers.clone(),
+            optional_worker_auth_middleware,
+        ))
         .with_state(state)
 }
 
 async fn upload(
     State(state): State<Arc<MediaState>>,
     user: Option<Extension<AuthUser>>,
+    worker: Option<Extension<WorkerIdentity>>,
     mut multipart: Multipart,
 ) -> Response {
-    let user = match user {
-        Some(Extension(u)) => u,
-        None => return StatusCode::UNAUTHORIZED.into_response(),
+    // Accept either a user JWT (owner = that user/tenant) or a worker token (owner = the worker, no
+    // tenant). One of the two must be present.
+    let (owner_id, tenant_id): (String, Option<String>) = match (user, worker) {
+        (Some(Extension(u)), _) => (u.id, u.tenant_id),
+        (None, Some(Extension(w))) => (format!("worker:{}", w.id), None),
+        (None, None) => return StatusCode::UNAUTHORIZED.into_response(),
     };
     let field = match multipart.next_field().await {
         Ok(Some(f)) => f,
@@ -566,8 +583,8 @@ async fn upload(
             &filename,
             &content_type,
             bytes.as_ref(),
-            &user.id,
-            user.tenant_id.as_deref(),
+            &owner_id,
+            tenant_id.as_deref(),
         )
         .await
     {

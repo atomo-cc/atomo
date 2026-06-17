@@ -77,6 +77,67 @@ fn upload_req(token: Option<&str>, content_type: &str, data: &[u8]) -> Request<B
     b.body(body).unwrap()
 }
 
+fn worker_upload_req(worker_token: &str, content_type: &str, data: &[u8]) -> Request<Body> {
+    let (ct, body) = multipart("w.png", content_type, data);
+    Request::builder()
+        .method("POST")
+        .uri("/media")
+        .header("Content-Type", ct)
+        .header("X-Worker-Token", worker_token)
+        .body(body)
+        .unwrap()
+}
+
+/// `POST /media` accepts a worker token in addition to a user JWT, so external workers can store
+/// generated artifacts without a user session. Invalid/missing credentials still 401.
+#[tokio::test]
+#[ignore]
+async fn media_http_accepts_worker_token() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let workers = atomo_server::jobs::WorkerTokenStore::new(pool.clone());
+    workers.init().await.unwrap();
+    let no_caps: Vec<String> = vec![];
+    let (_id, worker_token) = workers
+        .mint("media-test-worker", &["test-queue".to_string()], &no_caps)
+        .await
+        .unwrap();
+    let dir = std::env::temp_dir().join(format!("atomo-media-wkr-{}", uuid::Uuid::new_v4()));
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let state = Arc::new(MediaState::new(
+        pool.clone(),
+        Arc::new(LocalStorage::new(&dir)),
+        tx,
+    ));
+    state.init().await.unwrap();
+    let app = media_router(state, auth);
+
+    // Valid worker token authorizes the upload (no Authorization header).
+    let r = app
+        .clone()
+        .oneshot(worker_upload_req(&worker_token, "image/png", PNG))
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        StatusCode::OK,
+        "valid worker token authorizes media upload"
+    );
+    let body = json_body(r).await;
+    assert!(body.get("id").is_some(), "returns an asset id");
+
+    // Invalid worker token (and no JWT) -> 401.
+    let r = app
+        .oneshot(worker_upload_req("wkr_invalid", "image/png", PNG))
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        StatusCode::UNAUTHORIZED,
+        "invalid worker token is rejected"
+    );
+}
+
 #[tokio::test]
 #[ignore]
 async fn media_http_full_lifecycle_and_security() {

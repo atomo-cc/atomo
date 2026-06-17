@@ -58,6 +58,28 @@ pub async fn worker_auth_middleware(
     }
 }
 
+/// Non-fatal variant of [`worker_auth_middleware`]: injects the verified `WorkerIdentity` when a
+/// valid `X-Worker-Token` is present, and otherwise passes the request through unchanged (no 401).
+/// Lets a route accept *either* a user JWT or a worker token — e.g. media upload, where an external
+/// worker stores generated artifacts with its worker token rather than a user session.
+pub async fn optional_worker_auth_middleware(
+    State(store): State<Arc<WorkerTokenStore>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    if let Some(token) = req
+        .headers()
+        .get("x-worker-token")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        if let Ok(Some(identity)) = store.verify(&token).await {
+            req.extensions_mut().insert(identity);
+        }
+    }
+    next.run(req).await
+}
+
 fn leased_json(j: &LeasedJob) -> Value {
     json!({
         "id": j.id,

@@ -59,7 +59,9 @@ participates in audit/history/projections — this is what makes Atomo's upload 
 ### 2c. Routes (`upload_routes.rs`, wired into `create_router`)
 
 - `POST /media` — multipart upload → store bytes + insert metadata + emit event →
-  `{id, url, contentType, size}`. **Behind `auth_middleware`**.
+  `{id, url, contentType, size}`. **Behind `auth_middleware`**; also accepts an `X-Worker-Token`
+  (via `optional_worker_auth_middleware`) so external workers can store generated artifacts
+  without a user session (owner mapped to `worker:{id}`, no tenant).
 - `GET /media/{id}` — serve bytes (local) or 302 → presigned URL (S3). Gated by read access +
   tenant scope. The local proxy path honors HTTP **Range** requests (206 / `Content-Range`, 416 for
   an unsatisfiable range) so `video`/`audio` can seek, advertises `Accept-Ranges: bytes`, and emits
