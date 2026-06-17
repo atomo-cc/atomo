@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Worker-token media upload.** `POST /media` now accepts an `X-Worker-Token` in addition to a
+  user JWT, so external workers can store generated artifacts (e.g. processed images, rendered
+  video) without a user session. The worker is mapped to `owner_id = "worker:{id}"` with no
+  tenant. A non-fatal `optional_worker_auth_middleware` in `job_routes.rs` injects the verified
+  `WorkerIdentity` only when the header is present; routes that don't need it are unaffected.
+  Regression-tested (`media_http_accepts_worker_token`: valid token → 200 + asset id,
+  invalid → 401).
+
 ### Removed
 - **Product-specific public-demo route removed from core** (`atomo_server::public_demo_routes`). The
   generic server no longer carries a consumer's Demo command surface or its `public_*`/named-consumer
