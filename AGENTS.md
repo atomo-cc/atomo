@@ -79,25 +79,55 @@ removal from history a maintainer can scrub it with `git filter-repo`.
 When cutting a new version (e.g. v0.5.7), follow **every** step in order. Do not
 skip steps silently — if one doesn't apply, say so.
 
-1. **CHANGELOG cutover** — rename `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` and add a
-   fresh empty `## [Unreleased]` section above it.
-2. **Bump crate versions** — update `version` in all 9 `crates/*/Cargo.toml` files.
-3. **Regenerate Cargo.lock** — `cargo check --workspace` (ensures the lockfile matches).
-4. **Commit + PR + merge** — branch, commit (`chore: release vX.Y.Z`), open a PR,
-   squash-merge, delete the branch. Never push directly to main.
-5. **Tag** — `git tag vX.Y.Z && git push origin vX.Y.Z` (from the merged main).
-6. **GitHub release** — `gh release create vX.Y.Z` with release notes summarizing
-   the changelog section.
-7. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
-   - `docker.yml -f tag=vX.Y.Z` — server image `:vX.Y.Z`
-   - `docker.yml -f tag=latest` — server image `:latest`
-   - `docs.yml` — deploy documentation
-   - `release.yml -f tag=vX.Y.Z` — build CLI binaries (Linux/macOS/Windows) and
-     attach to the GitHub release *(optional — skip if CLI unchanged)*
-8. **Verify** — confirm workflow runs succeed in the Actions tab.
+### Pre-release (before the version commit)
 
-> **Not yet active (commented out):** crates.io publish (in `release.yml`) and npm
-> publish (`@atomo-cc/*` packages). Enable when ready for public distribution.
+1. **Verify build** — `cargo check --workspace` and `cargo clippy -- -D warnings`
+   must be clean. Run any relevant tests (`cargo test -p atomo_server`).
+2. **CHANGELOG cutover** — rename `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` and add a
+   fresh empty `## [Unreleased]` section above it.
+3. **Bump Rust crate versions** — update `version` in all 9 `crates/*/Cargo.toml`.
+4. **Bump npm package versions** — update `version` in publishable
+   `packages/*/package.json` to match (currently: `@atomo-cc/client-sdk`,
+   `@atomo-cc/worker-sdk`).
+5. **Regenerate lockfiles** — `cargo check --workspace` (Cargo.lock) and
+   `corepack pnpm@8.15.0 install --lockfile-only` (pnpm-lock.yaml).
+
+### Release
+
+6. **Commit + PR + merge** — branch, commit (`chore: release vX.Y.Z`), open a PR,
+   squash-merge, delete the branch. Never push directly to main.
+7. **Tag** — `git tag vX.Y.Z && git push origin vX.Y.Z` (from the merged main).
+8. **GitHub release** — `gh release create vX.Y.Z` with release notes summarizing
+   the changelog section.
+
+### Publish artifacts
+
+9. **npm publish** (local, free) — from each publishable package directory:
+   ```
+   cd packages/atomo-client-sdk && npm publish --access public
+   cd packages/atomo-worker-sdk && npm publish --access public
+   ```
+   Ensure `npm whoami` shows the right account. `prepublishOnly` rebuilds `dist/`.
+10. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
+    - `docker.yml -f tag=vX.Y.Z` — server image `:vX.Y.Z`
+    - `docker.yml -f tag=latest` — server image `:latest`
+    - `docs.yml` — deploy documentation
+    - `release.yml -f tag=vX.Y.Z` — build CLI binaries (Linux/macOS/Windows) and
+      attach to the GitHub release *(optional — skip if CLI unchanged)*
+
+### Post-release verification
+
+11. **Verify workflows** — confirm all dispatched runs succeed in the Actions tab
+    (`gh run list --workflow=docker.yml --limit=3`).
+12. **Verify Docker image** — `docker pull ghcr.io/atomo-cc/atomo-server:vX.Y.Z`
+    (or check GHCR package page).
+13. **Verify npm** — `npm view @atomo-cc/client-sdk version` and
+    `npm view @atomo-cc/worker-sdk version` should show the new version.
+14. **Notify consumers** — if a consumer (e.g. a sibling service) pins the image
+    tag in `docker-compose.yml`, update its tag and `docker compose pull`.
+
+> **Not yet active (commented out):** crates.io publish (in `release.yml`). Enable
+> when ready for public Rust crate distribution.
 
 ## Security & Configuration Tips
 - Use `.env` for local secrets; never commit secrets. Copy from `.env.example`.
