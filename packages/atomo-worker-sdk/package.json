@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/worker-sdk",
-  "version": "0.1.0",
+  "version": "0.5.7",
   "description": "TypeScript SDK for writing Atomo external job workers — supply handlers, the SDK owns the lease/heartbeat/complete/fail loop.",
   "type": "module",
   "publishConfig": {
@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "rimraf dist && tsc",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -35,6 +36,7 @@
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "@types/node": "^20.12.0",
+    "rimraf": "^5.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }
