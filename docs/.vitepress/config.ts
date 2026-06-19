@@ -2,8 +2,8 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'Atomo',
-  // Project Pages are served under /atomo/, so assets must resolve against this base.
-  base: '/atomo/',
+  // Custom domain (docs.atomo.cc) serves at root — no subpath needed.
+  base: '/',
   // Localhost URLs are legitimate examples in the docs (dev server, /admin) — don't
   // fail the build treating them as dead links.
   ignoreDeadLinks: [/^https?:\/\/localhost/, /^https?:\/\/127\.0\.0\.1/],
@@ -34,7 +34,7 @@ export default defineConfig({
         { text: '路线图', link: '/zh/roadmap' }
       ]},
       {
-        text: 'v0.4.0',
+        text: 'v0.5.7',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Roadmap', link: '/roadmap' }
