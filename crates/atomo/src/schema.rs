@@ -427,6 +427,45 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
+/// Check for declared schema fields whose columns are missing from the database.
+/// Emits a `tracing::warn!` for each gap so consumers notice drift at boot instead
+/// of hitting opaque runtime failures.
+pub async fn check_column_drift(schema: &Schema, pool: &sqlx::PgPool) {
+    for model in schema.models.values() {
+        let table = crate::query::sql_builder::table_name_for(model);
+
+        let existing: Vec<String> = match sqlx::query_scalar::<_, String>(
+            "SELECT column_name FROM information_schema.columns \
+             WHERE table_schema = current_schema() AND table_name = $1",
+        )
+        .bind(&table)
+        .fetch_all(pool)
+        .await
+        {
+            Ok(cols) => cols,
+            Err(_) => continue,
+        };
+
+        if existing.is_empty() {
+            continue;
+        }
+
+        let existing: std::collections::HashSet<String> = existing.into_iter().collect();
+
+        for field in model.fields.values() {
+            let col = to_snake_case(&field.name);
+            if !existing.contains(&col) {
+                tracing::warn!(
+                    table = %table,
+                    column = %col,
+                    "table is missing declared column — schema/DB drift detected; \
+                     enable migrations or run them manually"
+                );
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

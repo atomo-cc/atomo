@@ -1192,6 +1192,8 @@ impl AtomoClientBuilder {
             tx.commit().await?;
         }
 
+        crate::schema::check_column_drift(schema, &pool).await;
+
         let embedding_store = if self.enable_ai {
             let store = crate::ai::EmbeddingStore::new(pool.clone());
             store.init().await.ok(); // Don't fail if pgvector not installed
