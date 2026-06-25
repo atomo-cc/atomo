@@ -10,20 +10,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    // Split stable third-party deps into their own cacheable chunks so the app
-    // bundle stays small and vendor code isn't re-downloaded on every app change.
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (/[\\/]node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/.test(id)) {
-              return 'react-vendor'
-            }
-            return 'vendor'
-          }
-        },
-      },
-    },
   },
   server: {
     port: 5173,
