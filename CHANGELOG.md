@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-06-20
+
+### Fixed
+- **Admin UI TDZ crash on init.** Removed `manualChunks` from the admin UI Vite
+  config — the vendor/react-vendor chunk split caused `Cannot access 'ho' before
+  initialization` because React-dependent libraries (Radix UI, TanStack, etc.) in
+  the vendor chunk referenced React symbols before the react-vendor chunk finished
+  initializing. Also fixes `/admin/favicon.svg` 404.
+
+### Added
+- **Boot-time schema/DB column drift warning.** The server now queries
+  `information_schema.columns` on startup and emits `tracing::warn!` for any
+  declared schema field whose column is missing from the database, so consumers
+  catch drift immediately instead of hitting opaque runtime write failures.
+
 ## [0.5.7] - 2026-06-17
 
 ### Added
