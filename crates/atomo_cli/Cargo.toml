@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_cli"
-version = "0.5.7"
+version = "0.5.8"
 edition = "2021"
 description = "Atomo CLI - Command line interface for Atomo development"
 license = "AGPL-3.0-or-later"

@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/worker-sdk",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "TypeScript SDK for writing Atomo external job workers — supply handlers, the SDK owns the lease/heartbeat/complete/fail loop.",
   "type": "module",
   "publishConfig": {
