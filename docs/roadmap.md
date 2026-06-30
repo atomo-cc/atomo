@@ -14,7 +14,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 - CLI and dev runtime: ✅ implemented (init, migrate, codegen, dev, dev --workspace, test, deploy)
 - Schema → Rust/GraphQL/codegen: ✅ implemented with hot reload
 - Schema forward-migration: ✅ additive auto-migration reconciles new columns, declared defaults (with row backfill), `@unique` (as a reconcilable unique index) and `@index` on existing tables; a required-no-default add to a populated table fails with an actionable message instead of an opaque startup error. Postgres-tested (`schema_evolution`). Guide: `/guide/advanced/schema-migration`
-- GraphQL API: ✅ full CRUD with where/orderBy parsing, pagination, relationships
+- GraphQL API: ✅ full CRUD with where/orderBy parsing, pagination, relationships, `updateMany` bulk mutation, `id` shorthand, camelCase output with dual-casing input
 - Public read (anonymous): ✅ `GET /public/records/{model}` — default-deny dual approval (operator allowlist + schema `allow.public()`), explicit per-model fixed filters + allowed query fields (no assumed status/slug), read-only. Unit + Postgres HTTP tests (`public_read`). API: `/api/public-read`
 - Admin UI: ✅ dynamic rendering with aligned API client
 - Auth (JWT + RBAC): ✅ argon2id hashing, RBAC enforced in GraphQL resolvers (parsed from schema + conformance-tested in S1; **data-layer callers not yet gated**), OAuth2/OIDC SSO. Optional self-registration is **default-off** (`ATOMO_ENABLE_SELF_REGISTRATION`) with configurable role/tenant provisioning and race-safe duplicate handling; Postgres HTTP-tested (`self_registration`). API: `/api/auth`
@@ -31,13 +31,13 @@ This page is the single source of truth for delivery status and upcoming milesto
 - Metered command primitives: ✅ `atomo_server::metered` — expiring single-use token store + integer-unit budget ledger + transactional `JobStore::enqueue_tx`, composing one all-or-nothing metered command (reserve budget · consume token · enqueue job). Generic/library-only (no HTTP surface, no business policy); Postgres-tested (`metered_store`: single-use, windowed limit, concurrent no-over-commit, atomic rollback). Guide: `/guide/advanced/metered-command-primitives`
 - Workflow engine: 🟢 triggers/conditions/retry + YAML loading + HTTP steps + **Mutation steps (GraphQL) and Job steps (durable worker enqueue)** wired via executor seams injected at server boot; advanced JS-authored workflows still TODO
 - Caching: ✅ read cache with TTL and event-driven invalidation (conformance-tested C4; pagination cache-key bug fixed C2)
-- Rate limiting: ✅ per-IP token bucket middleware
+- Rate limiting: ✅ per-IP token bucket middleware with `Retry-After` header, auth/health endpoint exemptions
 
 > **Conformance status**: capability claims above are validated against the flagship CRM by the
 > CRM Conformance Suite (`/guide/advanced/crm-conformance-plan`), which fixed 8 silent gaps and
 > 2 security holes. 🟡 marks capabilities that work in part with documented follow-ups.
 - Observability: ✅ structured tracing with request ID propagation
-- Benchmarks: 🟡 reproducible engine harness (`examples/bench`) + a **co-located `node-postgres` head-to-head** (`bench/node-baseline.mjs`) — data layer, job-lease engine (`SKIP LOCKED` scaling), JS/Javy hook tax, footprint; results recorded honestly (Atomo is ~2× slower than raw node-pg on writes but wins on cached reads/footprint/engine features — the "3–5× vs Node" line stays a **target**). Plus a **full-stack HTTP throughput** test (axum vs Fastify under k6 — Atomo comparable-to-slower; "3–5× vs Node" unsupported at *either* layer, so it stays a target; actionable: `RUST_LOG=warn` for ~45% more throughput). Authenticated-CRUD-under-load still TODO. See `/guide/advanced/benchmarks`
+- Benchmarks: 🟡 reproducible engine harness (`examples/bench`) + a **co-located `node-postgres` head-to-head** (`bench/node-baseline.mjs`) — data layer, job-lease engine (`SKIP LOCKED` scaling), JS/Javy hook tax, footprint; results recorded honestly (Atomo is ~2× slower than raw node-pg on writes but wins on cached reads/footprint/engine features — the "3–5× vs Node" line stays a **target**). Plus a **full-stack HTTP throughput** test (axum vs Fastify under k6 — Atomo comparable-to-slower; "3–5× vs Node" unsupported at *either* layer, so it stays a target; actionable: `RUST_LOG=warn` for ~45% more throughput). New in v0.5.10: **GraphQL full-stack** (in-process create/query/point-read including camelCase conversion), **updateMany vs sequential** comparison, and **rate limiter throughput** (serial + concurrent). See `/guide/advanced/benchmarks`
 - Validation: ✅ rules parsed from schema.ts and enforced (required, email, min, max, numeric)
 - Soft deletes: ✅ full lifecycle — delete / restore / hardDelete / trash (deletedRecords) with query filtering
 - Audit: ✅ mutations auto-logged with the acting user; admin/manager-gated audit REST
