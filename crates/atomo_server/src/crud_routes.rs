@@ -211,7 +211,7 @@ async fn find_by_id(
     .await;
     match result {
         Ok(Some(record)) => Json(json!(record)).into_response(),
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response(),
         Err(e) => error_response(e),
     }
 }
@@ -260,7 +260,7 @@ async fn update(
     match result {
         Ok(records) => match records.into_iter().next() {
             Some(record) => Json(json!(record)).into_response(),
-            None => StatusCode::NOT_FOUND.into_response(),
+            None => (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response(),
         },
         Err(e) => error_response(e),
     }

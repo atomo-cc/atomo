@@ -46,15 +46,15 @@ pub async fn worker_auth_middleware(
         .map(|s| s.to_string())
     {
         Some(t) => t,
-        None => return StatusCode::UNAUTHORIZED.into_response(),
+        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "missing worker token"}))).into_response(),
     };
     match store.verify(&token).await {
         Ok(Some(identity)) => {
             req.extensions_mut().insert(identity);
             next.run(req).await
         }
-        Ok(None) => StatusCode::UNAUTHORIZED.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(None) => (StatusCode::UNAUTHORIZED, Json(json!({"error": "invalid worker token"}))).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "internal server error"}))).into_response(),
     }
 }
 
@@ -125,7 +125,7 @@ async fn lease(
             let arr: Vec<Value> = leased.iter().map(leased_json).collect();
             Json(json!({ "jobs": arr })).into_response()
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -146,9 +146,8 @@ async fn heartbeat(
     let vis = req.visibility_secs.clamp(1, 86_400);
     match jobs.heartbeat(&id, &req.lease_id, vis).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        // Lease lost (expired/reassigned) — tell the worker to stop.
-        Ok(false) => StatusCode::CONFLICT.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(false) => (StatusCode::CONFLICT, Json(json!({"error": "lease lost"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -168,8 +167,8 @@ async fn complete(
 ) -> Response {
     match jobs.complete(&id, &req.lease_id, req.result).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        Ok(false) => StatusCode::CONFLICT.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(false) => (StatusCode::CONFLICT, Json(json!({"error": "lease lost"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -197,9 +196,8 @@ async fn fail(
             Json(json!({ "outcome": "retry", "delaySecs": delay_secs })).into_response()
         }
         Ok(Some(FailOutcome::DeadLetter)) => Json(json!({ "outcome": "dead" })).into_response(),
-        // Stale lease — no-op.
-        Ok(None) => StatusCode::CONFLICT.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(None) => (StatusCode::CONFLICT, Json(json!({"error": "lease lost"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -250,8 +248,8 @@ async fn progress(
             }
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(false) => StatusCode::CONFLICT.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(false) => (StatusCode::CONFLICT, Json(json!({"error": "lease lost"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -283,7 +281,7 @@ async fn enqueue(
 ) -> Response {
     let user = match user {
         Some(Extension(u)) => u,
-        None => return StatusCode::UNAUTHORIZED.into_response(),
+        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
     };
     if req.queue.is_empty() || req.kind.is_empty() {
         return (StatusCode::BAD_REQUEST, "queue and kind are required").into_response();
@@ -307,7 +305,7 @@ async fn enqueue(
         .await
     {
         Ok(id) => (StatusCode::CREATED, Json(json!({ "id": id }))).into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -320,13 +318,13 @@ async fn get_job(
 ) -> Response {
     let user = match user {
         Some(Extension(u)) => u,
-        None => return StatusCode::UNAUTHORIZED.into_response(),
+        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
     };
     match jobs.get(&id).await {
         Ok(Some(v)) => {
             if let Some(t) = &v.tenant_id {
                 if user.tenant_id.as_deref() != Some(t.as_str()) {
-                    return StatusCode::NOT_FOUND.into_response();
+                    return (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response();
                 }
             }
             Json(json!({
@@ -341,8 +339,8 @@ async fn get_job(
             }))
             .into_response()
         }
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -372,7 +370,7 @@ async fn mint_worker(
             })),
         )
             .into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -380,8 +378,8 @@ async fn mint_worker(
 fn require_admin(user: Option<Extension<AuthUser>>) -> Option<Response> {
     match user {
         Some(u) if matches!(u.role, UserRole::Admin) => None,
-        Some(_) => Some(StatusCode::FORBIDDEN.into_response()),
-        None => Some(StatusCode::UNAUTHORIZED.into_response()),
+        Some(_) => Some((StatusCode::FORBIDDEN, Json(json!({"error": "admin access required"}))).into_response()),
+        None => Some((StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response()),
     }
 }
 
@@ -410,7 +408,7 @@ async fn list_workers(
                 .collect();
             Json(json!({ "workers": arr })).into_response()
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
@@ -424,8 +422,8 @@ async fn revoke_worker(
     }
     match workers.revoke(&id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        Ok(false) => StatusCode::NOT_FOUND.into_response(), // unknown or already revoked
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({"error": "worker not found or already revoked"}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }
 }
 
