@@ -39,6 +39,22 @@ query { record(model: "Contact", id: "<id>") }
 mutation { create(model: "Contact", data: { firstName: "John", email: "john@example.com" }) }
 mutation { update(model: "Contact", where: { id: { equals: "<id>" } }, data: { phone: "555" }) }
 mutation { delete(model: "Contact", where: { id: { equals: "<id>" } }) }
+
+# id shorthand — equivalent to where: { id: { equals: "<id>" } }
+mutation { update(model: "Contact", id: "<id>", data: { phone: "555" }) }
+mutation { delete(model: "Contact", id: "<id>") }
+mutation { restore(model: "Contact", id: "<id>") }
+mutation { hardDelete(model: "Contact", id: "<id>") }
+```
+
+```graphql
+# Bulk update — update many records in one call; returns all updated records.
+mutation {
+  updateMany(model: "Contact", items: [
+    { id: "<id1>", data: { phone: "555" } },
+    { id: "<id2>", data: { phone: "666" } }
+  ])
+}
 ```
 
 ```graphql
@@ -77,8 +93,11 @@ subscription { modelChanges(model: "Contact") { eventType modelName eventId } }
 ```
 
 Notes
+- **Casing:** query results return camelCase keys (`firstName`, `createdAt`). Mutation inputs accept both camelCase and snake_case — the server normalizes to the schema's field names.
 - `where` operators: `equals`, `not`, `contains`, `startsWith`, `endsWith`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`.
+- **`id` shorthand:** `update`, `delete`, `restore`, and `hardDelete` accept an `id` argument as sugar for `where: { id: { equals: "..." } }`. An error is returned if both `id` and `where` are provided, or if neither is.
 - `delete` is a soft delete (sets `deleted_at`); use `restore` to undo or `hardDelete` to purge. `records`/`paginatedRecords` exclude soft-deleted rows; `deletedRecords` shows only them.
+- **`updateMany`:** accepts an `items` array of `{ id, data }` pairs and returns all updated records. Each item updates one record by id.
 - Access is enforced per model from the schema `access` rules (RBAC). Send `Authorization: Bearer <jwt>`.
 - Multi-tenant scoping: send `X-Tenant-ID: <id>` to scope all operations to a tenant.
 - Mutations are audit-logged with the acting user (from the JWT) as `user_id`.

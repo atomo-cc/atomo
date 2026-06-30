@@ -101,6 +101,12 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 | **crm: find_many filtered** | `find_many` with WHERE on a select field (`status`) or FK field (`companyId`) — measures cache-hit read with non-trivial filters |
 | **crm: find_unique by id** | point read on a CRM Contact — same cache-hit path as simple Note, validates no per-field overhead |
 | **crm: mixed workload** | interleaved `create Deal` + `find_many Lead` — simulates a real CRM app pattern |
+| **GraphQL: create mutation** | a full `create` mutation resolved in-process via `schema.execute()` — measures GraphQL resolution + casing conversion |
+| **GraphQL: records query (hot)** | `records(model, limit: 20)` in-process — includes camelCase key conversion on cached results |
+| **GraphQL: record by id (hot)** | `record(model, id)` point-read in-process — cache hit + camelCase conversion |
+| **updateMany vs sequential** | N=50 sequential `update` mutations vs 1 `updateMany` bulk call — per-row latency comparison over 5 rounds |
+| **rate limiter: serial** | `RateLimiter::check()` throughput on a single IP (token bucket, no contention) |
+| **rate limiter: concurrent** | 8-worker concurrent `check()` with unique IPs — measures lock contention on the shared state |
 
 ## Results
 

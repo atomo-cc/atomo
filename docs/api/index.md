@@ -109,20 +109,34 @@ An admin user is seeded on first boot from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (see
 
 ## Error Handling
 
-Atomo APIs use consistent error formats:
+All REST and GraphQL error responses return a JSON body with an `error` field:
+
+```json
+// REST error (e.g. 401, 403, 404, 409, 500)
+{ "error": "authentication required" }
+{ "error": "not found" }
+{ "error": "lease lost" }
+```
+
+GraphQL errors carry codes in `extensions`:
+
+```json
+{ "errors": [{ "message": "...", "extensions": { "code": "NOT_FOUND" } }] }
+```
+
+Extension codes: `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.
+
+TypeScript SDK example:
 
 ```typescript
 try {
   const contact = await atomo.contacts.create(data)
 } catch (error) {
   if (error.code === 'VALIDATION_ERROR') {
-    // Handle validation errors
     console.log('Validation errors:', error.details)
   } else if (error.code === 'PERMISSION_DENIED') {
-    // Handle authorization errors
     console.log('Access denied:', error.message)
   } else {
-    // Handle other errors
     console.log('Unexpected error:', error)
   }
 }
@@ -135,7 +149,9 @@ The server applies a per-IP token-bucket rate limiter (in-memory). It is configu
 - `RATE_LIMIT_RPS` — max requests per window (default `100`)
 - `RATE_LIMIT_WINDOW_SECS` — window length in seconds (default `60`)
 
-The client IP is taken from the `X-Forwarded-For` header (first hop) when present. Requests over the limit receive `429 Too Many Requests`.
+The client IP is taken from the `X-Forwarded-For` header (first hop) when present. Requests over the limit receive `429 Too Many Requests` with a `Retry-After` header (seconds until the bucket refills).
+
+**Exempted paths:** `/auth/*`, `/health`, and `/ready` are never rate-limited.
 
 ## Versioning
 
