@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_control_plane"
-version = "0.5.9"
+version = "0.5.10"
 edition = "2021"
 description = "Atomo multi-project control plane — registry, provisioner, gateway, reconciler"
 license = "AGPL-3.0-or-later"

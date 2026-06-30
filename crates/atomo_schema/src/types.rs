@@ -103,7 +103,7 @@ impl ActionCondition {
                 fields.iter().any(|f| current.get(f) != prev.get(f))
             }
             ActionCondition::FieldEquals { field, value } => {
-                current.get(field).map_or(false, |v| v == value)
+                current.get(field) == Some(value)
             }
         }
     }

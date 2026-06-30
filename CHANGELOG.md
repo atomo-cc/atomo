@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-06-30
+
+### Fixed
+- **Structured error bodies.** All REST error responses (`job_routes`, `media`,
+  `crud_routes`, `registry_routes`) now return `{"error": "..."}` JSON instead of
+  bare status codes, so consumers can programmatically parse failures.
+- **Projector self-heal.** Per-projection event processing errors are logged instead
+  of propagated, preventing one bad projection from crash-looping the listener.
+- **Casing asymmetry.** GraphQL queries now return camelCase keys (`createdAt`
+  instead of `created_at`), and mutations accept both camelCase and snake_case
+  inputs. Consumers can round-trip records without manual re-casing.
+- **Clippy cleanups.** Replaced deprecated `map_or` patterns with `is_some_and` /
+  `is_none_or`; removed a useless `.map_err(Into::into)`.
+
+### Added
+- **`updateMany` bulk mutation.** Accepts `[{id, data}]` pairs and returns all
+  updated records in one call, eliminating N sequential `update()` round-trips.
+
 ## [0.5.9] - 2026-06-30
 
 ### Fixed
