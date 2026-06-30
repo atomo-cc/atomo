@@ -1,4 +1,9 @@
-use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
+use axum::{
+    extract::Request,
+    http::{HeaderValue, StatusCode},
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -40,7 +45,9 @@ impl RateLimiter {
         Self::new(max, window)
     }
 
-    async fn check(&self, ip: IpAddr) -> bool {
+    /// Returns `Ok(())` if the request is allowed, or `Err(retry_after_secs)` if
+    /// the bucket is exhausted.
+    async fn check(&self, ip: IpAddr) -> Result<(), u64> {
         let mut state = self.state.lock().await;
         let now = Instant::now();
         let bucket = state.entry(ip).or_insert(TokenBucket {
@@ -56,9 +63,10 @@ impl RateLimiter {
 
         if bucket.tokens > 0 {
             bucket.tokens -= 1;
-            true
+            Ok(())
         } else {
-            false
+            let retry_after = self.window_secs.saturating_sub(elapsed);
+            Err(retry_after.max(1))
         }
     }
 }
@@ -67,7 +75,12 @@ pub async fn rate_limit_middleware(
     axum::extract::State(limiter): axum::extract::State<RateLimiter>,
     req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, Response> {
+    let path = req.uri().path();
+    if path.starts_with("/auth/") || path == "/auth" || path == "/health" || path == "/ready" {
+        return Ok(next.run(req).await);
+    }
+
     let ip = req
         .headers()
         .get("x-forwarded-for")
@@ -76,10 +89,12 @@ pub async fn rate_limit_middleware(
         .and_then(|s| s.trim().parse::<IpAddr>().ok())
         .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
 
-    if limiter.check(ip).await {
-        Ok(next.run(req).await)
-    } else {
-        Err(StatusCode::TOO_MANY_REQUESTS)
+    match limiter.check(ip).await {
+        Ok(()) => Ok(next.run(req).await),
+        Err(retry_after) => {
+            let val = HeaderValue::from_str(&retry_after.to_string()).unwrap();
+            Err((StatusCode::TOO_MANY_REQUESTS, [("retry-after", val)]).into_response())
+        }
     }
 }
 
@@ -94,18 +109,18 @@ mod tests {
 
     #[tokio::test]
     async fn allows_up_to_limit_then_blocks() {
-        let rl = RateLimiter::new(2, 60); // 2 requests / 60s
-        assert!(rl.check(ip()).await, "1st allowed");
-        assert!(rl.check(ip()).await, "2nd allowed");
-        assert!(!rl.check(ip()).await, "3rd over the limit -> blocked");
+        let rl = RateLimiter::new(2, 60);
+        assert!(rl.check(ip()).await.is_ok(), "1st allowed");
+        assert!(rl.check(ip()).await.is_ok(), "2nd allowed");
+        let err = rl.check(ip()).await.unwrap_err();
+        assert!(err >= 1, "3rd over the limit -> blocked with retry_after");
     }
 
     #[tokio::test]
     async fn refills_after_window() {
         let rl = RateLimiter::new(1, 0); // window 0s → refills every call
-        assert!(rl.check(ip()).await, "1st allowed");
-        // elapsed >= window(0) → bucket refilled before the check.
-        assert!(rl.check(ip()).await, "allowed again after window elapsed");
+        assert!(rl.check(ip()).await.is_ok(), "1st allowed");
+        assert!(rl.check(ip()).await.is_ok(), "allowed again after window elapsed");
     }
 
     #[tokio::test]
@@ -113,8 +128,8 @@ mod tests {
         let rl = RateLimiter::new(1, 60);
         let a = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
         let b = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
-        assert!(rl.check(a).await);
-        assert!(!rl.check(a).await, "A exhausted");
-        assert!(rl.check(b).await, "B has its own bucket");
+        assert!(rl.check(a).await.is_ok());
+        assert!(rl.check(a).await.is_err(), "A exhausted");
+        assert!(rl.check(b).await.is_ok(), "B has its own bucket");
     }
 }
