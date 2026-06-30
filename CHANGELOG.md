@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-06-30
+
+### Fixed
+- **Rate limiter exempts auth endpoints.** `/auth/*`, `/health`, and `/ready` are
+  no longer subject to rate limiting, preventing concurrent write bursts from
+  locking out authentication.
+- **429 responses include `Retry-After` header.** Clients can now back off
+  intelligently instead of guessing wave sizes by trial and error.
+- **IPv6 localhost hang.** Default server bind changed from `0.0.0.0` (IPv4-only)
+  to `::` (dual-stack) so clients using `localhost` that resolves to `::1` can
+  connect. Default `DATABASE_URL` uses `127.0.0.1` to avoid IPv6 resolution issues.
+
+### Added
+- **`id` shorthand for mutations.** `update`, `delete`, `restore`, and `hardDelete`
+  now accept an optional `id` argument as sugar for `where: {id: "..."}`. Clear
+  error when both or neither are provided.
+
 ## [0.5.8] - 2026-06-20
 
 ### Fixed

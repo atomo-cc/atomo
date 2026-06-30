@@ -316,7 +316,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "atomo"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "async-graphql",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_cli"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "async-graphql",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_control_plane"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_core"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "async-graphql",
@@ -413,7 +413,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_projectors"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_realtime"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -437,7 +437,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_realtime_server"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "atomo_realtime",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_schema"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "async-graphql",
@@ -472,7 +472,7 @@ dependencies = [
 
 [[package]]
 name = "atomo_server"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "anyhow",
  "argon2",
