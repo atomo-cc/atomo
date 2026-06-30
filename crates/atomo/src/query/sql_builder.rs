@@ -246,7 +246,7 @@ impl SqlBuilder {
     }
 }
 
-fn to_snake_case(s: &str) -> String {
+pub fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     for c in s.chars() {
         if c.is_uppercase() && !result.is_empty() {

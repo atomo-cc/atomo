@@ -98,6 +98,61 @@ fn resolve_where(id: Option<String>, where_: Option<Value>) -> GraphQLResult<Val
     }
 }
 
+/// Convert a `snake_case` string to `camelCase`. Already-camelCase input passes through unchanged.
+fn snake_to_camel(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut upper_next = false;
+    for c in s.chars() {
+        if c == '_' {
+            upper_next = true;
+        } else if upper_next {
+            result.extend(c.to_uppercase());
+            upper_next = false;
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Convert all keys in a record from snake_case to camelCase for API output.
+fn camel_keys(record: HashMap<String, Value>) -> HashMap<String, Value> {
+    record
+        .into_iter()
+        .map(|(k, v)| (snake_to_camel(&k), v))
+        .collect()
+}
+
+/// Normalize mutation input keys so both `camelCase` and `snake_case` are accepted.
+/// For each incoming key, if it matches a schema field name directly, keep it.
+/// Otherwise, try to find a schema field whose snake_case form matches the key's
+/// snake_case form, and use the canonical schema name. Unknown keys pass through
+/// as-is (the DB will reject them if the column doesn't exist).
+fn normalize_input_keys(
+    data: HashMap<String, Value>,
+    schema: &Schema,
+    model_name: &str,
+) -> HashMap<String, Value> {
+    let model = match schema.models.get(model_name) {
+        Some(m) => m,
+        None => return data,
+    };
+    data.into_iter()
+        .map(|(k, v)| {
+            if model.fields.contains_key(&k) {
+                return (k, v);
+            }
+            let k_snake = crate::query::sql_builder::to_snake_case(&k);
+            for field_name in model.fields.keys() {
+                if crate::query::sql_builder::to_snake_case(field_name) == k_snake {
+                    return (field_name.clone(), v);
+                }
+            }
+            (k, v)
+        })
+        .collect()
+}
+
 pub fn parse_where(where_json: &Value) -> Vec<WhereClause> {
     let mut clauses = Vec::new();
     if let Value::Object(map) = where_json {
@@ -217,7 +272,7 @@ impl Query {
                 &[],
             )
             .await?;
-        Ok(result)
+        Ok(result.into_iter().map(camel_keys).collect())
     }
 
     /// List soft-deleted records (the "trash" view) with pagination metadata.
@@ -242,6 +297,7 @@ impl Query {
             .client
             .find_deleted(&model, &where_clauses, &orders, Some(lim), Some(off))
             .await?;
+        let data: Vec<_> = data.into_iter().map(camel_keys).collect();
         let total_count = self
             .client
             .count_deleted(&model, &where_clauses)
@@ -277,7 +333,7 @@ impl Query {
         let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let result = self.client.find_unique(&model, &where_clauses, &[]).await?;
-        Ok(result)
+        Ok(result.map(camel_keys))
     }
 
     /// Get records with pagination metadata
@@ -302,6 +358,7 @@ impl Query {
             .client
             .find_many(&model, &where_clauses, &orders, Some(lim), Some(off), &[])
             .await?;
+        let data: Vec<_> = data.into_iter().map(camel_keys).collect();
         let total_count = self.client.count(&model, &where_clauses).await.unwrap_or(0);
         let page_info = PageInfo {
             total_count,
@@ -339,7 +396,7 @@ impl Mutation {
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "create", ctx)?;
-        let mut data = data;
+        let mut data = normalize_input_keys(data, &self.schema, &model);
         if let Some(t) = ctx.data_opt::<TenantCtx>() {
             data.insert("tenant_id".to_string(), Value::String(t.0.clone()));
         }
@@ -388,7 +445,7 @@ impl Mutation {
             )
             .await?;
 
-        Ok(result)
+        Ok(camel_keys(result))
     }
 
     /// Update a record. Accepts either `id` (shorthand for `where: {id: "..."}`)
@@ -402,6 +459,7 @@ impl Mutation {
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "update", ctx)?;
+        let data = normalize_input_keys(data, &self.schema, &model);
         let where_value = resolve_where(id, where_)?;
         let tenant = ctx.data_opt::<TenantCtx>();
         let where_clauses = parse_where(&where_value);
@@ -421,7 +479,7 @@ impl Mutation {
             )
             .await?;
 
-        Ok(results.into_iter().next().unwrap_or_default())
+        Ok(camel_keys(results.into_iter().next().unwrap_or_default()))
     }
 
     /// Bulk-update multiple records by id in a single request.
@@ -451,6 +509,7 @@ impl Mutation {
                     ))
                 }
             };
+            let data = normalize_input_keys(data, &self.schema, &model);
             let results = self
                 .client
                 .update_many_checked(
@@ -463,7 +522,7 @@ impl Mutation {
                 )
                 .await?;
             if let Some(row) = results.into_iter().next() {
-                out.push(row);
+                out.push(camel_keys(row));
             }
         }
         Ok(out)
@@ -601,9 +660,41 @@ impl Subscription {
                         }
                         None => true,
                     }
+                }).map(|mut e| {
+                    e.data = camel_keys(e.data);
+                    if let Some(prev) = e.previous_data.take() {
+                        e.previous_data = Some(camel_keys(prev));
+                    }
+                    e
                 })
             }
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snake_to_camel_conversions() {
+        assert_eq!(snake_to_camel("first_name"), "firstName");
+        assert_eq!(snake_to_camel("created_at"), "createdAt");
+        assert_eq!(snake_to_camel("id"), "id");
+        assert_eq!(snake_to_camel("tenant_id"), "tenantId");
+        assert_eq!(snake_to_camel("firstName"), "firstName");
+        assert_eq!(snake_to_camel("some_long_field_name"), "someLongFieldName");
+    }
+
+    #[test]
+    fn camel_keys_converts_map() {
+        let mut m = HashMap::new();
+        m.insert("first_name".to_string(), Value::String("Jane".into()));
+        m.insert("id".to_string(), Value::String("1".into()));
+        let out = camel_keys(m);
+        assert!(out.contains_key("firstName"));
+        assert!(out.contains_key("id"));
+        assert!(!out.contains_key("first_name"));
     }
 }
 
