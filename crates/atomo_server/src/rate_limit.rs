@@ -47,7 +47,7 @@ impl RateLimiter {
 
     /// Returns `Ok(())` if the request is allowed, or `Err(retry_after_secs)` if
     /// the bucket is exhausted.
-    async fn check(&self, ip: IpAddr) -> Result<(), u64> {
+    pub async fn check(&self, ip: IpAddr) -> Result<(), u64> {
         let mut state = self.state.lock().await;
         let now = Instant::now();
         let bucket = state.entry(ip).or_insert(TokenBucket {
