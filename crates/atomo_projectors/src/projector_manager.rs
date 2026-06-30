@@ -33,7 +33,9 @@ impl ProjectorManager {
         self.projections.push(Arc::new(projection));
     }
 
-    /// Process a single event through all matching projections
+    /// Process a single event through all matching projections.
+    /// Per-projection failures are logged but never fatal — a bad event must not
+    /// kill the listener and require a manual container restart.
     pub async fn process_event(
         &self,
         event_type: &str,
@@ -42,7 +44,15 @@ impl ProjectorManager {
     ) -> Result<()> {
         for proj in &self.projections {
             if proj.source_model() == model_name {
-                proj.handle_event(event_type, data, &self.pool).await?;
+                if let Err(e) = proj.handle_event(event_type, data, &self.pool).await {
+                    tracing::error!(
+                        projection = proj.name(),
+                        event_type,
+                        model = model_name,
+                        error = %e,
+                        "projection failed to handle event; skipping"
+                    );
+                }
             }
         }
         Ok(())

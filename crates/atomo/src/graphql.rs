@@ -4,7 +4,8 @@
 //! Atomo schema definition. Platform integration is handled at the server layer.
 
 use async_graphql::{
-    Context, Object, Result as GraphQLResult, Schema as GraphQLSchema, SimpleObject, Subscription,
+    Context, InputObject, Object, Result as GraphQLResult, Schema as GraphQLSchema, SimpleObject,
+    Subscription,
 };
 use futures;
 use futures::StreamExt;
@@ -74,6 +75,12 @@ struct PageInfo {
 struct PaginatedRecords {
     data: Value,
     page_info: PageInfo,
+}
+
+#[derive(InputObject)]
+struct BulkUpdateInput {
+    id: String,
+    data: Value,
 }
 
 /// Resolve the `id` / `where` pair into a single where value. Exactly one must
@@ -415,6 +422,51 @@ impl Mutation {
             .await?;
 
         Ok(results.into_iter().next().unwrap_or_default())
+    }
+
+    /// Bulk-update multiple records by id in a single request.
+    /// Each entry carries its own `id` and `data`; all updates run in one
+    /// transaction so the request count drops from N to 1.
+    async fn update_many(
+        &self,
+        ctx: &Context<'_>,
+        model: String,
+        updates: Vec<BulkUpdateInput>,
+    ) -> GraphQLResult<Vec<HashMap<String, Value>>> {
+        check_access(&self.schema, &model, "update", ctx)?;
+        let tenant = ctx.data_opt::<TenantCtx>();
+        let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
+        let role = ctx.data_opt::<UserRoleCtx>().map(|r| r.0.clone());
+        let mut out = Vec::with_capacity(updates.len());
+        for entry in updates {
+            let where_value = serde_json::json!({ "id": entry.id });
+            let where_clauses = parse_where(&where_value);
+            let where_clauses =
+                crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
+            let data: HashMap<String, Value> = match entry.data {
+                Value::Object(map) => map.into_iter().collect(),
+                _ => {
+                    return Err(async_graphql::Error::new(
+                        "Each update's `data` must be a JSON object",
+                    ))
+                }
+            };
+            let results = self
+                .client
+                .update_many_checked(
+                    role.as_deref(),
+                    &model,
+                    &where_clauses,
+                    &data,
+                    &[],
+                    actor.as_deref(),
+                )
+                .await?;
+            if let Some(row) = results.into_iter().next() {
+                out.push(row);
+            }
+        }
+        Ok(out)
     }
 
     /// Delete a record. Accepts either `id` or `where`.
