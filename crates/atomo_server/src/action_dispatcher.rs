@@ -91,7 +91,7 @@ fn matching_bindings<'a>(
                     return false;
                 }
             }
-            b.condition.as_ref().map_or(true, |cond| {
+            b.condition.as_ref().is_none_or(|cond| {
                 cond.matches(&ev.data, ev.previous_data.as_ref())
             })
         })

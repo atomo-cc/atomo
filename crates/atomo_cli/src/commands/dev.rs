@@ -10,7 +10,7 @@ fn parse_schema_models(content: &str) -> Result<Vec<Model>> {
         Ok(schema.models.into_values().collect())
     } else {
         let parser = TypeScriptParser::new();
-        parser.parse(content).map_err(Into::into)
+        parser.parse(content)
     }
 }
 use colored::*;

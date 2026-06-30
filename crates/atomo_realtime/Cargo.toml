@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_realtime"
-version = "0.5.9"
+version = "0.5.10"
 edition = "2021"
 description = "Atomo Realtime — transport-agnostic ephemeral channels, presence & fan-out (in-memory hub; no HTTP, no event store)"
 license = "AGPL-3.0-or-later"

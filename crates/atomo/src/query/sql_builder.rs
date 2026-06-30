@@ -73,7 +73,7 @@ impl SqlBuilder {
 
         for (i, (key, val)) in data.iter().enumerate() {
             let snake = to_snake_case(key);
-            let is_datetime = model.fields.get(key).map_or(false, |f| {
+            let is_datetime = model.fields.get(key).is_some_and(|f| {
                 matches!(f.field_type, crate::schema::FieldType::DateTime)
             });
             let cast = if is_datetime { "::timestamptz" } else { "" };
@@ -153,7 +153,7 @@ impl SqlBuilder {
         let mut params = Vec::new();
 
         for (i, (key, val)) in data.iter().enumerate() {
-            let is_datetime = model.fields.get(key).map_or(false, |f| {
+            let is_datetime = model.fields.get(key).is_some_and(|f| {
                 matches!(f.field_type, crate::schema::FieldType::DateTime)
             });
             let cast = if is_datetime { "::timestamptz" } else { "" };

@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_server"
-version = "0.5.9"
+version = "0.5.10"
 edition = "2021"
 description = "Atomo Server - Web server with GraphQL API using the Atomo library"
 license = "AGPL-3.0-or-later"

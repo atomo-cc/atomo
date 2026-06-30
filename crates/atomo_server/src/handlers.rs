@@ -399,7 +399,7 @@ pub async fn public_records(
 
     // When a slug query returns empty, check for a redirect before returning.
     let items_array = items.as_array();
-    if items_array.map_or(true, |a| a.is_empty()) {
+    if items_array.is_none_or(|a| a.is_empty()) {
         if let Some(slug) = params.get("slug") {
             if let Ok(Some(redirect)) = redirects.lookup(&model, slug).await {
                 let mut target_params = params.clone();
