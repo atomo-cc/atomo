@@ -10,8 +10,10 @@
 
 use atomo::query::{WhereClause, WhereOperator};
 use atomo_server::jobs::JobStore;
+use atomo_server::rate_limit::RateLimiter;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -766,9 +768,200 @@ export const Activity = model('bench_crm_activities', {
         stats(t),
     ));
 
+    // ----- GraphQL full-stack round-trip -----
+    // Measures the actual cost consumers pay: GraphQL resolution + casing conversion +
+    // validation + engine. Uses schema.execute() in-process (no HTTP/network).
+    let gql_schema_content =
+        "export interface GqlNote { id: string; title: string; }\n\
+         export const schema = { models: { GqlNote: { tableName: 'bench_gql_notes' } } };\n\
+         export default schema;";
+    let gql_atomo = atomo::Atomo::builder()
+        .schema_content(gql_schema_content)
+        .database_url(&db)
+        .enable_migrations(true)
+        .build()
+        .await
+        .expect("gql atomo build");
+    let gql_client = Arc::new(gql_atomo.client().clone());
+    let gql_pool = gql_atomo.db_pool().clone();
+    let gql = atomo::graphql::build_schema(gql_client.clone(), gql_atomo.schema(), gql_pool.clone());
+    let _ = sqlx::query("TRUNCATE bench_gql_notes")
+        .execute(gql_atomo.db_pool())
+        .await;
+
+    // Warm: seed some records
+    for i in 0..50 {
+        let q = format!(
+            r#"mutation {{ create(model: "GqlNote", data: {{ title: "warm{i}" }}) }}"#
+        );
+        gql.execute(async_graphql::Request::new(&q)).await;
+    }
+
+    // GraphQL create mutation
+    let gql_iters = iters.min(500);
+    let mut t = Vec::with_capacity(gql_iters);
+    for i in 0..gql_iters {
+        let q = format!(
+            r#"mutation {{ create(model: "GqlNote", data: {{ title: "gql{i}" }}) }}"#
+        );
+        let req = async_graphql::Request::new(&q);
+        let s = Instant::now();
+        gql.execute(req).await;
+        t.push(s.elapsed());
+    }
+    rows.push(("graphql: create mutation (full stack)".into(), stats(t)));
+
+    // GraphQL records query (hot)
+    gql.execute(async_graphql::Request::new(
+        r#"{ records(model: "GqlNote", limit: 20) }"#,
+    ))
+    .await;
+    let mut t = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        let req = async_graphql::Request::new(
+            r#"{ records(model: "GqlNote", limit: 20) }"#,
+        );
+        let s = Instant::now();
+        gql.execute(req).await;
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "graphql: records query hot (limit 20, incl. camelCase)".into(),
+        stats(t),
+    ));
+
+    // GraphQL record by id (hot)
+    let gql_seed = gql
+        .execute(async_graphql::Request::new(
+            r#"mutation { create(model: "GqlNote", data: { title: "gql-unique" }) }"#,
+        ))
+        .await;
+    let gql_seed_id = gql_seed
+        .data
+        .into_json()
+        .ok()
+        .and_then(|v| v.get("create").and_then(|c| c.get("id")).and_then(|id| id.as_str().map(String::from)))
+        .unwrap_or_default();
+    if !gql_seed_id.is_empty() {
+        let q = format!(r#"{{ record(model: "GqlNote", id: "{gql_seed_id}") }}"#);
+        gql.execute(async_graphql::Request::new(&q)).await;
+        let mut t = Vec::with_capacity(iters);
+        for _ in 0..iters {
+            let req = async_graphql::Request::new(&q);
+            let s = Instant::now();
+            gql.execute(req).await;
+            t.push(s.elapsed());
+        }
+        rows.push(("graphql: record by id hot".into(), stats(t)));
+    }
+
+    // ----- updateMany: N sequential vs 1 bulk call -----
+    // Create N records, then compare N individual update mutations vs one updateMany.
+    let bulk_n = 50usize;
+    let mut seed_ids = Vec::with_capacity(bulk_n);
+    for i in 0..bulk_n {
+        let q = format!(
+            r#"mutation {{ create(model: "GqlNote", data: {{ title: "bulk{i}" }}) }}"#
+        );
+        let resp = gql.execute(async_graphql::Request::new(&q)).await;
+        if let Ok(v) = resp.data.into_json() {
+            if let Some(id) = v.get("create").and_then(|c| c.get("id")).and_then(|id| id.as_str()) {
+                seed_ids.push(id.to_string());
+            }
+        }
+    }
+
+    // N sequential updates
+    let rounds = 5;
+    let mut t = Vec::with_capacity(rounds);
+    for r in 0..rounds {
+        let s = Instant::now();
+        for (i, id) in seed_ids.iter().enumerate() {
+            let q = format!(
+                r#"mutation {{ update(model: "GqlNote", id: "{id}", data: {{ title: "seq-{r}-{i}" }}) }}"#
+            );
+            gql.execute(async_graphql::Request::new(&q)).await;
+        }
+        t.push(s.elapsed() / bulk_n as u32);
+    }
+    rows.push((
+        format!("graphql: update ×{bulk_n} sequential (per row)"),
+        stats(t),
+    ));
+
+    // 1 updateMany call
+    let mut t = Vec::with_capacity(rounds);
+    for r in 0..rounds {
+        let entries: Vec<String> = seed_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| format!(r#"{{ id: "{id}", data: {{ title: "bulk-{r}-{i}" }} }}"#))
+            .collect();
+        let q = format!(
+            r#"mutation {{ updateMany(model: "GqlNote", updates: [{}]) }}"#,
+            entries.join(", ")
+        );
+        let s = Instant::now();
+        gql.execute(async_graphql::Request::new(&q)).await;
+        t.push(s.elapsed() / bulk_n as u32);
+    }
+    rows.push((
+        format!("graphql: updateMany ×{bulk_n} bulk (per row)"),
+        stats(t),
+    ));
+
+    // ----- Rate limiter throughput -----
+    let rl = RateLimiter::new(1_000_000, 60);
+    let rl_iters = iters.max(5000);
+    let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+
+    // Single-threaded throughput
+    let mut t = Vec::with_capacity(rl_iters);
+    for _ in 0..rl_iters {
+        let s = Instant::now();
+        let _ = rl.check(ip).await;
+        t.push(s.elapsed());
+    }
+    rows.push((
+        "rate limiter: check (single IP, serial)".into(),
+        stats(t),
+    ));
+
+    // Concurrent throughput: 8 tasks, unique IPs
+    let conc_workers = 8u8;
+    let per_worker = (rl_iters / conc_workers as usize).max(100);
+    let rl2 = RateLimiter::new(1_000_000, 60);
+    let s = Instant::now();
+    let mut handles = Vec::new();
+    for w in 0..conc_workers {
+        let rl = rl2.clone();
+        handles.push(tokio::spawn(async move {
+            let ip = IpAddr::V4(Ipv4Addr::new(10, 0, w, 1));
+            for _ in 0..per_worker {
+                let _ = rl.check(ip).await;
+            }
+        }));
+    }
+    for h in handles {
+        h.await.unwrap();
+    }
+    let total_checks = per_worker * conc_workers as usize;
+    let conc_elapsed = s.elapsed();
+    rows.push((
+        format!("rate limiter: check ({conc_workers} concurrent IPs, {total_checks} total)"),
+        Stats {
+            n: total_checks,
+            mean_us: conc_elapsed.as_micros() as f64 / total_checks as f64,
+            p50_us: 0,
+            p95_us: 0,
+            p99_us: 0,
+            ops_per_s: total_checks as f64 / conc_elapsed.as_secs_f64(),
+        },
+    ));
+
     // ----- Report -----
     println!("\n## Atomo engine benchmarks (in-process)\n");
-    println!("iterations: {iters} · engine-level latencies (exclude HTTP/network/GraphQL)\n");
+    println!("iterations: {iters} · engine-level + GraphQL-level latencies (exclude HTTP/network)\n");
     println!("| Benchmark | n | mean µs | p50 µs | p95 µs | p99 µs | ops/sec |");
     println!("|---|--:|--:|--:|--:|--:|--:|");
     for (name, s) in &rows {
@@ -791,7 +984,7 @@ export const Activity = model('bench_crm_activities', {
         );
     }
     println!();
-    let _ = sqlx::query("TRUNCATE bench_notes, bench_rel_notes, bench_rel_tags, bench_ev_notes")
+    let _ = sqlx::query("TRUNCATE bench_notes, bench_rel_notes, bench_rel_tags, bench_ev_notes, bench_gql_notes")
         .execute(atomo.db_pool())
         .await;
     let _ = sqlx::query(
