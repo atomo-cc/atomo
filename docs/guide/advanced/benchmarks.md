@@ -174,6 +174,54 @@ Key takeaways:
 - **Mixed workloads** (interleaved create + read) cost ~4.5 ms — the write dominates, and the hot
   read adds negligible time.
 
+**GraphQL full-stack (in-process, including camelCase conversion):**
+
+These measure the full GraphQL resolution path — `schema.execute(Request)` — not just the data layer.
+The cost includes parsing, validation, resolver dispatch, casing conversion, and result serialization.
+
+| Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
+|---|--:|--:|--:|--:|--:|
+| graphql: create mutation (full stack) | 4492 | 4072 | 7197 | 8912 | 223 |
+| graphql: records query hot (limit 20, incl. camelCase) | 48 | 43 | 61 | 118 | 20 899 |
+| graphql: record by id hot | 10 | 8 | 11 | 21 | 104 002 |
+
+Key takeaways:
+
+- **GraphQL create** (~4.5 ms) ≈ raw data layer create (~4.3 ms) — the resolution overhead is ~4%,
+  invisible next to `fsync`.
+- **GraphQL list read** (48 µs) is ~4× the raw data layer (12 µs) — the camelCase key conversion on
+  20 records + GraphQL resolution machinery accounts for the difference. Still **~21 k ops/s**.
+- **GraphQL point read** (10 µs, 104 k ops/s) is ~12× the raw cache hit (0.8 µs) — GraphQL parsing
+  and resolver dispatch dominate when the underlying lookup is sub-µs.
+
+**`updateMany` vs sequential updates (GraphQL, in-process):**
+
+Compares 50 individual `update` mutations vs 1 `updateMany` call with 50 items. Per-row latency over
+5 rounds. Both in-process via `schema.execute()`.
+
+| Benchmark | mean µs/row | p50 | p95 | p99 | ops/sec |
+|---|--:|--:|--:|--:|--:|
+| graphql: update ×50 sequential (per row) | 4018 | 4033 | 4138 | 4138 | 249 |
+| graphql: updateMany ×50 bulk (per row) | 4183 | 4247 | 4501 | 4501 | 239 |
+
+Key takeaway: **per-row engine cost is the same** — each row is still one update + event write in a
+transaction (`fsync`-bound). `updateMany`'s value is **fewer HTTP/GraphQL round trips**, not faster
+per-row throughput. Over HTTP, 1 request vs 50 requests is where the win shows.
+
+**Rate limiter throughput (in-memory, no I/O):**
+
+| Benchmark | mean µs | ops/sec |
+|---|--:|--:|
+| rate limiter: check (single IP, serial) | 0.1 | 12 569 636 |
+| rate limiter: check (8 concurrent IPs, 5000 total) | 0.5 | 2 039 598 |
+
+The token-bucket `check()` is **~12.6 M ops/s** serial — negligible per-request cost. Under 8-way
+concurrency the `Mutex` contention drops throughput to ~2 M ops/s, still orders of magnitude above
+any realistic request rate.
+
+**Machine:** Intel i5-13400 (10C/16T), 64 GB · Postgres in WSL2 (local) · release build (Docker
+`rust:latest`, `--network host`) · 2000 iterations · **2026-06-30**.
+
 **Batch inserts:** `create_many` commits a 100-row batch via **two multi-row `INSERT`s** (the rows,
 then their events) in **one** transaction — so the per-row cost drops from **~3.9 ms to ~77 µs —
 roughly 50×** (≈13 k rows/sec). One `fsync` amortized across the batch *and* one round trip per
