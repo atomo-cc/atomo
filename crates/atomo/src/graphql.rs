@@ -76,6 +76,21 @@ struct PaginatedRecords {
     page_info: PageInfo,
 }
 
+/// Resolve the `id` / `where` pair into a single where value. Exactly one must
+/// be provided; `id` is sugar for `{id: "<value>"}`.
+fn resolve_where(id: Option<String>, where_: Option<Value>) -> GraphQLResult<Value> {
+    match (id, where_) {
+        (Some(id), None) => Ok(serde_json::json!({ "id": id })),
+        (None, Some(w)) => Ok(w),
+        (Some(_), Some(_)) => Err(async_graphql::Error::new(
+            "Provide either `id` or `where`, not both",
+        )),
+        (None, None) => Err(async_graphql::Error::new(
+            "Either `id` or `where` must be provided",
+        )),
+    }
+}
+
 pub fn parse_where(where_json: &Value) -> Vec<WhereClause> {
     let mut clauses = Vec::new();
     if let Value::Object(map) = where_json {
@@ -369,17 +384,20 @@ impl Mutation {
         Ok(result)
     }
 
-    /// Update a record
+    /// Update a record. Accepts either `id` (shorthand for `where: {id: "..."}`)
+    /// or `where` for complex filters. At least one must be provided.
     async fn update(
         &self,
         ctx: &Context<'_>,
         model: String,
-        #[graphql(name = "where")] where_: Value,
+        id: Option<String>,
+        #[graphql(name = "where")] where_: Option<Value>,
         data: HashMap<String, Value>,
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "update", ctx)?;
+        let where_value = resolve_where(id, where_)?;
         let tenant = ctx.data_opt::<TenantCtx>();
-        let where_clauses = parse_where(&where_);
+        let where_clauses = parse_where(&where_value);
         let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
@@ -396,20 +414,21 @@ impl Mutation {
             )
             .await?;
 
-        // Return the first updated record or a default one
         Ok(results.into_iter().next().unwrap_or_default())
     }
 
-    /// Delete a record
+    /// Delete a record. Accepts either `id` or `where`.
     async fn delete(
         &self,
         ctx: &Context<'_>,
         model: String,
-        #[graphql(name = "where")] where_: Value,
+        id: Option<String>,
+        #[graphql(name = "where")] where_: Option<Value>,
     ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
+        let where_value = resolve_where(id, where_)?;
         let tenant = ctx.data_opt::<TenantCtx>();
-        let where_clauses = parse_where(&where_);
+        let where_clauses = parse_where(&where_value);
         let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
@@ -422,17 +441,19 @@ impl Mutation {
         Ok(count as i32)
     }
 
-    /// Restore soft-deleted records matching the where filter.
+    /// Restore soft-deleted records. Accepts either `id` or `where`.
     async fn restore(
         &self,
         ctx: &Context<'_>,
         model: String,
-        r#where: Value,
+        id: Option<String>,
+        #[graphql(name = "where")] where_: Option<Value>,
     ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
+        let where_value = resolve_where(id, where_)?;
         let tenant = ctx.data_opt::<TenantCtx>();
-        let mut where_clauses = parse_where(&r#where);
-        where_clauses =
+        let where_clauses = parse_where(&where_value);
+        let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
         let count = self
@@ -442,17 +463,19 @@ impl Mutation {
         Ok(count as i32)
     }
 
-    /// Permanently delete (purge) records matching the where filter.
+    /// Permanently delete (purge) records. Accepts either `id` or `where`.
     async fn hard_delete(
         &self,
         ctx: &Context<'_>,
         model: String,
-        r#where: Value,
+        id: Option<String>,
+        #[graphql(name = "where")] where_: Option<Value>,
     ) -> GraphQLResult<i32> {
         check_access(&self.schema, &model, "delete", ctx)?;
+        let where_value = resolve_where(id, where_)?;
         let tenant = ctx.data_opt::<TenantCtx>();
-        let mut where_clauses = parse_where(&r#where);
-        where_clauses =
+        let where_clauses = parse_where(&where_value);
+        let where_clauses =
             crate::client::scope_by_tenant(&where_clauses, tenant.map(|t| t.0.as_str()));
         let actor = ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone());
         let count = self

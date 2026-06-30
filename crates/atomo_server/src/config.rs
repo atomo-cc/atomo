@@ -39,9 +39,9 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
+            host: "::".to_string(),
             port: 3000,
-            database_url: "postgresql://localhost/atomo_dev".to_string(),
+            database_url: "postgresql://127.0.0.1/atomo_dev".to_string(),
             schema_path: "./schema.ts".to_string(),
             service_config_dir: None,
             cors_origins: vec!["http://localhost:3000".to_string()],
@@ -59,13 +59,13 @@ impl Default for ServerConfig {
 impl ServerConfig {
     pub fn from_env() -> Self {
         Self {
-            host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            host: std::env::var("HOST").unwrap_or_else(|_| "::".to_string()),
             port: std::env::var("PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
             database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgresql://localhost/atomo_dev".to_string()),
+                .unwrap_or_else(|_| "postgresql://127.0.0.1/atomo_dev".to_string()),
             schema_path: std::env::var("ATOMO_SCHEMA_PATH")
                 .unwrap_or_else(|_| "./schema.ts".to_string()),
             service_config_dir: std::env::var("ATOMO_CONFIG_DIR").ok().map(PathBuf::from),
