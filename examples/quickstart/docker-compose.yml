@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atomo
+      POSTGRES_PASSWORD: atomo
+      POSTGRES_DB: quickstart
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atomo -d quickstart"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  server:
+    image: ghcr.io/atomo-cc/atomo-server:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://atomo:atomo@db:5432/quickstart
+      ATOMO_SCHEMA_PATH: /app/schema.ts
+      ATOMO_SCHEMA_WATCH: "true"
+      JWT_SECRET: quickstart-dev-secret
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: admin123
+      ATOMO_ENABLE_REALTIME: "true"
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./schema.ts:/app/schema.ts:ro
+
+volumes:
+  pgdata:
