@@ -163,7 +163,7 @@ async fn no_redirect_without_slug_param() {
     // Query without slug param returns all rows, no redirect.
     let (status, body) = get(&app, "/public/records/Article").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(body["items"].as_array().unwrap().len() >= 1);
+    assert!(!body["items"].as_array().unwrap().is_empty());
 
     std::env::remove_var("ATOMO_PUBLIC_READ_MODELS");
     std::env::remove_var("ATOMO_PUBLIC_READ_FIELDS_Article");
