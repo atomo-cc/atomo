@@ -672,6 +672,21 @@ impl Subscription {
     }
 }
 
+pub fn build_schema(
+    client: Arc<AtomoClient>,
+    schema: &Schema,
+    pool: sqlx::Pool<sqlx::Postgres>,
+) -> GraphQLSchema<Query, Mutation, Subscription> {
+    let query = Query::new(client.clone(), schema.clone());
+    let mutation = Mutation::new(client.clone(), schema.clone());
+    let subscription = Subscription::new(client.clone());
+
+    GraphQLSchema::build(query, mutation, subscription)
+        .data(client)
+        .data(pool)
+        .finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -696,21 +711,4 @@ mod tests {
         assert!(out.contains_key("id"));
         assert!(!out.contains_key("first_name"));
     }
-}
-
-/// Service-level schema without platform integration
-/// Platform integration should be done at the server layer
-pub fn build_schema(
-    client: Arc<AtomoClient>,
-    schema: &Schema,
-    pool: sqlx::Pool<sqlx::Postgres>,
-) -> GraphQLSchema<Query, Mutation, Subscription> {
-    let query = Query::new(client.clone(), schema.clone());
-    let mutation = Mutation::new(client.clone(), schema.clone());
-    let subscription = Subscription::new(client.clone());
-
-    GraphQLSchema::build(query, mutation, subscription)
-        .data(client)
-        .data(pool)
-        .finish()
 }
