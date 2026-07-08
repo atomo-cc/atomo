@@ -21,21 +21,25 @@ Atomo is a **Content Core** - not just a CMS, but the "Arc Reactor" that powers 
 
 Atomo is pre-1.0. There are two ways to run it:
 
-### Run without Rust (Docker) — recommended
+### Quickstart (Docker) — recommended
 
-The fastest path, and the only one that needs **no Rust toolchain**. It brings up
-PostgreSQL plus the server wired to the CRM demo schema:
+The fastest path. A minimal blog example that runs in 60 seconds with **no Rust toolchain**:
 
 ```bash
 git clone https://github.com/atomo-cc/atomo.git
-cd atomo
-docker compose up --build        # Postgres + atomo-server on :3000
+cd atomo/examples/quickstart
+docker compose up                # Postgres + atomo-server on :3000
 ```
 
-Then continue to the **Verify it works** step below, and open the bundled
-**Admin UI** at <http://localhost:3000/admin>. Rust compiles only inside the build
-container — your host stays clean. Point the `server.volumes` schema mount at a
-different `schema.ts` to run your own model.
+- **Admin UI** → http://localhost:3000/admin (login: `admin@example.com` / `admin123`)
+- **GraphQL IDE** → http://localhost:3000/graphql
+
+Edit `schema.ts`, save — the server auto-reloads and migrates. See the
+[quickstart README](https://github.com/atomo-cc/atomo/tree/main/examples/quickstart) for
+GraphQL examples and a seed script.
+
+For the full CRM demo (6 models, actions, workers), run `docker compose up` from the repo
+root instead — it uses `services/crm-service/schema.ts`.
 
 ### From source (contributors / core work)
 

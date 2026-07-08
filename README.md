@@ -37,28 +37,24 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
   control plane** (`atomo_control_plane` — foundations + `atomo project` CLI; not yet a runnable
   service), and the local-first SDK. See the [roadmap](docs/roadmap.md).
 
-Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.4.0`) rather than `:latest` for
+Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.5.10`) rather than `:latest` for
 reproducibility.
 
 ## 🚀 Quick Start
 
-### Run it with no Rust (Docker) — ~5 minutes
-
-Scaffold a project and run it against the published image — no toolchain required:
+### Run it with no Rust (Docker) — 60 seconds
 
 ```bash
-npm create @atomo-cc/app my-app   # writes atomo/schema.ts + docker-compose.yml
-cd my-app
-docker compose up                 # pulls the atomo-server image and boots
+cd examples/quickstart
+docker compose up
 ```
 
-- **GraphQL API** → http://localhost:3000/graphql
-- **Admin UI** → http://localhost:3000/admin (sign in with the seeded admin)
+- **Admin UI** → http://localhost:3000/admin (login: `admin@example.com` / `admin123`)
+- **GraphQL IDE** → http://localhost:3000/graphql
 - **Health** → http://localhost:3000/health
 
-Edit `atomo/schema.ts` (add a model, a field, a `// @@check(...)` constraint) and the
-server re-migrates on restart — edit-and-live in ~2s, still no Rust.
-Templates: `npm create @atomo-cc/app my-app -- --template crm|blog|ecommerce`.
+Edit `schema.ts`, save — the server auto-reloads and migrates. No Rust toolchain needed.
+See [`examples/quickstart/`](examples/quickstart/) for the full walkthrough.
 
 ### Or use the CLI (Rust) — for local dev with hot reload
 
