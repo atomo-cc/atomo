@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_schema"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Atomo Schema Parser - Parse TypeScript schema definitions"
 license = "AGPL-3.0-or-later"

@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_core"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Atomo Core - Domain models and business logic"
 license = "AGPL-3.0-or-later"
