@@ -15,10 +15,6 @@ tokio = { workspace = true }
 
 # Schema parsing dependencies
 regex = "1.10"
-swc_common = "0.33"
-swc_ecma_ast = "0.110"
-swc_ecma_parser = "0.141"
-swc_ecma_visit = "0.96"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Template generation

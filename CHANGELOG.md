@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only (`Encode::encode_by_ref` / `Arguments::add` became fallible); no
   behavior change. Also removed the unused `sea-orm` workspace dependency that
   was pinning sqlx 0.7.
+- **Removed the unused swc dependency tree; refreshed the lockfile.** All four
+  `swc_*` crates in `atomo_schema` had zero source references (the TS parser is
+  regex-based) — like `sea-orm`, dead weight; dropping them removes a large
+  compile-time tree and unpinned old transitive constraints. `cargo update`
+  refreshed ~230 transitive deps within semver (incl. serde to current).
 - **CI actions bumped to Node 24 majors** (`checkout@v5`, `setup-node@v5`,
   `docker/login-action@v4`, `docker/setup-buildx-action@v4`,
   `docker/build-push-action@v7`) — clears the Node 20 deprecation warnings on
