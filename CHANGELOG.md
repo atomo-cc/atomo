@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-07-13
+
+### Fixed
+- **Admin list grid honors `ui.listView`.** The admin UI unconditionally excluded
+  `createdAt`/`updatedAt` from list columns, ignoring an explicit `ui.listView` in
+  the schema — on append-only models (event logs, ledgers) the timestamp column an
+  operator most needs was invisible. Now the schema parser extracts
+  `ui: { listView: [...] }`, `/meta/schema` forwards it, and the admin SPA renders
+  exactly the declared columns (timestamps included). Without a declared `listView`,
+  the default column set no longer strips timestamps either.
+
 ## [0.5.10] - 2026-06-30
 
 ### Fixed

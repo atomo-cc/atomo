@@ -37,4 +37,7 @@ export const schema = {
 - access: role strings for create/read/update/delete.
 - relationships: belongsTo/hasMany with foreign keys.
 - validation: simple rules (email, required, min/max).
-- ui: hints for generated admin screens.
+- ui: config for generated admin screens. `listView` declares exactly which columns
+  the admin list grid shows, in order — including `createdAt`/`updatedAt` if you list
+  them (useful on append-only models like event logs). Served to the admin UI via
+  `/meta/schema`. Without a `listView`, the grid defaults to the first six fields.

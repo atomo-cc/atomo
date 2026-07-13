@@ -7,7 +7,9 @@ GET /meta/schema
 ```
 
 - Returns a JSON model registry derived from `schema.ts` and platform models
-- Includes table names, fields, relationships, validation rules, and UI hints
+- Includes table names, fields, relationships, validation rules, and UI config
+- Each model's `ui` carries the schema's `ui.listView` (or `null` if not declared);
+  the admin UI renders exactly those columns, in order — timestamps included
 - Semi‑protected route: accepts optional auth; sensitive fields are omitted by design
 
 Raw schema in dev
