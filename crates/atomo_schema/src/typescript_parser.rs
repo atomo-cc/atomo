@@ -12,6 +12,7 @@ struct ModelMetadata {
     access: Option<AccessControl>,
     relationships: HashMap<String, Relationship>,
     events: ModelEvents,
+    ui: Option<UiConfig>,
 }
 
 /// TypeScript parser that implements true "Dual-Mode Schema"
@@ -108,6 +109,9 @@ impl TypeScriptParser {
                 if !m.events.is_empty() {
                     model.events = m.events;
                 }
+                if m.ui.is_some() {
+                    model.ui = m.ui;
+                }
             }
         }
 
@@ -199,11 +203,25 @@ impl TypeScriptParser {
                 }
                 m.events = events;
             }
+            // ui: { listView: ['field1', 'field2', ...] }
+            if let Some(ublock) = Self::sub_block(&block, "ui") {
+                let mut ui = UiConfig::default();
+                if let Some(arr) = Self::sub_array(&ublock, "listView") {
+                    let fields = Self::parse_string_array(&arr);
+                    if !fields.is_empty() {
+                        ui.list_view = Some(fields);
+                    }
+                }
+                if ui.list_view.is_some() {
+                    m.ui = Some(ui);
+                }
+            }
             if m.table_name.is_some()
                 || !m.validation.is_empty()
                 || m.access.is_some()
                 || !m.relationships.is_empty()
                 || !m.events.is_empty()
+                || m.ui.is_some()
             {
                 result.insert(name, m);
             }
@@ -528,6 +546,7 @@ impl TypeScriptParser {
                 relationships: std::collections::HashMap::new(),
                 constraints: Vec::new(),
                 events: Default::default(),
+                ui: None,
             });
         }
 
@@ -617,13 +636,14 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
     let model = Model {
         name,
         fields,
-        access: None, // Will be populated later by DSL parser
-        hooks: None,  // Will be populated later by DSL parser
+        access: None,
+        hooks: None,
         validation: HashMap::new(),
         table_name: None,
         relationships: std::collections::HashMap::new(),
         constraints,
         events: Default::default(),
+        ui: None,
     };
     let lines_consumed = i - start_index;
 
@@ -1101,6 +1121,23 @@ mod validation_tests {
         assert_eq!(p.events.updated[1].action, "processPost");
         assert!(p.events.updated[1].condition.is_none());
         assert!(p.events.deleted.is_empty());
+    }
+
+    #[test]
+    fn parses_ui_list_view_from_schema_metadata() {
+        let content = r#"
+        export interface UsageEvent { id: string; event: string; appVersion: string; createdAt: Date; }
+        export const schema = { models: { UsageEvent: {
+          ui: {
+            listView: ['event', 'appVersion', 'createdAt'],
+          },
+        } } };
+        "#;
+        let models = TypeScriptParser::new().parse(content).unwrap();
+        let m = models.iter().find(|m| m.name == "UsageEvent").unwrap();
+        let ui = m.ui.as_ref().expect("ui config must be parsed");
+        let lv = ui.list_view.as_ref().expect("listView must be parsed");
+        assert_eq!(lv, &["event", "appVersion", "createdAt"]);
     }
 
     #[test]

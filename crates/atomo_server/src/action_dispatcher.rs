@@ -175,6 +175,7 @@ mod tests {
                     }],
                     deleted: vec![],
                 },
+                ui: None,
             },
         );
         Schema { models, actions }

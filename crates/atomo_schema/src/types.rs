@@ -63,6 +63,15 @@ pub struct Model {
     /// Lifecycle event bindings: which actions to enqueue when a record is created/updated/deleted.
     #[serde(default)]
     pub events: ModelEvents,
+    /// Optional UI hints from the schema (e.g. which fields to show in the admin list view).
+    #[serde(default)]
+    pub ui: Option<UiConfig>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UiConfig {
+    #[serde(default, rename = "listView")]
+    pub list_view: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

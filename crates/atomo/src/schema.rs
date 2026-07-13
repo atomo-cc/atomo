@@ -513,6 +513,7 @@ mod tests {
             relationships: rels.into_iter().map(|(n, r)| (n.to_string(), r)).collect(),
             constraints: Vec::new(),
             events: Default::default(),
+            ui: None,
         }
     }
 
@@ -740,6 +741,7 @@ mod tests {
             relationships: HashMap::new(),
             constraints: Vec::new(),
             events: Default::default(),
+            ui: None,
         }
     }
 

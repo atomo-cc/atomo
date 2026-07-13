@@ -252,6 +252,7 @@ mod tests {
             relationships: HashMap::new(),
             constraints: Vec::new(),
             events,
+            ui: None,
         }
     }
 
