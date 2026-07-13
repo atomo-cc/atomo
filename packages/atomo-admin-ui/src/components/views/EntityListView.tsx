@@ -93,8 +93,11 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
           // Render different content depending on the field type
           switch (field?.type) {
             case 'date':
-            case 'datetime':
               return value ? formatDate(value) : '-'
+            case 'datetime':
+              // Timestamps need time-of-day: event logs / ledgers cluster many
+              // rows in one day, and a date-only cell makes them indistinguishable.
+              return value ? formatDate(value, 'time') : '-'
             case 'boolean':
               return value ? 'Yes' : 'No'
             case 'reference':
