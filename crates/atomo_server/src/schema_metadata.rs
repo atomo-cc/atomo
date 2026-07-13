@@ -56,6 +56,11 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
             })
             .collect();
 
+        let ui = match &model.ui {
+            Some(ui) => json!({ "listView": ui.list_view }),
+            None => json!(null),
+        };
+
         models.insert(
             name.clone(),
             json!({
@@ -64,6 +69,7 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
                 "fields": fields,
                 "relationships": relationships,
                 "validation": model.validation,
+                "ui": ui,
             }),
         );
     }

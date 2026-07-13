@@ -462,6 +462,7 @@ mod tests {
                 hooks: None,
                 constraints: vec![],
                 events: Default::default(),
+                ui: None,
             },
         );
         let schema = Schema {

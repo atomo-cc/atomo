@@ -89,6 +89,7 @@ fn unique_schema(table: &str) -> Schema {
         relationships: HashMap::new(),
         constraints: Vec::new(),
         events: Default::default(),
+        ui: None,
     };
     let mut models = HashMap::new();
     models.insert("Uniq".to_string(), model);

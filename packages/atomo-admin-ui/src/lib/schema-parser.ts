@@ -480,22 +480,21 @@ function generateFieldUIConfig(fieldName: string, _tsType: string) {
 
 /**
  * Generate the UI config for a model.
+ * When `serverListView` is provided (from the schema's `ui.listView`), it is used as-is —
+ * including any timestamp fields the schema author explicitly listed.
  */
-function generateUIConfig(_modelName: string, fields: Record<string, FieldMetadata>) {
+function generateUIConfig(_modelName: string, fields: Record<string, FieldMetadata>, serverListView?: string[]) {
   const fieldNames = Object.keys(fields)
 
-  // Find a suitable field to use as the display field
   const displayField = findDisplayField(fieldNames)
 
-  // Generate the list view config
-  const listView = fieldNames
-    .filter(name => !['createdAt', 'updatedAt'].includes(name))
-    .slice(0, 6) // Show at most 6 fields
+  const listView = serverListView
+    ? serverListView.filter(name => fieldNames.includes(name))
+    : fieldNames.slice(0, 6)
 
-  // Generate the edit form config
   const editForm = fieldNames
     .filter(name => !['id', 'createdAt', 'updatedAt'].includes(name))
-  
+
   return {
     displayField,
     listView,
@@ -609,7 +608,7 @@ async function loadFromMetaSchema(): Promise<SchemaMetadata> {
       relationships: m.relationships || undefined,
       validation: m.validation || undefined,
       searchable: getSearchableFields(fields),
-      ui: generateUIConfig(name, fields),
+      ui: generateUIConfig(name, fields, m.ui?.listView ?? undefined),
     }
   }
 

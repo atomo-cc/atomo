@@ -1304,6 +1304,7 @@ mod tests {
             relationships: HashMap::new(),
             constraints: Vec::new(),
             events: ModelEvents::default(),
+            ui: None,
         }
     }
 

@@ -49,6 +49,7 @@ fn test_schema() -> atomo_schema::Schema {
             relationships: std::collections::HashMap::new(),
             constraints: Vec::new(),
             events: Default::default(),
+            ui: None,
         },
     );
     atomo_schema::Schema { models, actions: std::collections::HashMap::new() }

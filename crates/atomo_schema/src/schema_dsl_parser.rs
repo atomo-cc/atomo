@@ -49,6 +49,7 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
                 relationships,
                 constraints: Vec::new(),
                 events,
+                ui: None,
             },
         );
     }

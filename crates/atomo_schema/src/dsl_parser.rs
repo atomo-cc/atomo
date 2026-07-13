@@ -50,6 +50,7 @@ impl DslParser {
                 relationships: std::collections::HashMap::new(),
                 constraints: Vec::new(),
                 events: Default::default(),
+                ui: None,
             });
         }
 
