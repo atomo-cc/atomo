@@ -589,7 +589,13 @@ async fn test_actor_persisted_and_replayed() {
     let mut update_data = HashMap::new();
     update_data.insert("name".to_string(), json!("ActorTestUpdated"));
     client
-        .update_many("TestUser", &where_clauses, &update_data, &[], Some("user-99"))
+        .update_many(
+            "TestUser",
+            &where_clauses,
+            &update_data,
+            &[],
+            Some("user-99"),
+        )
         .await
         .expect("update failed");
 
@@ -598,8 +604,10 @@ async fn test_actor_persisted_and_replayed() {
     let events = store.replay("TestUser", None).await.expect("replay failed");
     let actor_events: Vec<_> = events
         .iter()
-        .filter(|e| e.data.get("name").map(|v| v.as_str()) == Some(Some("ActorTest"))
-            || e.data.get("name").map(|v| v.as_str()) == Some(Some("ActorTestUpdated")))
+        .filter(|e| {
+            e.data.get("name").map(|v| v.as_str()) == Some(Some("ActorTest"))
+                || e.data.get("name").map(|v| v.as_str()) == Some(Some("ActorTestUpdated"))
+        })
         .collect();
 
     assert!(
@@ -633,7 +641,9 @@ async fn test_actor_persisted_and_replayed() {
         .await
         .expect("entity_history failed");
     assert!(
-        history.iter().any(|e| e.actor.as_deref() == Some("user-42")),
+        history
+            .iter()
+            .any(|e| e.actor.as_deref() == Some("user-42")),
         "entity_history must include actor"
     );
 }
@@ -687,7 +697,10 @@ async fn test_restore_and_hard_delete_events_persist_to_event_log() {
         .await
         .expect("entity_history failed");
 
-    let types: Vec<_> = history.iter().map(|e| format!("{:?}", e.event_type)).collect();
+    let types: Vec<_> = history
+        .iter()
+        .map(|e| format!("{:?}", e.event_type))
+        .collect();
     assert!(
         types.contains(&"Created".to_string()),
         "missing Created in {types:?}"

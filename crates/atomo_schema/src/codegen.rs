@@ -157,10 +157,7 @@ pub fn generate_typescript_client(schema: &Schema) -> String {
                 .map(|b| format!("'{}'", b.action))
                 .collect::<Vec<_>>()
                 .join(" | ");
-            out.push_str(&format!(
-                "  '{}.{}': {};\n",
-                name, event_kind, actions_str
-            ));
+            out.push_str(&format!("  '{}.{}': {};\n", name, event_kind, actions_str));
         }
     }
     out.push_str("}\n");
@@ -169,10 +166,7 @@ pub fn generate_typescript_client(schema: &Schema) -> String {
     if !action_names.is_empty() {
         out.push_str("\nexport interface ActionHandlers {\n");
         for aname in &action_names {
-            out.push_str(&format!(
-                "  {}: {{ input: {}Input }};\n",
-                aname, aname
-            ));
+            out.push_str(&format!("  {}: {{ input: {}Input }};\n", aname, aname));
         }
         out.push_str("}\n\n");
 
@@ -352,7 +346,11 @@ mod tests {
 
         let mut models = HashMap::new();
         models.insert("Post".to_string(), post);
-        let schema = Schema { models, actions, builtins: Default::default() };
+        let schema = Schema {
+            models,
+            actions,
+            builtins: Default::default(),
+        };
 
         let ts = generate_typescript_client(&schema);
 
@@ -402,7 +400,10 @@ mod tests {
 
         let ts = generate_typescript_client(&schema);
 
-        assert!(ts.contains("export interface SendEmailInput {"), "Object input interface missing");
+        assert!(
+            ts.contains("export interface SendEmailInput {"),
+            "Object input interface missing"
+        );
         assert!(ts.contains("to: string;"), "required field missing");
         assert!(ts.contains("cc?: string;"), "optional field missing ?");
     }
@@ -584,7 +585,10 @@ mod tests {
             builtins: Default::default(),
         });
 
-        assert_eq!(ts1, ts2, "output should be identical regardless of HashMap order");
+        assert_eq!(
+            ts1, ts2,
+            "output should be identical regardless of HashMap order"
+        );
     }
 
     #[test]
@@ -627,7 +631,11 @@ mod tests {
 
         let mut models = HashMap::new();
         models.insert("Post".to_string(), post);
-        let schema = Schema { models, actions, builtins: Default::default() };
+        let schema = Schema {
+            models,
+            actions,
+            builtins: Default::default(),
+        };
         let ts = generate_typescript_client(&schema);
 
         assert!(
@@ -710,10 +718,7 @@ mod tests {
         assert_eq!(ts_type(&FieldType::Json), "unknown");
         assert_eq!(ts_type(&FieldType::Blocks), "unknown");
         assert_eq!(ts_type(&FieldType::Custom("Foo".to_string())), "unknown");
-        assert_eq!(
-            ts_type(&FieldType::Reference("User".to_string())),
-            "string"
-        );
+        assert_eq!(ts_type(&FieldType::Reference("User".to_string())), "string");
         assert_eq!(
             ts_type(&FieldType::Array(Box::new(FieldType::Number))),
             "number[]"

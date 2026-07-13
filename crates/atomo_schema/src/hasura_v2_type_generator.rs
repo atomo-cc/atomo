@@ -6,10 +6,10 @@ pub fn safe_ident(name: &str) -> String {
     match name {
         "type" | "match" | "move" | "ref" | "self" | "super" | "crate" | "mod" | "fn"
         | "struct" | "enum" | "trait" | "impl" | "pub" | "use" | "let" | "mut" | "const"
-        | "static" | "loop" | "for" | "while" | "if" | "else" | "return" | "break"
-        | "continue" | "as" | "in" | "where" | "async" | "await" | "dyn" | "abstract"
-        | "become" | "box" | "do" | "final" | "macro" | "override" | "priv" | "try"
-        | "typeof" | "unsafe" | "unsized" | "virtual" | "yield" => format!("r#{}", name),
+        | "static" | "loop" | "for" | "while" | "if" | "else" | "return" | "break" | "continue"
+        | "as" | "in" | "where" | "async" | "await" | "dyn" | "abstract" | "become" | "box"
+        | "do" | "final" | "macro" | "override" | "priv" | "try" | "typeof" | "unsafe"
+        | "unsized" | "virtual" | "yield" => format!("r#{}", name),
         _ => name.to_string(),
     }
 }
@@ -635,7 +635,11 @@ impl From<{model_name}> for {core_type} {{
             let db_field_name = self.camel_to_snake_case(field_name);
             let field_type = self.convert_field_type_for_db(&field.field_type, field.optional);
 
-            fields.push(format!("    pub {}: {}", safe_ident(&db_field_name), field_type));
+            fields.push(format!(
+                "    pub {}: {}",
+                safe_ident(&db_field_name),
+                field_type
+            ));
         }
 
         let fields_str = fields.join(",\n");
@@ -775,10 +779,7 @@ impl From<{model_name}Row> for {model_name} {{
                     field_name, ident, comparison_type
                 ));
             } else {
-                fields.push(format!(
-                    "    pub {}: Option<{}>",
-                    ident, comparison_type
-                ));
+                fields.push(format!("    pub {}: Option<{}>", ident, comparison_type));
             }
         }
 
@@ -873,10 +874,7 @@ pub enum {model_name}SelectColumn {{
             let snake_case_name = self.camel_to_snake_case(field_name);
             let ident = safe_ident(&snake_case_name);
             let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
-            fields.push(format!(
-                "    pub {}: Option<{}>",
-                ident, field_type
-            ));
+            fields.push(format!("    pub {}: Option<{}>", ident, field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -909,10 +907,7 @@ pub struct {model_name}InsertInput {{
             let snake_case_name = self.camel_to_snake_case(field_name);
             let ident = safe_ident(&snake_case_name);
             let field_type = self.convert_field_type_for_input(&field.field_type, false); // Get base type without Option
-            fields.push(format!(
-                "    pub {}: Option<{}>",
-                ident, field_type
-            ));
+            fields.push(format!("    pub {}: Option<{}>", ident, field_type));
         }
 
         let fields_str = fields.join(",\n");
@@ -2001,10 +1996,7 @@ mod tests {
 
     #[test]
     fn basic_model_generates_mutation_response() {
-        let model = make_model(
-            "Customer",
-            &[("id", FieldType::EntityId, false)],
-        );
+        let model = make_model("Customer", &[("id", FieldType::EntityId, false)]);
         let gen = HasuraV2TypeGenerator::new();
         let output = gen.generate_types(&[model]).unwrap();
 

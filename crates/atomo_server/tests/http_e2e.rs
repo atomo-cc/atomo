@@ -295,10 +295,12 @@ export default schema;
             while let Ok(ev) = rx.recv().await {
                 let op = match ev.event_type {
                     atomo::events::EventType::Created => AuditOperation::Create,
-                    atomo::events::EventType::Updated
-                    | atomo::events::EventType::Restored => AuditOperation::Update,
-                    atomo::events::EventType::Deleted
-                    | atomo::events::EventType::HardDeleted => AuditOperation::Delete,
+                    atomo::events::EventType::Updated | atomo::events::EventType::Restored => {
+                        AuditOperation::Update
+                    }
+                    atomo::events::EventType::Deleted | atomo::events::EventType::HardDeleted => {
+                        AuditOperation::Delete
+                    }
                     atomo::events::EventType::Custom => AuditOperation::Read,
                 };
                 let entity_id = ev
@@ -854,10 +856,12 @@ async fn test_crm_mutation_audited_with_actor() {
             while let Ok(ev) = rx.recv().await {
                 let op = match ev.event_type {
                     atomo::events::EventType::Created => AuditOperation::Create,
-                    atomo::events::EventType::Updated
-                    | atomo::events::EventType::Restored => AuditOperation::Update,
-                    atomo::events::EventType::Deleted
-                    | atomo::events::EventType::HardDeleted => AuditOperation::Delete,
+                    atomo::events::EventType::Updated | atomo::events::EventType::Restored => {
+                        AuditOperation::Update
+                    }
+                    atomo::events::EventType::Deleted | atomo::events::EventType::HardDeleted => {
+                        AuditOperation::Delete
+                    }
                     atomo::events::EventType::Custom => AuditOperation::Read,
                 };
                 let entity_id = ev
@@ -933,7 +937,17 @@ async fn test_crm_mutation_audited_with_actor() {
         rows
     );
 
-    for t in ["contact", "company", "deal", "activity"] {
+    // Current CRM table names (plural) — the old singular list was a no-op, and
+    // leaving the CRM-shaped `users` table behind broke every later suite that
+    // expects the platform users table (ensure_platform_tables is IF NOT EXISTS).
+    for t in [
+        "deals",
+        "contacts",
+        "companies",
+        "activities",
+        "leads",
+        "users",
+    ] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await

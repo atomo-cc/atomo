@@ -82,7 +82,10 @@ impl AtomoServer {
         info!("   Port: {}", self.config.port);
         info!("   Database: {}", self.config.database_url);
         if !self.config.public_read_models.is_empty() {
-            info!("   Public-read models: {:?}", self.config.public_read_models);
+            info!(
+                "   Public-read models: {:?}",
+                self.config.public_read_models
+            );
         }
 
         // Fail loud on silent half-registration (consumer feedback #1): a model with
@@ -182,9 +185,9 @@ impl AtomoServer {
         registry_store.init().await?;
         info!("   ✓ Plugin registry ready");
 
-        let redirect_store = std::sync::Arc::new(
-            crate::public_read_redirects::RedirectStore::new(self.atomo.db_pool().clone()),
-        );
+        let redirect_store = std::sync::Arc::new(crate::public_read_redirects::RedirectStore::new(
+            self.atomo.db_pool().clone(),
+        ));
         redirect_store.init().await?;
         info!("   ✓ Public read redirects ready");
 
@@ -463,10 +466,8 @@ impl AtomoServer {
             None
         };
 
-        let action_router = crate::action_routes::action_router(
-            self.atomo.schema().clone(),
-            job_store.clone(),
-        );
+        let action_router =
+            crate::action_routes::action_router(self.atomo.schema().clone(), job_store.clone());
 
         let crud_router = crate::crud_routes::crud_router(
             std::sync::Arc::new(self.atomo.client().clone()),

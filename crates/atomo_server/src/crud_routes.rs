@@ -24,8 +24,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use crate::jobs::{WorkerIdentity, WorkerTokenStore};
 use crate::job_routes::worker_auth_middleware;
+use crate::jobs::{WorkerIdentity, WorkerTokenStore};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,7 +99,9 @@ fn capability_check(worker: &WorkerIdentity, model: &str, op: &str) -> Option<Re
         Some(
             (
                 StatusCode::FORBIDDEN,
-                Json(json!({"error": format!("worker lacks crud capability for {}.{}", model, op)})),
+                Json(
+                    json!({"error": format!("worker lacks crud capability for {}.{}", model, op)}),
+                ),
             )
                 .into_response(),
         )
@@ -125,7 +127,11 @@ fn model_check(schema: &Schema, model: &str) -> Option<Response> {
 fn error_response(e: anyhow::Error) -> Response {
     let msg = e.to_string();
     if msg.contains("validation failed") {
-        (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": msg}))).into_response()
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": msg})),
+        )
+            .into_response()
     } else if msg.contains("Access denied") || msg.contains("Authentication required") {
         (StatusCode::FORBIDDEN, Json(json!({"error": msg}))).into_response()
     } else {
@@ -204,9 +210,7 @@ async fn find_by_id(
 
     let result = with_tenant_scope(
         tenant_id.map(String::from),
-        state
-            .client
-            .find_unique(&model, &where_clauses, &[]),
+        state.client.find_unique(&model, &where_clauses, &[]),
     )
     .await;
     match result {
@@ -246,14 +250,9 @@ async fn update(
         req.origin,
         with_tenant_scope(
             tenant_id.map(String::from),
-            state.client.update_many_checked(
-                role,
-                &model,
-                &where_clauses,
-                &req.data,
-                &[],
-                user_id,
-            ),
+            state
+                .client
+                .update_many_checked(role, &model, &where_clauses, &req.data, &[], user_id),
         ),
     )
     .await;
@@ -345,14 +344,9 @@ async fn find_many(
 
     let result = with_tenant_scope(
         tenant_id.map(String::from),
-        state.client.find_many(
-            &model,
-            &where_clauses,
-            &[],
-            Some(limit),
-            Some(offset),
-            &[],
-        ),
+        state
+            .client
+            .find_many(&model, &where_clauses, &[], Some(limit), Some(offset), &[]),
     )
     .await;
     match result {

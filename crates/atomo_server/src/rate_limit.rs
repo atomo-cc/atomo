@@ -120,7 +120,10 @@ mod tests {
     async fn refills_after_window() {
         let rl = RateLimiter::new(1, 0); // window 0s → refills every call
         assert!(rl.check(ip()).await.is_ok(), "1st allowed");
-        assert!(rl.check(ip()).await.is_ok(), "allowed again after window elapsed");
+        assert!(
+            rl.check(ip()).await.is_ok(),
+            "allowed again after window elapsed"
+        );
     }
 
     #[tokio::test]

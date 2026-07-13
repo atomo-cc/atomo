@@ -269,10 +269,7 @@ async fn main() {
             .await
             .unwrap();
         let s = Instant::now();
-        client
-            .find_unique("Note", &by_target, &[])
-            .await
-            .unwrap();
+        client.find_unique("Note", &by_target, &[]).await.unwrap();
         t.push(s.elapsed());
     }
     rows.push((
@@ -285,10 +282,7 @@ async fn main() {
     let mut t = Vec::with_capacity(iters);
     for _ in 0..iters {
         let s = Instant::now();
-        client
-            .find_unique("Note", &by_target, &[])
-            .await
-            .unwrap();
+        client.find_unique("Note", &by_target, &[]).await.unwrap();
         t.push(s.elapsed());
     }
     rows.push((
@@ -738,13 +732,12 @@ export const Activity = model('bench_crm_activities', {
     let mut t = Vec::with_capacity(iters);
     for _ in 0..iters {
         let s = Instant::now();
-        cc.find_unique("Contact", &contact_by_id, &[]).await.unwrap();
+        cc.find_unique("Contact", &contact_by_id, &[])
+            .await
+            .unwrap();
         t.push(s.elapsed());
     }
-    rows.push((
-        "crm: find_unique Contact by id hot".into(),
-        stats(t),
-    ));
+    rows.push(("crm: find_unique Contact by id hot".into(), stats(t)));
 
     // CRM: mixed workload (create Deal + read Leads — simulates real app)
     let mix_iters = crm_iters.min(200);
@@ -763,16 +756,12 @@ export const Activity = model('bench_crm_activities', {
             .unwrap();
         t.push(s.elapsed());
     }
-    rows.push((
-        "crm: mixed (create Deal + find_many Lead)".into(),
-        stats(t),
-    ));
+    rows.push(("crm: mixed (create Deal + find_many Lead)".into(), stats(t)));
 
     // ----- GraphQL full-stack round-trip -----
     // Measures the actual cost consumers pay: GraphQL resolution + casing conversion +
     // validation + engine. Uses schema.execute() in-process (no HTTP/network).
-    let gql_schema_content =
-        "export interface GqlNote { id: string; title: string; }\n\
+    let gql_schema_content = "export interface GqlNote { id: string; title: string; }\n\
          export const schema = { models: { GqlNote: { tableName: 'bench_gql_notes' } } };\n\
          export default schema;";
     let gql_atomo = atomo::Atomo::builder()
@@ -784,16 +773,15 @@ export const Activity = model('bench_crm_activities', {
         .expect("gql atomo build");
     let gql_client = Arc::new(gql_atomo.client().clone());
     let gql_pool = gql_atomo.db_pool().clone();
-    let gql = atomo::graphql::build_schema(gql_client.clone(), gql_atomo.schema(), gql_pool.clone());
+    let gql =
+        atomo::graphql::build_schema(gql_client.clone(), gql_atomo.schema(), gql_pool.clone());
     let _ = sqlx::query("TRUNCATE bench_gql_notes")
         .execute(gql_atomo.db_pool())
         .await;
 
     // Warm: seed some records
     for i in 0..50 {
-        let q = format!(
-            r#"mutation {{ create(model: "GqlNote", data: {{ title: "warm{i}" }}) }}"#
-        );
+        let q = format!(r#"mutation {{ create(model: "GqlNote", data: {{ title: "warm{i}" }}) }}"#);
         gql.execute(async_graphql::Request::new(&q)).await;
     }
 
@@ -801,9 +789,7 @@ export const Activity = model('bench_crm_activities', {
     let gql_iters = iters.min(500);
     let mut t = Vec::with_capacity(gql_iters);
     for i in 0..gql_iters {
-        let q = format!(
-            r#"mutation {{ create(model: "GqlNote", data: {{ title: "gql{i}" }}) }}"#
-        );
+        let q = format!(r#"mutation {{ create(model: "GqlNote", data: {{ title: "gql{i}" }}) }}"#);
         let req = async_graphql::Request::new(&q);
         let s = Instant::now();
         gql.execute(req).await;
@@ -818,9 +804,7 @@ export const Activity = model('bench_crm_activities', {
     .await;
     let mut t = Vec::with_capacity(iters);
     for _ in 0..iters {
-        let req = async_graphql::Request::new(
-            r#"{ records(model: "GqlNote", limit: 20) }"#,
-        );
+        let req = async_graphql::Request::new(r#"{ records(model: "GqlNote", limit: 20) }"#);
         let s = Instant::now();
         gql.execute(req).await;
         t.push(s.elapsed());
@@ -840,7 +824,11 @@ export const Activity = model('bench_crm_activities', {
         .data
         .into_json()
         .ok()
-        .and_then(|v| v.get("create").and_then(|c| c.get("id")).and_then(|id| id.as_str().map(String::from)))
+        .and_then(|v| {
+            v.get("create")
+                .and_then(|c| c.get("id"))
+                .and_then(|id| id.as_str().map(String::from))
+        })
         .unwrap_or_default();
     if !gql_seed_id.is_empty() {
         let q = format!(r#"{{ record(model: "GqlNote", id: "{gql_seed_id}") }}"#);
@@ -860,12 +848,14 @@ export const Activity = model('bench_crm_activities', {
     let bulk_n = 50usize;
     let mut seed_ids = Vec::with_capacity(bulk_n);
     for i in 0..bulk_n {
-        let q = format!(
-            r#"mutation {{ create(model: "GqlNote", data: {{ title: "bulk{i}" }}) }}"#
-        );
+        let q = format!(r#"mutation {{ create(model: "GqlNote", data: {{ title: "bulk{i}" }}) }}"#);
         let resp = gql.execute(async_graphql::Request::new(&q)).await;
         if let Ok(v) = resp.data.into_json() {
-            if let Some(id) = v.get("create").and_then(|c| c.get("id")).and_then(|id| id.as_str()) {
+            if let Some(id) = v
+                .get("create")
+                .and_then(|c| c.get("id"))
+                .and_then(|id| id.as_str())
+            {
                 seed_ids.push(id.to_string());
             }
         }
@@ -922,10 +912,7 @@ export const Activity = model('bench_crm_activities', {
         let _ = rl.check(ip).await;
         t.push(s.elapsed());
     }
-    rows.push((
-        "rate limiter: check (single IP, serial)".into(),
-        stats(t),
-    ));
+    rows.push(("rate limiter: check (single IP, serial)".into(), stats(t)));
 
     // Concurrent throughput: 8 tasks, unique IPs
     let conc_workers = 8u8;
@@ -961,7 +948,9 @@ export const Activity = model('bench_crm_activities', {
 
     // ----- Report -----
     println!("\n## Atomo engine benchmarks (in-process)\n");
-    println!("iterations: {iters} · engine-level + GraphQL-level latencies (exclude HTTP/network)\n");
+    println!(
+        "iterations: {iters} · engine-level + GraphQL-level latencies (exclude HTTP/network)\n"
+    );
     println!("| Benchmark | n | mean µs | p50 µs | p95 µs | p99 µs | ops/sec |");
     println!("|---|--:|--:|--:|--:|--:|--:|");
     for (name, s) in &rows {
@@ -984,9 +973,11 @@ export const Activity = model('bench_crm_activities', {
         );
     }
     println!();
-    let _ = sqlx::query("TRUNCATE bench_notes, bench_rel_notes, bench_rel_tags, bench_ev_notes, bench_gql_notes")
-        .execute(atomo.db_pool())
-        .await;
+    let _ = sqlx::query(
+        "TRUNCATE bench_notes, bench_rel_notes, bench_rel_tags, bench_ev_notes, bench_gql_notes",
+    )
+    .execute(atomo.db_pool())
+    .await;
     let _ = sqlx::query(
         "TRUNCATE bench_crm_activities, bench_crm_deals, bench_crm_leads, \
          bench_crm_contacts, bench_crm_companies CASCADE",

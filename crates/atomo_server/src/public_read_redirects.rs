@@ -53,12 +53,14 @@ impl RedirectStore {
         .bind(from_slug)
         .fetch_optional(&self.pool)
         .await?;
-        Ok(row.map(|(from_model, from_slug, to_slug, permanent)| Redirect {
-            from_model,
-            from_slug,
-            to_slug,
-            permanent,
-        }))
+        Ok(
+            row.map(|(from_model, from_slug, to_slug, permanent)| Redirect {
+                from_model,
+                from_slug,
+                to_slug,
+                permanent,
+            }),
+        )
     }
 
     /// Create or update a redirect. Upserts on (model, from_slug).
@@ -85,13 +87,12 @@ impl RedirectStore {
 
     /// Remove a redirect.
     pub async fn remove(&self, model: &str, from_slug: &str) -> Result<bool> {
-        let result = sqlx::query(
-            "DELETE FROM public_read_redirects WHERE model = $1 AND from_slug = $2",
-        )
-        .bind(model)
-        .bind(from_slug)
-        .execute(&self.pool)
-        .await?;
+        let result =
+            sqlx::query("DELETE FROM public_read_redirects WHERE model = $1 AND from_slug = $2")
+                .bind(model)
+                .bind(from_slug)
+                .execute(&self.pool)
+                .await?;
         Ok(result.rows_affected() > 0)
     }
 

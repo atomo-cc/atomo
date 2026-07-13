@@ -650,23 +650,27 @@ impl Subscription {
             let m = model_filter.clone();
             let t = tenant.clone();
             async move {
-                result.ok().filter(|e| {
-                    if e.model_name != m {
-                        return false;
-                    }
-                    match &t {
-                        Some(tid) => {
-                            e.data.get("tenant_id").and_then(|v| v.as_str()) == Some(tid.as_str())
+                result
+                    .ok()
+                    .filter(|e| {
+                        if e.model_name != m {
+                            return false;
                         }
-                        None => true,
-                    }
-                }).map(|mut e| {
-                    e.data = camel_keys(e.data);
-                    if let Some(prev) = e.previous_data.take() {
-                        e.previous_data = Some(camel_keys(prev));
-                    }
-                    e
-                })
+                        match &t {
+                            Some(tid) => {
+                                e.data.get("tenant_id").and_then(|v| v.as_str())
+                                    == Some(tid.as_str())
+                            }
+                            None => true,
+                        }
+                    })
+                    .map(|mut e| {
+                        e.data = camel_keys(e.data);
+                        if let Some(prev) = e.previous_data.take() {
+                            e.previous_data = Some(camel_keys(prev));
+                        }
+                        e
+                    })
             }
         }))
     }

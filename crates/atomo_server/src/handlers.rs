@@ -12,7 +12,7 @@ use axum::{
     extract::{Extension, State},
     http::StatusCode,
     response::{Html, IntoResponse, Json},
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Router,
 };
 use prometheus::{Encoder, TextEncoder};
@@ -415,11 +415,7 @@ pub async fn public_records(
                 } else {
                     StatusCode::FOUND
                 };
-                return Ok((
-                    status,
-                    [(header::LOCATION, location)],
-                )
-                    .into_response());
+                return Ok((status, [(header::LOCATION, location)]).into_response());
             }
         }
     }
@@ -437,7 +433,9 @@ pub struct CreateRedirectBody {
     #[serde(default = "default_permanent")]
     pub permanent: bool,
 }
-fn default_permanent() -> bool { true }
+fn default_permanent() -> bool {
+    true
+}
 
 pub async fn create_redirect(
     Extension(redirects): Extension<std::sync::Arc<crate::public_read_redirects::RedirectStore>>,

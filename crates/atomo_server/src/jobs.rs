@@ -514,10 +514,7 @@ impl WorkerIdentity {
             }
             match parts.len() {
                 2 => parts[1] == model,
-                3 => {
-                    parts[1] == model
-                        && parts[2].split(',').any(|o| o.eq_ignore_ascii_case(op))
-                }
+                3 => parts[1] == model && parts[2].split(',').any(|o| o.eq_ignore_ascii_case(op)),
                 _ => false,
             }
         })

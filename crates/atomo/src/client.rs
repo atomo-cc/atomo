@@ -2,7 +2,9 @@
 
 use anyhow::Result;
 use serde_json::Value;
-use sqlx::{postgres::PgArguments, postgres::PgPoolOptions, Arguments, Column, PgPool, Row, TypeInfo};
+use sqlx::{
+    postgres::PgArguments, postgres::PgPoolOptions, Arguments, Column, PgPool, Row, TypeInfo,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -324,7 +326,12 @@ impl AtomoClient {
     ) -> Result<Option<HashMap<String, Value>>> {
         let cache_key = crate::cache::ReadCache::key(
             model_name,
-            &format!("unique:{:?}{:?}{:?}", where_clauses, include, current_tenant()),
+            &format!(
+                "unique:{:?}{:?}{:?}",
+                where_clauses,
+                include,
+                current_tenant()
+            ),
         );
         if let Some(cached) = self.cache.get(&cache_key).await {
             if let Ok(record) = serde_json::from_value(cached) {
@@ -1331,9 +1338,7 @@ mod tests {
         assert_eq!(current_origin(), None);
 
         // Inside with_action_origin, it returns the set value.
-        let inside = with_action_origin(Some("myAction".into()), async {
-            current_origin()
-        }).await;
+        let inside = with_action_origin(Some("myAction".into()), async { current_origin() }).await;
         assert_eq!(inside, Some("myAction".to_string()));
 
         // After the scope, it's None again.
@@ -1342,9 +1347,7 @@ mod tests {
 
     #[tokio::test]
     async fn action_origin_none_scope_returns_none() {
-        let inside = with_action_origin(None, async {
-            current_origin()
-        }).await;
+        let inside = with_action_origin(None, async { current_origin() }).await;
         assert_eq!(inside, None);
     }
 }

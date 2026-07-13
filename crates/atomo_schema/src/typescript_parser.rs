@@ -353,25 +353,24 @@ impl TypeScriptParser {
         if let Some(fe_block) = Self::sub_block(&cond_block, "fieldEquals") {
             let field_re = Regex::new(r#"field\s*:\s*['"]([^'"]+)['"]"#).ok()?;
             let field = field_re.captures(&fe_block)?.get(1)?.as_str().to_string();
-            let value =
-                if let Some(c) = Regex::new(r#"value\s*:\s*['"]([^'"]+)['"]"#)
-                    .ok()?
-                    .captures(&fe_block)
-                {
-                    serde_json::Value::String(c[1].to_string())
-                } else if let Some(c) = Regex::new(r"value\s*:\s*(true|false)")
-                    .ok()?
-                    .captures(&fe_block)
-                {
-                    serde_json::Value::Bool(&c[1] == "true")
-                } else if let Some(c) = Regex::new(r"value\s*:\s*(-?\d+(?:\.\d+)?)")
-                    .ok()?
-                    .captures(&fe_block)
-                {
-                    serde_json::json!(c[1].parse::<f64>().ok()?)
-                } else {
-                    return None;
-                };
+            let value = if let Some(c) = Regex::new(r#"value\s*:\s*['"]([^'"]+)['"]"#)
+                .ok()?
+                .captures(&fe_block)
+            {
+                serde_json::Value::String(c[1].to_string())
+            } else if let Some(c) = Regex::new(r"value\s*:\s*(true|false)")
+                .ok()?
+                .captures(&fe_block)
+            {
+                serde_json::Value::Bool(&c[1] == "true")
+            } else if let Some(c) = Regex::new(r"value\s*:\s*(-?\d+(?:\.\d+)?)")
+                .ok()?
+                .captures(&fe_block)
+            {
+                serde_json::json!(c[1].parse::<f64>().ok()?)
+            } else {
+                return None;
+            };
             return Some(ActionCondition::FieldEquals { field, value });
         }
         None
@@ -410,11 +409,7 @@ impl TypeScriptParser {
         let input_block = Self::sub_block(block, "input")?;
         if let Some(pick_block) = Self::sub_block(&input_block, "pick") {
             let model_re = Regex::new(r#"model\s*:\s*['"]([^'"]+)['"]"#).ok()?;
-            let model = model_re
-                .captures(&pick_block)?
-                .get(1)?
-                .as_str()
-                .to_string();
+            let model = model_re.captures(&pick_block)?.get(1)?.as_str().to_string();
             if let Some(fields_arr) = Self::sub_array(&pick_block, "fields") {
                 let fields = Self::parse_string_array(&fields_arr);
                 return Some(ActionInputDef::PickFields { model, fields });
@@ -1195,8 +1190,14 @@ mod validation_tests {
         };
         "#;
         let schema = TypeScriptParser::new().parse_schema(content).unwrap();
-        let ext = schema.builtins.get("users").expect("users extension parsed");
-        assert_eq!(ext.columns.get("storeAccountId").map(String::as_str), Some("TEXT"));
+        let ext = schema
+            .builtins
+            .get("users")
+            .expect("users extension parsed");
+        assert_eq!(
+            ext.columns.get("storeAccountId").map(String::as_str),
+            Some("TEXT")
+        );
         assert_eq!(
             ext.constraints,
             vec![crate::types::ModelConstraint::UniqueWhere(

@@ -197,8 +197,7 @@ mod tests {
             proj("a", Some("a.example.com"), Some("127.0.0.1:4001")),
             proj("b", Some("b.example.com"), None), // no upstream → skipped
         ];
-        let cfg: serde_json::Value =
-            serde_json::from_str(&gw.render(&projects).unwrap()).unwrap();
+        let cfg: serde_json::Value = serde_json::from_str(&gw.render(&projects).unwrap()).unwrap();
         let routes = cfg["apps"]["http"]["servers"]["srv0"]["routes"]
             .as_array()
             .expect("routes array");
@@ -209,7 +208,10 @@ mod tests {
         assert!(json.contains("127.0.0.1:4001"), "upstream for a");
         assert!(json.contains("X-Atomo-Project"), "header fallback matcher");
         // Project b has no upstream → it must not appear at all.
-        assert!(!json.contains("b.example.com"), "b has no upstream → skipped");
+        assert!(
+            !json.contains("b.example.com"),
+            "b has no upstream → skipped"
+        );
         // a contributes a host route + a header route (2); b contributes none.
         assert_eq!(routes.len(), 2, "only project a's two routes");
     }

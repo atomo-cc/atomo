@@ -36,12 +36,8 @@ pub fn spawn_action_dispatcher(
                 };
 
                 let payload = build_job_payload(&ev, &binding.action, input);
-                let idempotency_key =
-                    format!("{}:{}", ev.event_id, binding.action);
-                let tenant_id = ev
-                    .data
-                    .get("tenant_id")
-                    .and_then(|v| v.as_str());
+                let idempotency_key = format!("{}:{}", ev.event_id, binding.action);
+                let tenant_id = ev.data.get("tenant_id").and_then(|v| v.as_str());
 
                 if let Err(e) = job_store
                     .enqueue(
@@ -91,20 +87,16 @@ fn matching_bindings<'a>(
                     return false;
                 }
             }
-            b.condition.as_ref().is_none_or(|cond| {
-                cond.matches(&ev.data, ev.previous_data.as_ref())
-            })
+            b.condition
+                .as_ref()
+                .is_none_or(|cond| cond.matches(&ev.data, ev.previous_data.as_ref()))
         })
         .collect();
 
     Some(matched)
 }
 
-fn build_job_payload(
-    ev: &ModelEvent,
-    action_name: &str,
-    input: HashMap<String, Value>,
-) -> Value {
+fn build_job_payload(ev: &ModelEvent, action_name: &str, input: HashMap<String, Value>) -> Value {
     json!({
         "action": action_name,
         "model": ev.model_name,
@@ -178,7 +170,11 @@ mod tests {
                 ui: None,
             },
         );
-        Schema { models, actions, builtins: Default::default() }
+        Schema {
+            models,
+            actions,
+            builtins: Default::default(),
+        }
     }
 
     #[test]
@@ -324,7 +320,11 @@ mod tests {
             origin: Some("processPost".into()),
         };
         let bindings = matching_bindings(&schema, &ev).unwrap();
-        assert_eq!(bindings.len(), 0, "processPost should be suppressed by origin");
+        assert_eq!(
+            bindings.len(),
+            0,
+            "processPost should be suppressed by origin"
+        );
     }
 
     #[test]
@@ -346,7 +346,11 @@ mod tests {
             origin: None,
         };
         let bindings = matching_bindings(&schema, &ev).unwrap();
-        assert_eq!(bindings.len(), 1, "origin=None should not suppress anything");
+        assert_eq!(
+            bindings.len(),
+            1,
+            "origin=None should not suppress anything"
+        );
         assert_eq!(bindings[0].action, "processPost");
     }
 

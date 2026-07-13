@@ -488,7 +488,11 @@ mod tests {
             .and_then(|s| s.parse().ok())
             .unwrap_or(4000);
         let p = Provisioner::default_port("alpha");
-        assert!(p >= base && p < base + 1000, "port {p} within [{base}, {})", base + 1000);
+        assert!(
+            p >= base && p < base + 1000,
+            "port {p} within [{base}, {})",
+            base + 1000
+        );
     }
 
     #[test]
@@ -516,6 +520,9 @@ mod tests {
         let s = Provisioner::materialized_schema_path(&p)
             .to_string_lossy()
             .replace('\\', "/");
-        assert!(s.ends_with("g1/schema.ts"), "git schema lands as <id>/schema.ts: {s}");
+        assert!(
+            s.ends_with("g1/schema.ts"),
+            "git schema lands as <id>/schema.ts: {s}"
+        );
     }
 }

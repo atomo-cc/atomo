@@ -111,7 +111,10 @@ pub struct EventActionBinding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ActionCondition {
     ChangedAny(Vec<String>),
-    FieldEquals { field: String, value: serde_json::Value },
+    FieldEquals {
+        field: String,
+        value: serde_json::Value,
+    },
 }
 
 impl ActionCondition {
@@ -128,9 +131,7 @@ impl ActionCondition {
                 };
                 fields.iter().any(|f| current.get(f) != prev.get(f))
             }
-            ActionCondition::FieldEquals { field, value } => {
-                current.get(field) == Some(value)
-            }
+            ActionCondition::FieldEquals { field, value } => current.get(field) == Some(value),
         }
     }
 }

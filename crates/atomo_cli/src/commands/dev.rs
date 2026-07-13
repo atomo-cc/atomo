@@ -104,7 +104,14 @@ pub async fn dev_command(
     let _ = dotenv::from_path(current_dir.join(".env"));
 
     // Run atomo-server with schema pointed at this service, with file watching
-    run_server_with_watch(&server_binary, &schema_path, &service_name, port, &current_dir).await?;
+    run_server_with_watch(
+        &server_binary,
+        &schema_path,
+        &service_name,
+        port,
+        &current_dir,
+    )
+    .await?;
 
     Ok(())
 }
@@ -120,7 +127,10 @@ async fn find_or_build_server_binary(service_dir: &Path) -> Result<PathBuf> {
     // Look in workspace target directories
     if let Some(workspace_root) = detect_workspace_root_from(service_dir)? {
         for profile in &["debug", "release"] {
-            let candidate = workspace_root.join("target").join(profile).join(binary_name);
+            let candidate = workspace_root
+                .join("target")
+                .join(profile)
+                .join(binary_name);
             if candidate.exists() {
                 return Ok(candidate);
             }
@@ -144,13 +154,18 @@ async fn find_or_build_server_binary(service_dir: &Path) -> Result<PathBuf> {
             anyhow::bail!("❌ Failed to build atomo-server");
         }
 
-        let built = workspace_root.join("target").join("debug").join(binary_name);
+        let built = workspace_root
+            .join("target")
+            .join("debug")
+            .join(binary_name);
         if built.exists() {
             return Ok(built);
         }
     }
 
-    anyhow::bail!("❌ atomo-server not found. Build with: cargo build -p atomo_server --bin atomo-server")
+    anyhow::bail!(
+        "❌ atomo-server not found. Build with: cargo build -p atomo_server --bin atomo-server"
+    )
 }
 
 /// Run atomo-server as a child process with file watching for hot reload.
@@ -205,8 +220,7 @@ async fn run_server_with_watch(
         println!();
         println!(
             "   🔥 {}",
-            "Hot Reload: Watching schema.ts for changes..."
-                .bright_yellow()
+            "Hot Reload: Watching schema.ts for changes...".bright_yellow()
         );
         println!("{}", "─".repeat(70).yellow());
 
@@ -302,7 +316,6 @@ fn detect_service_context(current_dir: &Path) -> Result<String> {
     Ok(service_name)
 }
 
-
 /// 生成业务代码 (models.rs, resolvers.rs) - 增强版本
 /// 真正的细粒度增量代码生成 - 只重新生成变更的部分
 pub(crate) async fn generate_business_code_incremental(
@@ -317,8 +330,8 @@ pub(crate) async fn generate_business_code_incremental(
 
     // 读取并解析schema
     let schema_content = tokio::fs::read_to_string(schema_path).await?;
-    let models = parse_schema_models(&schema_content)
-        .with_context(|| "Failed to parse schema.ts")?;
+    let models =
+        parse_schema_models(&schema_content).with_context(|| "Failed to parse schema.ts")?;
 
     // 检查什么需要重新生成
     let change_detection =
@@ -405,7 +418,6 @@ fn detect_workspace_root_from(start: &Path) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-
 /// 生成标准GraphQL schema定义文件
 async fn generate_graphql_schema_definition(schema_path: &Path, output_path: &Path) -> Result<()> {
     let schema_content = tokio::fs::read_to_string(schema_path).await?;
@@ -419,7 +431,6 @@ async fn generate_graphql_schema_definition(schema_path: &Path, output_path: &Pa
 
     Ok(())
 }
-
 
 /// 验证Schema一致性 - 确保生成的GraphQL schema符合Hasura v2标准
 async fn verify_schema_consistency(schema_graphql_path: &Path) -> Result<()> {
@@ -634,7 +645,6 @@ fn extract_type_name(line: &str) -> Option<String> {
     None
 }
 
-
 /// 增量变更检测结果
 #[derive(Debug)]
 struct IncrementalChangeSet {
@@ -751,7 +761,6 @@ async fn read_cache_file(path: &Path) -> Option<String> {
         .ok()
         .map(|s| s.trim().to_string())
 }
-
 
 /// 更新增量缓存
 async fn update_incremental_cache(
@@ -934,4 +943,3 @@ mod tests {
         assert_eq!(found, None);
     }
 }
-

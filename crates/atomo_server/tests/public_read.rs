@@ -68,13 +68,19 @@ async fn build_app() -> axum::Router {
         atomo_server::public_read_redirects::RedirectStore::new(atomo.db_pool().clone()),
     );
     redirect_store.init().await.unwrap();
+    // Mirror server boot: the allowlist param comes from ATOMO_PUBLIC_READ_MODELS.
+    // Tests set that env per-case (PubDoc); a hardcoded list here silently 404s
+    // every allowlisted request.
+    let public_models: Vec<String> = std::env::var("ATOMO_PUBLIC_READ_MODELS")
+        .map(|s| s.split(',').map(|m| m.trim().to_string()).collect())
+        .unwrap_or_default();
     atomo_server::handlers::create_router(
         gql,
         atomo,
         auth,
         audit,
         atomo_server::auth::RegistrationConfig::disabled(),
-        vec!["PublicListing".to_string()],
+        public_models,
         redirect_store,
     )
 }
