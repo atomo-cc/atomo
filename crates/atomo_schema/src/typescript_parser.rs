@@ -363,13 +363,11 @@ impl TypeScriptParser {
                 .captures(&fe_block)
             {
                 serde_json::Value::Bool(&c[1] == "true")
-            } else if let Some(c) = Regex::new(r"value\s*:\s*(-?\d+(?:\.\d+)?)")
-                .ok()?
-                .captures(&fe_block)
-            {
-                serde_json::json!(c[1].parse::<f64>().ok()?)
             } else {
-                return None;
+                let c = Regex::new(r"value\s*:\s*(-?\d+(?:\.\d+)?)")
+                    .ok()?
+                    .captures(&fe_block)?;
+                serde_json::json!(c[1].parse::<f64>().ok()?)
             };
             return Some(ActionCondition::FieldEquals { field, value });
         }
