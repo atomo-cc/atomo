@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo_realtime_server"
-version = "0.5.10"
+version = "0.5.11"
 edition = "2021"
 description = "Standalone, lightweight realtime relay — the atomo_realtime hub over WebSocket with stateless JWT auth (no database)"
 license = "AGPL-3.0-or-later"
