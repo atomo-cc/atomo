@@ -113,9 +113,12 @@ p50/p95/p99 latency and ops/sec. **Release-only** (debug numbers are meaningless
 All numbers below are **co-located** — Atomo (Linux, in a `rust` container) and the Node baseline
 both run on the same host as Postgres, against the *same* local DB, so neither pays a network hop.
 **Machine:** Intel i5-13400 (10C/16T), 64 GB · Postgres in WSL2 (local) · release builds ·
-2000 iterations · **2026-07-14** (re-measured on post-v0.6.0 main after the sqlx 0.7→0.8 upgrade
-and dependency refresh — writes unchanged vs the 2026-06-08 run, cold reads ~13–28% faster;
-head-to-head baseline sections below retain their original dates since those stacks didn't change).
+2000 iterations · **2026-07-14**, measured on a **quiet machine** (all other local containers and
+workloads stopped — earlier runs shared the box with unrelated database containers, which inflated
+both CPU-bound µs-scale numbers and fsync-bound writes by ~20%). Re-measured on post-v0.6.0 main
+after the sqlx 0.7→0.8 upgrade and dependency refresh: no regressions; cold reads are ~2× faster
+than the 2026-06-08 run. Head-to-head baseline sections below retain their original dates since
+those stacks didn't change.
 
 **Footprint:** the `atomo-server` release binary is **9.8 MB** (single static binary, stripped + thin
 LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `node_modules`.
@@ -124,22 +127,22 @@ LTO) — the whole per-project runtime, vs a Node runtime (~50–90 MB) plus `no
 
 | Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
 |---|--:|--:|--:|--:|--:|
-| data layer: create (insert + event, single txn) | 3769 | 3649 | 4530 | 5326 | 265 |
-| data layer: **create_many** (per row, batch 100) | **79** | 79 | 91 | 91 | **12 711** |
-| data layer: update_many (1 row by id, single txn) | 3719 | 3627 | 4531 | 5380 | 269 |
-| data layer: delete_many (1 row by id, single txn) | 3756 | 3620 | 4480 | 5299 | 266 |
-| data layer: **update_many** (per row, ~500 matched) | **53** | 52 | 55 | 55 | **19 007** |
-| data layer: **delete_many** (per row, ~500 matched) | **51** | 50 | 53 | 53 | **19 766** |
-| data layer: find_many hot (limit 20, cache hit) | 15.0 | 13 | 16 | 35 | 66 663 |
-| data layer: find_many cold (limit 20, cache miss) | 448 | 433 | 601 | 745 | 2 234 |
-| data layer: **find_unique** hot (cache hit) | **0.8** | — | — | 1 | **1 274 861** |
-| data layer: find_unique cold (cache miss) | 470 | 448 | 656 | 884 | 2 127 |
-| data layer: **count** hot (cache hit) | **0.1** | — | — | — | **6 831 371** |
-| data layer: count cold (cache miss) | 1045 | 990 | 1389 | 1670 | 957 |
-| data layer: find_many + include (20 notes × 3 tags) | 119 | 72 | 137 | 213 | 8 394 |
-| data layer: find_many eventual (hot through writes) | 50.6 | 45 | 78 | 100 | 19 780 |
-| job lease: 1 worker | 124 | — | — | — | 8 077 |
-| job lease: 8 workers (`SKIP LOCKED`) | 29 | — | — | — | 34 754 |
+| data layer: create (insert + event, single txn) | 3010 | 2743 | 3727 | 7194 | 332 |
+| data layer: **create_many** (per row, batch 100) | **65** | 63 | 73 | 73 | **15 435** |
+| data layer: update_many (1 row by id, single txn) | 3002 | 2753 | 3731 | 4980 | 333 |
+| data layer: delete_many (1 row by id, single txn) | 3044 | 2739 | 3694 | 5248 | 329 |
+| data layer: **update_many** (per row, ~500 matched) | **46** | 44 | 55 | 55 | **21 775** |
+| data layer: **delete_many** (per row, ~500 matched) | **40** | 42 | 42 | 42 | **25 308** |
+| data layer: find_many hot (limit 20, cache hit) | 12.6 | 11 | 13 | 20 | 79 322 |
+| data layer: find_many cold (limit 20, cache miss) | 259 | 238 | 384 | 754 | 3 857 |
+| data layer: **find_unique** hot (cache hit) | **0.8** | — | — | — | **1 297 221** |
+| data layer: find_unique cold (cache miss) | 251 | 232 | 385 | 617 | 3 990 |
+| data layer: **count** hot (cache hit) | **0.1** | — | — | — | **6 962 673** |
+| data layer: count cold (cache miss) | 723 | 687 | 957 | 1220 | 1 383 |
+| data layer: find_many + include (20 notes × 3 tags) | 94 | 69 | 99 | 353 | 10 614 |
+| data layer: find_many eventual (hot through writes) | 26.0 | 24 | 37 | 51 | 38 412 |
+| job lease: 1 worker | 79 | — | — | — | 12 669 |
+| job lease: 8 workers (`SKIP LOCKED`) | 32 | — | — | — | 30 866 |
 
 **CRM-schema results (real-world model complexity):**
 
@@ -150,30 +153,30 @@ constraints, and validation rules. Tables are `bench_crm_`-prefixed to isolate f
 
 | Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
 |---|--:|--:|--:|--:|--:|
-| crm: create Company (7 fields) | 4058 | 3731 | 4762 | 7085 | 246 |
-| crm: create Contact (6 fields + FK) | 4170 | 4141 | 5479 | 8061 | 240 |
-| crm: create_many Lead (per row, batch=50) | 176 | 175 | 213 | 213 | 5 671 |
-| crm: find_many Lead WHERE status='qualified' hot | 25 | 22 | 31 | 63 | 40 684 |
-| crm: find_many Contact WHERE companyId=X hot | 23 | 21 | 27 | 45 | 44 312 |
-| crm: find_unique Contact by id hot | 1.5 | 1 | 2 | 2 | 679 641 |
-| crm: mixed (create Deal + find_many Lead) | 4225 | 4394 | 5140 | 5467 | 237 |
+| crm: create Company (7 fields) | 3309 | 3515 | 3800 | 4546 | 302 |
+| crm: create Contact (6 fields + FK) | 3290 | 3478 | 3835 | 5392 | 304 |
+| crm: create_many Lead (per row, batch=50) | 139 | 138 | 177 | 177 | 7 183 |
+| crm: find_many Lead WHERE status='qualified' hot | 20 | 19 | 22 | 34 | 49 367 |
+| crm: find_many Contact WHERE companyId=X hot | 20 | 19 | 22 | 35 | 49 698 |
+| crm: find_unique Contact by id hot | 1.3 | 1 | 1 | 2 | 794 405 |
+| crm: mixed (create Deal + find_many Lead) | 3432 | 3547 | 3826 | 4657 | 291 |
 
 **Machine:** Intel i5-13400 (10C/16T), 64 GB · Postgres in WSL2 (local) · release build (Docker
-`rust:latest`, `--network host`) · 2000 iterations · **2026-07-14**.
+`rust:latest`, `--network host`) · 2000 iterations · quiet machine · **2026-07-14**.
 
 Key takeaways:
 
-- **Writes scale with transaction count, not field count.** CRM `create` (~4.1 ms) ≈ Note `create`
-  (~3.8 ms, same run) — both are one txn = one `fsync`. Adding 6 more fields and a FK costs nothing
+- **Writes scale with transaction count, not field count.** CRM `create` (~3.3 ms) ≈ Note `create`
+  (~3.0 ms, same run) — both are one txn = one `fsync`. Adding 6 more fields and a FK costs nothing
   measurable.
-- **Batch creates stay efficient.** CRM `create_many` at 176 µs/row (batch=50) is proportional to the
-  Note batch at 79 µs/row (batch=100) — the per-row cost is dominated by the multi-row INSERT, not
+- **Batch creates stay efficient.** CRM `create_many` at 139 µs/row (batch=50) is proportional to the
+  Note batch at 65 µs/row (batch=100) — the per-row cost is dominated by the multi-row INSERT, not
   per-field overhead. The difference is batch size (50 vs 100), not schema complexity.
-- **Filtered reads are fast.** `find_many` with a WHERE clause on a select/enum field (25 µs) or FK
-  field (23 µs) — cache-hit performance is consistent regardless of filter complexity.
-- **Point reads stay sub-µs class.** CRM `find_unique` by id at 1.5 µs (680 k ops/s) vs Note at
+- **Filtered reads are fast.** `find_many` with a WHERE clause on a select/enum field (20 µs) or FK
+  field (20 µs) — cache-hit performance is consistent regardless of filter complexity.
+- **Point reads stay sub-µs class.** CRM `find_unique` by id at 1.3 µs (794 k ops/s) vs Note at
   0.8 µs (1.3 M ops/s) — the slight difference is the larger cached record, not per-field overhead.
-- **Mixed workloads** (interleaved create + read) cost ~4.2 ms — the write dominates, and the hot
+- **Mixed workloads** (interleaved create + read) cost ~3.4 ms — the write dominates, and the hot
   read adds negligible time.
 
 **GraphQL full-stack (in-process, including camelCase conversion):**
@@ -183,17 +186,17 @@ The cost includes parsing, validation, resolver dispatch, casing conversion, and
 
 | Benchmark | mean µs | p50 | p95 | p99 | ops/sec |
 |---|--:|--:|--:|--:|--:|
-| graphql: create mutation (full stack) | 4010 | 3705 | 4778 | 7413 | 249 |
-| graphql: records query hot (limit 20, incl. camelCase) | 55 | 47 | 81 | 139 | 18 171 |
-| graphql: record by id hot | 11 | 9 | 16 | 41 | 89 721 |
+| graphql: create mutation (full stack) | 2918 | 2738 | 3691 | 5242 | 343 |
+| graphql: records query hot (limit 20, incl. camelCase) | 42 | 40 | 50 | 79 | 23 708 |
+| graphql: record by id hot | 8.3 | 7 | 10 | 17 | 121 109 |
 
 Key takeaways:
 
-- **GraphQL create** (~4.0 ms) ≈ raw data layer create (~3.8 ms) — the resolution overhead is ~6%,
-  invisible next to `fsync`.
-- **GraphQL list read** (55 µs) is ~3.7× the raw data layer (15 µs) — the camelCase key conversion on
-  20 records + GraphQL resolution machinery accounts for the difference. Still **~18 k ops/s**.
-- **GraphQL point read** (11 µs, 90 k ops/s) is ~14× the raw cache hit (0.8 µs) — GraphQL parsing
+- **GraphQL create** (~2.9 ms) ≈ raw data layer create (~3.0 ms) — the resolution overhead is
+  statistically invisible next to `fsync`.
+- **GraphQL list read** (42 µs) is ~3.3× the raw data layer (12.6 µs) — the camelCase key conversion
+  on 20 records + GraphQL resolution machinery accounts for the difference. Still **~24 k ops/s**.
+- **GraphQL point read** (8.3 µs, 121 k ops/s) is ~10× the raw cache hit (0.8 µs) — GraphQL parsing
   and resolver dispatch dominate when the underlying lookup is sub-µs.
 
 **`updateMany` vs sequential updates (GraphQL, in-process):**
@@ -203,62 +206,61 @@ Compares 50 individual `update` mutations vs 1 `updateMany` call with 50 items. 
 
 | Benchmark | mean µs/row | p50 | p95 | p99 | ops/sec |
 |---|--:|--:|--:|--:|--:|
-| graphql: update ×50 sequential (per row) | 5065 | 5439 | 5592 | 5592 | 197 |
-| graphql: updateMany ×50 bulk (per row) | 4479 | 4193 | 5261 | 5261 | 223 |
+| graphql: update ×50 sequential (per row) | 2923 | 2913 | 3007 | 3007 | 342 |
+| graphql: updateMany ×50 bulk (per row) | 2931 | 2949 | 3035 | 3035 | 341 |
 
-Key takeaway: **per-row engine cost is roughly the same** (both `fsync`-bound; the two variants have
-swapped rank across runs, i.e. the gap is within noise) — each row is still one update + event write
-in a transaction. `updateMany`'s value is **fewer HTTP/GraphQL round trips**, not faster per-row
-throughput. Over HTTP, 1 request vs 50 requests is where the win shows.
+Key takeaway: **per-row engine cost is the same** — each row is still one update + event write in a
+transaction (`fsync`-bound). `updateMany`'s value is **fewer HTTP/GraphQL round trips**, not faster
+per-row throughput. Over HTTP, 1 request vs 50 requests is where the win shows.
 
 **Rate limiter throughput (in-memory, no I/O):**
 
 | Benchmark | mean µs | ops/sec |
 |---|--:|--:|
-| rate limiter: check (single IP, serial) | 0.1 | 11 424 628 |
-| rate limiter: check (8 concurrent IPs, 5000 total) | 0.3 | 3 057 921 |
+| rate limiter: check (single IP, serial) | 0.1 | 11 917 985 |
+| rate limiter: check (8 concurrent IPs, 5000 total) | 0.2 | 4 158 350 |
 
-The token-bucket `check()` is **~11.4 M ops/s** serial — negligible per-request cost. Under 8-way
-concurrency the `Mutex` contention drops throughput to ~3 M ops/s, still orders of magnitude above
+The token-bucket `check()` is **~11.9 M ops/s** serial — negligible per-request cost. Under 8-way
+concurrency the `Mutex` contention drops throughput to ~4.2 M ops/s, still orders of magnitude above
 any realistic request rate.
 
 **Machine:** Intel i5-13400 (10C/16T), 64 GB · Postgres in WSL2 (local) · release build (Docker
-`rust:latest`, `--network host`) · 2000 iterations · **2026-07-14**.
+`rust:latest`, `--network host`) · 2000 iterations · quiet machine · **2026-07-14**.
 
 **Batch inserts:** `create_many` commits a 100-row batch via **two multi-row `INSERT`s** (the rows,
-then their events) in **one** transaction — so the per-row cost drops from **~3.8 ms to ~79 µs —
-roughly 48×** (≈12.7 k rows/sec). One `fsync` amortized across the batch *and* one round trip per
+then their events) in **one** transaction — so the per-row cost drops from **~3.0 ms to ~65 µs —
+roughly 46×** (≈15.4 k rows/sec). One `fsync` amortized across the batch *and* one round trip per
 statement instead of per row. (An earlier per-row-in-one-transaction version was ~407 µs/row — the
 multi-row `INSERT` cut another ~5× by eliminating the per-row round trips.) For very large loads a
 `COPY`-based path could push further still — a follow-up.
 
-**Single-row writes** (`create` / `update_many` / `delete_many`) all sit in the same **~3.7–3.9 ms**
+**Single-row writes** (`create` / `update_many` / `delete_many`) all sit in the same **~3.0 ms**
 band — each is **one transaction = one `fsync`** (the write + its events commit together). The number
 is dominated by Postgres commit durability, not Atomo; relax it with co-located storage,
 `synchronous_commit`, or batching (`create_many`). (Each was ~2× this before its event write was
 folded into the same transaction.)
 
-**Bulk `update_many` / `delete_many`:** a single call matching ~500 rows costs **~51–53 µs per row**
-(≈19–20 k rows/sec) — **~70× cheaper per row** than a one-row call, because it's **one `UPDATE`**
+**Bulk `update_many` / `delete_many`:** a single call matching ~500 rows costs **~40–46 µs per row**
+(≈22–25 k rows/sec) — **~65× cheaper per row** than a one-row call, because it's **one `UPDATE`**
 for all matched rows (the SET/WHERE params don't scale with the match count) plus one chunked event
 INSERT, all in one transaction. The event inserts are chunked under Postgres' bind-param limit, so
 bulk operations are safe at any size (a 11 000-row batch is a regression test).
 
-**Read paths — cold vs hot:** a *hot* `find_many` (cache hit) returns in **~15 µs** (67 k/s); a *cold*
-read (cache miss, after a write invalidates the model cache) costs **~448 µs** — the actual Postgres
-query time (~30× slower). `find_unique` (point read by id) is even faster when cached: **~0.8 µs
-(1.3 M ops/s)**, because the cached value is a single record vs a list. Cold `find_unique` is ~470 µs.
-`count` is now cached under the same per-model key space: hot count returns in **~0.1 µs (6.8 M
-ops/s)**, cold (after a write invalidates) costs ~1045 µs (the DB round trip).
+**Read paths — cold vs hot:** a *hot* `find_many` (cache hit) returns in **~12.6 µs** (79 k/s); a
+*cold* read (cache miss, after a write invalidates the model cache) costs **~259 µs** — the actual
+Postgres query time (~20× slower). `find_unique` (point read by id) is even faster when cached:
+**~0.8 µs (1.3 M ops/s)**, because the cached value is a single record vs a list. Cold `find_unique`
+is ~251 µs. `count` is now cached under the same per-model key space: hot count returns in **~0.1 µs
+(7.0 M ops/s)**, cold (after a write invalidates) costs ~723 µs (the DB round trip).
 
 **Relation resolution (`include`):** `find_many` with a `hasMany` include (20 parent notes, each
-resolving 3 child tags) costs **~119 µs** — the child lookups hit the cache on repeated calls, so the
+resolving 3 child tags) costs **~94 µs** — the child lookups hit the cache on repeated calls, so the
 incremental cost of N+1 relation resolution is low when the cache is warm.
 
 **Eventual mode:** with `ATOMO_CACHE_MODE=eventual`, writes do **not** invalidate the read cache (the
-TTL alone bounds staleness). Under a mixed read/write load the cache stays hot — reads cost **~51 µs**
-(20 k/s) even with a write between every read, vs ~448 µs cold in strong mode. The trade-off is
-bounded staleness (up to the TTL) for ~9× faster reads under write pressure.
+TTL alone bounds staleness). Under a mixed read/write load the cache stays hot — reads cost **~26 µs**
+(38 k/s) even with a write between every read, vs ~259 µs cold in strong mode. The trade-off is
+bounded staleness (up to the TTL) for ~10× faster reads under write pressure.
 
 ## Head-to-head: Atomo vs Node (node-postgres), co-located
 
