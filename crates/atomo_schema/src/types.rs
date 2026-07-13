@@ -6,6 +6,23 @@ pub struct Schema {
     pub models: HashMap<String, Model>,
     #[serde(default)]
     pub actions: HashMap<String, ActionDef>,
+    /// Append-only extensions to built-in platform tables (e.g. `users`), keyed by
+    /// table name: extra nullable columns and model-level constraints, so consumer
+    /// integrity on platform tables lives in the schema instead of hand-written SQL.
+    #[serde(default)]
+    pub builtins: HashMap<String, BuiltinExtension>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BuiltinExtension {
+    /// Extra columns: field name (camelCase, converted to snake_case) → SQL type.
+    /// Types must be nullable — NOT NULL would break existing rows.
+    #[serde(default)]
+    pub columns: HashMap<String, String>,
+    /// Model-level constraints, declared with the same `@@unique([..]) WHERE ..` /
+    /// `@@index([..])` / `@@check(..)` annotation strings used on models.
+    #[serde(default)]
+    pub constraints: Vec<ModelConstraint>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

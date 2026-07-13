@@ -281,6 +281,7 @@ mod tests {
         let schema = Schema {
             models,
             actions: HashMap::new(),
+            builtins: Default::default(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -311,6 +312,7 @@ mod tests {
         let schema = Schema {
             models,
             actions: HashMap::new(),
+            builtins: Default::default(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -350,7 +352,7 @@ mod tests {
 
         let mut models = HashMap::new();
         models.insert("Post".to_string(), post);
-        let schema = Schema { models, actions };
+        let schema = Schema { models, actions, builtins: Default::default() };
 
         let ts = generate_typescript_client(&schema);
 
@@ -395,6 +397,7 @@ mod tests {
         let schema = Schema {
             models: HashMap::new(),
             actions,
+            builtins: Default::default(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -423,6 +426,7 @@ mod tests {
         let schema = Schema {
             models,
             actions: HashMap::new(),
+            builtins: Default::default(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -472,6 +476,7 @@ mod tests {
         let schema = Schema {
             models: HashMap::new(),
             actions: HashMap::new(),
+            builtins: Default::default(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -524,6 +529,7 @@ mod tests {
         let schema = Schema {
             models,
             actions: HashMap::new(),
+            builtins: Default::default(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -565,6 +571,7 @@ mod tests {
         let ts1 = generate_typescript_client(&Schema {
             models,
             actions: HashMap::new(),
+            builtins: Default::default(),
         });
 
         // Insert in forward order.
@@ -574,6 +581,7 @@ mod tests {
         let ts2 = generate_typescript_client(&Schema {
             models: models2,
             actions: HashMap::new(),
+            builtins: Default::default(),
         });
 
         assert_eq!(ts1, ts2, "output should be identical regardless of HashMap order");
@@ -619,7 +627,7 @@ mod tests {
 
         let mut models = HashMap::new();
         models.insert("Post".to_string(), post);
-        let schema = Schema { models, actions };
+        let schema = Schema { models, actions, builtins: Default::default() };
         let ts = generate_typescript_client(&schema);
 
         assert!(
@@ -676,6 +684,7 @@ mod tests {
         let schema = Schema {
             models,
             actions: HashMap::new(),
+            builtins: Default::default(),
         };
         let ts = generate_typescript_client(&schema);
 

@@ -178,7 +178,7 @@ mod tests {
                 ui: None,
             },
         );
-        Schema { models, actions }
+        Schema { models, actions, builtins: Default::default() }
     }
 
     #[test]

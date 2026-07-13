@@ -133,6 +133,24 @@ impl AtomoServer {
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
         info!("   ✓ Platform tables ensured");
 
+        // Built-in table extensions (schema `builtins` block): append-only columns +
+        // constraints on platform tables (e.g. `users`). Runs here — after the tables
+        // exist — not in the schema migration pass. Fails loud: a bad declaration
+        // stops boot instead of silently skipping consumer integrity.
+        {
+            let ext_migrations =
+                atomo::schema::generate_builtin_extension_migrations(self.atomo.schema())?;
+            for sql in &ext_migrations {
+                sqlx::query(sql).execute(self.atomo.db_pool()).await?;
+            }
+            if !ext_migrations.is_empty() {
+                info!(
+                    "   ✓ Built-in table extensions applied ({} statements)",
+                    ext_migrations.len()
+                );
+            }
+        }
+
         // Opt-in, DB-enforced multi-tenant Row-Level Security (defense-in-depth).
         // Gated behind ATOMO_ENABLE_RLS (default OFF → no-op, behavior unchanged).
         // Model tables already exist here (created in Atomo::new() before run()).

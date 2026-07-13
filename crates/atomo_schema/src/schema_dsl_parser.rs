@@ -82,6 +82,9 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
     Ok(Schema {
         models,
         actions: action_defs,
+        // The defineModel DSL path doesn't support built-in table extensions;
+        // declare them via the `builtins` block in schema metadata instead.
+        builtins: std::collections::HashMap::new(),
     })
 }
 

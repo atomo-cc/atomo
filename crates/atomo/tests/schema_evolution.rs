@@ -96,6 +96,7 @@ fn unique_schema(table: &str) -> Schema {
     Schema {
         models,
         actions: HashMap::new(),
+            builtins: Default::default(),
     }
 }
 

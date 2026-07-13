@@ -52,7 +52,11 @@ fn test_schema() -> atomo_schema::Schema {
             ui: None,
         },
     );
-    atomo_schema::Schema { models, actions: std::collections::HashMap::new() }
+    atomo_schema::Schema {
+        models,
+        actions: std::collections::HashMap::new(),
+        builtins: Default::default(),
+    }
 }
 
 #[tokio::test]

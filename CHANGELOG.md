@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Built-in table extensions (`builtins` schema block).** Consumers can declare
+  extra nullable columns and `@@unique`/`@@index`/`@@check` constraints (incl.
+  partial `WHERE` variants) on built-in platform tables — currently `users` —
+  directly in `schema.ts`, e.g. `UNIQUE(store_account_id) WHERE store_account_id
+  IS NOT NULL` as an anti-abuse anchor. Applied idempotently at boot after
+  platform tables are ensured; fails loud on non-whitelisted tables or NOT NULL
+  columns. Removes the last reason for consumer integrity to live in raw SQL.
+
 ### Fixed
 - **`docker.yml` no longer silently publishes `:latest` from a version ref.** The
   `tag` input defaulted to `latest`, so `gh workflow run docker.yml --ref vX.Y.Z`

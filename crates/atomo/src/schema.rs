@@ -171,57 +171,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         }
 
         // Model-level constraints from @@unique([..]) / @@index([..]) / @@check(..).
-        for (n, c) in model.constraints.iter().enumerate() {
-            match c {
-                // Composite uniqueness via a UNIQUE INDEX (idempotent with IF NOT EXISTS).
-                ModelConstraint::Unique(cols) => {
-                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
-                    migrations.push(format!(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list});",
-                        joined = snake.join("_"),
-                        list = snake.join(", ")
-                    ));
-                }
-                ModelConstraint::Index(cols) => {
-                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
-                    migrations.push(format!(
-                        "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list});",
-                        joined = snake.join("_"),
-                        list = snake.join(", ")
-                    ));
-                }
-                // PARTIAL unique/index: same as above plus a `WHERE <predicate>`. The
-                // predicate is raw SQL over column names (snake_case), so a nullable
-                // anti-abuse anchor like UNIQUE(store_account_id) WHERE store_account_id
-                // IS NOT NULL is expressible in the schema instead of hand-written SQL.
-                ModelConstraint::UniqueWhere(cols, predicate) => {
-                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
-                    migrations.push(format!(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
-                        joined = snake.join("_"),
-                        list = snake.join(", ")
-                    ));
-                }
-                ModelConstraint::IndexWhere(cols, predicate) => {
-                    let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
-                    migrations.push(format!(
-                        "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
-                        joined = snake.join("_"),
-                        list = snake.join(", ")
-                    ));
-                }
-                // CHECK as a guarded ALTER (same idempotency pattern as the FK pass).
-                ModelConstraint::Check(expr) => {
-                    let cname = format!("chk_{table}_{n}");
-                    migrations.push(format!(
-                        "DO $$ BEGIN \
-                         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
-                         ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({expr}); \
-                         END IF; END $$;"
-                    ));
-                }
-            }
-        }
+        push_constraint_migrations(&table, &model.constraints, &mut migrations);
     }
 
     // Foreign-key pass (after all tables exist, so ordering doesn't matter): for each model's
@@ -283,6 +233,109 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         }
     }
 
+    Ok(migrations)
+}
+
+/// Emit idempotent DDL for model-level constraints (`@@unique` / `@@index` /
+/// `@@check`, incl. partial `WHERE` variants) on `table`. Shared by the model
+/// migration pass and built-in table extensions.
+fn push_constraint_migrations(
+    table: &str,
+    constraints: &[ModelConstraint],
+    migrations: &mut Vec<String>,
+) {
+    for (n, c) in constraints.iter().enumerate() {
+        match c {
+            // Composite uniqueness via a UNIQUE INDEX (idempotent with IF NOT EXISTS).
+            ModelConstraint::Unique(cols) => {
+                let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                migrations.push(format!(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list});",
+                    joined = snake.join("_"),
+                    list = snake.join(", ")
+                ));
+            }
+            ModelConstraint::Index(cols) => {
+                let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                migrations.push(format!(
+                    "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list});",
+                    joined = snake.join("_"),
+                    list = snake.join(", ")
+                ));
+            }
+            // PARTIAL unique/index: same as above plus a `WHERE <predicate>`. The
+            // predicate is raw SQL over column names (snake_case), so a nullable
+            // anti-abuse anchor like UNIQUE(store_account_id) WHERE store_account_id
+            // IS NOT NULL is expressible in the schema instead of hand-written SQL.
+            ModelConstraint::UniqueWhere(cols, predicate) => {
+                let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                migrations.push(format!(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
+                    joined = snake.join("_"),
+                    list = snake.join(", ")
+                ));
+            }
+            ModelConstraint::IndexWhere(cols, predicate) => {
+                let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
+                migrations.push(format!(
+                    "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
+                    joined = snake.join("_"),
+                    list = snake.join(", ")
+                ));
+            }
+            // CHECK as a guarded ALTER (same idempotency pattern as the FK pass).
+            ModelConstraint::Check(expr) => {
+                let cname = format!("chk_{table}_{n}");
+                migrations.push(format!(
+                    "DO $$ BEGIN \
+                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
+                     ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({expr}); \
+                     END IF; END $$;"
+                ));
+            }
+        }
+    }
+}
+
+/// Built-in platform tables consumers may extend via the schema `builtins` block.
+/// Deliberately narrow — anything else fails loud at boot rather than silently
+/// altering a table atomo doesn't expect to change.
+const EXTENDABLE_BUILTINS: &[&str] = &["users"];
+
+/// Generate idempotent DDL for built-in table extensions (`schema.builtins`):
+/// append-only extra columns plus model-level constraints on platform tables.
+///
+/// Kept separate from [`generate_migrations`] because platform tables (e.g.
+/// `users`) are created by the server AFTER schema migrations run — the server
+/// executes these right after `ensure_platform_tables`, when the target exists.
+pub fn generate_builtin_extension_migrations(schema: &Schema) -> Result<Vec<String>> {
+    let mut migrations = Vec::new();
+    let mut tables: Vec<_> = schema.builtins.iter().collect();
+    tables.sort_by_key(|(t, _)| t.as_str());
+    for (table, ext) in tables {
+        if !EXTENDABLE_BUILTINS.contains(&table.as_str()) {
+            anyhow::bail!(
+                "builtins.{table}: not an extendable built-in table (allowed: {})",
+                EXTENDABLE_BUILTINS.join(", ")
+            );
+        }
+        let mut cols: Vec<_> = ext.columns.iter().collect();
+        cols.sort_by_key(|(f, _)| f.as_str());
+        for (field, sql_type) in cols {
+            let ty = sql_type.trim();
+            // Append-only: a NOT NULL column would break existing rows on adoption.
+            if ty.to_uppercase().contains("NOT NULL") {
+                anyhow::bail!(
+                    "builtins.{table}.{field}: extension columns must be nullable (drop NOT NULL)"
+                );
+            }
+            migrations.push(format!(
+                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ty};",
+                col = to_snake_case(field)
+            ));
+        }
+        push_constraint_migrations(table, &ext.constraints, &mut migrations);
+    }
     Ok(migrations)
 }
 
@@ -544,7 +597,7 @@ mod tests {
         let mut models = HashMap::new();
         models.insert("Contact".into(), contact);
         models.insert("Deal".into(), deal);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         // Every table gets soft-delete + tenant columns.
         assert!(
@@ -700,7 +753,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         // @unique -> UNIQUE INDEX (reconcilable on existing tables, not an inline constraint).
         assert!(
@@ -756,7 +809,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("User".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         assert!(
             sql.contains("chk_users_email_email"),
@@ -779,7 +832,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("Post".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         assert!(
             sql.contains("chk_posts_title_min") && sql.contains("length(title) >= 1"),
@@ -802,7 +855,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("Payment".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         assert!(
             sql.contains("chk_payments_amount_min") && sql.contains("amount >= 0"),
@@ -830,7 +883,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("Company".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         assert!(
             sql.contains("chk_companies_website_url"),
@@ -853,7 +906,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("Company".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         assert!(
             sql.contains("website IS NULL OR (website ~ '^https?://')"),
@@ -880,7 +933,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("Post".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         // None of these rules should produce CHECK constraints.
         assert!(
@@ -908,7 +961,7 @@ mod tests {
         );
         let mut models = HashMap::new();
         models.insert("User".into(), m);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         // `required` should be skipped, but the other three should each produce a CHECK.
         assert!(!sql.contains("chk_users_email_required"), "required should be skipped");
@@ -937,7 +990,7 @@ mod tests {
         ];
         let mut models = HashMap::new();
         models.insert("CreditLedger".into(), ledger);
-        let sql = generate_migrations(&Schema { models, actions: HashMap::new() }).unwrap().join("\n");
+        let sql = generate_migrations(&Schema { models, actions: HashMap::new(), builtins: HashMap::new() }).unwrap().join("\n");
 
         // Composite unique -> UNIQUE INDEX (the idempotency key).
         assert!(
@@ -954,5 +1007,67 @@ mod tests {
             sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_account_id ON credit_ledger (account_id) WHERE account_id IS NOT NULL"),
             "partial unique index missing:\n{sql}"
         );
+    }
+
+    #[test]
+    fn builtin_extensions_emit_column_and_partial_unique() {
+        use atomo_schema::BuiltinExtension;
+        // Consumer feedback #6: UNIQUE(store_account_id) WHERE ... on the built-in
+        // `users` table, declared in the schema instead of hand-written SQL.
+        let mut builtins = HashMap::new();
+        builtins.insert(
+            "users".to_string(),
+            BuiltinExtension {
+                columns: HashMap::from([("storeAccountId".to_string(), "TEXT".to_string())]),
+                constraints: vec![ModelConstraint::UniqueWhere(
+                    vec!["storeAccountId".into()],
+                    "store_account_id IS NOT NULL".into(),
+                )],
+            },
+        );
+        let schema = Schema { models: HashMap::new(), actions: HashMap::new(), builtins };
+
+        // Not in generate_migrations: platform tables don't exist yet at that point.
+        let base = generate_migrations(&schema).unwrap().join("\n");
+        assert!(!base.contains("users"), "builtins leaked into schema migrations:\n{base}");
+
+        let sql = generate_builtin_extension_migrations(&schema).unwrap().join("\n");
+        assert!(
+            sql.contains("ALTER TABLE users ADD COLUMN IF NOT EXISTS store_account_id TEXT;"),
+            "extension column missing:\n{sql}"
+        );
+        assert!(
+            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_store_account_id ON users (store_account_id) WHERE store_account_id IS NOT NULL"),
+            "partial unique on built-in table missing:\n{sql}"
+        );
+        // Column ALTER must precede the index that depends on it.
+        assert!(
+            sql.find("ADD COLUMN").unwrap() < sql.find("CREATE UNIQUE INDEX").unwrap(),
+            "column must be added before its index:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn builtin_extensions_fail_loud_on_bad_declarations() {
+        use atomo_schema::BuiltinExtension;
+        // Non-whitelisted table → error, not a silent ALTER on an unexpected table.
+        let mut builtins = HashMap::new();
+        builtins.insert("audit_log".to_string(), BuiltinExtension {
+            columns: HashMap::from([("x".to_string(), "TEXT".to_string())]),
+            constraints: vec![],
+        });
+        let schema = Schema { models: HashMap::new(), actions: HashMap::new(), builtins };
+        let err = generate_builtin_extension_migrations(&schema).unwrap_err().to_string();
+        assert!(err.contains("audit_log") && err.contains("users"), "bad error: {err}");
+
+        // NOT NULL column → error (would break existing rows on adoption).
+        let mut builtins = HashMap::new();
+        builtins.insert("users".to_string(), BuiltinExtension {
+            columns: HashMap::from([("x".to_string(), "TEXT NOT NULL".to_string())]),
+            constraints: vec![],
+        });
+        let schema = Schema { models: HashMap::new(), actions: HashMap::new(), builtins };
+        let err = generate_builtin_extension_migrations(&schema).unwrap_err().to_string();
+        assert!(err.contains("nullable"), "bad error: {err}");
     }
 }
