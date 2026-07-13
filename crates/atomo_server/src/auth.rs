@@ -965,14 +965,13 @@ pub mod handlers {
     ) -> Result<Json<LoginResponse>, StatusCode> {
         match auth_service.refresh_access_token(&req.refreshToken).await {
             Ok((token, new_refresh, user)) => {
-                let tenant_id: Option<String> = sqlx::query_scalar(
-                    "SELECT tenant_id FROM users WHERE id = $1",
-                )
-                .bind(user.id.to_string())
-                .fetch_optional(auth_service.db_pool())
-                .await
-                .ok()
-                .flatten();
+                let tenant_id: Option<String> =
+                    sqlx::query_scalar("SELECT tenant_id FROM users WHERE id = $1")
+                        .bind(user.id.to_string())
+                        .fetch_optional(auth_service.db_pool())
+                        .await
+                        .ok()
+                        .flatten();
                 Ok(Json(LoginResponse {
                     token,
                     refresh_token: Some(new_refresh),

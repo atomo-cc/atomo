@@ -59,7 +59,8 @@ async fn crm_schema_drives_the_platform() {
         .create(
             "Contact",
             &rec(&[
-                ("name", json!("Ada Lovelace")),
+                ("firstName", json!("Ada")),
+                ("lastName", json!("Lovelace")),
                 ("email", json!("ada@acme.com")),
                 ("companyId", json!(company_id)),
             ]),
@@ -81,7 +82,8 @@ async fn crm_schema_drives_the_platform() {
             &rec(&[
                 ("title", json!("Acme renewal")),
                 ("value", json!(50000)),
-                ("status", json!("open")),
+                ("stage", json!("proposal")),
+                ("companyId", json!(company_id)),
                 ("contactId", json!(contact_id)),
             ]),
             &[],
@@ -91,27 +93,27 @@ async fn crm_schema_drives_the_platform() {
         .expect("create Deal");
     let deal_id = deal.get("id").and_then(|v| v.as_str()).unwrap().to_string();
     assert_eq!(
-        deal.get("status").and_then(|v| v.as_str()),
-        Some("open"),
-        "status round-trips as a string"
+        deal.get("stage").and_then(|v| v.as_str()),
+        Some("proposal"),
+        "stage round-trips as a string"
     );
 
-    // 4. Move the deal status (the pipeline core operation).
+    // 4. Move the deal stage (the pipeline core operation).
     let moved = c
         .update_many(
             "Deal",
             &[eq("id", json!(deal_id))],
-            &rec(&[("status", json!("won"))]),
+            &rec(&[("stage", json!("won"))]),
             &[],
             None,
         )
         .await
-        .expect("move Deal status");
+        .expect("move Deal stage");
     assert_eq!(moved.len(), 1, "exactly one deal updated");
     assert_eq!(
-        moved[0].get("status").and_then(|v| v.as_str()),
+        moved[0].get("stage").and_then(|v| v.as_str()),
         Some("won"),
-        "status advanced"
+        "stage advanced"
     );
 
     // Update-aware validation: the stage-only patch above succeeded despite `title` (required)
@@ -175,7 +177,7 @@ async fn crm_schema_drives_the_platform() {
             &rec(&[
                 ("title", json!("")),
                 ("value", json!(1)),
-                ("status", json!("open")),
+                ("companyId", json!(company_id)),
                 ("contactId", json!(contact_id)),
             ]),
             &[],
@@ -202,7 +204,7 @@ async fn crm_schema_drives_the_platform() {
         &rec(&[
             ("title", json!("Big deal")),
             ("value", json!(99000)),
-            ("status", json!("open")),
+            ("companyId", json!(company_id)),
             ("contactId", json!(contact_id)),
         ]),
         &[],
@@ -255,7 +257,7 @@ async fn crm_schema_drives_the_platform() {
         &rec(&[
             ("title", json!("Cache deal")),
             ("value", json!(5)),
-            ("status", json!("open")),
+            ("companyId", json!(company_id)),
             ("contactId", json!(contact_id)),
         ]),
         &[],
@@ -316,7 +318,17 @@ async fn crm_schema_drives_the_platform() {
     );
 
     // Cleanup the tables this test generated.
-    for t in ["deals", "contacts", "companies", "activities"] {
+    // Includes users + leads: the CRM schema declares its own User model on the
+    // `users` table, and leaving that shape behind breaks every later suite that
+    // expects the platform users table (ensure_platform_tables is IF NOT EXISTS).
+    for t in [
+        "deals",
+        "contacts",
+        "companies",
+        "activities",
+        "leads",
+        "users",
+    ] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await
@@ -338,11 +350,21 @@ async fn crm_deal_event_history_replays() {
         .unwrap();
     let c = atomo.client();
 
+    let company = c
+        .create("Company", &rec(&[("name", json!("Hist Co"))]), &[], None)
+        .await
+        .unwrap();
+    let company_id = company
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
     let contact = c
         .create(
             "Contact",
             &rec(&[
-                ("name", json!("Eve S")),
+                ("firstName", json!("Eve")),
+                ("lastName", json!("S")),
                 ("email", json!("e@s.com")),
             ]),
             &[],
@@ -361,7 +383,7 @@ async fn crm_deal_event_history_replays() {
             &rec(&[
                 ("title", json!("Hist")),
                 ("value", json!(10)),
-                ("status", json!("open")),
+                ("companyId", json!(company_id)),
                 ("contactId", json!(cid)),
             ]),
             &[],
@@ -381,7 +403,7 @@ async fn crm_deal_event_history_replays() {
     c.update_many(
         "Deal",
         &by_id(&did),
-        &rec(&[("status", json!("won"))]),
+        &rec(&[("stage", json!("won"))]),
         &[],
         None,
     )
@@ -398,11 +420,7 @@ async fn crm_deal_event_history_replays() {
     let types: Vec<EventType> = history.iter().map(|e| e.event_type).collect();
     assert_eq!(
         types,
-        vec![
-            EventType::Created,
-            EventType::Updated,
-            EventType::Deleted
-        ],
+        vec![EventType::Created, EventType::Updated, EventType::Deleted],
         "Deal history must replay Created → Updated → Deleted, got {:?}",
         types
     );
@@ -416,7 +434,17 @@ async fn crm_deal_event_history_replays() {
         Some(did.as_str())
     );
 
-    for t in ["deals", "contacts", "companies", "activities"] {
+    // Includes users + leads: the CRM schema declares its own User model on the
+    // `users` table, and leaving that shape behind breaks every later suite that
+    // expects the platform users table (ensure_platform_tables is IF NOT EXISTS).
+    for t in [
+        "deals",
+        "contacts",
+        "companies",
+        "activities",
+        "leads",
+        "users",
+    ] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await
@@ -467,7 +495,17 @@ async fn data_layer_enforce_access_gates_by_role() {
         "viewer can read"
     );
 
-    for t in ["deals", "contacts", "companies", "activities"] {
+    // Includes users + leads: the CRM schema declares its own User model on the
+    // `users` table, and leaving that shape behind breaks every later suite that
+    // expects the platform users table (ensure_platform_tables is IF NOT EXISTS).
+    for t in [
+        "deals",
+        "contacts",
+        "companies",
+        "activities",
+        "leads",
+        "users",
+    ] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await
@@ -483,6 +521,9 @@ async fn data_layer_enforce_access_gates_by_role() {
 async fn schema_driven_include_resolves_renamed_relationship() {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     // Deal.owner is a belongsTo Contact via ownerId — name (owner) != model (Contact).
+    // Table names are deliberately distinct from the CRM schema's contacts/deals:
+    // the tests share one database, and the CRM tables (first_name NOT NULL, ...)
+    // would otherwise collide with this minimal Contact shape.
     let schema_ts = r#"
 export interface Contact {
   id: string;
@@ -494,8 +535,8 @@ export interface Deal {
   ownerId: string;
 }
 export const schema = { models: {
-  Contact: { tableName: 'contacts' },
-  Deal: { tableName: 'deals', relationships: { owner: { type: 'belongsTo', model: 'Contact', foreignKey: 'ownerId' } } }
+  Contact: { tableName: 'relren_contacts' },
+  Deal: { tableName: 'relren_deals', relationships: { owner: { type: 'belongsTo', model: 'Contact', foreignKey: 'ownerId' } } }
 } };
 export default schema;
 "#;
@@ -549,7 +590,7 @@ export default schema;
         owner_rel
     );
 
-    for t in ["deals", "contacts"] {
+    for t in ["relren_deals", "relren_contacts"] {
         sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", t))
             .execute(atomo.db_pool())
             .await

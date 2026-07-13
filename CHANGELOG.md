@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Builder-DSL access combinators are now enforced.** `parse_access_block` only
+  understood bare `allow.role/authenticated/public` — schemas using
+  `allow.any([...])`, `allow.sameTenant(..)`, or `allow.owner(..)` (as the CRM
+  dogfood schema does) parsed to *no* access rule, silently disabling access
+  control for those operations. Any-of role combinators now join into the pipe
+  rule (`admin|manager|sales`); tenant/owner/authenticated forms gate to
+  "authenticated" at the role layer (scoping is enforced by the data layer).
+- **Media GC purge cutoff computed on the database clock.** `purge_deleted`
+  compared the DB-written `deleted_at` against an app-host timestamp; clock skew
+  between app and DB could make a purge silently match nothing. The cutoff is now
+  `now() - make_interval(..)` in SQL — one clock source.
+- **CI is green again** — the Postgres-gated suite hadn't completed in weeks and
+  had rotted at several layers: `crm_dogfood` tests drifted from the replaced CRM
+  schema (Contact `firstName`/`lastName`, Deal `stage` + required `companyId`);
+  the CRM schema's own `users` model leaked a non-platform `users` table into
+  every later suite (cleanups now drop it, plus `leads`); `action_lifecycle`
+  asserted the old `pending` job status (now `queued`); `public_read` tests set
+  the allowlist env but the test router hardcoded a different list; an
+  illustrative RLS doctest compiled (and failed) under `--ignored`; `cargo fmt`
+  had drifted. Also bumped the missed `actions/cache@v5`.
+
 ### Changed
 - **sqlx 0.7 → 0.8.** Resolves the `sqlx-postgres 0.7.4` future-incompatibility
   warning (code that a future Rust release will reject). Internal API adaptation

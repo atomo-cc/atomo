@@ -34,8 +34,7 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
         let fields = parse_fields_block(&body);
         let access = parse_access_block(&body);
         let events = parse_on_block(&body);
-        let (field_map, validation, relationships) =
-            resolve_fields(&fields, &table_to_model);
+        let (field_map, validation, relationships) = resolve_fields(&fields, &table_to_model);
 
         models.insert(
             model_name.clone(),
@@ -64,7 +63,10 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
         let input = match ad.input {
             ActionInputDef::PickFields { model, fields } => {
                 let resolved = table_to_model.get(&model).cloned().unwrap_or(model);
-                ActionInputDef::PickFields { model: resolved, fields }
+                ActionInputDef::PickFields {
+                    model: resolved,
+                    fields,
+                }
             }
             other => other,
         };
@@ -92,10 +94,9 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
 
 fn parse_action_defs(content: &str) -> Vec<ActionDef> {
     let mut actions = Vec::new();
-    let re = Regex::new(
-        r"export\s+const\s+(\w+)\s*=\s*action\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)",
-    )
-    .unwrap();
+    let re =
+        Regex::new(r"export\s+const\s+(\w+)\s*=\s*action\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)")
+            .unwrap();
 
     for cap in re.captures_iter(content) {
         let _var_name = &cap[1];
@@ -138,7 +139,9 @@ fn take_chain(s: &str) -> String {
             b'.' => {
                 i += 1;
                 // skip method name
-                while i < bytes.len() && bytes[i].is_ascii_alphanumeric() || (i < bytes.len() && bytes[i] == b'_') {
+                while i < bytes.len() && bytes[i].is_ascii_alphanumeric()
+                    || (i < bytes.len() && bytes[i] == b'_')
+                {
                     i += 1;
                 }
                 // skip whitespace
@@ -157,7 +160,9 @@ fn take_chain(s: &str) -> String {
                                 let q = bytes[i];
                                 i += 1;
                                 while i < bytes.len() && bytes[i] != q {
-                                    if bytes[i] == b'\\' { i += 1; }
+                                    if bytes[i] == b'\\' {
+                                        i += 1;
+                                    }
                                     i += 1;
                                 }
                                 // skip closing quote
@@ -175,7 +180,11 @@ fn take_chain(s: &str) -> String {
 }
 
 fn extract_chain_string(chain: &str, method: &str) -> Option<String> {
-    let re = Regex::new(&format!(r"\.{}\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)", method)).ok()?;
+    let re = Regex::new(&format!(
+        r"\.{}\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)",
+        method
+    ))
+    .ok()?;
     re.captures(chain).map(|c| c[1].to_string())
 }
 
@@ -188,15 +197,19 @@ fn extract_chain_array(chain: &str, method: &str) -> Option<Vec<String>> {
         .captures_iter(inner)
         .map(|c| c[1].to_string())
         .collect();
-    if items.is_empty() { None } else { Some(items) }
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
 }
 
 // ── model() parsing ─────────────────────────────────────────────────────────
 
 /// Extract `export const Name = model('table', { ... })` → (ModelName, tableName).
 fn parse_model_names(content: &str) -> HashMap<String, String> {
-    let re = Regex::new(r"export\s+const\s+(\w+)\s*=\s*model\s*\(\s*['\x22]([^'\x22]+)['\x22]")
-        .unwrap();
+    let re =
+        Regex::new(r"export\s+const\s+(\w+)\s*=\s*model\s*\(\s*['\x22]([^'\x22]+)['\x22]").unwrap();
     let mut map = HashMap::new();
     for cap in re.captures_iter(content) {
         map.insert(cap[2].to_string(), cap[1].to_string());
@@ -206,8 +219,9 @@ fn parse_model_names(content: &str) -> HashMap<String, String> {
 
 /// Extract all model blocks: (ModelName, tableName, objectBody).
 fn parse_model_blocks(content: &str) -> Vec<(String, String, String)> {
-    let re = Regex::new(r"export\s+const\s+(\w+)\s*=\s*model\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*,\s*\{")
-        .unwrap();
+    let re =
+        Regex::new(r"export\s+const\s+(\w+)\s*=\s*model\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*,\s*\{")
+            .unwrap();
     let mut out = Vec::new();
 
     for cap in re.captures_iter(content) {
@@ -234,7 +248,9 @@ fn balanced_brace_body(content: &str, start: usize) -> Option<String> {
                 let q = bytes[i];
                 i += 1;
                 while i < bytes.len() && bytes[i] != q {
-                    if bytes[i] == b'\\' { i += 1; }
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
                     i += 1;
                 }
             }
@@ -311,7 +327,9 @@ fn extract_paren_arg(content: &str, start: usize) -> (Option<String>, usize) {
                 let q = bytes[i];
                 i += 1;
                 while i < bytes.len() && bytes[i] != q {
-                    if bytes[i] == b'\\' { i += 1; }
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
                     i += 1;
                 }
             }
@@ -320,14 +338,22 @@ fn extract_paren_arg(content: &str, start: usize) -> (Option<String>, usize) {
         i += 1;
     }
     let raw = content[start..i.saturating_sub(1)].trim();
-    let arg = if raw.is_empty() { None } else { Some(raw.to_string()) };
+    let arg = if raw.is_empty() {
+        None
+    } else {
+        Some(raw.to_string())
+    };
     (arg, i)
 }
 
 fn resolve_fields(
     raw: &[RawField],
     table_to_model: &HashMap<String, String>,
-) -> (HashMap<String, Field>, HashMap<String, String>, HashMap<String, Relationship>) {
+) -> (
+    HashMap<String, Field>,
+    HashMap<String, String>,
+    HashMap<String, Relationship>,
+) {
     let mut fields = HashMap::new();
     let mut validation = HashMap::new();
     let mut relationships = HashMap::new();
@@ -339,10 +365,24 @@ fn resolve_fields(
         let is_id = chain.contains(".id()");
         let is_optional = chain.contains(".optional()");
         let is_required = chain.contains(".required()");
-        let optional = if is_id { false } else if is_required { false } else { is_optional || !is_required };
+        let optional = if is_id {
+            false
+        } else if is_required {
+            false
+        } else {
+            is_optional || !is_required
+        };
         // For relation fields, if not explicitly required, default to optional.
-        let optional = if f.base_type == "relation" && !is_required { true } else { optional };
-        let optional = if f.base_type == "datetime" && !is_optional { false } else { optional };
+        let optional = if f.base_type == "relation" && !is_required {
+            true
+        } else {
+            optional
+        };
+        let optional = if f.base_type == "datetime" && !is_optional {
+            false
+        } else {
+            optional
+        };
 
         let mut attrs = Vec::new();
         if is_id {
@@ -449,42 +489,49 @@ fn parse_access_block(body: &str) -> Option<AccessControl> {
     let inner = balanced_brace_body(body, m.end())?;
 
     let parse_rule = |op: &str| -> Option<AccessRule> {
-        // allow.role(['sales', 'admin']) or allow.role('admin')
-        let role_re = Regex::new(&format!(
-            r"{}\s*:\s*allow\s*\.\s*role\s*\(\s*(\[?)([^)\]]*)\]?\s*\)",
-            op
-        ))
-        .ok()?;
-        if let Some(cap) = role_re.captures(&inner) {
-            let is_array = !cap[1].is_empty();
-            let content = &cap[2];
-            let roles: Vec<String> = Regex::new(r"['\x22]([^'\x22]+)['\x22]")
-                .unwrap()
-                .captures_iter(content)
-                .map(|c| c[1].to_string())
-                .collect();
-            if roles.is_empty() {
-                return None;
-            }
-            return if is_array || roles.len() > 1 {
-                Some(AccessRule::Boolean(roles.join("|")))
-            } else {
-                Some(AccessRule::Boolean(roles[0].clone()))
-            };
+        // Grab this op's full rule expression (to end of line) so combinator forms
+        // like allow.any([allow.role('a'), allow.role('b')]) are seen whole.
+        // Previously only bare allow.role/authenticated/public matched — any other
+        // form (allow.any, allow.sameTenant, allow.owner) parsed to None, which
+        // silently DISABLED access control for that operation.
+        let expr_re = Regex::new(&format!(r"{}\s*:\s*(allow\s*\.[^\n]+)", op)).ok()?;
+        let expr = expr_re.captures(&inner)?.get(1)?.as_str().to_string();
+
+        // allow.public() — anonymous allowed, nothing further to gate.
+        if Regex::new(r"\bpublic\s*\(\s*\)").unwrap().is_match(&expr) {
+            return Some(AccessRule::Boolean("public".to_string()));
         }
 
-        // allow.authenticated()
-        let auth_re =
-            Regex::new(&format!(r"{}\s*:\s*allow\s*\.\s*authenticated\s*\(\s*\)", op)).ok()?;
-        if auth_re.is_match(&inner) {
+        // allow.authenticated(), allow.sameTenant(..), allow.owner(..): all require a
+        // logged-in principal. Tenant scoping / ownership are enforced by the data
+        // layer's tenant_id isolation and owner checks — at THIS layer (role gating)
+        // they gate to "any authenticated user", never to "no rule". Checked BEFORE
+        // roles: in a mixed any-of like any([owner(..), role('admin')]) a roles-only
+        // gate would wrongly deny legitimate owners, so the sound approximation for
+        // the whole expression is "authenticated".
+        if Regex::new(r"\b(authenticated|sameTenant|owner)\s*\(")
+            .unwrap()
+            .is_match(&expr)
+        {
             return Some(AccessRule::Boolean("authenticated".to_string()));
         }
 
-        // allow.public()
-        let pub_re =
-            Regex::new(&format!(r"{}\s*:\s*allow\s*\.\s*public\s*\(\s*\)", op)).ok()?;
-        if pub_re.is_match(&inner) {
-            return Some(AccessRule::Boolean("public".to_string()));
+        // Role gates: collect every role('x') / role(['x','y']) mention. Covers both
+        // the bare form and combinators like allow.any([allow.role('admin'), ...]) —
+        // any-of over roles is exactly what the pipe-joined rule string expresses.
+        let roles: Vec<String> = Regex::new(r"role\s*\(\s*\[?([^)\]]*)\]?\s*\)")
+            .unwrap()
+            .captures_iter(&expr)
+            .flat_map(|cap| {
+                Regex::new(r"['\x22]([^'\x22]+)['\x22]")
+                    .unwrap()
+                    .captures_iter(&cap[1])
+                    .map(|c| c[1].to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        if !roles.is_empty() {
+            return Some(AccessRule::Boolean(roles.join("|")));
         }
 
         None
@@ -496,7 +543,12 @@ fn parse_access_block(body: &str) -> Option<AccessControl> {
     let delete = parse_rule("delete");
 
     if create.is_some() || read.is_some() || update.is_some() || delete.is_some() {
-        Some(AccessControl { create, read, update, delete })
+        Some(AccessControl {
+            create,
+            read,
+            update,
+            delete,
+        })
     } else {
         None
     }
@@ -565,15 +617,27 @@ fn parse_event_list(on_block: &str, event_kind: &str) -> Vec<EventActionBinding>
             continue;
         }
 
-        let condition = if let Some(wc_match) = Regex::new(r"\.whenChanged\s*\(([^)]*)\)").unwrap().captures(trimmed) {
+        let condition = if let Some(wc_match) = Regex::new(r"\.whenChanged\s*\(([^)]*)\)")
+            .unwrap()
+            .captures(trimmed)
+        {
             let args_str = &wc_match[1];
-            let fields: Vec<String> = str_re.captures_iter(args_str)
+            let fields: Vec<String> = str_re
+                .captures_iter(args_str)
                 .map(|c| c[1].to_string())
                 .collect();
-            if fields.is_empty() { None } else { Some(ActionCondition::ChangedAny(fields)) }
-        } else if let Some(w_match) = Regex::new(r"\.when\s*\(([^)]*)\)").unwrap().captures(trimmed) {
+            if fields.is_empty() {
+                None
+            } else {
+                Some(ActionCondition::ChangedAny(fields))
+            }
+        } else if let Some(w_match) = Regex::new(r"\.when\s*\(([^)]*)\)")
+            .unwrap()
+            .captures(trimmed)
+        {
             let args_str = &w_match[1];
-            let strs: Vec<String> = str_re.captures_iter(args_str)
+            let strs: Vec<String> = str_re
+                .captures_iter(args_str)
                 .map(|c| c[1].to_string())
                 .collect();
             if strs.len() >= 2 {
@@ -755,10 +819,19 @@ export const Activity = model('activities', {
     #[test]
     fn parses_table_names() {
         let schema = parse_builder_dsl(CRM_DSL).unwrap();
-        assert_eq!(schema.models["Company"].table_name.as_deref(), Some("companies"));
-        assert_eq!(schema.models["Contact"].table_name.as_deref(), Some("contacts"));
+        assert_eq!(
+            schema.models["Company"].table_name.as_deref(),
+            Some("companies")
+        );
+        assert_eq!(
+            schema.models["Contact"].table_name.as_deref(),
+            Some("contacts")
+        );
         assert_eq!(schema.models["Deal"].table_name.as_deref(), Some("deals"));
-        assert_eq!(schema.models["Activity"].table_name.as_deref(), Some("activities"));
+        assert_eq!(
+            schema.models["Activity"].table_name.as_deref(),
+            Some("activities")
+        );
     }
 
     #[test]
@@ -768,7 +841,10 @@ export const Activity = model('activities', {
 
         assert_eq!(contact.fields["id"].field_type, FieldType::String);
         assert!(!contact.fields["id"].optional);
-        assert!(contact.fields["id"].attributes.iter().any(|a| matches!(a, FieldAttribute::Primary)));
+        assert!(contact.fields["id"]
+            .attributes
+            .iter()
+            .any(|a| matches!(a, FieldAttribute::Primary)));
 
         assert_eq!(contact.fields["name"].field_type, FieldType::String);
         assert!(!contact.fields["name"].optional);
@@ -792,25 +868,43 @@ export const Activity = model('activities', {
     fn parses_validation() {
         let schema = parse_builder_dsl(CRM_DSL).unwrap();
         let contact = &schema.models["Contact"];
-        assert_eq!(contact.validation.get("name").map(|s| s.as_str()), Some("required|min:1|max:100"));
-        assert_eq!(contact.validation.get("email").map(|s| s.as_str()), Some("required|email"));
+        assert_eq!(
+            contact.validation.get("name").map(|s| s.as_str()),
+            Some("required|min:1|max:100")
+        );
+        assert_eq!(
+            contact.validation.get("email").map(|s| s.as_str()),
+            Some("required|email")
+        );
 
         let deal = &schema.models["Deal"];
-        assert_eq!(deal.validation.get("title").map(|s| s.as_str()), Some("required|min:1|max:160"));
-        assert_eq!(deal.validation.get("value").map(|s| s.as_str()), Some("min:0"));
+        assert_eq!(
+            deal.validation.get("title").map(|s| s.as_str()),
+            Some("required|min:1|max:160")
+        );
+        assert_eq!(
+            deal.validation.get("value").map(|s| s.as_str()),
+            Some("min:0")
+        );
     }
 
     #[test]
     fn parses_relationships() {
         let schema = parse_builder_dsl(CRM_DSL).unwrap();
         let contact = &schema.models["Contact"];
-        let rel = contact.relationships.get("company").expect("company relationship");
+        let rel = contact
+            .relationships
+            .get("company")
+            .expect("company relationship");
         assert_eq!(rel.kind, "belongsTo");
         assert_eq!(rel.model, "Company");
         assert_eq!(rel.foreign_key.as_deref(), Some("companyId"));
 
         let deal = &schema.models["Deal"];
-        let rel = deal.relationships.get("contact").expect("contact relationship");
+        let rel = deal
+            .relationships
+            .get("contact")
+            .expect("contact relationship");
         assert_eq!(rel.kind, "belongsTo");
         assert_eq!(rel.model, "Contact");
     }
@@ -831,6 +925,45 @@ export const Activity = model('activities', {
         }
         match &ac.delete {
             Some(AccessRule::Boolean(s)) => assert_eq!(s, "admin"),
+            other => panic!("expected Boolean, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_access_combinators() {
+        // The forms the CRM dogfood schema actually uses. Before this parser
+        // handled them, they parsed to None — access control silently OFF.
+        let dsl = r#"
+export const Contact = model('contacts', {
+  fields: { id: text().id() },
+  access: {
+    read: allow.sameTenant('tenantId'),
+    create: allow.any([allow.role('admin'), allow.role('manager'), allow.role('sales')]),
+    update: allow.any([allow.owner('ownerId'), allow.role('admin'), allow.role('manager')]),
+    delete: allow.any([allow.role('admin'), allow.role('manager')]),
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        let ac = schema.models["Contact"].access.as_ref().expect("access");
+
+        // any-of over roles → pipe-joined role gate.
+        match &ac.create {
+            Some(AccessRule::Boolean(s)) => assert_eq!(s, "admin|manager|sales"),
+            other => panic!("expected Boolean, got {:?}", other),
+        }
+        match &ac.delete {
+            Some(AccessRule::Boolean(s)) => assert_eq!(s, "admin|manager"),
+            other => panic!("expected Boolean, got {:?}", other),
+        }
+        // sameTenant → any authenticated user at the role layer.
+        match &ac.read {
+            Some(AccessRule::Boolean(s)) => assert_eq!(s, "authenticated"),
+            other => panic!("expected Boolean, got {:?}", other),
+        }
+        // mixed any(owner, roles) → authenticated, so legitimate owners aren't denied.
+        match &ac.update {
+            Some(AccessRule::Boolean(s)) => assert_eq!(s, "authenticated"),
             other => panic!("expected Boolean, got {:?}", other),
         }
     }
@@ -926,7 +1059,10 @@ export const Tag = model('tags', {
         assert_eq!(tag.fields.len(), 1);
         assert_eq!(tag.fields["id"].field_type, FieldType::String);
         assert!(!tag.fields["id"].optional);
-        assert!(tag.fields["id"].attributes.iter().any(|a| matches!(a, FieldAttribute::Primary)));
+        assert!(tag.fields["id"]
+            .attributes
+            .iter()
+            .any(|a| matches!(a, FieldAttribute::Primary)));
         assert!(tag.access.is_none());
         assert!(tag.events.is_empty());
         assert!(tag.relationships.is_empty());
@@ -975,7 +1111,10 @@ export const Everything = model('everything', {
         assert_eq!(model.fields["avatar"].field_type, FieldType::File);
 
         // Relation creates a relationship entry
-        let rel = model.relationships.get("author").expect("author relationship");
+        let rel = model
+            .relationships
+            .get("author")
+            .expect("author relationship");
         assert_eq!(rel.model, "Author");
         assert_eq!(rel.foreign_key.as_deref(), Some("authorId"));
 
@@ -999,7 +1138,10 @@ export const Empty = model('empties', {
 "#;
         let schema = parse_builder_dsl(dsl).unwrap();
         let model = schema.models.get("Empty").expect("Empty model");
-        assert!(model.fields.is_empty(), "model with no fields block should have empty fields");
+        assert!(
+            model.fields.is_empty(),
+            "model with no fields block should have empty fields"
+        );
     }
 
     #[test]
@@ -1012,7 +1154,10 @@ import { model } from '@atomo/schema'
 export const Broken = model('broken')
 "#;
         let schema = parse_builder_dsl(dsl).unwrap();
-        assert!(schema.models.is_empty(), "model with no body block should be skipped");
+        assert!(
+            schema.models.is_empty(),
+            "model with no body block should be skipped"
+        );
     }
 
     #[test]
@@ -1035,9 +1180,15 @@ export const Ping = model('pings', {
         // No .input() means the parser falls through to Object { fields: [] }
         match &action.input {
             ActionInputDef::Object { fields } => {
-                assert!(fields.is_empty(), "no .input() should produce empty Object input");
+                assert!(
+                    fields.is_empty(),
+                    "no .input() should produce empty Object input"
+                );
             }
-            other => panic!("expected Object variant for action with no .input(), got {:?}", other),
+            other => panic!(
+                "expected Object variant for action with no .input(), got {:?}",
+                other
+            ),
         }
     }
 
@@ -1077,7 +1228,12 @@ export const Order = model('orders', {
         assert_eq!(schema.actions.len(), 3);
         for name in &["onOrderCreated", "onOrderShipped", "onOrderRefunded"] {
             let a = schema.actions.get(*name).unwrap();
-            assert_eq!(a.source_model.as_deref(), Some("Order"), "{} should reference Order", name);
+            assert_eq!(
+                a.source_model.as_deref(),
+                Some("Order"),
+                "{} should reference Order",
+                name
+            );
         }
 
         // Verify distinct input fields

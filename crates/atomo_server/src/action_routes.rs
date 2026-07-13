@@ -87,9 +87,7 @@ mod tests {
             "scorePost".to_string(),
             ActionDef {
                 name: "scorePost".to_string(),
-                input: ActionInputDef::Object {
-                    fields: vec![],
-                },
+                input: ActionInputDef::Object { fields: vec![] },
                 returns: Some(ActionReturn::Model("Post".into())),
                 source_model: None,
             },

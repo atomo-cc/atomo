@@ -95,7 +95,9 @@ async fn registry_crud_roundtrip() {
     // Mutations reflect on reload.
     reg.set_upstream(ID, Some("127.0.0.1:4321")).await.unwrap();
     reg.update_status(ID, ProjectStatus::Running).await.unwrap();
-    reg.set_desired_state(ID, DesiredState::Stopped).await.unwrap();
+    reg.set_desired_state(ID, DesiredState::Stopped)
+        .await
+        .unwrap();
     reg.set_schema_version(ID, "cafef00d").await.unwrap();
     reg.set_last_health(ID, serde_json::json!({ "status": "healthy" }))
         .await
@@ -105,12 +107,20 @@ async fn registry_crud_roundtrip() {
     assert_eq!(got.status, ProjectStatus::Running);
     assert_eq!(got.desired_state, DesiredState::Stopped);
     assert_eq!(got.schema_version.as_deref(), Some("cafef00d"));
-    assert_eq!(got.last_health.unwrap()["status"], serde_json::json!("healthy"));
+    assert_eq!(
+        got.last_health.unwrap()["status"],
+        serde_json::json!("healthy")
+    );
 
     // record_event + delete.
-    reg.record_event(ID, "test", Some("tester"), serde_json::json!({ "ok": true }))
-        .await
-        .unwrap();
+    reg.record_event(
+        ID,
+        "test",
+        Some("tester"),
+        serde_json::json!({ "ok": true }),
+    )
+    .await
+    .unwrap();
     reg.delete(ID).await.unwrap();
     assert!(reg.get(ID).await.is_err(), "deleted project must be gone");
 

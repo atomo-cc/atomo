@@ -185,10 +185,7 @@ async fn main() {
             client.create("Post", &r, &[], Some("bench")).await.unwrap();
             t.push(s.elapsed());
         }
-        rows.push((
-            "2. CRUD + event emission (no dispatcher)".into(),
-            stats(t),
-        ));
+        rows.push(("2. CRUD + event emission (no dispatcher)".into(), stats(t)));
 
         let _ = sqlx::query("TRUNCATE bench_action_with_events")
             .execute(atomo.db_pool())
@@ -400,9 +397,7 @@ async fn main() {
         let s2 = rows[1].1.mean_us;
         let s3 = rows[2].1.mean_us;
         let s4 = rows[3].1.mean_us;
-        println!(
-            "| Differential | mean us | What it isolates |"
-        );
+        println!("| Differential | mean us | What it isolates |");
         println!("|---|--:|---|");
         println!(
             "| S2 - S1 (event emission overhead) | {:.1} | cost of constructing + broadcasting the ModelEvent to zero receivers |",

@@ -141,7 +141,10 @@ pub async fn ensure_rls_policies(
 ///
 /// ## Usage (the required shape)
 ///
-/// ```ignore
+/// (`text` fence: an illustrative fragment, not a compilable doctest — the CI
+/// `--ignored` pass would otherwise try to build it and fail.)
+///
+/// ```text
 /// let mut tx = pool.begin().await?;
 /// atomo_server::rls::bind_tenant(&mut tx, tenant_id.as_deref()).await?;
 /// // ... all reads/writes for this request, on `&mut *tx` ...

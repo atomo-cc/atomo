@@ -32,7 +32,11 @@ async fn search_plugins(
     let q = params.get("q").map(|s| s.as_str()).unwrap_or("");
     match store.search(q).await {
         Ok(items) => Json(json!({ "plugins": items })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -43,8 +47,16 @@ async fn get_plugin(
 ) -> impl IntoResponse {
     match store.get_plugin(&name).await {
         Ok(Some(plugin)) => Json(plugin).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "plugin not found"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "plugin not found"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -60,7 +72,15 @@ async fn download_artifact(
             bytes,
         )
             .into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({"error": "artifact not found"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "artifact not found"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }

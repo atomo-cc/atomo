@@ -747,16 +747,14 @@ pub struct Mutation;
             let ident = safe_ident(field_name);
             // Add to bind fields
             match &field.field_type {
-                crate::types::FieldType::Array(inner) => {
-                    match inner.as_ref() {
-                        crate::types::FieldType::Custom(name) if name.contains("Block") => {
-                            bind_fields.push(ident);
-                        }
-                        _ => {
-                            bind_fields.push(format!("{}_json", field_name));
-                        }
+                crate::types::FieldType::Array(inner) => match inner.as_ref() {
+                    crate::types::FieldType::Custom(name) if name.contains("Block") => {
+                        bind_fields.push(ident);
                     }
-                }
+                    _ => {
+                        bind_fields.push(format!("{}_json", field_name));
+                    }
+                },
                 _ => {
                     bind_fields.push(ident);
                 }
@@ -922,12 +920,7 @@ pub struct Mutation;
             let {}_json = serde_json::to_value(&{})?;
             query_builder.push(", {} = ").push_bind({}_json);
         }}"#,
-                        ident,
-                        struct_ident,
-                        field_name,
-                        ident,
-                        db_field_name,
-                        field_name
+                        ident, struct_ident, field_name, ident, db_field_name, field_name
                     )
                 }
                 _ => {
@@ -1026,12 +1019,7 @@ pub struct Mutation;
             let {}_json = serde_json::to_value(&{})?;
             query_builder.push(", {} = ").push_bind({}_json);
         }}"#,
-                        ident,
-                        struct_ident,
-                        field_name,
-                        ident,
-                        db_field_name,
-                        field_name
+                        ident, struct_ident, field_name, ident, db_field_name, field_name
                     )
                 }
                 _ => {
@@ -1337,11 +1325,20 @@ mod tests {
         let output = gen.generate_resolvers(&[person]).unwrap();
 
         // Header defines Query and Mutation structs
-        assert!(output.contains("pub struct Query;"), "should define Query struct");
-        assert!(output.contains("pub struct Mutation;"), "should define Mutation struct");
+        assert!(
+            output.contains("pub struct Query;"),
+            "should define Query struct"
+        );
+        assert!(
+            output.contains("pub struct Mutation;"),
+            "should define Mutation struct"
+        );
 
         // Query impl block with list query
-        assert!(output.contains("impl Query"), "should have Query impl block");
+        assert!(
+            output.contains("impl Query"),
+            "should have Query impl block"
+        );
         assert!(
             output.contains("async fn persons("),
             "should generate list query named after pluralized lowercase model"
@@ -1354,7 +1351,10 @@ mod tests {
         );
 
         // Mutation impl block with CRUD mutations
-        assert!(output.contains("impl Mutation"), "should have Mutation impl block");
+        assert!(
+            output.contains("impl Mutation"),
+            "should have Mutation impl block"
+        );
         assert!(
             output.contains("async fn insert_person_one("),
             "should generate insert_one mutation"
@@ -1481,10 +1481,7 @@ mod tests {
 
     #[test]
     fn id_only_model_generates_valid_resolvers() {
-        let model = make_model(
-            "Tag",
-            vec![field("id", FieldType::EntityId, false)],
-        );
+        let model = make_model("Tag", vec![field("id", FieldType::EntityId, false)]);
 
         let gen = HasuraV2ResolverGenerator::new();
         let output = gen.generate_resolvers(&[model]).unwrap();
@@ -1492,8 +1489,14 @@ mod tests {
         // Should still produce a valid resolver file with Query and Mutation
         assert!(output.contains("pub struct Query;"));
         assert!(output.contains("pub struct Mutation;"));
-        assert!(output.contains("async fn tags("), "list query for id-only model");
-        assert!(output.contains("async fn tag_by_pk("), "by-pk query for id-only model");
+        assert!(
+            output.contains("async fn tags("),
+            "list query for id-only model"
+        );
+        assert!(
+            output.contains("async fn tag_by_pk("),
+            "by-pk query for id-only model"
+        );
         assert!(
             output.contains("async fn insert_tag_one("),
             "insert mutation for id-only model"
@@ -1607,10 +1610,7 @@ mod tests {
 
     #[test]
     fn build_schema_function_is_generated() {
-        let model = make_model(
-            "Widget",
-            vec![field("id", FieldType::EntityId, false)],
-        );
+        let model = make_model("Widget", vec![field("id", FieldType::EntityId, false)]);
 
         let gen = HasuraV2ResolverGenerator::new();
         let output = gen.generate_resolvers(&[model]).unwrap();

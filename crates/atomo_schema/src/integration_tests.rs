@@ -8,8 +8,8 @@ mod tests {
     use anyhow::Result;
 
     fn crm_schema_content() -> String {
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../services/crm-service");
+        let base =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../services/crm-service");
         let schema = std::fs::read_to_string(base.join("atomo/schema.ts"))
             .expect("CRM schema.ts should exist");
         let actions = std::fs::read_to_string(base.join("atomo/actions.ts"))
@@ -37,13 +37,21 @@ mod tests {
 
         // User.created → sendWelcomeEmail
         let user = &schema.models["User"];
-        assert_eq!(user.events.created.len(), 1, "User should have 1 created event");
+        assert_eq!(
+            user.events.created.len(),
+            1,
+            "User should have 1 created event"
+        );
         assert_eq!(user.events.created[0].action, "sendWelcomeEmail");
         assert!(user.events.created[0].condition.is_none());
 
         // Company.created → enrichCompany
         let company = &schema.models["Company"];
-        assert_eq!(company.events.created.len(), 1, "Company should have 1 created event");
+        assert_eq!(
+            company.events.created.len(),
+            1,
+            "Company should have 1 created event"
+        );
         assert_eq!(company.events.created[0].action, "enrichCompany");
 
         // Company.updated → enrichCompany.whenChanged('website', ...)
@@ -53,21 +61,40 @@ mod tests {
 
         // Lead.created → scoreLead + rollupLeadStats
         let lead = &schema.models["Lead"];
-        assert_eq!(lead.events.created.len(), 2, "Lead should have 2 created events");
-        let lead_created_names: Vec<&str> = lead.events.created.iter().map(|e| e.action.as_str()).collect();
+        assert_eq!(
+            lead.events.created.len(),
+            2,
+            "Lead should have 2 created events"
+        );
+        let lead_created_names: Vec<&str> = lead
+            .events
+            .created
+            .iter()
+            .map(|e| e.action.as_str())
+            .collect();
         assert!(lead_created_names.contains(&"scoreLead"));
         assert!(lead_created_names.contains(&"rollupLeadStats"));
 
         // Lead.updated has conditional actions
-        assert_eq!(lead.events.updated.len(), 2, "Lead should have 2 updated events");
+        assert_eq!(
+            lead.events.updated.len(),
+            2,
+            "Lead should have 2 updated events"
+        );
 
         // Activity.created → updateContactLastActivity
         let activity = &schema.models["Activity"];
         assert_eq!(activity.events.created.len(), 1);
-        assert_eq!(activity.events.created[0].action, "updateContactLastActivity");
+        assert_eq!(
+            activity.events.created[0].action,
+            "updateContactLastActivity"
+        );
 
         // Lifecycle actions parsed (at least the .from().input([]) ones)
-        let welcome = schema.actions.get("sendWelcomeEmail").expect("sendWelcomeEmail action");
+        let welcome = schema
+            .actions
+            .get("sendWelcomeEmail")
+            .expect("sendWelcomeEmail action");
         assert_eq!(welcome.source_model.as_deref(), Some("User"));
         if let crate::types::ActionInputDef::PickFields { model, fields } = &welcome.input {
             assert_eq!(model, "User");
@@ -77,7 +104,10 @@ mod tests {
             panic!("expected PickFields for sendWelcomeEmail");
         }
 
-        let enrich = schema.actions.get("enrichCompany").expect("enrichCompany action");
+        let enrich = schema
+            .actions
+            .get("enrichCompany")
+            .expect("enrichCompany action");
         assert_eq!(enrich.source_model.as_deref(), Some("Company"));
 
         let score = schema.actions.get("scoreLead").expect("scoreLead action");
@@ -100,8 +130,7 @@ mod tests {
             .expect("committed generated/client.ts should exist");
 
         if generated.trim() != committed.trim() {
-            std::fs::write(&committed_path, &generated)
-                .expect("auto-update generated/client.ts");
+            std::fs::write(&committed_path, &generated).expect("auto-update generated/client.ts");
             panic!(
                 "codegen output drifted — auto-updated services/crm-service/generated/client.ts. \
                  Re-run to confirm."
@@ -358,10 +387,7 @@ export const ProductModel = defineModel({
 
         println!("Complete Hook and Access Control DSL flow test passed!");
         println!("Parsed {} models", models.len());
-        println!(
-            "Generated {} lines of Rust code",
-            rust_code.lines().count()
-        );
+        println!("Generated {} lines of Rust code", rust_code.lines().count());
 
         Ok(())
     }

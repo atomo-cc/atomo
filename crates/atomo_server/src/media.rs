@@ -327,12 +327,15 @@ impl MediaState {
     /// Housekeeping only — does NOT detect media orphaned by a deleted referencing entity (that
     /// needs per-schema reference tracking and is intentionally out of scope to avoid data loss).
     pub async fn purge_deleted(&self, older_than: std::time::Duration) -> Result<u64> {
-        let cutoff = chrono::Utc::now()
-            - chrono::Duration::from_std(older_than).unwrap_or_else(|_| chrono::Duration::zero());
+        // Cutoff on the DB clock: `deleted_at` is written by the database (NOW()),
+        // so comparing it against an app-host timestamp is skew-sensitive — with a
+        // small `older_than`, a DB clock ahead of the app host purges nothing.
+        let secs = older_than.as_secs_f64();
         let rows = sqlx::query(
-            "SELECT storage_key FROM media WHERE deleted_at IS NOT NULL AND deleted_at < $1",
+            "SELECT storage_key FROM media \
+             WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(secs => $1)",
         )
-        .bind(cutoff)
+        .bind(secs)
         .fetch_all(&self.pool)
         .await?;
         for r in &rows {
@@ -341,10 +344,13 @@ impl MediaState {
                 .await
                 .ok();
         }
-        let res = sqlx::query("DELETE FROM media WHERE deleted_at IS NOT NULL AND deleted_at < $1")
-            .bind(cutoff)
-            .execute(&self.pool)
-            .await?;
+        let res = sqlx::query(
+            "DELETE FROM media \
+             WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(secs => $1)",
+        )
+        .bind(secs)
+        .execute(&self.pool)
+        .await?;
         Ok(res.rows_affected())
     }
 
@@ -433,7 +439,13 @@ async fn presign(
 ) -> Response {
     let user = match user {
         Some(Extension(u)) => u,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "authentication required"})),
+            )
+                .into_response()
+        }
     };
     let filename = req.filename.unwrap_or_else(|| "upload".to_string());
     match state
@@ -475,7 +487,13 @@ async fn commit(
 ) -> Response {
     let user = match user {
         Some(Extension(u)) => u,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "authentication required"})),
+            )
+                .into_response()
+        }
     };
     let content_type = req
         .content_type
@@ -545,7 +563,13 @@ async fn upload(
     let (owner_id, tenant_id): (String, Option<String>) = match (user, worker) {
         (Some(Extension(u)), _) => (u.id, u.tenant_id),
         (None, Some(Extension(w))) => (format!("worker:{}", w.id), None),
-        (None, None) => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
+        (None, None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "authentication required"})),
+            )
+                .into_response()
+        }
     };
     let field = match multipart.next_field().await {
         Ok(Some(f)) => f,
@@ -610,10 +634,20 @@ async fn gc(
 ) -> Response {
     let user = match user {
         Some(Extension(u)) => u,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "authentication required"})),
+            )
+                .into_response()
+        }
     };
     if !matches!(user.role, crate::platform_models::UserRole::Admin) {
-        return (StatusCode::FORBIDDEN, Json(json!({"error": "admin access required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "admin access required"})),
+        )
+            .into_response();
     }
     let secs = params
         .get("older_than_secs")
@@ -624,7 +658,11 @@ async fn gc(
         .await
     {
         Ok(n) => (StatusCode::OK, Json(json!({ "purged": n }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -636,14 +674,32 @@ async fn serve_media(
 ) -> Response {
     let (key, ct, tenant) = match state.lookup(&id).await {
         Ok(Some(m)) => m,
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+                .into_response()
+        }
     };
     if state.private_reads {
         match &user {
-            None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "authentication required"})),
+                )
+                    .into_response()
+            }
             Some(Extension(u)) if u.tenant_id != tenant => {
-                return (StatusCode::FORBIDDEN, Json(json!({"error": "access denied"}))).into_response()
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({"error": "access denied"})),
+                )
+                    .into_response()
             }
             Some(_) => {}
         }
@@ -797,12 +853,22 @@ async fn delete_media(
 ) -> Response {
     let user = match user {
         Some(Extension(u)) => u,
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "authentication required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "authentication required"})),
+            )
+                .into_response()
+        }
     };
     match state.soft_delete(&id, &user.id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 

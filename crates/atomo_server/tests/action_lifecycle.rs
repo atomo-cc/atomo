@@ -143,7 +143,7 @@ async fn lifecycle_create_enqueue_worker_crud_update_origin_loop_prevention() {
     // ── Step 2: Verify processPost was enqueued ─────────────────────────
 
     let pending: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM jobs WHERE queue = 'actions' AND kind = 'processPost' AND status = 'pending'")
+        sqlx::query_as("SELECT COUNT(*) FROM jobs WHERE queue = 'actions' AND kind = 'processPost' AND status = 'queued'")
             .fetch_one(atomo.db_pool())
             .await
             .unwrap();
@@ -185,7 +185,7 @@ async fn lifecycle_create_enqueue_worker_crud_update_origin_loop_prevention() {
     // ── Step 4: Worker calls CRUD update with origin ────────────────────
 
     // Clear old jobs so we can count new enqueues precisely.
-    sqlx::query("DELETE FROM jobs WHERE queue = 'actions' AND status = 'pending'")
+    sqlx::query("DELETE FROM jobs WHERE queue = 'actions' AND status = 'queued'")
         .execute(atomo.db_pool())
         .await
         .ok();
@@ -262,7 +262,7 @@ async fn lifecycle_create_enqueue_worker_crud_update_origin_loop_prevention() {
 
     // processPost should NOT have been re-enqueued (origin == "processPost").
     let requeued: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM jobs WHERE queue = 'actions' AND kind = 'processPost' AND status = 'pending'",
+        "SELECT COUNT(*) FROM jobs WHERE queue = 'actions' AND kind = 'processPost' AND status = 'queued'",
     )
     .fetch_one(atomo.db_pool())
     .await
@@ -275,7 +275,7 @@ async fn lifecycle_create_enqueue_worker_crud_update_origin_loop_prevention() {
     // onStatusChange SHOULD have been enqueued (status changed from draft → published,
     // and origin = 'processPost' != 'onStatusChange').
     let status_change: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM jobs WHERE queue = 'actions' AND kind = 'onStatusChange' AND status = 'pending'",
+        "SELECT COUNT(*) FROM jobs WHERE queue = 'actions' AND kind = 'onStatusChange' AND status = 'queued'",
     )
     .fetch_one(atomo.db_pool())
     .await
@@ -331,11 +331,7 @@ async fn crud_capability_scoping_denies_unauthorized_operations() {
 
     // Mint a broad token for setup.
     let (_, broad_token) = worker_tokens
-        .mint(
-            "broad-worker",
-            &["actions".into()],
-            &["crud:*".into()],
-        )
+        .mint("broad-worker", &["actions".into()], &["crud:*".into()])
         .await
         .unwrap();
 
@@ -368,7 +364,12 @@ async fn crud_capability_scoping_denies_unauthorized_operations() {
         ))
         .unwrap();
     let (status, body) = send(&app, create_req).await;
-    assert_eq!(status, StatusCode::CREATED, "broad token should create: {:?}", body);
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "broad token should create: {:?}",
+        body
+    );
     let post_id = body["id"].as_str().unwrap().to_string();
 
     // ── read with narrow token → 200 ───────────────────────────────────
