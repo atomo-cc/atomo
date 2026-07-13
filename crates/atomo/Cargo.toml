@@ -1,6 +1,6 @@
 ﻿[package]
 name = "atomo"
-version = "0.5.11"
+version = "0.5.12"
 edition = "2021"
 description = "The next-generation Content Core - your business's Arc Reactor"
 license = "MIT OR Apache-2.0"
