@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-07-13
+
 ### Fixed
 - **Admin list grid shows time-of-day for `datetime` fields.** Timestamp columns
   restored in 0.5.11 rendered date-only (`toLocaleDateString()`), making rows in
