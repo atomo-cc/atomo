@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`docker.yml` no longer silently publishes `:latest` from a version ref.** The
+  `tag` input defaulted to `latest`, so `gh workflow run docker.yml --ref vX.Y.Z`
+  without `-f tag=` produced a green run but no versioned image (and stamped
+  `GET /version` as "latest") — hit on both v0.5.11 and v0.5.12. The workflow now
+  derives the tag from the ref when the input is omitted on a `v*` ref, and every
+  release build also pushes `:latest` so one dispatch produces both tags.
+
 ## [0.5.12] - 2026-07-13
 
 ### Fixed

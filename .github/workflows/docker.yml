@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to publish (e.g. v0.1.0 or latest)'
-        required: true
+        description: 'Image tag to publish (e.g. v0.1.0 or latest). Defaults to the ref name when dispatched from a v* tag.'
+        required: false
         default: 'latest'
 
 permissions:
@@ -42,16 +42,37 @@ jobs:
         id: stamp
         run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      # Consumer feedback #10: the `tag` input silently defaulted to `latest`, so
+      # dispatching with `--ref vX.Y.Z` but no `-f tag=` published only `:latest`
+      # (stamped version "latest") and the versioned image never existed — a green
+      # run with a missing artifact. Derive the tag from the ref when the input is
+      # omitted on a v* ref, and push `:latest` alongside every release build so
+      # one dispatch produces both tags.
+      - name: Resolve image tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ "$TAG" = "latest" ] && [[ "${{ github.ref_name }}" == v* ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "tag input omitted on a version ref — using $TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == v* ]]; then
+            echo "tags=ghcr.io/atomo-cc/atomo-server:$TAG,ghcr.io/atomo-cc/atomo-server:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=ghcr.io/atomo-cc/atomo-server:$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           # Owner is lowercased for GHCR; image lives at ghcr.io/atomo-cc/atomo-server.
-          tags: ghcr.io/atomo-cc/atomo-server:${{ github.event.inputs.tag }}
+          tags: ${{ steps.tag.outputs.tags }}
           # Stamp the image so GET /version reports the exact build (consumer ask).
           build-args: |
-            ATOMO_VERSION=${{ github.event.inputs.tag }}
+            ATOMO_VERSION=${{ steps.tag.outputs.tag }}
             ATOMO_GIT_SHA=${{ github.sha }}
             ATOMO_BUILD_TIME=${{ steps.stamp.outputs.time }}
           cache-from: type=gha

@@ -109,8 +109,11 @@ skip steps silently — if one doesn't apply, say so.
    ```
    Ensure `npm whoami` shows the right account. `prepublishOnly` rebuilds `dist/`.
 10. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
-    - `docker.yml -f tag=vX.Y.Z` — server image `:vX.Y.Z`
-    - `docker.yml -f tag=latest` — server image `:latest`
+    - `docker.yml -f tag=vX.Y.Z` — pushes server image `:vX.Y.Z` **and** moves
+      `:latest` in one run (any `v*` tag input publishes both). The `-f tag=` input
+      is REQUIRED when dispatching from `main`; only a `--ref vX.Y.Z` dispatch may
+      omit it (the workflow then derives the tag from the ref instead of silently
+      publishing `:latest`).
     - `docs.yml` — deploy documentation
     - `release.yml -f tag=vX.Y.Z` — build CLI binaries (Linux/macOS/Windows) and
       attach to the GitHub release *(optional — skip if CLI unchanged)*
