@@ -51,7 +51,10 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ContentBlockType {
 
 #[cfg(feature = "sqlx")]
 impl<'q> sqlx::Encode<'q, sqlx::Postgres> for ContentBlockType {
-    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         let s = match self {
             Self::Text => "Text",
             Self::RichText => "RichText",
@@ -113,8 +116,11 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ContentBlock {
 
 #[cfg(feature = "sqlx")]
 impl<'q> sqlx::Encode<'q, sqlx::Postgres> for ContentBlock {
-    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
-        let json = serde_json::to_value(self).unwrap_or(serde_json::Value::Null);
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        let json = serde_json::to_value(self)?;
         <serde_json::Value as sqlx::Encode<'q, sqlx::Postgres>>::encode_by_ref(&json, buf)
     }
 }

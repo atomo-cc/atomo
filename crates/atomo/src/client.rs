@@ -1226,9 +1226,9 @@ fn build_args(params: &[Value]) -> Result<PgArguments> {
             Value::String(s) => args.add(s.as_str()),
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    args.add(i);
+                    args.add(i)
                 } else {
-                    args.add(n.as_f64().unwrap_or(0.0));
+                    args.add(n.as_f64().unwrap_or(0.0))
                 }
             }
             Value::Bool(b) => args.add(*b),
@@ -1236,6 +1236,7 @@ fn build_args(params: &[Value]) -> Result<PgArguments> {
             // Arrays/objects bind as native JSON so JSONB columns accept them.
             other => args.add(other.clone()),
         }
+        .map_err(|e| anyhow::anyhow!("failed to bind query parameter: {e}"))?;
     }
     Ok(args)
 }

@@ -38,11 +38,12 @@ impl sqlx::postgres::PgHasArrayType for ContentBlockDb {
 }
 
 impl sqlx::Encode<'_, sqlx::Postgres> for ContentBlockDb {
-    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
-        match serde_json::to_value(&self.0) {
-            Ok(json_value) => json_value.encode_by_ref(buf),
-            Err(_) => sqlx::encode::IsNull::Yes,
-        }
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        let json_value = serde_json::to_value(&self.0)?;
+        json_value.encode_by_ref(buf)
     }
 }
 

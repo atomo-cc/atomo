@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **sqlx 0.7 → 0.8.** Resolves the `sqlx-postgres 0.7.4` future-incompatibility
+  warning (code that a future Rust release will reject). Internal API adaptation
+  only (`Encode::encode_by_ref` / `Arguments::add` became fallible); no
+  behavior change. Also removed the unused `sea-orm` workspace dependency that
+  was pinning sqlx 0.7.
+- **CI actions bumped to Node 24 majors** (`checkout@v5`, `setup-node@v5`,
+  `docker/login-action@v4`, `docker/setup-buildx-action@v4`,
+  `docker/build-push-action@v7`) — clears the Node 20 deprecation warnings on
+  every run. The archived `create-release@v1`/`upload-release-asset@v1` in
+  release.yml still warn; replacing them with `gh release` is a future chore.
+
 ## [0.6.0] - 2026-07-13
 
 ### Added
