@@ -109,8 +109,9 @@ This page is the single source of truth for delivery status and upcoming milesto
   - Hook/Access DSL and action interfaces
   - Actions & workers framework (event-triggered automation, external worker SDK)
   - Extend-without-forking seams: declarable schema constraints
-    (`@unique`/`@index`/`@@unique`/`@@index`/`@@check`, incl. partial `WHERE`) and
-    worker-served custom integrations; transactional route handlers
+    (`@unique`/`@index`/`@@unique`/`@@index`/`@@check`, incl. partial `WHERE`),
+    built-in table extensions (`builtins` block — extra columns/constraints on
+    `users`), and worker-served custom integrations; transactional route handlers
     designed (phase 3)
   - AI groundwork (pgvector, content APIs)
 

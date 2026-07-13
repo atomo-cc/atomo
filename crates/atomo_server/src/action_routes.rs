@@ -109,6 +109,7 @@ mod tests {
         Schema {
             models: HashMap::new(),
             actions,
+            builtins: Default::default(),
         }
     }
 

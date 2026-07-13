@@ -442,7 +442,45 @@ impl TypeScriptParser {
         Ok(Schema {
             models: schema_models,
             actions,
+            builtins: Self::parse_builtins(content),
         })
+    }
+
+    /// Parse the `builtins` block from `export const schema` — append-only extensions
+    /// to built-in platform tables (extra columns + constraints):
+    ///
+    /// ```ts
+    /// builtins: {
+    ///   users: {
+    ///     columns: { storeAccountId: 'TEXT' },
+    ///     constraints: ['@@unique([storeAccountId]) WHERE store_account_id IS NOT NULL'],
+    ///   },
+    /// }
+    /// ```
+    fn parse_builtins(content: &str) -> HashMap<String, BuiltinExtension> {
+        let mut result = HashMap::new();
+        let block = match Self::sub_block(content, "builtins") {
+            Some(b) => b,
+            None => return result,
+        };
+        for (table, tblock) in Self::top_level_entries(&block) {
+            let mut ext = BuiltinExtension::default();
+            if let Some(cols) = Self::sub_block(&tblock, "columns") {
+                let kv = Regex::new(r#"(\w+)\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+                for c in kv.captures_iter(&cols) {
+                    ext.columns.insert(c[1].to_string(), c[2].to_string());
+                }
+            }
+            if let Some(arr) = Self::sub_array(&tblock, "constraints") {
+                for annotation in Self::parse_string_array(&arr) {
+                    parse_model_constraints(&annotation, &mut ext.constraints);
+                }
+            }
+            if !ext.columns.is_empty() || !ext.constraints.is_empty() {
+                result.insert(table, ext);
+            }
+        }
+        result
     }
 
     /// Collect enum and type alias definitions
@@ -1138,6 +1176,39 @@ mod validation_tests {
         let ui = m.ui.as_ref().expect("ui config must be parsed");
         let lv = ui.list_view.as_ref().expect("listView must be parsed");
         assert_eq!(lv, &["event", "appVersion", "createdAt"]);
+    }
+
+    #[test]
+    fn parses_builtins_block() {
+        // Consumer feedback #6: constraints/extra columns on built-in platform
+        // tables (e.g. `users`) declared in the schema instead of raw SQL.
+        let content = r#"
+        export interface Thing { id: string; name: string; }
+        export const schema = {
+          models: { Thing: { tableName: 'thing' } },
+          builtins: {
+            users: {
+              columns: { storeAccountId: 'TEXT' },
+              constraints: ['@@unique([storeAccountId]) WHERE store_account_id IS NOT NULL'],
+            },
+          },
+        };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        let ext = schema.builtins.get("users").expect("users extension parsed");
+        assert_eq!(ext.columns.get("storeAccountId").map(String::as_str), Some("TEXT"));
+        assert_eq!(
+            ext.constraints,
+            vec![crate::types::ModelConstraint::UniqueWhere(
+                vec!["storeAccountId".to_string()],
+                "store_account_id IS NOT NULL".to_string()
+            )]
+        );
+        // No builtins block → empty map, not an error.
+        let none = TypeScriptParser::new()
+            .parse_schema("export interface T { id: string; }\nexport const schema = { models: { T: { tableName: 't' } } };")
+            .unwrap();
+        assert!(none.builtins.is_empty());
     }
 
     #[test]
