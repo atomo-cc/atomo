@@ -75,16 +75,21 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v5
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8.15.0
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 20
 
       - name: Install dependencies
-        run: corepack pnpm@8.15.0 install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Type-check + unit tests (all packages)
-        run: corepack pnpm@8.15.0 --filter "./packages/*" test
+        run: pnpm --filter "./packages/*" test
 
   # Admin e2e smoke: a real server (e2e schema) + the real SPA in a browser,
   # asserting schema-truth invariants (labels, listView columns, datetime cells,
@@ -143,21 +148,26 @@ jobs:
           done
           curl -sf http://localhost:3000/health || { cat server.log; exit 1; }
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8.15.0
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 20
 
       - name: Install dependencies
-        run: corepack pnpm@8.15.0 install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Install Playwright chromium
         working-directory: packages/atomo-admin-ui
-        run: corepack pnpm@8.15.0 exec playwright install chromium --with-deps
+        run: pnpm exec playwright install chromium --with-deps
 
       - name: Run admin smoke
         working-directory: packages/atomo-admin-ui
-        run: corepack pnpm@8.15.0 e2e
+        run: pnpm e2e
 
       - name: Server log on failure
         if: failure()
