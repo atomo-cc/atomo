@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Enum fields render as a Select in the admin.** `select(['a','b'])` schema
+  fields now carry their allowed values as an `in:a,b` validation rule — the
+  runtime validator enforces it on every write path, and the admin form renders
+  a dropdown of the allowed values instead of a free-text input.
+- **Role-aware admin UI.** `/meta/schema` now includes each model's access-rule
+  strings; the admin hides mutation controls (New/Edit/Delete/bulk) the signed-in
+  role can't use, instead of offering buttons that 403. Cosmetic only — the
+  server enforces regardless; unknown rules fail open.
+- **`isNull: false` in GraphQL where JSON now means IS NOT NULL** (previously
+  the value was ignored and "is not null" was inexpressible).
+
+### Fixed
+- **Admin list toolbar controls now actually work.** Three prominent controls
+  were wired to nothing: the search box never sent its value to the server
+  (typing refetched identical results), advanced-filter chips rendered but never
+  reached the query, and bulk delete used leftover Hasura-style GraphQL that
+  errored for every model. Search now does a `contains` match on the model's
+  first searchable field (the placeholder names it — the where JSON has no OR,
+  so it's honestly single-field); filters translate to the server's where
+  vocabulary (operators the server can't express are no longer offered, incl.
+  the OR combinator); bulk delete is one `delete(model, where: {id: {in: [...]}})`.
+- **Admin table column layout restored** — dynamically-composed Tailwind
+  `col-span-*` classes were purged from the production build, leaving columns
+  unsized; the grid template is now an explicit style.
+- **Admin list default sort** no longer assumes a `createdAt` field exists.
+- **Blocking `alert()` dialogs replaced with toasts** in the live CRUD paths.
+
+### Removed
+- **Unrouted mock scaffolding deleted from the admin UI** — the observability,
+  AI search, collaboration, and notification panels were `Math.random()`-driven
+  mockups reachable from no route (tree-shaken from the bundle, but misleading
+  to contributors). Restorable from git history when a real backend API exists.
+  The unused `cmdk` dependency went with them.
+
 ## [0.6.1] - 2026-07-14
 
 ### Fixed

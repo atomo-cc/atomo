@@ -412,6 +412,21 @@ fn resolve_fields(
         if let Some(n) = extract_chain_number(chain, "max") {
             rules.push(format!("max:{}", n));
         }
+        // select(['a', 'b']) → `in:a,b`. Previously the allowed values were
+        // discarded at parse time, so the runtime validator couldn't enforce
+        // them and the admin UI rendered enums as free-text inputs.
+        if f.base_type == "select" {
+            if let Some(arg) = &f.base_arg {
+                let values: Vec<String> = Regex::new(r"['\x22]([^'\x22]+)['\x22]")
+                    .unwrap()
+                    .captures_iter(arg)
+                    .map(|c| c[1].to_string())
+                    .collect();
+                if !values.is_empty() {
+                    rules.push(format!("in:{}", values.join(",")));
+                }
+            }
+        }
         if !rules.is_empty() {
             validation.insert(f.name.clone(), rules.join("|"));
         }
@@ -885,6 +900,32 @@ export const Activity = model('activities', {
         assert_eq!(
             deal.validation.get("value").map(|s| s.as_str()),
             Some("min:0")
+        );
+    }
+
+    #[test]
+    fn select_values_become_in_rule() {
+        // select(['a','b']) must survive parsing as an `in:` validation rule —
+        // the runtime validator enforces it and the admin UI renders a Select.
+        let dsl = r#"
+import { model, text, select } from '@atomo/schema'
+export const Deal = model('deals', {
+  fields: {
+    id: text().id(),
+    stage: select(['prospecting', 'proposal', 'won']).default('prospecting'),
+    kind: select(['new']).required(),
+  },
+})
+"#;
+        let schema = parse_builder_dsl(dsl).unwrap();
+        let deal = &schema.models["Deal"];
+        assert_eq!(
+            deal.validation.get("stage").map(|s| s.as_str()),
+            Some("in:prospecting,proposal,won")
+        );
+        assert_eq!(
+            deal.validation.get("kind").map(|s| s.as_str()),
+            Some("required|in:new")
         );
     }
 

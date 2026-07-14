@@ -81,28 +81,31 @@ const OPERATORS: Record<FilterOperator, string> = {
   is_not_empty: 'Is not empty'
 }
 
+// Only operators the server's where JSON can express (see lib/where.ts).
+// `not_contains` / `is_empty` / `is_not_empty` were offered before but had no
+// server mapping — a filter that renders a chip and does nothing.
 const getFieldOperators = (field: FieldMetadata): FilterOperator[] => {
   switch (field.type) {
     case 'string':
     case 'text':
-      return ['equals', 'not_equals', 'contains', 'not_contains', 'starts_with', 'ends_with', 'is_null', 'is_not_null', 'is_empty', 'is_not_empty']
-    
+      return ['equals', 'not_equals', 'contains', 'starts_with', 'ends_with', 'is_null', 'is_not_null']
+
     case 'number':
       return ['equals', 'not_equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal', 'between', 'is_null', 'is_not_null']
-    
+
     case 'boolean':
       return ['equals', 'not_equals', 'is_null', 'is_not_null']
-    
+
     case 'date':
     case 'datetime':
       return ['equals', 'not_equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal', 'between', 'is_null', 'is_not_null']
-    
+
     case 'reference':
       return ['equals', 'not_equals', 'in', 'not_in', 'is_null', 'is_not_null']
-    
+
     case 'array':
-      return ['contains', 'not_contains', 'is_empty', 'is_not_empty']
-    
+      return ['contains', 'is_null', 'is_not_null']
+
     default:
       return ['equals', 'not_equals', 'is_null', 'is_not_null']
   }
@@ -345,24 +348,12 @@ export function AdvancedFilterPanel({
                   const field = modelMetadata.fields[condition.field]
                   return (
                     <div key={condition.id} className="p-4 border border-gray-200 rounded-lg space-y-3">
-                      {/* Logical operator */}
+                      {/* Conditions always AND-combine — the server's where JSON
+                          has no OR, so offering an OR selector here would be a
+                          control wired to nothing. */}
                       {index > 0 && (
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-500">Logic:</span>
-                          <Select
-                            value={condition.logicalOperator || 'AND'}
-                            onValueChange={(value: 'AND' | 'OR') => 
-                              updateCondition(condition.id, { logicalOperator: value })
-                            }
-                          >
-                            <SelectTrigger className="w-20">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="AND">AND</SelectItem>
-                              <SelectItem value="OR">OR</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <span className="text-sm text-gray-500">AND</span>
                         </div>
                       )}
 

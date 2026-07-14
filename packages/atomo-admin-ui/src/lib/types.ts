@@ -20,6 +20,9 @@ export interface ModelMetadata {
   searchable?: string[]
   relationships?: Record<string, RelationshipConfig>
   validation?: Record<string, string>
+  /** Access rule strings per op from /meta/schema ("admin|manager", "authenticated",
+   *  "system", "never", ...). Cosmetic UI gating only — the server enforces. */
+  access?: Partial<Record<'create' | 'read' | 'update' | 'delete', string | null>>
   ui: UIConfig
   fields: Record<string, FieldMetadata>
   // Platform model specific properties
@@ -116,6 +119,10 @@ export interface QueryOptions {
   order?: 'asc' | 'desc'
   filters?: Record<string, any>
   search?: string
+  /** The single field the search box targets (server where has no OR). */
+  searchField?: string
+  /** Structured where JSON (from the advanced filter panel), merged with filters/search. */
+  where?: Record<string, any>
 }
 
 export interface ColumnConfig {

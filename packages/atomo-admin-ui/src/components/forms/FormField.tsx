@@ -7,6 +7,7 @@
 
 import { FieldMetadata, SchemaMetadata, ModelMetadata } from '../../lib/types'
 import { Input } from '../ui/Input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/Select'
 import { Textarea } from '../ui/Textarea'
 
 import { Switch } from '../ui/Switch'
@@ -42,8 +43,35 @@ export function FormField({
   const placeholder = fieldConfig.placeholder
   const helpText = fieldConfig.helpText
 
+  // Enum fields: an `in:a,b,c` validation rule (from select([...]) in the schema)
+  // means only those values are valid — render a Select instead of free text,
+  // so operators can't type an invalid status/stage into a constrained field.
+  const inRule = modelMetadata.validation?.[field.name]
+    ?.split('|')
+    .find((r) => r.startsWith('in:'))
+  const enumValues = inRule
+    ? inRule.slice(3).split(',').map((v) => v.trim()).filter(Boolean)
+    : undefined
+
   // Render a different input component depending on the field type
   const renderInput = () => {
+    if (enumValues && enumValues.length > 0 && (field.type === 'string' || field.type === 'custom')) {
+      return (
+        <Select value={value || ''} onValueChange={onChange} disabled={disabled}>
+          <SelectTrigger>
+            <SelectValue placeholder={placeholder || `Select ${label}`} />
+          </SelectTrigger>
+          <SelectContent>
+            {enumValues.map((v) => (
+              <SelectItem key={v} value={v}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )
+    }
+
     switch (field.type) {
       case 'string':
         if (field.name.toLowerCase().includes('email')) {

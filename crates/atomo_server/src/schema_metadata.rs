@@ -61,6 +61,23 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
             None => json!(null),
         };
 
+        // Access rules as plain strings ("admin|manager", "authenticated", ...) so
+        // the admin UI can hide affordances the caller's role can't use. The UI
+        // gate is cosmetic — the server enforces regardless; anything not
+        // expressible as a simple rule string serializes as null (UI fails open).
+        let access = model.access.as_ref().map(|ac| {
+            let rule = |r: &Option<atomo::schema::AccessRule>| match r {
+                Some(atomo::schema::AccessRule::Boolean(s)) => json!(s),
+                _ => json!(null),
+            };
+            json!({
+                "create": rule(&ac.create),
+                "read": rule(&ac.read),
+                "update": rule(&ac.update),
+                "delete": rule(&ac.delete),
+            })
+        });
+
         models.insert(
             name.clone(),
             json!({
@@ -70,6 +87,7 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
                 "relationships": relationships,
                 "validation": model.validation,
                 "ui": ui,
+                "access": access,
             }),
         );
     }

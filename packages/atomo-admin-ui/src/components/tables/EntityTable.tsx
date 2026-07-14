@@ -182,27 +182,33 @@ export function EntityTable({
     )
   }
 
+  // Column layout via an explicit CSS grid template — the previous
+  // `col-span-${computed}` classes were invisible to Tailwind's static scan,
+  // got purged from the build, and left the columns unsized.
+  const gridTemplate = {
+    gridTemplateColumns: `${onSelectionChange ? '48px ' : ''}repeat(${Math.max(columns.length, 1)}, minmax(0, 1fr)) 96px`,
+  }
+
   // Table header
   const renderHeader = () => (
-    <div className="grid grid-cols-12 bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+    <div className="grid bg-gray-50 border-b border-gray-200 sticky top-0 z-10" style={gridTemplate}>
       {/* Selection column */}
       {onSelectionChange && (
-        <div className="col-span-1 px-4 py-3 flex items-center">
+        <div className="px-4 py-3 flex items-center">
           <Checkbox
             checked={selectedRows.length === data.length && data.length > 0}
             onCheckedChange={handleSelectAll}
           />
         </div>
       )}
-      
+
       {/* Data columns */}
-      {columns.map((column, index) => (
+      {columns.map((column) => (
         <div
           key={column.key}
           className={cn(
             'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider',
-            column.sortable && 'cursor-pointer hover:bg-gray-100',
-            `col-span-${Math.floor((12 - (onSelectionChange ? 2 : 1)) / columns.length)}`
+            column.sortable && 'cursor-pointer hover:bg-gray-100'
           )}
           onClick={() => column.sortable && onSort?.(column.key)}
         >
@@ -212,9 +218,9 @@ export function EntityTable({
           </div>
         </div>
       ))}
-      
+
       {/* Actions column */}
-      <div className="col-span-1 px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+      <div className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
         Actions
       </div>
     </div>
@@ -228,36 +234,34 @@ export function EntityTable({
       <div
         key={row.id}
         className={cn(
-          'grid grid-cols-12 border-b border-gray-200 hover:bg-gray-50 transition-colors',
+          'grid border-b border-gray-200 hover:bg-gray-50 transition-colors',
           isSelected && 'bg-primary-50'
         )}
+        style={gridTemplate}
       >
         {/* Selection column */}
         {onSelectionChange && (
-          <div className="col-span-1 px-4 py-4 flex items-center">
+          <div className="px-4 py-4 flex items-center">
             <Checkbox
               checked={isSelected}
               onCheckedChange={() => handleRowSelect(row.id)}
             />
           </div>
         )}
-        
+
         {/* Data columns */}
         {columns.map((column) => (
           <div
             key={column.key}
-            className={cn(
-              'px-4 py-4 text-sm text-gray-900 cursor-pointer',
-              `col-span-${Math.floor((12 - (onSelectionChange ? 2 : 1)) / columns.length)}`
-            )}
+            className="px-4 py-4 text-sm text-gray-900 cursor-pointer truncate"
             onClick={() => onRowClick?.(row)}
           >
             {column.render ? column.render(row[column.key], row) : row[column.key]}
           </div>
         ))}
-        
+
         {/* Actions column */}
-        <div className="col-span-1 px-4 py-4 text-right">
+        <div className="px-4 py-4 text-right">
           <RowActionMenu row={row} />
         </div>
       </div>
