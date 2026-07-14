@@ -65,6 +65,104 @@ jobs:
       - name: Run DB-gated conformance + integration tests
         run: cargo test --workspace -- --ignored --test-threads=1
         
+  # Frontend unit tests + type-check for all packages. These previously ran
+  # only on dev machines — regressions in the admin SPA reached consumers
+  # unchecked (feedback #8/#9/#11).
+  frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: corepack pnpm@8.15.0 install --frozen-lockfile
+
+      - name: Type-check + unit tests (all packages)
+        run: corepack pnpm@8.15.0 --filter "./packages/*" test
+
+  # Admin e2e smoke: a real server (e2e schema) + the real SPA in a browser,
+  # asserting schema-truth invariants (labels, listView columns, datetime cells,
+  # search wiring, enum dropdowns, create gating, observability). Guards the
+  # consumer-reported escape class that unit tests can't see — and caught two
+  # live server bugs (audit auth layer, audit JSONB decode) on its first run.
+  e2e:
+    name: Admin E2E Smoke
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: atomo_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build server
+        run: cargo build -p atomo_server --bin atomo-server
+
+      - name: Start server (e2e schema)
+        run: |
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/atomo_e2e \
+          ATOMO_SCHEMA_PATH=packages/atomo-admin-ui/e2e/schema.e2e.ts \
+          JWT_SECRET=e2e-secret \
+          ADMIN_EMAIL=admin@e2e.dev ADMIN_PASSWORD=e2e-admin-pass \
+          PORT=3000 nohup ./target/debug/atomo-server > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:3000/health || { cat server.log; exit 1; }
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: corepack pnpm@8.15.0 install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        working-directory: packages/atomo-admin-ui
+        run: corepack pnpm@8.15.0 exec playwright install chromium --with-deps
+
+      - name: Run admin smoke
+        working-directory: packages/atomo-admin-ui
+        run: corepack pnpm@8.15.0 e2e
+
+      - name: Server log on failure
+        if: failure()
+        run: cat server.log || true
+
   lint:
     name: Linting
     runs-on: ubuntu-latest

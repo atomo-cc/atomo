@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The audit REST plane (`/audit/*`) actually works now.** It was doubly
+  broken and can never have functioned end-to-end: the router was missing the
+  auth middleware (so the handlers' admin check saw no user and 401'd every
+  caller, valid token or not), and the queries decoded the JSONB
+  `operation_details` column as text (500 on any row fetch). Both found by the
+  new admin e2e smoke on its first run.
+
+### Added
+- **Admin e2e smoke suite in CI** (`packages/atomo-admin-ui/e2e/admin-smoke.spec.ts`):
+  a real server on a purpose-built schema plus the real SPA in a browser,
+  asserting schema-truth invariants — model-name labels, `listView` columns with
+  time-of-day timestamps, server-wired search, enum dropdowns, create-gating on
+  server-written models, live observability numbers. Each assertion maps to a
+  shipped consumer report (#8/#9/#11). Frontend unit tests + type-check also run
+  in CI now (previously dev-machine only). Legacy CRM-demo specs that imported a
+  deleted module were removed.
+
 ## [0.6.3] - 2026-07-14
 
 ### Fixed
