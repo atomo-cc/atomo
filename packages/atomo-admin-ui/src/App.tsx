@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { DynamicRenderer, useRouteParser } from './components/DynamicRenderer'
 import { Navigation } from './components/Navigation'
 import { Login } from './components/Login'
+import { Toaster } from './components/ui/Toast'
 import { apiClient, AuthUser } from './lib/api'
 import { initializeServicePlugins } from './lib/service-plugin-loader'
 import './index.css'
@@ -35,6 +36,7 @@ function App() {
       .getCurrentUser()
       .then((u) => {
         setUser(u)
+        apiClient.currentUser = u
         setAuthState('authed')
       })
       .catch(() => {
@@ -65,6 +67,8 @@ function App() {
       <main className="lg:pl-64">
         <DynamicRenderer route={route} />
       </main>
+
+      <Toaster />
     </div>
   )
 }

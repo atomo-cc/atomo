@@ -171,7 +171,16 @@ pub fn parse_where(where_json: &Value) -> Vec<WhereClause> {
                         "lte" => WhereOperator::LessThanOrEqual,
                         "in" => WhereOperator::In,
                         "notIn" => WhereOperator::NotIn,
-                        "isNull" => WhereOperator::IsNull,
+                        // `isNull: true` → IS NULL; `isNull: false` → IS NOT NULL.
+                        // Previously the value was ignored, so "is not null" was
+                        // inexpressible through the GraphQL where JSON.
+                        "isNull" => {
+                            if val.as_bool() == Some(false) {
+                                WhereOperator::IsNotNull
+                            } else {
+                                WhereOperator::IsNull
+                            }
+                        }
                         _ => continue,
                     };
                     clauses.push(WhereClause {
@@ -714,5 +723,22 @@ mod tests {
         assert!(out.contains_key("firstName"));
         assert!(out.contains_key("id"));
         assert!(!out.contains_key("first_name"));
+    }
+
+    #[test]
+    fn parse_where_is_null_honors_bool_value() {
+        use crate::query::WhereOperator;
+        let clauses = parse_where(&serde_json::json!({
+            "closedAt": { "isNull": true },
+            "ownerId": { "isNull": false },
+        }));
+        let op_for = |f: &str| {
+            clauses
+                .iter()
+                .find(|c| c.field == f)
+                .map(|c| c.operator.clone())
+        };
+        assert!(matches!(op_for("closedAt"), Some(WhereOperator::IsNull)));
+        assert!(matches!(op_for("ownerId"), Some(WhereOperator::IsNotNull)));
     }
 }

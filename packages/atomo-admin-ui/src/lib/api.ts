@@ -34,6 +34,9 @@ function camelizeKeys(obj: any): any {
 class AtomoApiClient {
   private client: AxiosInstance
   private baseUrl: string
+  /** Signed-in user, set by App after /auth/me. Read by views for cosmetic
+   *  role gating (see lib/permissions.ts) — the server enforces regardless. */
+  currentUser: AuthUser | null = null
 
   constructor(baseUrl: string = '') {
     // Simplified URL detection - more reliable than complex logic
@@ -169,15 +172,23 @@ class AtomoApiClient {
     page: number
     limit: number
   }> {
-    const { page = 1, limit = 20, sort, order = 'desc', filters = {} } = options
+    const { page = 1, limit = 20, sort, order = 'desc', filters = {}, search, searchField, where } = options
     const offset = (page - 1) * limit
 
-    // Build where filter
-    const where_: Record<string, any> = {}
+    // Merge structured where (advanced filters) + simple filters + search into
+    // one where JSON. Previously `search` was silently dropped here — the
+    // search box refetched identical results (consumer-facing dead control).
+    const where_: Record<string, any> = { ...(where ?? {}) }
     for (const [key, value] of Object.entries(filters)) {
       if (value !== undefined && value !== '') {
-        where_[key] = typeof value === 'string' ? { contains: value } : { equals: value }
+        where_[key] = {
+          ...(where_[key] ?? {}),
+          ...(typeof value === 'string' ? { contains: value } : { equals: value }),
+        }
       }
+    }
+    if (search && searchField) {
+      where_[searchField] = { ...(where_[searchField] ?? {}), contains: search }
     }
 
     const orderBy = sort ? { [sort]: order.toUpperCase() } : undefined
@@ -286,19 +297,18 @@ class AtomoApiClient {
   }
 
   /**
-   * Bulk operations.
+   * Bulk delete via one `delete(model, where: { id: { in: [...] } })` mutation —
+   * the same API single-delete uses. (The previous implementation was leftover
+   * Hasura-style GraphQL that this server never supported; it errored for every
+   * model.)
    */
-  async bulkDelete(modelName: string, ids: string[]): Promise<number> {
-    const query = `
-      mutation BulkDelete${modelName}($where: CompanyBoolExp!) {
-        delete${modelName}(where: $where) {
-          affectedRows
-        }
+  async bulkDelete(modelName: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return
+    await this.graphql(`
+      mutation($model: String!, $where: JSON!) {
+        delete(model: $model, where: $where)
       }
-    `
-
-    const result = await this.graphql(query, { where: { id: { _in: ids } } })
-    return result[`affectedRows`]
+    `, { model: modelName, where: { id: { in: ids } } })
   }
 
   /**

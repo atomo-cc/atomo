@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 // Re-export from atomo_schema for compatibility
 pub use atomo_schema::{
-    is_builder_dsl, parse_builder_dsl, ActionCondition, ActionDef, ActionInputDef,
+    is_builder_dsl, parse_builder_dsl, AccessRule, ActionCondition, ActionDef, ActionInputDef,
     ActionInputField, ActionReturn, EventActionBinding, Field, FieldAttribute, FieldType, Model,
     ModelConstraint, ModelEvents, Schema, TypeScriptParser,
 };

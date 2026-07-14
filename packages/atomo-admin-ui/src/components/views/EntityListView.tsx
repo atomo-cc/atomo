@@ -33,8 +33,11 @@ import { EntityTable } from '../tables/EntityTable'
 import { AdvancedFilterPanel, FilterCondition } from '../filters/AdvancedFilterPanel'
 import { TableSettings, TableColumn } from '../tables/TableSettings'
 import { Badge } from '../ui/Badge'
+import { toast } from '../ui/Toast'
 import { formatDate, getFieldLabel } from '../../lib/utils'
 import { exportData } from '../../lib/export'
+import { conditionsToWhere } from '../../lib/where'
+import { canPerform } from '../../lib/permissions'
 
 interface EntityListViewProps {
   modelName: string
@@ -44,33 +47,58 @@ interface EntityListViewProps {
 
 export function EntityListView({ modelName, modelMetadata, schema }: EntityListViewProps) {
   const navigate = useNavigate()
-  
+
+  // Default sort: createdAt only if the model actually has it, else the primary key.
+  const defaultSort = modelMetadata.fields['createdAt']
+    ? 'createdAt'
+    : modelMetadata.primaryKey || 'id'
+
+  // The single field the search box targets (the server's where JSON has no OR,
+  // so multi-field search isn't expressible). Prefer the first searchable string
+  // field; without one the box is hidden rather than shipped dead.
+  const searchField = useMemo(() => {
+    const candidates = (modelMetadata.searchable ?? []).filter(
+      (name) => modelMetadata.fields[name]?.type === 'string' || modelMetadata.fields[name]?.type === 'text'
+    )
+    return candidates[0]
+  }, [modelMetadata])
+
+  // Cosmetic role gating — the server enforces access regardless.
+  const role = apiClient.currentUser?.role
+  const mayCreate = canPerform(modelMetadata, 'create', role)
+  const mayDelete = canPerform(modelMetadata, 'delete', role)
+
   // State management
   const [queryOptions, setQueryOptions] = useState<QueryOptions>({
     page: 1,
     limit: schema.config.defaultPageSize || 20,
-    sort: 'createdAt',
+    sort: defaultSort,
     order: 'desc',
     filters: {},
     search: ''
   })
-  
+
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false)
   const [activeFilters, setActiveFilters] = useState<FilterCondition[]>([])
   const [showTableSettings, setShowTableSettings] = useState(false)
   const [tableColumns, setTableColumns] = useState<TableColumn[]>([])
-  
+
+  // Advanced filters → the server's where JSON (previously collected but never
+  // applied — the filter chips were cosmetic).
+  const filterWhere = useMemo(() => conditionsToWhere(activeFilters), [activeFilters])
+  const effectiveOptions: QueryOptions = { ...queryOptions, searchField, where: filterWhere }
+
   // Data query
   const {
-    data, 
-    isLoading, 
-    error, 
+    data,
+    isLoading,
+    error,
     refetch,
-    isFetching 
+    isFetching
   } = useQuery({
-    queryKey: ['entities', modelName, queryOptions],
-    queryFn: () => apiClient.listEntities(modelName, queryOptions),
+    queryKey: ['entities', modelName, effectiveOptions],
+    queryFn: () => apiClient.listEntities(modelName, effectiveOptions),
     // Omit keepPreviousData so we don't show the previous model's data
     staleTime: 5 * 1000, // Data is considered fresh for 5 seconds
   })
@@ -133,7 +161,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
     setQueryOptions({
       page: 1,
       limit: schema.config.defaultPageSize || 20,
-      sort: 'createdAt',
+      sort: defaultSort,
       order: 'desc',
       filters: {},
       search: ''
@@ -145,7 +173,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
     setShowTableSettings(false)
     // Reset table column config so baseColumns reinitializes
     setTableColumns([])
-  }, [modelName, schema.config.defaultPageSize])
+  }, [modelName, schema.config.defaultPageSize, defaultSort])
 
   // Initialize table column config
   useEffect(() => {
@@ -191,11 +219,12 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
 
     try {
       await apiClient.bulkDelete(modelName, selectedRows)
+      toast.success(`Deleted ${selectedRows.length} items`)
       setSelectedRows([])
       refetch()
     } catch (error) {
       console.error('Bulk delete failed:', error)
-      alert('Delete failed, please try again')
+      toast.error('Delete failed, please try again')
     }
   }
 
@@ -203,10 +232,11 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   const handleRowDelete = async (row: EntityData) => {
     try {
       await apiClient.deleteEntity(modelName, row.id)
+      toast.success('Deleted')
       refetch()
     } catch (error) {
       console.error('Delete failed:', error)
-      alert('Delete failed, please try again')
+      toast.error('Delete failed, please try again')
     }
   }
 
@@ -218,7 +248,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
   // Export data
   const handleExport = async (format: 'csv' | 'excel') => {
     if (!data?.data || visibleColumns.length === 0) {
-      alert('No data to export')
+      toast.error('No data to export')
       return
     }
 
@@ -231,7 +261,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       )
     } catch (error) {
       console.error('Export failed:', error)
-      alert('Export failed, please try again')
+      toast.error('Export failed, please try again')
     }
   }
 
@@ -280,10 +310,12 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
             Table Settings
           </Button>
 
-          <Button onClick={() => navigate(`/entities/${modelName}/new`)}>
-            <Plus className="h-4 w-4 mr-2" />
-            New {getFieldLabel(modelName)}
-          </Button>
+          {mayCreate && (
+            <Button onClick={() => navigate(`/entities/${modelName}/new`)}>
+              <Plus className="h-4 w-4 mr-2" />
+              New {getFieldLabel(modelName)}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -291,18 +323,25 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
       <Card>
         <CardContent className="p-4">
           <div className="space-y-4">
-            {/* Search bar and tool buttons */}
+            {/* Search bar and tool buttons. The search box only renders when the
+                model has a searchable string field — and the placeholder names
+                exactly what is searched (the server where has no OR, so this is
+                a single-field contains match, not a global search). */}
             <div className="flex gap-4 items-center">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder={`Search ${getFieldLabel(modelName)}...`}
-                  value={queryOptions.search}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  className="pl-9 max-w-sm"
-                />
-              </div>
-              
+              {searchField ? (
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder={`Search by ${getFieldLabel(searchField)}...`}
+                    value={queryOptions.search}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    className="pl-9 max-w-sm"
+                  />
+                </div>
+              ) : (
+                <div className="flex-1" />
+              )}
+
               <Button
                 variant="secondary"
                 onClick={() => setShowAdvancedFilter(true)}
@@ -317,7 +356,7 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
                 )}
               </Button>
               
-              {selectedRows.length > 0 && (
+              {selectedRows.length > 0 && mayDelete && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-gray-600">
                     {selectedRows.length} items selected

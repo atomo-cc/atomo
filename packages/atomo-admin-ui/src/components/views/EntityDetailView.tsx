@@ -25,8 +25,10 @@ import { apiClient } from '../../lib/api'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/Tabs'
+import { toast } from '../ui/Toast'
 import { DynamicForm } from '../forms/DynamicForm'
 import { formatDate, getFieldLabel } from '../../lib/utils'
+import { canPerform } from '../../lib/permissions'
 
 interface EntityDetailViewProps {
   modelName: string
@@ -88,17 +90,24 @@ export function EntityDetailView({
     },
   })
 
+  // Cosmetic role gating — the server enforces access regardless.
+  const role = apiClient.currentUser?.role
+  const mayUpdate = canPerform(modelMetadata, 'update', role)
+  const mayDelete = canPerform(modelMetadata, 'delete', role)
+
   // Form submission
   const handleSave = async (formData: any) => {
     try {
       if (mode === 'create') {
         await createMutation.mutateAsync(formData)
+        toast.success('Created')
       } else {
         await updateMutation.mutateAsync(formData)
+        toast.success('Saved')
       }
     } catch (error) {
       console.error('Save failed:', error)
-      alert('Save failed, please try again')
+      toast.error('Save failed, please try again')
     }
   }
 
@@ -167,22 +176,26 @@ export function EntityDetailView({
           )}
           {isDetail && (
             <>
-              <Button
-                variant="secondary"
-                onClick={() => setMode('edit')}
-              >
-                <Edit2 className="h-4 w-4 mr-2" />
-                Edit
-              </Button>
+              {mayUpdate && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setMode('edit')}
+                >
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              )}
 
-              <Button
-                variant="danger"
-                onClick={handleDelete}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </Button>
+              {mayDelete && (
+                <Button
+                  variant="danger"
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              )}
             </>
           )}
           

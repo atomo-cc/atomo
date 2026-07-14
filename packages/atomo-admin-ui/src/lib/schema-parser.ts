@@ -607,6 +607,8 @@ async function loadFromMetaSchema(): Promise<SchemaMetadata> {
       fields,
       relationships: m.relationships || undefined,
       validation: m.validation || undefined,
+      // Access rule strings for cosmetic UI gating (server enforces regardless).
+      access: m.access || undefined,
       searchable: getSearchableFields(fields),
       ui: generateUIConfig(name, fields, m.ui?.listView ?? undefined),
     }
