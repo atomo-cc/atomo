@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-07-14
+
 ### Fixed
 - **Dashboard cards and Quick Actions are labeled by the model's display name**,
   not a field heuristic — cards previously titled `createdAt`/`delta`/`event`
