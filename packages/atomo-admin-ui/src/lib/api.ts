@@ -369,6 +369,57 @@ class AtomoApiClient {
     }
   }
 
+  // ── Observability (admin-gated on the server) ─────────────────────
+  /** Queue-health aggregates: counts by status, by (queue,status), oldest queued age. */
+  async getJobStats(): Promise<{
+    byStatus: Record<string, number>
+    byQueue: { queue: string; status: string; count: number }[]
+    oldestQueuedSeconds: number | null
+  }> {
+    const res = await this.client.get('/jobs/stats')
+    return res.data
+  }
+
+  /** Recent jobs, newest first (no payload bodies). */
+  async listRecentJobs(params: {
+    queue?: string
+    status?: string
+    limit?: number
+    offset?: number
+  } = {}): Promise<{
+    jobs: {
+      id: string
+      queue: string
+      kind: string
+      status: string
+      attempts: number
+      maxAttempts: number
+      error: string | null
+      createdAt: string
+      updatedAt: string
+    }[]
+  }> {
+    const q = new URLSearchParams()
+    if (params.queue) q.append('queue', params.queue)
+    if (params.status) q.append('status', params.status)
+    if (params.limit) q.append('limit', String(params.limit))
+    if (params.offset) q.append('offset', String(params.offset))
+    const res = await this.client.get(`/jobs/recent?${q}`)
+    return res.data
+  }
+
+  /** Recent audit-log entries (admin/manager-gated on the server). */
+  async getAuditLogs(limit = 25): Promise<any[]> {
+    const res = await this.client.get(`/audit/logs?limit=${limit}`)
+    return res.data
+  }
+
+  /** Audit aggregates (admin/manager-gated on the server). */
+  async getAuditStatistics(): Promise<any> {
+    const res = await this.client.get('/audit/statistics')
+    return res.data
+  }
+
   /** Absolute URL to serve a media object by id (e.g. for <img src>). */
   getMediaUrl(id: string): string {
     return `${this.baseUrl}/media/${id}`

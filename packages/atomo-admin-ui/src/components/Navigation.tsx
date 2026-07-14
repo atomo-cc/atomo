@@ -97,7 +97,19 @@ export function Navigation({ user }: { user?: AuthUser | null }) {
       href: '/trash',
       icon: Trash2,
       active: isActive('/trash')
-    }
+    },
+    // Observability endpoints are admin-gated server-side; only show the nav
+    // item to admins so other roles aren't offered a page that 403s.
+    ...(user?.role?.toLowerCase() === 'admin'
+      ? [
+          {
+            name: 'Observability',
+            href: '/observability',
+            icon: Activity,
+            active: isActive('/observability')
+          }
+        ]
+      : [])
   ]
 
   const sidebarContent = (

@@ -461,6 +461,90 @@ impl JobStore {
         }))
     }
 
+    /// Recent jobs for the admin observability panel, newest first, optionally
+    /// filtered by queue and/or status. Payload/result bodies are excluded —
+    /// this is a queue-health view, not a job inspector (GET /jobs/{id} is).
+    pub async fn list_recent(
+        &self,
+        queue: Option<&str>,
+        status: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Value>> {
+        let rows = sqlx::query(
+            "SELECT id, queue, kind, status, attempts, max_attempts, error,
+                    created_at, updated_at
+             FROM jobs
+             WHERE ($1::text IS NULL OR queue = $1)
+               AND ($2::text IS NULL OR status = $2)
+             ORDER BY created_at DESC
+             LIMIT $3 OFFSET $4",
+        )
+        .bind(queue)
+        .bind(status)
+        .bind(limit.clamp(1, 200))
+        .bind(offset.max(0))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                json!({
+                    "id": r.get::<String, _>("id"),
+                    "queue": r.get::<String, _>("queue"),
+                    "kind": r.get::<String, _>("kind"),
+                    "status": r.get::<String, _>("status"),
+                    "attempts": r.get::<i32, _>("attempts"),
+                    "maxAttempts": r.get::<i32, _>("max_attempts"),
+                    "error": r.get::<Option<String>, _>("error"),
+                    "createdAt": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at").to_rfc3339(),
+                    "updatedAt": r.get::<chrono::DateTime<chrono::Utc>, _>("updated_at").to_rfc3339(),
+                })
+            })
+            .collect())
+    }
+
+    /// Queue-health aggregates: counts by status, counts by (queue, status), and
+    /// the age of the oldest still-queued job. All from one snapshot; computed on
+    /// the DB clock (same lesson as media GC — never mix app and DB clocks).
+    pub async fn stats(&self) -> Result<Value> {
+        let by_status = sqlx::query("SELECT status, COUNT(*) AS n FROM jobs GROUP BY status")
+            .fetch_all(&self.pool)
+            .await?;
+        let by_queue = sqlx::query(
+            "SELECT queue, status, COUNT(*) AS n FROM jobs GROUP BY queue, status ORDER BY queue",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let oldest_queued_secs: Option<f64> = sqlx::query_scalar(
+            "SELECT EXTRACT(EPOCH FROM (now() - MIN(visible_at)))::float8
+             FROM jobs WHERE status = 'queued'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let mut status_counts = serde_json::Map::new();
+        for r in &by_status {
+            status_counts.insert(r.get::<String, _>("status"), json!(r.get::<i64, _>("n")));
+        }
+        let queues: Vec<Value> = by_queue
+            .iter()
+            .map(|r| {
+                json!({
+                    "queue": r.get::<String, _>("queue"),
+                    "status": r.get::<String, _>("status"),
+                    "count": r.get::<i64, _>("n"),
+                })
+            })
+            .collect();
+
+        Ok(json!({
+            "byStatus": status_counts,
+            "byQueue": queues,
+            "oldestQueuedSeconds": oldest_queued_secs,
+        }))
+    }
+
     fn emit(&self, event_type: EventType, id: &str, extra: HashMap<String, Value>) {
         let mut data = extra;
         data.insert("id".to_string(), json!(id));

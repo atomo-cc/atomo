@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Real observability panel in the admin** (`/observability`, admin-only nav +
+  server-gated): job-queue health tiles, per-status/per-queue counts, an
+  oldest-queued-age stall warning, a filterable recent-jobs table, and recent
+  audit activity — every number from a live endpoint, auto-refreshing. Backed by
+  two new admin-gated endpoints: `GET /jobs/stats` (counts by status/queue +
+  oldest queued age, computed on the DB clock) and
+  `GET /jobs/recent?queue=&status=&limit=&offset=` (newest first, no payload
+  bodies). This replaces the removed `Math.random()` mock ObservabilityCenter
+  with the real thing.
 - **Enum fields render as a Select in the admin.** `select(['a','b'])` schema
   fields now carry their allowed values as an `in:a,b` validation rule — the
   runtime validator enforces it on every write path, and the admin form renders
@@ -39,8 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unrouted mock scaffolding deleted from the admin UI** — the observability,
   AI search, collaboration, and notification panels were `Math.random()`-driven
   mockups reachable from no route (tree-shaken from the bundle, but misleading
-  to contributors). Restorable from git history when a real backend API exists.
-  The unused `cmdk` dependency went with them.
+  to contributors). Observability has since been rebuilt for real (see Added);
+  the others wait for real backend APIs. **To restore any of them:**
+  `git checkout ca0123f^ -- packages/atomo-admin-ui/src/components/<ai|collaboration|notifications>`
+  (plus `src/lib/ai-assistant.ts` / `src/lib/collaboration.ts`). The unused
+  `cmdk` dependency went with them.
 
 ## [0.6.1] - 2026-07-14
 

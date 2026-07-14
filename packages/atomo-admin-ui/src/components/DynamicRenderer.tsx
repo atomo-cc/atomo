@@ -15,6 +15,7 @@ import { Dashboard } from './views/Dashboard'
 import { WorkflowsView } from './views/WorkflowsView'
 import { WorkflowDesigner } from './views/WorkflowDesigner'
 import { TrashView } from './views/TrashView'
+import { ObservabilityView } from './views/ObservabilityView'
 import { Settings } from './views/Settings'
 import { Help } from './views/Help'
 import { Card, CardContent } from './ui/Card'
@@ -26,7 +27,7 @@ export interface DynamicRendererProps {
    * Current route info
    */
   route: {
-    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'plugin' | 'workflows' | 'trash' | 'workflow-design' | 'settings' | 'help' | 'not-found'
+    type: 'dashboard' | 'list' | 'detail' | 'create' | 'edit' | 'plugin' | 'workflows' | 'trash' | 'workflow-design' | 'settings' | 'help' | 'observability' | 'not-found'
     modelName?: string
     entityId?: string
     pluginHandler?: any
@@ -107,6 +108,9 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
 
     case 'trash':
       return <TrashView schema={schema} />
+
+    case 'observability':
+      return <ObservabilityView />
 
     case 'settings':
       return <Settings schema={schema} />
@@ -236,6 +240,11 @@ export function useRouteParser(): DynamicRendererProps['route'] {
     // Trash / soft-delete management page
     if (path === '/trash') {
       return { type: 'trash' as const }
+    }
+
+    // Observability: job-queue health + recent activity (admin-gated server-side)
+    if (path === '/observability') {
+      return { type: 'observability' as const }
     }
 
     // Settings + Help pages
