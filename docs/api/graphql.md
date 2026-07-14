@@ -4,6 +4,14 @@ Atomo services expose a generated GraphQL API. When running `atomo dev`, visit `
 
 The service API is model-generic: operations take a `model` argument and JSON `where`/`orderBy`/`data` payloads.
 
+## Where operators
+
+Per field, the `where` JSON accepts: `equals`/`eq`, `not`/`neq`, `contains`/`like`,
+`startsWith`, `endsWith`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, and `isNull`.
+`isNull: true` matches `IS NULL`; `isNull: false` matches `IS NOT NULL`. Multiple
+fields — and multiple operators on one field (`{ value: { gte: 1, lte: 9 } }`) —
+combine with **AND**; there is no OR combinator.
+
 ## Example Operations
 
 ```graphql

@@ -10,6 +10,10 @@ GET /meta/schema
 - Includes table names, fields, relationships, validation rules, and UI config
 - Each model's `ui` carries the schema's `ui.listView` (or `null` if not declared);
   the admin UI renders exactly those columns, in order — timestamps included
+- Each model's `access` carries the schema's access-rule strings per operation
+  (e.g. `"admin|manager"`, `"authenticated"`, `"system"`); the admin UI uses them
+  to hide mutation controls the signed-in role can't use. Cosmetic only — the
+  server enforces regardless; rules not expressible as strings serialize as `null`
 - Semi‑protected route: accepts optional auth; sensitive fields are omitted by design
 
 Raw schema in dev

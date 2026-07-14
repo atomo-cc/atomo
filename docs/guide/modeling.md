@@ -34,9 +34,14 @@ export const schema = {
 }
 ```
 
-- access: role strings for create/read/update/delete.
+- access: role strings for create/read/update/delete. Also served to the admin UI
+  via `/meta/schema`, which hides mutation buttons the signed-in role can't use
+  (cosmetic — the server enforces regardless).
 - relationships: belongsTo/hasMany with foreign keys.
-- validation: simple rules (email, required, min/max).
+- validation: simple rules (email, required, min/max, `in:a,b,c`). Builder-DSL
+  `select(['a','b'])` fields emit an `in:` rule automatically — the runtime
+  validator rejects out-of-set values on every write path, and the admin form
+  renders a dropdown of the allowed values instead of free text.
 - ui: config for generated admin screens. `listView` declares exactly which columns
   the admin list grid shows, in order — including `createdAt`/`updatedAt` if you list
   them (useful on append-only models like event logs). Served to the admin UI via

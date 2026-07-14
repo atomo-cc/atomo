@@ -142,6 +142,35 @@ Admin only. Returns metadata only — never the token or its hash.
 Admin only. `204` on success; `404` if the id is unknown or already revoked. A revoked token's
 worker-plane requests immediately become `401`.
 
+### `GET /jobs/stats` — queue-health aggregates
+
+Admin only. Backs the admin UI's Observability panel. Counts by status, counts by
+`(queue, status)`, and the age of the oldest still-queued job — all computed on the
+database clock in one snapshot.
+
+```json
+// 200
+{
+  "byStatus": { "queued": 3, "succeeded": 120, "failed": 1 },
+  "byQueue": [ { "queue": "actions", "status": "queued", "count": 3 } ],
+  "oldestQueuedSeconds": 42.5
+}
+```
+
+A growing `oldestQueuedSeconds` means no worker is draining the queue.
+
+### `GET /jobs/recent` — recent jobs
+
+Admin only. Newest first; filterable with `?queue=`, `?status=`, `?limit=` (max 200),
+`?offset=`. Payload/result bodies are **excluded** — this is a queue-health view; use
+`GET /jobs/{id}` to inspect one job.
+
+```json
+// 200
+{ "jobs": [ { "id", "queue", "kind", "status", "attempts", "maxAttempts",
+              "error": null, "createdAt": "…", "updatedAt": "…" } ] }
+```
+
 ## Configuration
 
 | Env | Default | Meaning |
