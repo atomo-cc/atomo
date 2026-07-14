@@ -21,7 +21,24 @@
 
 ## Testing Guidelines
 - Rust unit tests co-located; integration tests in `tests/`. Prefer meaningful property/edge cases.
+- Postgres-gated integration tests are `#[ignore]`d; run them with
+  `DATABASE_URL=… cargo test --workspace -- --ignored --test-threads=1` (serial — they
+  share one database; cleanups must drop every table a schema creates, incl. `users`
+  when a test schema redefines it).
 - TypeScript tests as `*.test.ts(x)` within package `src/`. Service-level flows via `pnpm atomo test -- --service <name>`.
+- **Admin e2e smoke** (`packages/atomo-admin-ui/e2e/admin-smoke.spec.ts`): the real SPA
+  in chromium against a real server on `e2e/schema.e2e.ts`. It guards the
+  consumer-reported escape class — admin rendering that contradicts schema truth
+  (labels, listView columns, datetime cells, search wiring, enum dropdowns, create
+  gating). When adding an admin-visible behavior, extend this ONE spec — no e2e sprawl.
+  Run locally: start Postgres + `atomo-server` with the e2e schema env, then `pnpm e2e`
+  from `packages/atomo-admin-ui` (see the ci.yml `e2e` job for the exact env).
+- CI (`ci.yml`, manual dispatch: `gh workflow run ci.yml --ref main`) runs five jobs:
+  Rust Test Suite (incl. the pg-gated pass), Frontend Tests (type-check + vitest for
+  all packages), Admin E2E Smoke, Linting (fmt + clippy latest-stable — keep the local
+  toolchain current), Build. **Dispatch it after substantive merges**; it does not
+  auto-trigger, and it stops at the first failing test binary, so a red run may hide
+  more rot behind it.
 - No hard coverage gate yet; add tests for new behavior and regressions.
 
 ## Commit & Pull Request Guidelines
@@ -81,8 +98,12 @@ skip steps silently — if one doesn't apply, say so.
 
 ### Pre-release (before the version commit)
 
-1. **Verify build** — `cargo check --workspace` and `cargo clippy -- -D warnings`
-   must be clean. Run any relevant tests (`cargo test -p atomo_server`).
+1. **Verify with CI, not just cargo** — dispatch `ci.yml` on the release code and
+   confirm **all five jobs** green (Rust tests incl. pg-gated, Frontend Tests,
+   Admin E2E Smoke, Linting, Build). The e2e smoke is the pre-publish gate for
+   the admin surface — three consumer-reported escapes (#8/#9/#11) shipped in
+   releases that were cargo-green. Locally, `cargo check --workspace` +
+   `cargo clippy -- -D warnings` before pushing.
 2. **CHANGELOG cutover** — rename `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` and add a
    fresh empty `## [Unreleased]` section above it.
 3. **Bump Rust crate versions** — update `version` in all 9 `crates/*/Cargo.toml`.
