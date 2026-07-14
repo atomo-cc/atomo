@@ -69,8 +69,11 @@ From a single `schema.ts`, Atomo generates:
 
 - **GraphQL API** with CRUD, filtering, pagination, and sorting
 - **Event sourcing** — every mutation is logged for replay and audit
-- **Admin UI** — browse, create, edit, and delete records
-- **RBAC** — access rules enforced per model from the schema
+- **Admin UI** — browse, search, create, edit, and delete records; `select()`
+  fields render as dropdowns of their allowed values
+- **RBAC** — access rules enforced per model from the schema (the admin also
+  hides buttons your role can't use)
+- **Observability** — job-queue health and audit activity at `/admin` → Observability (admin role)
 - **Real-time** — GraphQL subscriptions over WebSocket
 
 ## Next steps
