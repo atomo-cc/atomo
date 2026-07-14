@@ -60,6 +60,7 @@ export default defineConfig({
             { text: 'Event Sourcing', link: '/guide/event-sourcing' },
             { text: 'Schema-Driven Development', link: '/guide/schema-driven' },
             { text: 'Modeling & Access', link: '/guide/modeling' },
+            { text: 'Building a Production Service', link: '/guide/production-consumers' },
             { text: 'Subscriptions', link: '/guide/subscriptions' },
             { text: 'Soft Delete & Trash', link: '/guide/soft-delete' },
             { text: 'Caching', link: '/guide/caching' },

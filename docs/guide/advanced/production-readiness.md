@@ -2,6 +2,9 @@
 
 Use this checklist to take an Atomo service from local dev to production. It highlights actions and code tasks needed to harden the current implementation.
 
+For how to *structure* a consumer service (project layout, schema discipline, worker
+patterns, upgrade habits), see [Building a Production Service](/guide/production-consumers).
+
 Quick start
 - Require envs: `DATABASE_URL`, `JWT_SECRET`
 - Build release binaries and static Admin UI
