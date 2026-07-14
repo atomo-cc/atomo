@@ -10,6 +10,8 @@ import { SchemaMetadata } from '../../lib/types'
 import { apiClient } from '../../lib/api'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
+import { getFieldLabel } from '../../lib/utils'
+import { canPerform } from '../../lib/permissions'
 import { useNavigate } from 'react-router-dom'
 import { 
   Users,
@@ -29,6 +31,12 @@ export function Dashboard({ schema }: DashboardProps) {
 
   // Extract the list of models from the schema
   const models = Object.keys(schema.models)
+
+  // Quick-create only for models the signed-in role may actually create — the
+  // same rule as the entity toolbar (server-written models like ledgers declare
+  // create: "system" and must not be offered here).
+  const role = apiClient.currentUser?.role
+  const creatableModels = models.filter((m) => canPerform(schema.models[m], 'create', role))
 
   // Real per-model record counts (one cheap count query per model). A failed count
   // shows "—" rather than breaking the card.
@@ -75,13 +83,15 @@ export function Dashboard({ schema }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {models.map((modelName) => {
           const IconComponent = getModelIcon(modelName)
-          const modelMeta = schema.models[modelName]
-          
+
           return (
             <Card key={modelName} className="hover:shadow-md transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                {/* Model display name — the same label the sidebar renders.
+                    ui.displayField is a FIELD (which record column to show as a
+                    record's title), never a card title. */}
                 <CardTitle className="text-sm font-medium">
-                  {modelMeta.ui.displayField || modelName}
+                  {getFieldLabel(modelName)}
                 </CardTitle>
                 <IconComponent className="h-4 w-4 text-gray-600" />
               </CardHeader>
@@ -90,7 +100,7 @@ export function Dashboard({ schema }: DashboardProps) {
                   {counts?.[modelName] ?? (counts === undefined ? '…' : '—')}
                 </div>
                 <p className="text-xs text-gray-600">
-                  Total {modelName.toLowerCase()} count
+                  Total {getFieldLabel(modelName)} records
                 </p>
                 <div className="mt-4">
                   <Button
@@ -108,41 +118,51 @@ export function Dashboard({ schema }: DashboardProps) {
         })}
       </div>
 
-      {/* Quick actions section */}
+      {/* Quick actions — only models the current role may create. When every
+          model is server-written (create: "system"), the section says so
+          instead of offering buttons that can only end in a permission error. */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {models.map((modelName) => {
-            const modelMeta = schema.models[modelName]
-            const IconComponent = getModelIcon(modelName)
-            
-            return (
-              <Card key={`action-${modelName}`} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-primary-100 rounded-lg">
-                      <IconComponent className="h-5 w-5 text-primary-600" />
+        {creatableModels.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-center text-sm text-gray-500">
+              No quick actions — every model in this schema is created by the server, not
+              from the admin.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {creatableModels.map((modelName) => {
+              const IconComponent = getModelIcon(modelName)
+
+              return (
+                <Card key={`action-${modelName}`} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-primary-100 rounded-lg">
+                        <IconComponent className="h-5 w-5 text-primary-600" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900">
+                          New {getFieldLabel(modelName)}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Quickly create a new {getFieldLabel(modelName)}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => navigate(`/entities/${modelName}/new`)}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
-                        New {modelMeta.ui.displayField || modelName}
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Quickly create a new {modelName.toLowerCase()}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => navigate(`/entities/${modelName}/new`)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* System info */}

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Dashboard cards and Quick Actions are labeled by the model's display name**,
+  not a field heuristic — cards previously titled `createdAt`/`delta`/`event`
+  (with actions like "New createdAt"). `ui.displayField` names a record *column*,
+  never a card. Quick Actions are also **filtered by the role's create
+  permission** (same rule as the entity toolbar) — server-written models
+  (`create: "system"`) no longer offer a quick-create that can only 403; when
+  nothing is creatable the section says so instead.
+
 ## [0.6.2] - 2026-07-14
 
 ### Added
