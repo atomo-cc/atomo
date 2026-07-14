@@ -15,6 +15,8 @@ const API = process.env.E2E_API_URL || 'http://localhost:3000'
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@e2e.dev'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'e2e-admin-pass'
 
+let articleId: string
+
 // Seed one Article through the real API so list assertions have a row.
 test.beforeAll(async () => {
   const api = await request.newContext({ baseURL: API })
@@ -24,15 +26,18 @@ test.beforeAll(async () => {
   expect(login.ok(), `login failed: ${login.status()}`).toBeTruthy()
   const { token } = await login.json()
 
+  // coverImage is a File field seeded with a BARE media-id string — the shape a
+  // worker/migration writes, and the shape that crashed the record view (#12A).
   const create = await api.post('/graphql', {
     headers: { authorization: `Bearer ${token}` },
     data: {
-      query: `mutation { create(model: "Article", data: { title: "Smoke Article", status: "published" }) }`,
+      query: `mutation { create(model: "Article", data: { title: "Smoke Article", status: "published", coverImage: "e2e-fake-media-id" }) }`,
     },
   })
   expect(create.ok()).toBeTruthy()
   const body = await create.json()
   expect(body.errors, JSON.stringify(body.errors)).toBeFalsy()
+  articleId = body.data.create.id
   await api.dispose()
 })
 
@@ -104,6 +109,22 @@ test('server-written model: list page offers no create affordance', async ({ pag
 
   await expect(page.getByRole('heading', { name: /Audit Event List/ })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: /New Audit Event/ })).toHaveCount(0)
+})
+
+test('File field with a scalar media-id value renders, never crashes (#12)', async ({ page }) => {
+  await signIn(page)
+
+  // Record view: the scalar coverImage must not take down the page — it renders
+  // as a single-item file preview showing the media id. (Field values live in
+  // form inputs, so assert on the heading + the preview text, not input values.)
+  await page.goto(`/entities/Article/${articleId}`)
+  await expect(page.getByRole('heading', { name: 'Article', exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('e2e-fake-media-id').first()).toBeVisible()
+  await expect(page.getByText(/Something went wrong|is not a function/)).toHaveCount(0)
+
+  // List view: the file column falls back to the id text when the image 404s.
+  await page.goto('/entities/Article')
+  await expect(page.getByText('e2e-fake-media-id').first()).toBeVisible({ timeout: 15_000 })
 })
 
 test('observability: real queue numbers render for an admin', async ({ page }) => {

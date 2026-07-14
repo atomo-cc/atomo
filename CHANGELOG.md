@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`File` fields with scalar values no longer crash the record view.** A `File`
+  value is documented as "stored as TEXT — the media id/url", but anything other
+  than the admin's own uploader (a worker via CRUD, a migration) writes a bare
+  string — and the uploader called `.map` on it, taking down the whole record
+  view with an error boundary. Every stored shape (scalar id, scalar URL, id
+  arrays, uploader objects) now coerces to a preview; bare media ids resolve to
+  `/media/{id}`. `File` columns in the list grid also render a small thumbnail
+  (safe text fallback on load error) instead of the raw id string.
+- **The filter panel treats enum fields as enums.** `in:`-constrained fields
+  (from `select()` or metadata rules) previously got substring operators and a
+  free-text value box; they now offer `equals`/`not_equals`/`in`/`not_in`/null
+  checks with a dropdown of the declared values — the same source the record
+  form's dropdown uses (shared `lib/enums.ts`).
 - **The audit REST plane (`/audit/*`) actually works now.** It was doubly
   broken and can never have functioned end-to-end: the router was missing the
   auth middleware (so the handlers' admin check saw no user and 401'd every

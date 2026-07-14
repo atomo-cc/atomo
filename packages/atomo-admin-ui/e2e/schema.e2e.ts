@@ -10,6 +10,9 @@ export interface Article {
   id: string
   title: string
   status: string
+  /** File field seeded with a BARE media-id string (worker-style write) — the
+   *  record view must render it, not crash (feedback #12A). */
+  coverImage?: File
   createdAt: Date
 }
 
@@ -25,7 +28,7 @@ export const schema = {
       tableName: 'e2e_articles',
       access: { create: 'admin', read: 'authenticated', update: 'admin', delete: 'admin' },
       validation: { title: 'required|min:1|max:200', status: 'required|in:draft,published' },
-      ui: { listView: ['title', 'status', 'createdAt'] },
+      ui: { listView: ['title', 'status', 'coverImage', 'createdAt'] },
     },
     AuditEvent: {
       tableName: 'e2e_audit_events',

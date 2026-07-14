@@ -120,6 +120,34 @@ export function EntityListView({ modelName, modelMetadata, schema }: EntityListV
         render: (value: any, _row: EntityData) => {
           // Render different content depending on the field type
           switch (field?.type) {
+            case 'file': {
+              // Thumbnail for image-bearing models (consumer feedback #12B).
+              // Value may be a bare media id/url (worker-written scalar) or the
+              // uploader's UploadedFile[]; resolve the first to /media/{id} and
+              // fall back to the raw text if the image can't load.
+              const first = Array.isArray(value) ? value[0] : value
+              const src =
+                typeof first === 'string'
+                  ? /^(https?:)?\//.test(first)
+                    ? first
+                    : apiClient.getMediaUrl(first)
+                  : first?.url || (first?.id ? apiClient.getMediaUrl(first.id) : undefined)
+              if (!src) return '-'
+              return (
+                <img
+                  src={src}
+                  alt=""
+                  className="h-8 w-8 rounded object-cover"
+                  onError={(e) => {
+                    // Safe fallback (textContent, never HTML injection): show the id.
+                    const span = document.createElement('span')
+                    span.className = 'text-xs text-gray-500'
+                    span.textContent = typeof first === 'string' ? first : first?.id ?? ''
+                    e.currentTarget.replaceWith(span)
+                  }}
+                />
+              )
+            }
             case 'date':
               return value ? formatDate(value) : '-'
             case 'datetime':
