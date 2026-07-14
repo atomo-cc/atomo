@@ -585,3 +585,79 @@ async fn jobs_http_progress_publishes_to_realtime() {
         .unwrap();
     assert_eq!(r.status(), StatusCode::CONFLICT);
 }
+
+#[tokio::test]
+#[ignore]
+async fn jobs_http_observability_stats_and_recent() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let admin = seed_admin_token(&pool, &auth).await;
+    let viewer = seed_token(&pool, &auth, "viewer").await;
+
+    let (tx, _rx) = tokio::sync::broadcast::channel(64);
+    let jobs = Arc::new(JobStore::new(pool.clone(), tx));
+    jobs.init().await.unwrap();
+    let workers = Arc::new(WorkerTokenStore::new(pool.clone()));
+    workers.init().await.unwrap();
+    let app = jobs_router(jobs.clone(), workers.clone(), auth, None);
+
+    // Unique queue per run so counts are deterministic on a shared database.
+    let queue = format!("obs-{}", uuid::Uuid::new_v4());
+    for i in 0..3 {
+        jobs.enqueue(&queue, "obsJob", json!({"i": i}), None, 5, 0, None)
+            .await
+            .unwrap();
+    }
+
+    // Admin-only: anon and non-admin are refused.
+    let get = |uri: &str, token: Option<&str>| {
+        let mut b = Request::builder().method("GET").uri(uri);
+        if let Some(t) = token {
+            b = b.header("authorization", format!("Bearer {t}"));
+        }
+        b.body(Body::empty()).unwrap()
+    };
+    let r = app.clone().oneshot(get("/jobs/stats", None)).await.unwrap();
+    assert_eq!(r.status(), StatusCode::UNAUTHORIZED, "stats needs auth");
+    let r = app
+        .clone()
+        .oneshot(get("/jobs/stats", Some(&viewer)))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN, "stats is admin-only");
+
+    // Stats: our three queued jobs show under byQueue for this queue.
+    let r = app
+        .clone()
+        .oneshot(get("/jobs/stats", Some(&admin)))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let stats = json_body(r).await;
+    let queued_here = stats["byQueue"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|q| q["queue"] == queue.as_str() && q["status"] == "queued")
+        .expect("our queue appears in byQueue");
+    assert_eq!(queued_here["count"], 3);
+    assert!(stats["byStatus"]["queued"].as_i64().unwrap() >= 3);
+    assert!(stats["oldestQueuedSeconds"].as_f64().is_some());
+
+    // Recent: filterable by queue + status, newest first, no payload bodies.
+    let r = app
+        .clone()
+        .oneshot(get(
+            &format!("/jobs/recent?queue={queue}&status=queued&limit=2"),
+            Some(&admin),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let body = json_body(r).await;
+    let items = body["jobs"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "limit honored");
+    assert!(items.iter().all(|j| j["queue"] == queue.as_str()));
+    assert!(items[0].get("payload").is_none(), "no payload bodies");
+    assert!(items[0]["createdAt"].as_str().unwrap().contains('T'));
+}

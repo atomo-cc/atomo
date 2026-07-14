@@ -32,12 +32,14 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
   **file storage**, and a generated **admin UI** — all self-hostable via Docker.
 - **Solid today (cont.):** opt-in **multi-tenant Row-Level Security** (`ATOMO_ENABLE_RLS`) —
   DB-enforced tenant isolation as defense-in-depth on top of the app-layer `tenant_id` scoping.
-- **Early / in progress:** AI + pgvector workflows (needs a pgvector env), some admin
-  panels (observability, collaboration — scaffolded, not yet wired), the **multi-project
-  control plane** (`atomo_control_plane` — foundations + `atomo project` CLI; not yet a runnable
-  service), and the local-first SDK. See the [roadmap](docs/roadmap.md).
+- **Early / in progress:** AI + pgvector workflows (needs a pgvector env), the
+  **multi-project control plane** (`atomo_control_plane` — foundations + `atomo project` CLI;
+  not yet a runnable service), and the local-first SDK. See the [roadmap](docs/roadmap.md).
+  The admin's **observability panel is real** (job-queue health + audit activity from live
+  endpoints); the former AI-search/collaboration/notification mockups were removed —
+  restore from commit `ca0123f^` if a real backend for them lands.
 
-Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.5.10`) rather than `:latest` for
+Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.6.1`) rather than `:latest` for
 reproducibility.
 
 ## 🚀 Quick Start

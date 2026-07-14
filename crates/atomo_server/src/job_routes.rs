@@ -399,6 +399,59 @@ async fn get_job(
     }
 }
 
+/// GET /jobs/stats — queue-health aggregates for the admin observability panel.
+async fn job_stats(
+    State(jobs): State<Arc<JobStore>>,
+    user: Option<Extension<AuthUser>>,
+) -> Response {
+    if let Some(resp) = require_admin(user) {
+        return resp;
+    }
+    match jobs.stats().await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /jobs/recent?queue=&status=&limit=&offset= — newest jobs first, no payload bodies.
+async fn recent_jobs(
+    State(jobs): State<Arc<JobStore>>,
+    user: Option<Extension<AuthUser>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    if let Some(resp) = require_admin(user) {
+        return resp;
+    }
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(25);
+    let offset = params
+        .get("offset")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    match jobs
+        .list_recent(
+            params.get("queue").map(String::as_str),
+            params.get("status").map(String::as_str),
+            limit,
+            offset,
+        )
+        .await
+    {
+        Ok(items) => Json(json!({ "jobs": items })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 #[derive(Deserialize)]
 struct MintReq {
     name: String,
@@ -545,6 +598,7 @@ pub fn jobs_router(
         .with_state((jobs.clone(), progress_publisher));
 
     // App-side enqueue + status poll: any authenticated user.
+    let jobs_for_observability = jobs.clone();
     let app_routes = Router::new()
         .route("/jobs", post(enqueue))
         .route("/jobs/{id}", get(get_job))
@@ -559,13 +613,26 @@ pub fn jobs_router(
         .route("/jobs/workers", post(mint_worker).get(list_workers))
         .route("/jobs/workers/{id}", delete(revoke_worker))
         .route_layer(middleware::from_fn_with_state(
-            auth,
+            auth.clone(),
             optional_auth_middleware,
         ))
         .with_state(workers);
+
+    // Queue observability (admin only, checked in the handlers): stats + recent
+    // jobs for the admin panel. Static segments, so they coexist with the
+    // `/jobs/{id}` param route (axum resolves static first).
+    let observability_routes = Router::new()
+        .route("/jobs/stats", get(job_stats))
+        .route("/jobs/recent", get(recent_jobs))
+        .route_layer(middleware::from_fn_with_state(
+            auth,
+            optional_auth_middleware,
+        ))
+        .with_state(jobs_for_observability);
 
     worker_routes
         .merge(progress_route)
         .merge(app_routes)
         .merge(admin_routes)
+        .merge(observability_routes)
 }
