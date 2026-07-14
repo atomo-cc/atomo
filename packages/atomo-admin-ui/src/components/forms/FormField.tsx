@@ -6,6 +6,8 @@
 
 
 import { FieldMetadata, SchemaMetadata, ModelMetadata } from '../../lib/types'
+import { apiClient } from '../../lib/api'
+import { getEnumValues } from '../../lib/enums'
 import { Input } from '../ui/Input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/Select'
 import { Textarea } from '../ui/Textarea'
@@ -46,12 +48,28 @@ export function FormField({
   // Enum fields: an `in:a,b,c` validation rule (from select([...]) in the schema)
   // means only those values are valid — render a Select instead of free text,
   // so operators can't type an invalid status/stage into a constrained field.
-  const inRule = modelMetadata.validation?.[field.name]
-    ?.split('|')
-    .find((r) => r.startsWith('in:'))
-  const enumValues = inRule
-    ? inRule.slice(3).split(',').map((v) => v.trim()).filter(Boolean)
-    : undefined
+  const enumValues = getEnumValues(modelMetadata, field.name)
+
+  // A `File` value is "stored as TEXT — the media id/url" (docs), so anything
+  // OTHER than the uploader itself (a worker via CRUD, a migration, POST /media)
+  // writes a bare scalar string. MediaUploader assumes its own UploadedFile[]
+  // shape and calls .map — a scalar crashed the whole record view (consumer
+  // feedback #12A). Coerce every stored shape to UploadedFile[] before it
+  // reaches the uploader; bare media ids resolve to /media/{id} for preview.
+  const toUploadedFiles = (v: any): any[] => {
+    const fromScalar = (s: string) => ({
+      id: s,
+      name: s,
+      size: 0,
+      type: '',
+      url: /^(https?:)?\//.test(s) ? s : apiClient.getMediaUrl(s),
+      status: 'success' as const,
+    })
+    if (!v) return []
+    if (Array.isArray(v)) return v.map((item) => (typeof item === 'string' ? fromScalar(item) : item))
+    if (typeof v === 'string') return [fromScalar(v)]
+    return [v]
+  }
 
   // Render a different input component depending on the field type
   const renderInput = () => {
@@ -298,7 +316,7 @@ export function FormField({
         // Auto-rendered for File-typed schema fields.
         return (
           <MediaUploader
-            value={value || []}
+            value={toUploadedFiles(value)}
             onChange={onChange}
             disabled={disabled}
             accept="image/*,video/*,audio/*,.pdf,.zip"
@@ -313,7 +331,7 @@ export function FormField({
         if (fieldConfig.component === 'media-uploader') {
           return (
             <MediaUploader
-              value={value || []}
+              value={toUploadedFiles(value)}
               onChange={onChange}
               disabled={disabled}
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx"

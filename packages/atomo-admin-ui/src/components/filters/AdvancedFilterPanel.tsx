@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 
 import { ModelMetadata, FieldMetadata } from '../../lib/types'
+import { getEnumValues } from '../../lib/enums'
 import { Button } from '../ui/Button'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/Select'
@@ -84,7 +85,12 @@ const OPERATORS: Record<FilterOperator, string> = {
 // Only operators the server's where JSON can express (see lib/where.ts).
 // `not_contains` / `is_empty` / `is_not_empty` were offered before but had no
 // server mapping — a filter that renders a chip and does nothing.
-const getFieldOperators = (field: FieldMetadata): FilterOperator[] => {
+const getFieldOperators = (field: FieldMetadata, isEnum: boolean): FilterOperator[] => {
+  // Fixed-domain (in:-constrained) fields: substring operators are meaningless —
+  // offer set membership, mirroring what the record form renders (feedback #13A).
+  if (isEnum) {
+    return ['equals', 'not_equals', 'in', 'not_in', 'is_null', 'is_not_null']
+  }
   switch (field.type) {
     case 'string':
     case 'text':
@@ -202,6 +208,7 @@ export function AdvancedFilterPanel({
   const renderConditionValue = (condition: FilterCondition) => {
     const field = modelMetadata.fields[condition.field]
     if (!field) return null
+    const enumValues = getEnumValues(modelMetadata, condition.field)
 
     // Operators that don't require a value
     if (['is_null', 'is_not_null', 'is_empty', 'is_not_empty'].includes(condition.operator)) {
@@ -209,6 +216,28 @@ export function AdvancedFilterPanel({
         <div className="flex items-center text-sm text-gray-500">
           No value needed
         </div>
+      )
+    }
+
+    // Enum fields (in:-constrained): pick from the declared values instead of
+    // typing free text — the same source the record form's dropdown uses.
+    if (enumValues && ['equals', 'not_equals'].includes(condition.operator)) {
+      return (
+        <Select
+          value={condition.value || ''}
+          onValueChange={(value) => updateCondition(condition.id, { value })}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Select value" />
+          </SelectTrigger>
+          <SelectContent>
+            {enumValues.map((v) => (
+              <SelectItem key={v} value={v}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )
     }
 
@@ -247,7 +276,9 @@ export function AdvancedFilterPanel({
           onChange={(e) => updateCondition(condition.id, {
             value: e.target.value.split(',').map(v => v.trim()).filter(Boolean)
           })}
-          placeholder="Separate multiple values with commas"
+          placeholder={
+            enumValues ? `Comma-separated: ${enumValues.join(', ')}` : 'Separate multiple values with commas'
+          }
           className="w-48"
         />
       )
@@ -394,7 +425,7 @@ export function AdvancedFilterPanel({
                             <SelectValue placeholder="Operator" />
                           </SelectTrigger>
                           <SelectContent>
-                            {field && getFieldOperators(field).map((op) => (
+                            {field && getFieldOperators(field, !!getEnumValues(modelMetadata, field.name)).map((op) => (
                               <SelectItem key={op} value={op}>
                                 {OPERATORS[op]}
                               </SelectItem>
