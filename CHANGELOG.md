@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-14
+
 ### Fixed
 - **`File` fields with scalar values no longer crash the record view.** A `File`
   value is documented as "stored as TEXT — the media id/url", but anything other
