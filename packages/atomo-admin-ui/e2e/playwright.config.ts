@@ -12,6 +12,8 @@ export default defineConfig({
     ? undefined
     : {
         command: 'pnpm dev',
+        // Relative to this config file — the admin package root, where `pnpm dev` exists.
+        cwd: '..',
         url: 'http://localhost:5173',
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

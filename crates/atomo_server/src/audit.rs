@@ -62,7 +62,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
         entity_id: &EntityId,
     ) -> Result<Vec<AuditLogEntry>, Self::Error> {
         let rows = sqlx::query_as::<_, (String, String, String, i16, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>(
-            "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at
+            "SELECT id, entity_type, entity_id, operation, operation_details::text AS operation_details, user_id, ip_address, user_agent, created_at
              FROM audit_log 
              WHERE entity_type = $1 AND entity_id = $2
              ORDER BY created_at DESC"
@@ -103,7 +103,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
         user_id: &EntityId,
     ) -> Result<Vec<AuditLogEntry>, Self::Error> {
         let rows = sqlx::query_as::<_, (String, String, String, i16, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>(
-            "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at
+            "SELECT id, entity_type, entity_id, operation, operation_details::text AS operation_details, user_id, ip_address, user_agent, created_at
              FROM audit_log 
              WHERE user_id = $1
              ORDER BY created_at DESC"
@@ -142,7 +142,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
         &self,
         filters: &AuditSearchFilters,
     ) -> Result<Vec<AuditLogEntry>, Self::Error> {
-        let mut query = "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at FROM audit_log WHERE 1=1".to_string();
+        let mut query = "SELECT id, entity_type, entity_id, operation, operation_details::text AS operation_details, user_id, ip_address, user_agent, created_at FROM audit_log WHERE 1=1".to_string();
         let mut bind_values: Vec<Box<dyn sqlx::Encode<sqlx::Postgres> + Send + Sync>> = Vec::new();
         let mut param_count = 1;
 
@@ -209,7 +209,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
         ) {
             (None, None, None, None, None, None) => {
                 sqlx::query_as::<_, (String, String, String, i16, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>(
-                    "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at
+                    "SELECT id, entity_type, entity_id, operation, operation_details::text AS operation_details, user_id, ip_address, user_agent, created_at
                      FROM audit_log ORDER BY created_at DESC LIMIT 100"
                 )
                 .fetch_all(&self.db_pool)
@@ -218,7 +218,7 @@ impl AuditService<AuditLogEntry> for HttpAuditService {
             _ => {
                 // For now, just return all entries (simplified implementation)
                 sqlx::query_as::<_, (String, String, String, i16, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>)>(
-                    "SELECT id, entity_type, entity_id, operation, operation_details, user_id, ip_address, user_agent, created_at
+                    "SELECT id, entity_type, entity_id, operation, operation_details::text AS operation_details, user_id, ip_address, user_agent, created_at
                      FROM audit_log ORDER BY created_at DESC LIMIT 100"
                 )
                 .fetch_all(&self.db_pool)

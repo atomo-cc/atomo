@@ -675,7 +675,10 @@ pub fn create_router(
                 .route("/providers", get(crate::oauth::oauth_providers))
                 .with_state(oauth_manager),
         )
-        // Audit log routes
+        // Audit log routes. The auth middleware must wrap these: the handlers read
+        // AuthUser from request extensions for their admin/manager check, and
+        // without the layer the extension is never populated — every call 401'd
+        // even with a valid admin token (caught by the admin e2e smoke).
         .nest(
             "/audit",
             Router::new()
@@ -686,6 +689,10 @@ pub fn create_router(
                     get(get_entity_audit),
                 )
                 .route("/statistics", get(get_audit_statistics))
+                .route_layer(middleware::from_fn_with_state(
+                    auth_service.clone(),
+                    optional_auth_middleware,
+                ))
                 .with_state(audit_service.clone()),
         )
         // Admin-only redirect management (requires auth)
