@@ -158,5 +158,14 @@ skip steps silently — if one doesn't apply, say so.
 - Run DB ops via `pnpm atomo migrate -- --service <name>` and seed with `pnpm atomo seed -- --service <name>`.
 - Generated code lives in `generated/`; do not hand-edit—change the source schema or templates instead.
 
+## Feature Development Standard: TODO-Driven Development (TODO 驱动开发规范)
+All future feature development, architectural migrations, and complex integrations across this repository MUST strictly adhere to the following workflow:
+1. **TODO File as First-Class Artifact**: Before writing implementation code, create or update a dedicated implementation plan (`IMPLEMENTATION_PLAN.md`) and a top-level `TODO.md` (or module-scoped `TODO.md`). Every feature must be decomposed into granular, verifiable, and atomic checkable tasks (`- [ ]`).
+2. **Real-Time Synchronization (Update As You Implement)**: Strictly prohibit batch checking at the end. Whenever a sub-task, component, or milestone is implemented, the developer or AI agent MUST immediately update the corresponding item from `- [ ]` to `- [x]`. Add concise context, commit references, or notes next to completed items when applicable.
+3. **Verification-Gated Completion**: A TODO item must ONLY be marked completed (`[x]`) after its corresponding verification passes (e.g. `cargo test`, `pnpm test`, type-check, or e2e smoke). Never mark an item complete based on unverified code.
+4. **State Transparency & Handover**: The `TODO.md` file serves as the single source of truth for task progress. Any contributor or AI agent taking over the conversation or codebase must be able to understand the exact state of progress and the immediate next step just by reading `TODO.md`.
+
 ## Agent-Specific Instructions
 - Respect this guide for any code edits. For any feature add/change/remove, run the **Feature Change Checklist** above so code, tests, config, and docs land together. Avoid breaking public APIs in `crates/atomo*` without prior discussion.
+- Adhere strictly to the **Feature Development Standard: TODO-Driven Development** defined above.
+
