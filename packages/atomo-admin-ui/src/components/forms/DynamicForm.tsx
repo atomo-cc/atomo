@@ -136,7 +136,7 @@ export function DynamicForm({
 
       {/* Submit buttons */}
       {!isReadonly && (
-        <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
+        <div className="flex justify-end gap-3 pt-6 border-t border-bn-border">
           <Button
             type="button"
             variant="secondary"
@@ -158,19 +158,19 @@ export function DynamicForm({
 
       {/* Debug info (development mode) */}
       {(import.meta as any).env?.DEV && (
-        <details className="mt-8 p-4 bg-gray-50 rounded-md">
-          <summary className="cursor-pointer text-sm font-medium text-gray-700">
-            Debug info
+        <details className="mt-8 p-4 bg-content-bg border border-bn-border rounded-bn text-foreground">
+          <summary className="cursor-pointer text-xs font-medium text-icon-muted">
+            Debug Information
           </summary>
           <div className="mt-2 space-y-2">
             <div className="text-xs">
               <span className="font-medium">Form state: </span>
-              <span className={`px-2 py-1 rounded text-white text-xs ${
-                form.formState.isValid ? 'bg-green-600' : 'bg-red-600'
+              <span className={`px-2 py-0.5 rounded text-white text-xs ${
+                form.formState.isValid ? 'bg-emerald-600' : 'bg-rose-600'
               }`}>
                 {form.formState.isValid ? 'Valid' : 'Invalid'}
               </span>
-              <span className="ml-2 text-gray-500">
+              <span className="ml-2 text-icon-muted">
                 (Submitted: {form.formState.isSubmitted ? 'Yes' : 'No'},
                  Modified: {form.formState.isDirty ? 'Yes' : 'No'})
               </span>
@@ -178,14 +178,14 @@ export function DynamicForm({
             
             {Object.keys(form.formState.errors).length > 0 && (
               <div className="text-xs">
-                <span className="font-medium text-red-600">Fields with errors: </span>
+                <span className="font-medium text-rose-500">Fields with errors: </span>
                 {Object.keys(form.formState.errors).join(', ')}
               </div>
             )}
             
-            <details className="text-xs">
-              <summary className="cursor-pointer text-gray-700">Full debug data</summary>
-              <pre className="mt-1 text-xs text-gray-600 overflow-auto bg-gray-100 p-2 rounded">
+            <details className="text-xs mt-2">
+              <summary className="cursor-pointer text-icon-muted">Full state payload</summary>
+              <pre className="mt-1 text-xs text-foreground overflow-auto bg-content-box p-3 rounded-bn border border-bn-border">
                 {JSON.stringify({
                   formData: form.watch(),
                   errors: form.formState.errors,

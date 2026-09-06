@@ -1,7 +1,5 @@
 /**
- * Date Picker Component — date picker
- * 
- * A simplified date picker.
+ * Date Picker Component — Dashin Date Picker Primitive
  */
 
 import * as React from 'react'
@@ -33,7 +31,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
     maxDate,
     ...props 
   }, ref) => {
-      const [inputValue, setInputValue] = React.useState('')
+    const [inputValue, setInputValue] = React.useState('')
 
     // Convert the value to a Date object
     const dateValue = React.useMemo(() => {
@@ -110,7 +108,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
                 size="sm"
                 onClick={handleClear}
                 disabled={disabled}
-                className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+                className="h-6 w-6 p-0 text-icon-muted hover:text-foreground"
               >
                 ×
               </Button>
@@ -122,7 +120,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
               size="sm"
               onClick={handleToday}
               disabled={disabled}
-              className="h-6 w-6 p-0 text-gray-400 hover:text-gray-600"
+              className="h-6 w-6 p-0 text-icon-muted hover:text-foreground"
               title={showTime ? 'Set to now' : 'Set to today'}
             >
               {showTime ? <Clock className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
@@ -132,7 +130,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(
 
         {/* Show the formatted date (if any) */}
         {dateValue && !error && (
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-icon-muted mt-1">
             {formatDate(dateValue, showTime ? 'time' : 'long')}
           </p>
         )}

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -12,14 +12,53 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+
+  /* Dashin design tokens — modern light */
+  --bn-bg: #f8fafc;
+  --bn-surface: #ffffff;
+  --bn-sidebar: #ffffff;
+  --bn-foreground: #1e293b;
+  --bn-muted: #94a3b8;
+  --bn-border: #e2e8f0;
+  --bn-primary: #6366f1;
+  --bn-primary-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  --bn-primary-foreground: #ffffff;
+  --bn-success: #10b981;
+  --bn-warning: #f59e0b;
+  --bn-danger: #ef4444;
+  --bn-radius: 12px;
+  --bn-shadow: 0 4px 12px rgba(2, 6, 23, 0.08);
+  --bn-ring: #6366f1;
+  --bn-primary-hover: #4f46e5;
+}
+
+.dark {
+  /* Dashin design tokens — modern dark */
+  --bn-bg: #0b0f19;
+  --bn-surface: #111827;
+  --bn-sidebar: #0f172a;
+  --bn-foreground: #f1f5f9;
+  --bn-muted: #64748b;
+  --bn-border: #1e293b;
+  --bn-primary: #818cf8;
+  --bn-primary-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  --bn-primary-foreground: #ffffff;
+  --bn-success: #34d399;
+  --bn-warning: #fbbf24;
+  --bn-danger: #f87171;
+  --bn-radius: 12px;
+  --bn-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --bn-ring: #818cf8;
+  --bn-primary-hover: #6366f1;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f9fafb;
-  color: #111827;
+  background-color: var(--bn-bg);
+  color: var(--bn-foreground);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {

@@ -1,28 +1,41 @@
 /**
- * Observability — queue health + recent activity, every number from a real
- * endpoint (GET /jobs/stats, /jobs/recent, /audit/logs). Admin-gated on the
- * server; a non-admin sees the 403 state, not fake data. This replaces the
- * old mock ObservabilityCenter, which rendered Math.random() metrics.
+ * Observability — Dashin-styled Queue Health and Audit Activity Panel
+ *
+ * Real endpoints: GET /jobs/stats, /jobs/recent, /audit/logs.
  */
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Activity, AlertTriangle, RefreshCw, CheckCircle2, Clock, PlayCircle, XCircle, Skull } from 'lucide-react'
 
 import { apiClient } from '../../lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/Select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/Table'
 import { formatDate } from '../../lib/utils'
 
 const REFRESH_MS = 10_000
 const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'dead'] as const
 
-function statusVariant(status: string): 'default' | 'secondary' | 'destructive' {
-  if (status === 'failed' || status === 'dead') return 'destructive'
-  if (status === 'succeeded') return 'secondary'
-  return 'default'
+function getStatusIcon(status: string) {
+  switch (status) {
+    case 'queued': return <Clock className="h-4 w-4 text-amber-500" />
+    case 'running': return <PlayCircle className="h-4 w-4 text-blue-500" />
+    case 'succeeded': return <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+    case 'failed': return <XCircle className="h-4 w-4 text-rose-500" />
+    case 'dead': return <Skull className="h-4 w-4 text-rose-600" />
+    default: return null
+  }
+}
+
+function statusBadgeVariant(status: string): 'default' | 'secondary' | 'success' | 'danger' | 'warning' {
+  if (status === 'failed' || status === 'dead') return 'danger'
+  if (status === 'succeeded') return 'success'
+  if (status === 'running') return 'default'
+  if (status === 'queued') return 'warning'
+  return 'secondary'
 }
 
 function isForbidden(error: unknown): boolean {
@@ -59,11 +72,15 @@ export function ObservabilityView() {
 
   if (isForbidden(stats.error)) {
     return (
-      <Card className="m-6">
-        <CardContent className="py-8 text-center text-gray-600">
-          Observability is admin-only. Sign in with an admin account to view queue health.
-        </CardContent>
-      </Card>
+      <div className="p-6">
+        <Card>
+          <CardContent className="py-12 text-center text-icon-muted">
+            <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
+            <h3 className="text-base font-semibold text-foreground mb-1">Access Restricted</h3>
+            <p className="text-xs">Observability is admin-only. Sign in with an admin account to view queue metrics.</p>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -72,64 +89,73 @@ export function ObservabilityView() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-            <Activity className="h-7 w-7" />
-            Observability
-          </h1>
-          <p className="text-gray-600 mt-1">
-            Job queue health and recent activity — refreshes every {REFRESH_MS / 1000}s
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-bn bg-primary/10 flex items-center justify-center text-primary">
+              <Activity className="h-4 w-4" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Observability</h1>
+          </div>
+          <p className="text-xs text-icon-muted mt-1">
+            Job queue health, worker throughput, and real-time audit logs — auto-refreshes every {REFRESH_MS / 1000}s
           </p>
         </div>
         <Button
           variant="secondary"
+          size="sm"
           onClick={() => {
             stats.refetch()
             recent.refetch()
             audit.refetch()
           }}
         >
-          <RefreshCw className="h-4 w-4 mr-2" />
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
           Refresh
         </Button>
       </div>
 
-      {/* Queue-health tiles */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {JOB_STATUSES.map((s) => (
-          <Card key={s}>
-            <CardContent className="p-4">
-              <div className="text-xs text-gray-500 uppercase tracking-wider">{s}</div>
-              <div
-                className={`text-2xl font-bold ${
-                  (s === 'failed' || s === 'dead') && (byStatus[s] ?? 0) > 0
-                    ? 'text-red-600'
-                    : 'text-gray-900'
-                }`}
-              >
-                {stats.isLoading ? '—' : byStatus[s] ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Queue-health KPI tiles */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {JOB_STATUSES.map((s) => {
+          const count = byStatus[s] ?? 0
+          const isProblem = (s === 'failed' || s === 'dead') && count > 0
+          return (
+            <Card key={s} className="hover:border-primary/30 transition-colors">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold text-icon-muted uppercase tracking-wider">{s}</div>
+                  <div className={`text-2xl font-bold tracking-tight mt-0.5 ${isProblem ? 'text-rose-500' : 'text-foreground'}`}>
+                    {stats.isLoading ? '—' : count}
+                  </div>
+                </div>
+                <div className="p-2 rounded-bn bg-content-bg border border-bn-border">
+                  {getStatusIcon(s)}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
-      {/* Oldest-queued warning: a growing age means no worker is draining the queue. */}
+      {/* Oldest-queued warning */}
       {typeof oldestQueued === 'number' && oldestQueued > 60 && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="flex items-center gap-2.5 rounded-bn border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-400 font-medium">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Oldest queued job has been waiting {Math.round(oldestQueued / 60)} min — is a worker
-          running?
+          Oldest queued job has been waiting {Math.round(oldestQueued / 60)} min — is a background worker running?
         </div>
       )}
 
       {/* Recent jobs */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Recent jobs</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between py-4 border-b border-bn-border/60">
+          <div>
+            <CardTitle>Recent Jobs</CardTitle>
+            <CardDescription>Execution status and retry attempts of background tasks</CardDescription>
+          </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-36 h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -144,79 +170,80 @@ export function ObservabilityView() {
         </CardHeader>
         <CardContent className="p-0">
           {recent.isLoading ? (
-            <div className="p-6 text-center text-gray-500">Loading…</div>
+            <div className="p-8 text-center text-xs text-icon-muted">Loading jobs…</div>
           ) : (recent.data?.jobs?.length ?? 0) === 0 ? (
-            <div className="p-6 text-center text-gray-500">No jobs yet</div>
+            <div className="p-8 text-center text-xs text-icon-muted">No background jobs found.</div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
-                  <th className="px-4 py-2">Kind</th>
-                  <th className="px-4 py-2">Queue</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Attempts</th>
-                  <th className="px-4 py-2">Created</th>
-                  <th className="px-4 py-2">Error</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Kind</TableHead>
+                  <TableHead>Queue</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Attempts</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {recent.data!.jobs.map((j) => (
-                  <tr key={j.id} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium">{j.kind}</td>
-                    <td className="px-4 py-2 text-gray-600">{j.queue}</td>
-                    <td className="px-4 py-2">
-                      <Badge variant={statusVariant(j.status) as any}>{j.status}</Badge>
-                    </td>
-                    <td className="px-4 py-2 text-gray-600">
+                  <TableRow key={j.id}>
+                    <TableCell className="font-medium">{j.kind}</TableCell>
+                    <TableCell className="text-icon-muted">{j.queue}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusBadgeVariant(j.status)}>{j.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-icon-muted">
                       {j.attempts}/{j.maxAttempts}
-                    </td>
-                    <td className="px-4 py-2 text-gray-600">{formatDate(j.createdAt, 'time')}</td>
-                    <td className="px-4 py-2 text-red-700 max-w-xs truncate" title={j.error ?? ''}>
-                      {j.error ?? ''}
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-icon-muted">{formatDate(j.createdAt, 'time')}</TableCell>
+                    <TableCell className="text-rose-600 dark:text-rose-400 max-w-xs truncate" title={j.error ?? ''}>
+                      {j.error || '—'}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
 
       {/* Recent audit activity */}
       <Card>
-        <CardHeader>
-          <CardTitle>Recent audit activity</CardTitle>
+        <CardHeader className="py-4 border-b border-bn-border/60">
+          <CardTitle>Recent Audit Activity</CardTitle>
+          <CardDescription>Security-sensitive operations and administrative actions log</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {audit.isLoading ? (
-            <div className="p-6 text-center text-gray-500">Loading…</div>
+            <div className="p-8 text-center text-xs text-icon-muted">Loading audit entries…</div>
           ) : isForbidden(audit.error) || (audit.data?.length ?? 0) === 0 ? (
-            <div className="p-6 text-center text-gray-500">No audit entries</div>
+            <div className="p-8 text-center text-xs text-icon-muted">No audit entries recorded yet.</div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
-                  <th className="px-4 py-2">Entity</th>
-                  <th className="px-4 py-2">Operation</th>
-                  <th className="px-4 py-2">Actor</th>
-                  <th className="px-4 py-2">When</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Operation</TableHead>
+                  <TableHead>Actor</TableHead>
+                  <TableHead>When</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {audit.data!.map((e: any) => (
-                  <tr key={e.id} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium">{e.entity_type ?? e.entityType}</td>
-                    <td className="px-4 py-2 text-gray-600">
-                      {String(e.operation ?? '').toString()}
-                    </td>
-                    <td className="px-4 py-2 text-gray-600">{e.user_id ?? e.userId ?? '—'}</td>
-                    <td className="px-4 py-2 text-gray-600">
+                  <TableRow key={e.id}>
+                    <TableCell className="font-medium">{e.entity_type ?? e.entityType}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{String(e.operation ?? '').toString()}</Badge>
+                    </TableCell>
+                    <TableCell className="text-icon-muted">{e.user_id ?? e.userId ?? '—'}</TableCell>
+                    <TableCell className="text-icon-muted">
                       {formatDate(e.created_at ?? e.createdAt, 'time')}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

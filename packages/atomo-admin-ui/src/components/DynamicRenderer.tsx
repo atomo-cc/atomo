@@ -53,46 +53,52 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
   // Error state
   if (error) {
     return (
-      <Card className="m-6">
-        <CardContent className="flex items-center justify-center py-8">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Couldn’t load schema metadata
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Check that the Atomo server is running and reachable.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-            >
-              Reload
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <h3 className="text-base font-semibold text-foreground mb-1">
+                Couldn’t load schema metadata
+              </h3>
+              <p className="text-xs text-icon-muted mb-4">
+                Check that the Atomo server is running and reachable.
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary text-white rounded-bn hover:bg-primary-hover shadow-sm text-sm"
+              >
+                Reload
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   // Loading state
   if (isLoading || !schema) {
     return (
-      <Card className="m-6">
-        <CardContent className="flex items-center justify-center py-8">
-          <div className="text-center">
-            <Spinner className="mx-auto mb-4" />
-            <p className="text-gray-600">Loading schema metadata…</p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="p-6">
+        <Card>
+          <CardContent className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin mx-auto mb-3" />
+              <p className="text-xs text-icon-muted">Loading schema metadata…</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
   // Inline error state for a malformed route or an unknown model.
   const routeError = (message: string) => (
-    <Card className="m-6">
-      <CardContent className="py-8 text-center text-gray-600">{message}</CardContent>
-    </Card>
+    <div className="p-6">
+      <Card>
+        <CardContent className="py-8 text-center text-xs text-icon-muted">{message}</CardContent>
+      </Card>
+    </div>
   )
 
   // Render the view for the current route type
@@ -120,18 +126,20 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
 
     case 'not-found':
       return (
-        <Card className="m-6">
-          <CardContent className="py-12 text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">Page not found</h3>
-            <p className="text-gray-600 mb-4">This route doesn’t exist in the admin.</p>
-            <a
-              href={(import.meta as any).env.BASE_URL}
-              className="inline-block px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-            >
-              Back to dashboard
-            </a>
-          </CardContent>
-        </Card>
+        <div className="p-6">
+          <Card>
+            <CardContent className="py-12 text-center">
+              <h3 className="text-base font-semibold text-foreground mb-1">Page not found</h3>
+              <p className="text-xs text-icon-muted mb-4">This route doesn’t exist in the admin.</p>
+              <a
+                href={(import.meta as any).env.BASE_URL}
+                className="inline-block px-4 py-2 bg-primary text-white rounded-bn hover:bg-primary-hover shadow-sm text-sm"
+              >
+                Back to dashboard
+              </a>
+            </CardContent>
+          </Card>
+        </div>
       )
 
     case 'list':

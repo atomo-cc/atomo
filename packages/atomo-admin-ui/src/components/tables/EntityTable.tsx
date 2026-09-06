@@ -132,37 +132,37 @@ export function EntityTable({
         </Button>
         
         {isMenuOpen && (
-          <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50">
-            <div className="py-1">
+          <div className="absolute right-0 mt-1 w-32 bg-content-box border border-bn-border rounded-bn shadow-bn z-50 py-1">
+            <div>
               <button
-                className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                className="flex items-center w-full px-3 py-2 text-xs text-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                 onClick={(e) => {
                   e.stopPropagation()
                   onRowClick?.(row)
                   setOpenMenuRowId(null)
                 }}
               >
-                <Eye className="h-4 w-4 mr-2" />
+                <Eye className="h-3.5 w-3.5 mr-2" />
                 View
               </button>
               
               {onRowEdit && (
                 <button
-                  className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="flex items-center w-full px-3 py-2 text-xs text-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                   onClick={(e) => {
                     e.stopPropagation()
                     onRowEdit(row)
                     setOpenMenuRowId(null)
                   }}
                 >
-                  <Edit2 className="h-4 w-4 mr-2" />
+                  <Edit2 className="h-3.5 w-3.5 mr-2" />
                   Edit
                 </button>
               )}
               
               {onRowDelete && (
                 <button
-                  className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                  className="flex items-center w-full px-3 py-2 text-xs text-rose-600 hover:bg-rose-500/10 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation()
                     if (confirm('Are you sure you want to delete this item?')) {
@@ -171,7 +171,7 @@ export function EntityTable({
                     setOpenMenuRowId(null)
                   }}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-3.5 w-3.5 mr-2" />
                   Delete
                 </button>
               )}
@@ -191,7 +191,7 @@ export function EntityTable({
 
   // Table header
   const renderHeader = () => (
-    <div className="grid bg-gray-50 border-b border-gray-200 sticky top-0 z-10" style={gridTemplate}>
+    <div className="grid bg-content-bg/75 backdrop-blur-sm border-b border-bn-border sticky top-0 z-10" style={gridTemplate}>
       {/* Selection column */}
       {onSelectionChange && (
         <div className="px-4 py-3 flex items-center">
@@ -207,8 +207,8 @@ export function EntityTable({
         <div
           key={column.key}
           className={cn(
-            'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider',
-            column.sortable && 'cursor-pointer hover:bg-gray-100'
+            'px-4 py-3 text-left text-xs font-semibold text-icon-muted uppercase tracking-wider',
+            column.sortable && 'cursor-pointer hover:bg-content-bg'
           )}
           onClick={() => column.sortable && onSort?.(column.key)}
         >
@@ -220,7 +220,7 @@ export function EntityTable({
       ))}
 
       {/* Actions column */}
-      <div className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+      <div className="px-4 py-3 text-right text-xs font-semibold text-icon-muted uppercase tracking-wider">
         Actions
       </div>
     </div>
@@ -234,14 +234,14 @@ export function EntityTable({
       <div
         key={row.id}
         className={cn(
-          'grid border-b border-gray-200 hover:bg-gray-50 transition-colors',
-          isSelected && 'bg-primary-50'
+          'grid border-b border-bn-border hover:bg-primary/5 transition-colors',
+          isSelected && 'bg-primary/10'
         )}
         style={gridTemplate}
       >
         {/* Selection column */}
         {onSelectionChange && (
-          <div className="px-4 py-4 flex items-center">
+          <div className="px-4 py-3.5 flex items-center">
             <Checkbox
               checked={isSelected}
               onCheckedChange={() => handleRowSelect(row.id)}
@@ -253,7 +253,7 @@ export function EntityTable({
         {columns.map((column) => (
           <div
             key={column.key}
-            className="px-4 py-4 text-sm text-gray-900 cursor-pointer truncate"
+            className="px-4 py-3.5 text-xs text-foreground cursor-pointer truncate"
             onClick={() => onRowClick?.(row)}
           >
             {column.render ? column.render(row[column.key], row) : row[column.key]}
@@ -261,7 +261,7 @@ export function EntityTable({
         ))}
 
         {/* Actions column */}
-        <div className="px-4 py-4 text-right">
+        <div className="px-4 py-3.5 text-right">
           <RowActionMenu row={row} />
         </div>
       </div>
@@ -272,8 +272,8 @@ export function EntityTable({
   if (loading) {
     return (
       <div className="p-8 text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading...</p>
+        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin mx-auto mb-3" />
+        <p className="text-xs text-icon-muted">Loading table data…</p>
       </div>
     )
   }
@@ -282,7 +282,7 @@ export function EntityTable({
   if (data.length === 0) {
     return (
       <div className="p-8 text-center">
-        <p className="text-gray-600">No data</p>
+        <p className="text-xs text-icon-muted">No records found</p>
       </div>
     )
   }

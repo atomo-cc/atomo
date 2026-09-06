@@ -1,5 +1,5 @@
 /**
- * Textarea Component — multi-line text input
+ * Textarea Component — Dashin Multiline Input Primitive
  */
 
 import * as React from 'react'
@@ -17,26 +17,26 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     const textareaId = id || React.useId()
     
     return (
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {label && (
           <label 
             htmlFor={textareaId}
-            className="text-sm font-medium text-gray-700"
+            className="text-xs font-medium text-foreground block"
           >
             {label}
-            {props.required && <span className="text-danger-500 ml-1">*</span>}
+            {props.required && <span className="text-danger ml-0.5">*</span>}
           </label>
         )}
         
         <textarea
           id={textareaId}
           className={cn(
-            'flex min-h-[80px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm',
-            'placeholder:text-gray-400',
-            'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent',
+            'flex min-h-[80px] w-full rounded-bn border border-bn-border bg-content-box px-3 py-2 text-sm text-foreground shadow-sm',
+            'placeholder:text-icon-muted transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary',
             'disabled:cursor-not-allowed disabled:opacity-50',
             'resize-vertical',
-            error && 'border-danger-500 focus:ring-danger-500',
+            error && 'border-danger focus:ring-danger/40 focus:border-danger',
             className
           )}
           ref={ref}
@@ -44,11 +44,11 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         />
         
         {error && (
-          <p className="text-sm text-danger-600">{error}</p>
+          <p className="text-xs text-danger font-medium">{error}</p>
         )}
         
         {helpText && !error && (
-          <p className="text-sm text-gray-500">{helpText}</p>
+          <p className="text-xs text-icon-muted">{helpText}</p>
         )}
       </div>
     )

@@ -1,263 +1,231 @@
-/**
- * Navigation — dynamic navigation component
- * 
- * Builds the navigation menu automatically from the schema metadata.
- */
-
-import React, { useState } from 'react'
+import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
 import { 
-  Home, 
+  LayoutDashboard, 
+  Sparkles,
+  Receipt,
+  Wallet,
+  Crown,
+  Timer,
+  BarChart3,
   Users, 
   Building2, 
   DollarSign, 
   Activity,
-  Menu,
-  X,
-  ChevronDown,
-  Settings,
-  HelpCircle,
   Workflow,
   Trash2,
-  LogOut
+  Settings,
+  HelpCircle,
+  ShieldCheck,
+  Layers,
+  X
 } from 'lucide-react'
 
 import { apiClient, AuthUser } from '../lib/api'
-import { cn, getFieldLabel } from '../lib/utils'
-import { Button } from './ui/Button'
+import { getFieldLabel } from '../lib/utils'
 
-export function Navigation({ user }: { user?: AuthUser | null }) {
+interface NavigationProps {
+  user?: AuthUser | null
+  isMobileOpen?: boolean
+  onCloseMobileMenu?: () => void
+}
+
+export function Navigation({ user, isMobileOpen, onCloseMobileMenu }: NavigationProps) {
   const location = useLocation()
-  const [isMobileOpen, setIsMobileOpen] = useState(false)
 
-  // Real signed-in identity (from /auth/me), with sensible fallbacks.
-  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
-  const primaryName = fullName || user?.email || 'Signed in'
-  const avatarInitial = (fullName || user?.email || 'A').charAt(0).toUpperCase()
-  const handleSignOut = () => {
-    apiClient.logout()
-    window.location.href = `${(import.meta as any).env.BASE_URL}login`
-  }
-
-  // Load schema metadata to build the nav
-  const { data: schema, isLoading } = useQuery({
+  // Load schema metadata
+  const { data: schema } = useQuery({
     queryKey: ['schema-metadata'],
     queryFn: () => apiClient.getSchemaMetadata(),
     staleTime: 5 * 60 * 1000,
   })
 
-  // Icon map
+  const models = schema?.models ? Object.keys(schema.models) : []
+
+  // Semantic icon assignment based on model name
   const getModelIcon = (modelName: string) => {
-    const iconMap: Record<string, React.ComponentType<any>> = {
-      contact: Users,
-      company: Building2,
-      deal: DollarSign,
-      user: Users,
-      default: Activity
-    }
-    
-    return iconMap[modelName.toLowerCase()] || iconMap.default
+    const lower = modelName.toLowerCase()
+    if (lower.includes('generation') || lower.includes('job') || lower.includes('image')) return Sparkles
+    if (lower.includes('ledger') || lower.includes('transaction')) return Receipt
+    if (lower.includes('balance') || lower.includes('credit')) return Wallet
+    if (lower.includes('subscription') || lower.includes('plan')) return Crown
+    if (lower.includes('trial') || lower.includes('usage')) return Timer
+    if (lower.includes('event') || lower.includes('telemetry') || lower.includes('metric')) return BarChart3
+    if (lower.includes('user') || lower.includes('account') || lower.includes('customer')) return Users
+    if (lower.includes('company') || lower.includes('org')) return Building2
+    if (lower.includes('deal') || lower.includes('order')) return DollarSign
+    return Layers
   }
 
-  // Whether the current path is active
+  // Active route checking
   const isActive = (path: string) => {
-    if (path === '/' || path === '/dashboard') {
-      return location.pathname === '/' || location.pathname === '/dashboard'
+    const base = (import.meta as any).env.BASE_URL || '/'
+    const cleanPath = location.pathname.replace(new RegExp(`^${base}`), '/')
+    if (path === '/') {
+      return cleanPath === '/' || cleanPath === '/dashboard'
     }
-    return location.pathname.startsWith(path)
+    return cleanPath.startsWith(path)
   }
 
-  let navigationItems = [
-    {
-      name: 'Dashboard',
-      href: '/',
-      icon: Home,
-      active: isActive('/')
-    },
-    ...(schema ? Object.keys(schema.models).map(modelName => ({
-      name: getFieldLabel(modelName),
-      href: `/entities/${modelName}`,
-      icon: getModelIcon(modelName),
-      active: isActive(`/entities/${modelName}`)
-    })) : [])
-  ]
-
-  // Workflows management (backend-driven; always available)
-  navigationItems = [
-    ...navigationItems,
-    {
-      name: 'Workflows',
-      href: '/workflows',
-      icon: Workflow,
-      active: isActive('/workflows')
-    },
-    {
-      name: 'Trash',
-      href: '/trash',
-      icon: Trash2,
-      active: isActive('/trash')
-    },
-    // Observability endpoints are admin-gated server-side; only show the nav
-    // item to admins so other roles aren't offered a page that 403s.
-    ...(user?.role?.toLowerCase() === 'admin'
-      ? [
-          {
-            name: 'Observability',
-            href: '/observability',
-            icon: Activity,
-            active: isActive('/observability')
-          }
-        ]
-      : [])
-  ]
-
-  const sidebarContent = (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="flex items-center h-16 px-6 border-b border-gray-200">
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-lg">A</span>
-          </div>
-          <span className="ml-3 text-xl font-semibold text-gray-900">
-            Atomo Admin
-          </span>
-        </div>
-      </div>
-
-      {/* Nav menu */}
-      <nav className="flex-1 px-4 py-6 space-y-2">
-        {isLoading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-10 bg-gray-200 rounded animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          navigationItems.map((item) => {
-            const IconComponent = item.icon
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                onClick={() => setIsMobileOpen(false)}
-                className={cn(
-                  'flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                  item.active
-                    ? 'bg-primary-100 text-primary-700 border-r-2 border-primary-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                )}
-              >
-                <IconComponent className="mr-3 h-5 w-5" />
-                {item.name}
-              </Link>
-            )
-          })
-        )}
-      </nav>
-
-      {/* Bottom menu */}
-      <div className="border-t border-gray-200 p-4 space-y-2">
-        <Link
-          to="/settings"
-          className="flex items-center px-3 py-2 text-sm font-medium text-gray-600 rounded-md hover:bg-gray-100 hover:text-gray-900"
-        >
-          <Settings className="mr-3 h-5 w-5" />
-          Settings
-        </Link>
-        
-        <Link
-          to="/help"
-          className="flex items-center px-3 py-2 text-sm font-medium text-gray-600 rounded-md hover:bg-gray-100 hover:text-gray-900"
-        >
-          <HelpCircle className="mr-3 h-5 w-5" />
-          Help
-        </Link>
-      </div>
-
-      {/* User info — the real signed-in user (from /auth/me), with sign-out. */}
-      <div className="border-t border-gray-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center min-w-0">
-            <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center shrink-0">
-              <span className="text-gray-600 text-sm font-medium">{avatarInitial}</span>
-            </div>
-            <div className="ml-3 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{primaryName}</p>
-              <p className="text-xs text-gray-500 truncate">{user?.role ?? ''}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleSignOut}
-            title="Sign out"
-            aria-label="Sign out"
-            className="ml-2 p-1.5 text-gray-400 rounded shrink-0 hover:bg-gray-100 hover:text-gray-700"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  const linkClass = (active: boolean) =>
+    `flex items-center space-x-3 px-3.5 py-2.5 rounded-bn text-sm font-medium transition-all duration-150 ${
+      active
+        ? 'bg-primary/10 text-primary shadow-sm font-semibold'
+        : 'text-icon-muted hover:text-foreground hover:bg-content-bg'
+    }`
 
   return (
     <>
-      {/* Mobile menu button */}
-      <div className="lg:hidden">
-        <div className="flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200">
-          <div className="flex items-center">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">A</span>
-            </div>
-            <span className="ml-3 text-xl font-semibold text-gray-900">
-              Atomo Admin
-            </span>
-          </div>
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsMobileOpen(true)}
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex-1 flex flex-col min-h-0 bg-white border-r border-gray-200">
-          {sidebarContent}
-        </div>
-      </div>
-
-      {/* Mobile sidebar overlay */}
+      {/* Mobile Backdrop */}
       {isMobileOpen && (
-        <div className="fixed inset-0 flex z-40 lg:hidden">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-gray-600 bg-opacity-75"
-            onClick={() => setIsMobileOpen(false)}
-          />
-          
-          {/* Sidebar */}
-          <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white">
-            <div className="absolute top-0 right-0 -mr-12 pt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsMobileOpen(false)}
-                className="text-white hover:text-white"
-              >
-                <X className="h-6 w-6" />
-              </Button>
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden"
+          onClick={onCloseMobileMenu}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-sidebar border-r border-bn-border flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Dashin Brand Header */}
+        <div className="h-16 px-5 border-b border-bn-border flex items-center justify-between">
+          <Link to="/" className="flex items-center space-x-3 group" onClick={onCloseMobileMenu}>
+            <div className="w-9 h-9 rounded-bn bg-primary-gradient flex items-center justify-center text-white shadow-bn group-hover:scale-105 transition-transform">
+              <Sparkles className="w-5 h-5" />
             </div>
-            
-            {sidebarContent}
+            <div>
+              <div className="font-bold text-foreground text-sm tracking-tight flex items-center space-x-1.5">
+                <span>Dashin Admin</span>
+              </div>
+              <div className="text-[10px] text-icon-muted font-medium">
+                PhotoEasy Backend
+              </div>
+            </div>
+          </Link>
+
+          {onCloseMobileMenu && (
+            <button
+              onClick={onCloseMobileMenu}
+              className="lg:hidden p-1.5 rounded-bn text-icon-muted hover:text-foreground"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Navigation Content */}
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+          {/* Main Dashboard */}
+          <div>
+            <Link
+              to="/"
+              onClick={onCloseMobileMenu}
+              className={linkClass(isActive('/'))}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Dashboard</span>
+            </Link>
+          </div>
+
+          {/* Introspected Models Group */}
+          <div>
+            <div className="px-3 mb-2 text-[11px] font-bold uppercase tracking-wider text-icon-muted">
+              Data Models
+            </div>
+            <div className="space-y-1">
+              {models.map((m) => {
+                const Icon = getModelIcon(m)
+                const active = isActive(`/entities/${m}`)
+                const meta = schema?.models[m]
+                const label = meta ? getFieldLabel(m, meta?.tableName) : m
+                return (
+                  <Link
+                    key={m}
+                    to={`/entities/${m}`}
+                    onClick={onCloseMobileMenu}
+                    className={linkClass(active)}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate flex-1">{label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Platform Tools */}
+          <div>
+            <div className="px-3 mb-2 text-[11px] font-bold uppercase tracking-wider text-icon-muted">
+              Platform
+            </div>
+            <div className="space-y-1">
+              <Link
+                to="/workflows"
+                onClick={onCloseMobileMenu}
+                className={linkClass(isActive('/workflows'))}
+              >
+                <Workflow className="w-4 h-4" />
+                <span>Workflows</span>
+              </Link>
+              <Link
+                to="/observability"
+                onClick={onCloseMobileMenu}
+                className={linkClass(isActive('/observability'))}
+              >
+                <Activity className="w-4 h-4" />
+                <span>Observability</span>
+              </Link>
+              <Link
+                to="/trash"
+                onClick={onCloseMobileMenu}
+                className={linkClass(isActive('/trash'))}
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Trash</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* System Settings */}
+          <div>
+            <div className="px-3 mb-2 text-[11px] font-bold uppercase tracking-wider text-icon-muted">
+              System
+            </div>
+            <div className="space-y-1">
+              <Link
+                to="/settings"
+                onClick={onCloseMobileMenu}
+                className={linkClass(isActive('/settings'))}
+              >
+                <Settings className="w-4 h-4" />
+                <span>Settings</span>
+              </Link>
+              <Link
+                to="/help"
+                onClick={onCloseMobileMenu}
+                className={linkClass(isActive('/help'))}
+              >
+                <HelpCircle className="w-4 h-4" />
+                <span>Documentation</span>
+              </Link>
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Sidebar Footer */}
+        <div className="p-3 border-t border-bn-border bg-content-bg/50">
+          <div className="flex items-center space-x-3 px-2 py-1.5">
+            <ShieldCheck className="w-4 h-4 text-success" />
+            <div className="text-xs">
+              <span className="font-semibold text-foreground">Secure Core</span>
+              <span className="text-[10px] text-icon-muted block">Schema-Driven Admin</span>
+            </div>
+          </div>
+        </div>
+      </aside>
     </>
   )
 }

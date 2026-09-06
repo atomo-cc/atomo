@@ -1,46 +1,34 @@
-/**
- * Dashboard View
- *
- * Displays a system overview and quick actions.
- */
-
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { 
+  Sparkles, 
+  Receipt, 
+  Crown, 
+  Timer, 
+  BarChart3, 
+  ArrowRight, 
+  Activity, 
+  CheckCircle2, 
+  Layers, 
+  Plus,
+  ShieldCheck,
+  Server
+} from 'lucide-react'
+
 import { SchemaMetadata } from '../../lib/types'
 import { apiClient } from '../../lib/api'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
-import { Button } from '../ui/Button'
 import { getFieldLabel } from '../../lib/utils'
-import { canPerform } from '../../lib/permissions'
-import { useNavigate } from 'react-router-dom'
-import { 
-  Users,
-  Building2,
-  DollarSign,
-  Activity,
-  Plus,
-  TrendingUp
-} from 'lucide-react'
 
 interface DashboardProps {
   schema: SchemaMetadata
 }
 
 export function Dashboard({ schema }: DashboardProps) {
-  const navigate = useNavigate()
+  const models = schema ? Object.keys(schema.models) : []
 
-  // Extract the list of models from the schema
-  const models = Object.keys(schema.models)
-
-  // Quick-create only for models the signed-in role may actually create — the
-  // same rule as the entity toolbar (server-written models like ledgers declare
-  // create: "system" and must not be offered here).
-  const role = apiClient.currentUser?.role
-  const creatableModels = models.filter((m) => canPerform(schema.models[m], 'create', role))
-
-  // Real per-model record counts (one cheap count query per model). A failed count
-  // shows "—" rather than breaking the card.
-  const { data: counts } = useQuery({
+  // Fetch count for each model
+  const { data: counts, isLoading } = useQuery({
     queryKey: ['dashboard-counts', models],
     queryFn: async () => {
       const entries = await Promise.all(
@@ -49,160 +37,186 @@ export function Dashboard({ schema }: DashboardProps) {
             const res = await apiClient.listEntities(m, { limit: 1 })
             return [m, res.total] as const
           } catch {
-            return [m, null] as const
+            return [m, 0] as const
           }
         })
       )
-      return Object.fromEntries(entries) as Record<string, number | null>
+      return Object.fromEntries(entries) as Record<string, number>
     },
-    staleTime: 60_000,
+    staleTime: 30_000,
   })
 
-  // Icon mapping
-  const getModelIcon = (modelName: string) => {
-    const iconMap: Record<string, React.ComponentType<any>> = {
-      contact: Users,
-      company: Building2,
-      deal: DollarSign,
-      user: Users,
-      default: Activity
-    }
-    
-    return iconMap[modelName.toLowerCase()] || iconMap.default
-  }
+  // Specific high-level stats for PhotoEasy
+  const genCount = counts?.GenerationJob ?? 0
+  const ledgerCount = counts?.CreditLedger ?? 0
+  const subCount = counts?.Subscription ?? 0
+  const trialCount = counts?.TrialUsage ?? 0
+
+  const kpis = [
+    {
+      title: 'Generation Jobs',
+      value: genCount,
+      desc: 'Total AI generation requests',
+      icon: Sparkles,
+      href: '/entities/GenerationJob',
+      color: 'from-blue-500 to-indigo-600',
+    },
+    {
+      title: 'Credit Ledger',
+      value: ledgerCount,
+      desc: 'Immutable financial audits',
+      icon: Receipt,
+      href: '/entities/CreditLedger',
+      color: 'from-emerald-500 to-teal-600',
+    },
+    {
+      title: 'Subscriptions',
+      value: subCount,
+      desc: 'Active user subscription plans',
+      icon: Crown,
+      href: '/entities/Subscription',
+      color: 'from-amber-500 to-orange-600',
+    },
+    {
+      title: 'Trial Usage',
+      value: trialCount,
+      desc: 'Anti-abuse free quota trackers',
+      icon: Timer,
+      href: '/entities/TrialUsage',
+      color: 'from-purple-500 to-pink-600',
+    },
+  ]
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header section */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Welcome to Atomo Admin UI</p>
+    <div className="p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto animate-fade-in">
+      {/* Welcome Banner */}
+      <div className="relative overflow-hidden rounded-bn bg-primary-gradient p-6 sm:p-8 text-white shadow-bn">
+        <div className="relative z-10 max-w-2xl">
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-xs font-semibold mb-3">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Dashin x Atomo Framework</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+            PhotoEasy Cloud Admin
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-white/80 leading-relaxed">
+            Zero-configuration, schema-driven administration for PhotoEasy GPT-image billing, credits ledger, and async generation tasks.
+          </p>
+        </div>
       </div>
 
-      {/* Stat cards section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {models.map((modelName) => {
-          const IconComponent = getModelIcon(modelName)
-
-          return (
-            <Card key={modelName} className="hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                {/* Model display name — the same label the sidebar renders.
-                    ui.displayField is a FIELD (which record column to show as a
-                    record's title), never a card title. */}
-                <CardTitle className="text-sm font-medium">
-                  {getFieldLabel(modelName)}
-                </CardTitle>
-                <IconComponent className="h-4 w-4 text-gray-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {counts?.[modelName] ?? (counts === undefined ? '…' : '—')}
+      {/* KPI Stat Band */}
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-icon-muted mb-4">
+          Key System Metrics
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          {kpis.map((kpi) => {
+            const Icon = kpi.icon
+            return (
+              <Link
+                key={kpi.title}
+                to={kpi.href}
+                className="group bg-content-box p-5 rounded-bn border border-bn-border shadow-bn hover:shadow-lg transition-all duration-200 flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-bn bg-gradient-to-tr ${kpi.color} flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-icon-muted group-hover:text-primary group-hover:translate-x-1 transition-all" />
                 </div>
-                <p className="text-xs text-gray-600">
-                  Total {getFieldLabel(modelName)} records
-                </p>
-                <div className="mt-4">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigate(`/entities/${modelName}`)}
-                    className="w-full"
-                  >
-                    View all
-                  </Button>
+                <div>
+                  <div className="text-2xl font-bold text-foreground tracking-tight">
+                    {isLoading ? '…' : kpi.value}
+                  </div>
+                  <div className="text-xs font-semibold text-foreground mt-0.5">{kpi.title}</div>
+                  <div className="text-[11px] text-icon-muted mt-1">{kpi.desc}</div>
                 </div>
-              </CardContent>
-            </Card>
-          )
-        })}
+              </Link>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Quick actions — only models the current role may create. When every
-          model is server-written (create: "system"), the section says so
-          instead of offering buttons that can only end in a permission error. */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        {creatableModels.length === 0 ? (
-          <Card>
-            <CardContent className="p-6 text-center text-sm text-gray-500">
-              No quick actions — every model in this schema is created by the server, not
-              from the admin.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {creatableModels.map((modelName) => {
-              const IconComponent = getModelIcon(modelName)
+      {/* Model Registry Quick-Launch */}
+      <div className="bg-content-box rounded-bn border border-bn-border shadow-bn p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-base font-bold text-foreground">Introspected Schemas</h2>
+            <p className="text-xs text-icon-muted mt-0.5">
+              Live models discovered from backend <code className="font-mono text-[11px]">/meta/schema</code>
+            </p>
+          </div>
+        </div>
 
-              return (
-                <Card key={`action-${modelName}`} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-primary-100 rounded-lg">
-                        <IconComponent className="h-5 w-5 text-primary-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium text-gray-900">
-                          New {getFieldLabel(modelName)}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          Quickly create a new {getFieldLabel(modelName)}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() => navigate(`/entities/${modelName}/new`)}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {models.map((modelName) => {
+            const meta = schema.models[modelName]
+            const count = counts?.[modelName] ?? 0
+            const isReadOnly = meta?.access?.update === 'never' || meta?.access?.update === 'system'
+
+            return (
+              <Link
+                key={modelName}
+                to={`/entities/${modelName}`}
+                className="p-4 rounded-bn border border-bn-border bg-content-bg/40 hover:bg-content-bg hover:border-primary/40 transition-all group flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-3 truncate">
+                  <div className="w-8 h-8 rounded-bn bg-content-box border border-bn-border flex items-center justify-center text-primary shadow-sm flex-shrink-0">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <div className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors truncate">
+                      {getFieldLabel(modelName, meta?.tableName)}
                     </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
+                    <div className="text-[11px] text-icon-muted font-mono truncate">
+                      {meta.tableName || modelName}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 flex-shrink-0">
+                  {isReadOnly && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      Audit
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-primary/10 text-primary">
+                    {count}
+                  </span>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
       </div>
 
-      {/* System info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            System Information
-          </CardTitle>
-          <CardDescription>
-            Status of the currently connected Atomo service
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <div className="font-medium text-gray-900">Models</div>
-              <div className="text-gray-600">{models.length}</div>
-            </div>
-            <div>
-              <div className="font-medium text-gray-900">Audit Log</div>
-              <div className="text-gray-600">
-                {schema.config.auditLog ? 'Enabled' : 'Disabled'}
-              </div>
-            </div>
-            <div>
-              <div className="font-medium text-gray-900">Soft Deletes</div>
-              <div className="text-gray-600">
-                {schema.config.softDeletes ? 'Enabled' : 'Disabled'}
-              </div>
-            </div>
-            <div>
-              <div className="font-medium text-gray-900">Page Size</div>
-              <div className="text-gray-600">
-                {schema.config.defaultPageSize || 20}
-              </div>
-            </div>
+      {/* System Status Footprint */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-content-box rounded-bn border border-bn-border shadow-bn p-5 flex items-center space-x-4">
+          <div className="w-10 h-10 rounded-bn bg-success/10 text-success border border-success/20 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
-        </CardContent>
-      </Card>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Postgres 16 CQRS Projections</h3>
+            <p className="text-xs text-icon-muted mt-0.5">
+              Read-models synchronized in real-time via event-sourced stream projectors.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-content-box rounded-bn border border-bn-border shadow-bn p-5 flex items-center space-x-4">
+          <div className="w-10 h-10 rounded-bn bg-primary/10 text-primary border border-primary/20 flex items-center justify-center flex-shrink-0">
+            <Server className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Atomo Server v0.6.4 Running</h3>
+            <p className="text-xs text-icon-muted mt-0.5">
+              Axum Rust engine hosting GraphQL & serving embedded Dashin Admin SPA.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

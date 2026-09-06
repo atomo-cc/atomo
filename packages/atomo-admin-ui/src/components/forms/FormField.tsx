@@ -376,20 +376,20 @@ export function FormField({
   }
 
   return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium text-gray-700">
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-foreground block">
         {label}
-        {!field.optional && <span className="text-danger-500 ml-1">*</span>}
+        {!field.optional && <span className="text-danger ml-0.5">*</span>}
       </label>
       
       {renderInput()}
       
       {helpText && !error && (
-        <p className="text-sm text-gray-500">{helpText}</p>
+        <p className="text-xs text-icon-muted">{helpText}</p>
       )}
       
       {error && (
-        <p className="text-sm text-danger-600">{error}</p>
+        <p className="text-xs text-danger font-medium">{error}</p>
       )}
     </div>
   )

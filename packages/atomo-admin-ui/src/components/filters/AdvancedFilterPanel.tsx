@@ -338,15 +338,15 @@ export function AdvancedFilterPanel({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end bg-black bg-opacity-50">
-      <Card className="w-full max-w-2xl h-full overflow-auto m-0 rounded-none">
-        <CardHeader className="border-b">
+    <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/60 backdrop-blur-sm">
+      <Card className="w-full max-w-2xl h-full overflow-auto m-0 rounded-none border-l border-bn-border bg-content-box shadow-bn text-foreground">
+        <CardHeader className="border-b border-bn-border/60 py-4 px-6">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Advanced Filter
+              <Filter className="h-4 w-4 text-primary" />
+              Advanced Filters
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -356,35 +356,32 @@ export function AdvancedFilterPanel({
           {/* Filter conditions */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Filter Conditions</h3>
+              <h3 className="text-xs font-semibold text-icon-muted uppercase tracking-wider">Filter Rules</h3>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={clearAllConditions}>
-                  <RotateCcw className="h-4 w-4 mr-1" />
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
                   Clear all
                 </Button>
                 <Button size="sm" onClick={addCondition}>
-                  <Plus className="h-4 w-4 mr-1" />
+                  <Plus className="h-3.5 w-3.5 mr-1" />
                   Add condition
                 </Button>
               </div>
             </div>
 
             {conditions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
-                No filter conditions yet. Click "Add condition" to get started
+              <div className="text-center py-8 text-xs text-icon-muted border border-dashed border-bn-border rounded-bn">
+                No filter conditions active. Click "Add condition" to filter records.
               </div>
             ) : (
               <div className="space-y-3">
                 {conditions.map((condition, index) => {
                   const field = modelMetadata.fields[condition.field]
                   return (
-                    <div key={condition.id} className="p-4 border border-gray-200 rounded-lg space-y-3">
-                      {/* Conditions always AND-combine — the server's where JSON
-                          has no OR, so offering an OR selector here would be a
-                          control wired to nothing. */}
+                    <div key={condition.id} className="p-4 border border-bn-border rounded-bn bg-content-bg/50 space-y-3">
                       {index > 0 && (
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-500">AND</span>
+                          <span className="text-xs font-semibold text-primary uppercase">AND</span>
                         </div>
                       )}
 
@@ -395,11 +392,11 @@ export function AdvancedFilterPanel({
                           value={condition.field}
                           onValueChange={(value) => updateCondition(condition.id, {
                             field: value,
-                            operator: 'equals', // Reset operator
-                            value: '' // Reset value
+                            operator: 'equals',
+                            value: ''
                           })}
                         >
-                          <SelectTrigger className="w-40">
+                          <SelectTrigger className="w-40 h-8 text-xs">
                             <SelectValue placeholder="Select field" />
                           </SelectTrigger>
                           <SelectContent>
@@ -417,11 +414,11 @@ export function AdvancedFilterPanel({
                           onValueChange={(value: FilterOperator) =>
                             updateCondition(condition.id, {
                               operator: value,
-                              value: '' // Reset value
+                              value: ''
                             })
                           }
                         >
-                          <SelectTrigger className="w-32">
+                          <SelectTrigger className="w-32 h-8 text-xs">
                             <SelectValue placeholder="Operator" />
                           </SelectTrigger>
                           <SelectContent>
@@ -441,7 +438,7 @@ export function AdvancedFilterPanel({
                           variant="ghost"
                           size="sm"
                           onClick={() => removeCondition(condition.id)}
-                          className="text-red-600 hover:text-red-700"
+                          className="text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 h-8 w-8 p-0"
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -455,15 +452,16 @@ export function AdvancedFilterPanel({
 
           {/* Save filter */}
           {conditions.length > 0 && (
-            <div className="space-y-3 pt-4 border-t">
-              <h3 className="text-sm font-medium">Save Filter</h3>
+            <div className="space-y-3 pt-4 border-t border-bn-border">
+              <h3 className="text-xs font-semibold text-icon-muted uppercase tracking-wider">Save Active Filter</h3>
 
               {!showSaveDialog ? (
                 <Button
                   variant="secondary"
+                  size="sm"
                   onClick={() => setShowSaveDialog(true)}
                 >
-                  <Save className="h-4 w-4 mr-2" />
+                  <Save className="h-3.5 w-3.5 mr-1.5" />
                   Save current filter
                 </Button>
               ) : (
@@ -471,14 +469,15 @@ export function AdvancedFilterPanel({
                   <Input
                     value={saveFilterName}
                     onChange={(e) => setSaveFilterName(e.target.value)}
-                    placeholder="Enter filter name"
-                    className="flex-1"
+                    placeholder="Enter filter preset name"
+                    className="flex-1 h-8 text-xs"
                   />
-                  <Button onClick={saveCurrentFilter} disabled={!saveFilterName.trim()}>
+                  <Button size="sm" onClick={saveCurrentFilter} disabled={!saveFilterName.trim()}>
                     Save
                   </Button>
                   <Button
                     variant="ghost"
+                    size="sm"
                     onClick={() => {
                       setShowSaveDialog(false)
                       setSaveFilterName('')
@@ -493,32 +492,35 @@ export function AdvancedFilterPanel({
 
           {/* Saved filters */}
           {savedFilters.length > 0 && (
-            <div className="space-y-3 pt-4 border-t">
-              <h3 className="text-sm font-medium">Saved Filters</h3>
+            <div className="space-y-3 pt-4 border-t border-bn-border">
+              <h3 className="text-xs font-semibold text-icon-muted uppercase tracking-wider">Saved Filter Presets</h3>
               <div className="space-y-2">
                 {savedFilters.map((filter) => (
-                  <div key={filter.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                  <div key={filter.id} className="flex items-center justify-between p-3 bg-content-bg border border-bn-border rounded-bn">
                     <div className="flex-1">
-                      <div className="font-medium text-sm">{filter.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {filter.conditions.length} conditions • {new Date(filter.createdAt).toLocaleDateString()}
+                      <div className="font-medium text-xs text-foreground">{filter.name}</div>
+                      <div className="text-[11px] text-icon-muted">
+                        {filter.conditions.length} rules • {new Date(filter.createdAt).toLocaleDateString()}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => loadSavedFilter(filter)}
+                        className="h-7 w-7 p-0"
+                        title="Load filter"
                       >
-                        <FolderOpen className="h-4 w-4" />
+                        <FolderOpen className="h-3.5 w-3.5 text-primary" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => deleteSavedFilter(filter.id)}
-                        className="text-red-600 hover:text-red-700"
+                        className="h-7 w-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+                        title="Delete filter"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
@@ -528,13 +530,13 @@ export function AdvancedFilterPanel({
           )}
 
           {/* Apply button */}
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="secondary" onClick={onClose}>
+          <div className="flex justify-end gap-2 pt-4 border-t border-bn-border">
+            <Button variant="secondary" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={onClose}>
-              <Search className="h-4 w-4 mr-2" />
-              Apply Filter
+            <Button size="sm" onClick={onClose}>
+              <Search className="h-3.5 w-3.5 mr-1.5" />
+              Apply Filters
             </Button>
           </div>
         </CardContent>

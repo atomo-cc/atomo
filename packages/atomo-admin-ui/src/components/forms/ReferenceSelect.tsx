@@ -40,7 +40,7 @@ export function ReferenceSelect({
   const relatedModel = schema.models[relationship.model]
   if (!relatedModel) {
     return (
-      <div className="p-2 text-sm text-gray-500 border border-gray-300 rounded-md">
+      <div className="p-2 text-xs text-icon-muted border border-bn-border rounded-bn bg-content-bg">
         Related model {relationship.model} does not exist
       </div>
     )
@@ -85,7 +85,7 @@ export function ReferenceSelect({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <Select
         value={value || ''}
         onValueChange={handleSelect}
@@ -93,7 +93,7 @@ export function ReferenceSelect({
         onOpenChange={setIsOpen}
         disabled={disabled}
       >
-        <SelectTrigger className={cn(error && 'border-danger-500')}>
+        <SelectTrigger className={cn(error && 'border-danger')}>
           <SelectValue 
             placeholder={placeholder || `Select ${getFieldLabel(relationship.model)}`}
           >
@@ -103,14 +103,14 @@ export function ReferenceSelect({
         
         <SelectContent>
           {/* Search box */}
-          <div className="p-2 border-b border-gray-200">
+          <div className="p-2 border-b border-bn-border">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-icon-muted" />
               <Input
-                placeholder="Search..."
+                placeholder="Search related records..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 h-8"
+                className="pl-8 h-8 text-xs"
               />
             </div>
           </div>
@@ -118,8 +118,8 @@ export function ReferenceSelect({
           {/* Clear option */}
           {value && (
             <SelectItem value="" onSelect={handleClear}>
-              <div className="flex items-center gap-2 text-gray-500">
-                <X className="h-4 w-4" />
+              <div className="flex items-center gap-2 text-icon-muted">
+                <X className="h-3.5 w-3.5" />
                 Clear selection
               </div>
             </SelectItem>
@@ -129,7 +129,7 @@ export function ReferenceSelect({
           {isLoading && (
             <div className="p-4 text-center">
               <Spinner size="sm" />
-              <p className="text-sm text-gray-500 mt-2">Loading...</p>
+              <p className="text-xs text-icon-muted mt-2">Loading...</p>
             </div>
           )}
 
@@ -140,7 +140,7 @@ export function ReferenceSelect({
                 <SelectItem key={item.id} value={item.id}>
                   <div className="flex flex-col">
                     <span>{formatDisplayText(item)}</span>
-                    <span className="text-xs text-gray-500">ID: {item.id}</span>
+                    <span className="text-[10px] text-icon-muted font-mono">ID: {item.id}</span>
                   </div>
                 </SelectItem>
               ))}
@@ -149,22 +149,22 @@ export function ReferenceSelect({
 
           {/* Empty state */}
           {options?.data && options.data.length === 0 && (
-            <div className="p-4 text-center text-gray-500 text-sm">
-              {search ? 'No matches found' : 'No data available'}
+            <div className="p-4 text-center text-icon-muted text-xs">
+              {search ? 'No matches found' : 'No records available'}
             </div>
           )}
 
           {/* More results hint */}
           {options?.data && options.data.length === 50 && (
-            <div className="p-2 text-xs text-gray-500 text-center border-t border-gray-200">
-              Showing the first 50 items; use search to find more
+            <div className="p-2 text-[11px] text-icon-muted text-center border-t border-bn-border">
+              Showing first 50 results; type to search
             </div>
           )}
         </SelectContent>
       </Select>
 
       {error && (
-        <p className="text-sm text-danger-600">{error}</p>
+        <p className="text-xs text-danger font-medium">{error}</p>
       )}
     </div>
   )

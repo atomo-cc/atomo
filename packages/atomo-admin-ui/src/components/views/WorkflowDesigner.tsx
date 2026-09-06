@@ -1,14 +1,10 @@
 /**
- * Workflow Designer — list-based structured editor (milestones 2-3 of the proposal).
- *
- * Edits a workflow's name, trigger, and an ordered list of steps, then saves via the
- * existing registerWorkflow (upsert). Uses the workflow-serde types as the contract.
- * Per the proposal we use a list editor (engine is sequential-only) rather than a canvas.
+ * Workflow Designer — Dashin List-Based Structured Pipeline Editor
  */
 
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, ArrowDown, Trash2, Plus, Save } from 'lucide-react'
+import { ArrowUp, ArrowDown, Trash2, Plus, Save, Workflow as WorkflowIcon, CheckCircle2, AlertCircle } from 'lucide-react'
 import { apiClient } from '../../lib/api'
 import {
   emptyGraph,
@@ -18,7 +14,7 @@ import {
   type WorkflowGraph,
   type WorkflowTrigger,
 } from '../../lib/workflow-serde'
-import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ActionEditor } from './ActionEditor'
@@ -98,102 +94,176 @@ export function WorkflowDesigner({ workflowName }: WorkflowDesignerProps) {
   const tk = triggerKind(graph.trigger)
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
-      <h1 className="text-3xl font-bold text-gray-900">Workflow Designer</h1>
+    <div className="p-6 space-y-6 max-w-4xl">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-bn bg-primary/10 flex items-center justify-center text-primary">
+          <WorkflowIcon className="h-5 w-5" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {name ? `Edit Workflow: ${name}` : 'New Workflow'}
+          </h1>
+          <p className="text-xs text-icon-muted mt-0.5">Visually design sequential action steps and triggers</p>
+        </div>
+      </div>
 
       {error && (
-        <div className="rounded-md bg-danger-50 border border-danger-500 px-4 py-3 text-sm text-danger-700">{error}</div>
+        <div className="flex items-center gap-2 rounded-bn bg-rose-500/10 border border-rose-500/20 px-4 py-3 text-xs text-rose-600 dark:text-rose-400 font-medium">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
       )}
       {saved && (
-        <div className="rounded-md bg-success-50 border border-success-500 px-4 py-3 text-sm text-success-700">Saved</div>
+        <div className="flex items-center gap-2 rounded-bn bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Workflow successfully registered! Redirecting…
+        </div>
       )}
 
+      {/* Basic information */}
       <Card>
-        <CardHeader><CardTitle>Basic Information</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <Input label="Name" value={graph.name} disabled={!!name}
-            onChange={(e) => update({ name: e.target.value })} placeholder="my-workflow" />
+        <CardHeader className="py-4 border-b border-bn-border/60">
+          <CardTitle>Basic Information</CardTitle>
+          <CardDescription>Workflow identification and invocation trigger configuration</CardDescription>
+        </CardHeader>
+        <CardContent className="p-5 space-y-4">
+          <Input
+            label="Workflow Name"
+            value={graph.name}
+            disabled={!!name}
+            onChange={(e) => update({ name: e.target.value })}
+            placeholder="e.g. notify-on-new-contact"
+          />
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Trigger</label>
-            <select value={tk} onChange={(e) => setTriggerKind(e.target.value)}
-              className="block rounded-md border border-gray-300 px-3 py-2 text-sm">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground block">Trigger Type</label>
+            <select
+              value={tk}
+              onChange={(e) => setTriggerKind(e.target.value)}
+              className="flex h-9 w-full rounded-bn border border-bn-border bg-content-box px-3 py-1.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
+            >
               <option value="Manual">Manual</option>
-              <option value="OnEvent">OnEvent</option>
-              <option value="Schedule">Schedule</option>
+              <option value="OnEvent">OnEvent (Schema Change)</option>
+              <option value="Schedule">Schedule (Cron Expression)</option>
             </select>
           </div>
 
           {tk === 'OnEvent' && graph.trigger !== 'Manual' && 'OnEvent' in graph.trigger && (
-            <div className="flex gap-3">
-              <Input label="Model" value={graph.trigger.OnEvent.model}
-                onChange={(e) => update({ trigger: { OnEvent: { ...(graph.trigger as any).OnEvent, model: e.target.value } } })} />
-              <Input label="Event Type" value={graph.trigger.OnEvent.event_type}
-                onChange={(e) => update({ trigger: { OnEvent: { ...(graph.trigger as any).OnEvent, event_type: e.target.value } } })} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Target Model"
+                value={graph.trigger.OnEvent.model}
+                onChange={(e) => update({ trigger: { OnEvent: { ...(graph.trigger as any).OnEvent, model: e.target.value } } })}
+                placeholder="e.g. GenerationJob"
+              />
+              <Input
+                label="Event Type"
+                value={graph.trigger.OnEvent.event_type}
+                onChange={(e) => update({ trigger: { OnEvent: { ...(graph.trigger as any).OnEvent, event_type: e.target.value } } })}
+                placeholder="e.g. Created"
+              />
             </div>
           )}
           {tk === 'Schedule' && graph.trigger !== 'Manual' && 'Schedule' in graph.trigger && (
-            <Input label="Cron (6 fields)" value={graph.trigger.Schedule.cron}
-              onChange={(e) => update({ trigger: { Schedule: { cron: e.target.value } } })} />
+            <Input
+              label="Cron (6 fields)"
+              value={graph.trigger.Schedule.cron}
+              onChange={(e) => update({ trigger: { Schedule: { cron: e.target.value } } })}
+              placeholder="0 0 * * * *"
+            />
           )}
         </CardContent>
       </Card>
 
+      {/* Steps */}
       <Card>
-        <CardHeader><CardTitle>Steps ({graph.steps.length})</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {graph.steps.map((step, idx) => (
-            <div key={step.id} className="rounded-md border border-gray-200 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Input value={step.name} placeholder="step name"
-                  onChange={(e) => patchStep(step.id, { name: e.target.value })} className="max-w-xs" />
-                <div className="ml-auto flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => moveStep(idx, -1)} disabled={idx === 0}><ArrowUp className="h-4 w-4" /></Button>
-                  <Button size="sm" variant="ghost" onClick={() => moveStep(idx, 1)} disabled={idx === graph.steps.length - 1}><ArrowDown className="h-4 w-4" /></Button>
-                  <Button size="sm" variant="danger" onClick={() => removeStep(step.id)}><Trash2 className="h-4 w-4" /></Button>
+        <CardHeader className="py-4 border-b border-bn-border/60 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Pipeline Steps ({graph.steps.length})</CardTitle>
+            <CardDescription>Sequential operations executed when this workflow fires</CardDescription>
+          </div>
+          <Button size="sm" variant="secondary" onClick={addStep}>
+            <Plus className="h-3.5 w-3.5 mr-1 text-primary" /> Add Step
+          </Button>
+        </CardHeader>
+        <CardContent className="p-5 space-y-4">
+          {graph.steps.length === 0 ? (
+            <div className="text-center py-6 text-xs text-icon-muted">No steps configured yet. Click "Add Step" above.</div>
+          ) : (
+            graph.steps.map((step, idx) => (
+              <div key={step.id} className="rounded-bn border border-bn-border bg-content-box p-4 space-y-4 shadow-sm hover:border-primary/40 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Input
+                    value={step.name}
+                    placeholder="Step name"
+                    onChange={(e) => patchStep(step.id, { name: e.target.value })}
+                    className="max-w-xs h-8"
+                  />
+                  <div className="ml-auto flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => moveStep(idx, -1)} disabled={idx === 0} title="Move up">
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => moveStep(idx, 1)} disabled={idx === graph.steps.length - 1} title="Move down">
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => removeStep(step.id)} title="Remove step">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-foreground block">Action Type</label>
+                    <select
+                      value={Object.keys(step.action)[0]}
+                      onChange={(e) => patchStep(step.id, { action: defaultStep(e.target.value).action })}
+                      className="flex h-8 w-full rounded-bn border border-bn-border bg-content-box px-2.5 text-xs text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      {ACTION_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-foreground block">Failure Policy</label>
+                    <select
+                      value={typeof step.on_failure === 'string' ? step.on_failure : 'Retry'}
+                      onChange={(e) => patchStep(step.id, { on_failure: e.target.value === 'Retry' ? { Retry: { max_attempts: 3 } } : e.target.value })}
+                      className="flex h-8 w-full rounded-bn border border-bn-border bg-content-box px-2.5 text-xs text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      {FAILURE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-bn-border/40">
+                  <ActionEditor
+                    action={step.action}
+                    onChange={(action) => patchStep(step.id, { action })}
+                  />
                 </div>
               </div>
-
-              <div className="flex gap-3 items-end">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">Action</label>
-                  <select
-                    value={Object.keys(step.action)[0]}
-                    onChange={(e) => patchStep(step.id, { action: defaultStep(e.target.value).action })}
-                    className="block rounded-md border border-gray-300 px-2 py-1.5 text-sm">
-                    {ACTION_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">Failure Policy</label>
-                  <select
-                    value={typeof step.on_failure === 'string' ? step.on_failure : 'Retry'}
-                    onChange={(e) => patchStep(step.id, { on_failure: e.target.value === 'Retry' ? { Retry: { max_attempts: 3 } } : e.target.value })}
-                    className="block rounded-md border border-gray-300 px-2 py-1.5 text-sm">
-                    {FAILURE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <ActionEditor
-                action={step.action}
-                onChange={(action) => patchStep(step.id, { action })}
-              />
-            </div>
-          ))}
-          <Button variant="secondary" onClick={addStep}><Plus className="h-4 w-4 mr-1" /> Add Step</Button>
+            ))
+          )}
         </CardContent>
       </Card>
 
+      {/* Preview */}
       <Card>
-        <CardHeader><CardTitle>Preview</CardTitle></CardHeader>
-        <CardContent>
+        <CardHeader className="py-4 border-b border-bn-border/60">
+          <CardTitle>Topology Preview</CardTitle>
+          <CardDescription>Live visual representation of the execution pipeline</CardDescription>
+        </CardHeader>
+        <CardContent className="p-4 bg-content-bg/30">
           <WorkflowGraphView graph={graph} />
         </CardContent>
       </Card>
 
+      {/* Actions */}
       <div className="flex gap-2">
-        <Button onClick={save}><Save className="h-4 w-4 mr-1" /> Save</Button>
+        <Button onClick={save}>
+          <Save className="h-3.5 w-3.5 mr-1.5" /> Save Workflow
+        </Button>
         <Button variant="ghost" onClick={() => navigate('/workflows')}>Cancel</Button>
       </div>
     </div>

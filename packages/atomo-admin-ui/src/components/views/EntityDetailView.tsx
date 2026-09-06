@@ -1,15 +1,10 @@
 /**
- * Entity Detail View
- *
- * Supports viewing, editing, and creating records with dynamically generated forms.
+ * Entity Detail View — Dashin Record Inspection, Creation, and Editing
  */
 
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { 
   ArrowLeft, 
   Save, 
@@ -17,7 +12,8 @@ import {
   Trash2, 
   Eye,
   Clock,
-  User
+  User,
+  AlertCircle
 } from 'lucide-react'
 
 import { SchemaMetadata, ModelMetadata, EntityData } from '../../lib/types'
@@ -75,7 +71,7 @@ export function EntityDetailView({
   const createMutation = useMutation({
     mutationFn: (data: Partial<EntityData>) => 
       apiClient.createEntity(modelName, data),
-    onSuccess: (newEntity) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['entities', modelName] })
       navigate(`/entities/${modelName}`)
     },
@@ -90,7 +86,7 @@ export function EntityDetailView({
     },
   })
 
-  // Cosmetic role gating — the server enforces access regardless.
+  // Role-based permissions
   const role = apiClient.currentUser?.role
   const mayUpdate = canPerform(modelMetadata, 'update', role)
   const mayDelete = canPerform(modelMetadata, 'delete', role)
@@ -100,14 +96,14 @@ export function EntityDetailView({
     try {
       if (mode === 'create') {
         await createMutation.mutateAsync(formData)
-        toast.success('Created')
+        toast.success('Record created successfully')
       } else {
         await updateMutation.mutateAsync(formData)
-        toast.success('Saved')
+        toast.success('Record updated successfully')
       }
-    } catch (error) {
-      console.error('Save failed:', error)
-      toast.error('Save failed, please try again')
+    } catch (err: any) {
+      console.error('Save failed:', err)
+      toast.error(err?.message || 'Save failed, please check your input')
     }
   }
 
@@ -121,15 +117,18 @@ export function EntityDetailView({
   // Error state
   if (error) {
     return (
-      <Card className="m-6">
-        <CardContent className="py-8 text-center">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Failed to Load</h3>
-          <p className="text-gray-600 mb-4">Unable to load {getFieldLabel(modelName)} data</p>
-          <Button onClick={() => navigate(`/entities/${modelName}`)}>
-            Back to List
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="p-6">
+        <Card>
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="h-8 w-8 text-rose-500 mx-auto mb-3" />
+            <h3 className="text-base font-semibold text-foreground mb-1">Failed to Load Record</h3>
+            <p className="text-xs text-icon-muted mb-4">Unable to retrieve {getFieldLabel(modelName)} details from server.</p>
+            <Button size="sm" variant="secondary" onClick={() => navigate(`/entities/${modelName}`)}>
+              Back to Table
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -138,37 +137,39 @@ export function EntityDetailView({
   const isDetail = mode === 'detail'
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 max-w-5xl">
       {/* Page header and actions */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => navigate(`/entities/${modelName}`)}
+            className="h-8 w-8 p-0"
+            title="Back to list"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to List
+            <ArrowLeft className="h-4 w-4" />
           </Button>
 
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
               {isCreate ? `New ${getFieldLabel(modelName)}` :
                isEdit ? `Edit ${getFieldLabel(modelName)}` :
                getFieldLabel(modelName)}
             </h1>
             {entity && (
-              <p className="text-gray-600 mt-1">
+              <p className="font-mono text-xs text-icon-muted mt-0.5">
                 ID: {entity.id}
               </p>
             )}
           </div>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2">
           {modelName === 'Contact' && entity && isDetail && (
             <Button
               variant="secondary"
+              size="sm"
               onClick={() => navigate(`/contacts/${entity.id}/timeline`)}
             >
               View Timeline
@@ -179,9 +180,10 @@ export function EntityDetailView({
               {mayUpdate && (
                 <Button
                   variant="secondary"
+                  size="sm"
                   onClick={() => setMode('edit')}
                 >
-                  <Edit2 className="h-4 w-4 mr-2" />
+                  <Edit2 className="h-3.5 w-3.5 mr-1.5" />
                   Edit
                 </Button>
               )}
@@ -189,10 +191,11 @@ export function EntityDetailView({
               {mayDelete && (
                 <Button
                   variant="danger"
+                  size="sm"
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                   Delete
                 </Button>
               )}
@@ -202,10 +205,11 @@ export function EntityDetailView({
           {isEdit && (
             <Button
               variant="secondary"
+              size="sm"
               onClick={() => setMode('detail')}
             >
-              <Eye className="h-4 w-4 mr-2" />
-              View
+              <Eye className="h-3.5 w-3.5 mr-1.5" />
+              View Mode
             </Button>
           )}
         </div>
@@ -214,18 +218,18 @@ export function EntityDetailView({
       {/* Main content */}
       {isLoading ? (
         <Card>
-          <CardContent className="py-8 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading...</p>
+          <CardContent className="py-12 text-center">
+            <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin mx-auto mb-3" />
+            <p className="text-xs text-icon-muted">Loading record data…</p>
           </CardContent>
         </Card>
       ) : (
-        <Tabs defaultValue="details" className="space-y-6">
+        <Tabs defaultValue="details" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="details">Details & Fields</TabsTrigger>
             {entity && (
               <>
-                <TabsTrigger value="history">History</TabsTrigger>
+                <TabsTrigger value="history">Audit History</TabsTrigger>
                 <TabsTrigger value="relations">Related Data</TabsTrigger>
               </>
             )}
@@ -252,36 +256,38 @@ export function EntityDetailView({
           {entity && (
             <TabsContent value="history">
               <Card>
-                <CardHeader>
+                <CardHeader className="py-4 border-b border-bn-border/60">
                   <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5" />
-                    Change History
+                    <Clock className="h-4 w-4 text-primary" />
+                    Lifecycle & History
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
-                      <User className="h-4 w-4 text-gray-500" />
+                <CardContent className="p-5 space-y-3">
+                  <div className="flex items-center gap-3 p-3 bg-content-bg rounded-bn border border-bn-border">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-600">
+                      <User className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold text-foreground">Record Created</div>
+                      <div className="text-[11px] text-icon-muted">
+                        {formatDate(entity.createdAt, 'time')}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {entity.updatedAt && entity.updatedAt !== entity.createdAt && (
+                    <div className="flex items-center gap-3 p-3 bg-content-bg rounded-bn border border-bn-border">
+                      <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-600">
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </div>
                       <div className="flex-1">
-                        <div className="text-sm font-medium">Record Created</div>
-                        <div className="text-xs text-gray-500">
-                          {formatDate(entity.createdAt, 'time')}
+                        <div className="text-xs font-semibold text-foreground">Last Modified</div>
+                        <div className="text-[11px] text-icon-muted">
+                          {formatDate(entity.updatedAt, 'time')}
                         </div>
                       </div>
                     </div>
-                    
-                    {entity.updatedAt !== entity.createdAt && (
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
-                        <Edit2 className="h-4 w-4 text-gray-500" />
-                        <div className="flex-1">
-                          <div className="text-sm font-medium">Last Updated</div>
-                          <div className="text-xs text-gray-500">
-                            {formatDate(entity.updatedAt, 'time')}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -291,11 +297,11 @@ export function EntityDetailView({
           {entity && (
             <TabsContent value="relations">
               <Card>
-                <CardHeader>
-                  <CardTitle>Related Data</CardTitle>
+                <CardHeader className="py-4 border-b border-bn-border/60">
+                  <CardTitle>Cross-Entity Relations</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-gray-600">Related data is under development...</p>
+                <CardContent className="p-6 text-center text-xs text-icon-muted">
+                  Use the RelatedPreview side drawer in the list table to drill into interconnected models.
                 </CardContent>
               </Card>
             </TabsContent>

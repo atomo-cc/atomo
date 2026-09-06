@@ -33,8 +33,8 @@ function failureLabel(p: FailurePolicy): string {
 function Connector() {
   return (
     <div className="flex flex-col items-center">
-      <div className="h-4 w-px bg-gray-300" />
-      <ArrowDown className="h-4 w-4 text-gray-400" />
+      <div className="h-4 w-px bg-bn-border" />
+      <ArrowDown className="h-3.5 w-3.5 text-icon-muted" />
     </div>
   )
 }
@@ -43,35 +43,35 @@ export function WorkflowGraphView({ graph }: WorkflowGraphViewProps) {
   return (
     <div className="flex flex-col items-center gap-0 py-6">
       {/* Trigger node */}
-      <div className="rounded-md border border-primary-300 bg-primary-50 px-4 py-3 shadow-sm w-64 text-center">
-        <div className="flex items-center justify-center gap-1 text-xs font-semibold text-primary-700 uppercase mb-1">
-          <Zap className="h-3 w-3" /> Trigger
+      <div className="rounded-bn border border-primary/30 bg-primary/10 px-4 py-3 shadow-sm w-64 text-center">
+        <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-primary uppercase mb-1 tracking-wider">
+          <Zap className="h-3.5 w-3.5" /> Trigger
         </div>
-        <div className="text-sm">{triggerLabel(graph.trigger)}</div>
+        <div className="text-sm font-medium text-foreground">{triggerLabel(graph.trigger)}</div>
       </div>
 
       {graph.steps.length === 0 ? (
         <>
           <Connector />
-          <div className="rounded-md border border-gray-200 bg-white px-4 py-3 shadow-sm w-64 text-center text-sm text-gray-400 italic">
-            No steps
+          <div className="rounded-bn border border-bn-border bg-content-box px-4 py-3 shadow-sm w-64 text-center text-xs text-icon-muted italic">
+            No steps configured
           </div>
         </>
       ) : (
         graph.steps.map((step) => (
           <React.Fragment key={step.id}>
             <Connector />
-            <div className="rounded-md border border-gray-200 bg-white px-4 py-3 shadow-sm w-64">
-              <div className="font-bold text-sm">{step.name}</div>
-              <span className="inline-block mt-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
+            <div className="rounded-bn border border-bn-border bg-content-box px-4 py-3 shadow-bn w-64 transition-colors hover:border-primary/40">
+              <div className="font-semibold text-sm text-foreground">{step.name}</div>
+              <span className="inline-block mt-1.5 rounded-bn bg-content-bg border border-bn-border px-2 py-0.5 text-xs text-foreground font-mono">
                 {actionLabel(step.action)}
               </span>
               {step.condition && (
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1.5 text-xs text-icon-muted">
                   if {step.condition.field} {step.condition.operator} {String(step.condition.value)}
                 </div>
               )}
-              <div className="mt-1 text-xs text-gray-400">{failureLabel(step.on_failure)}</div>
+              <div className="mt-1 text-[11px] text-icon-muted font-medium">Policy: {failureLabel(step.on_failure)}</div>
             </div>
           </React.Fragment>
         ))

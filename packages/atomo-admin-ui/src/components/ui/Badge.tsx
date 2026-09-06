@@ -1,5 +1,5 @@
 /**
- * Badge Component — badge
+ * Badge Component — Dashin Status Badge Primitive
  */
 
 import * as React from 'react'
@@ -7,16 +7,17 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '../../lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30',
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary-600 text-white hover:bg-primary-700',
-        secondary: 'border-transparent bg-gray-100 text-gray-900 hover:bg-gray-200',
-        success: 'border-transparent bg-success-600 text-white hover:bg-success-700',
-        danger: 'border-transparent bg-danger-600 text-white hover:bg-danger-700',
-        warning: 'border-transparent bg-warning-600 text-white hover:bg-warning-700',
-        outline: 'text-gray-950 border-gray-200',
+        default: 'border-transparent bg-primary text-white',
+        secondary: 'border-bn-border bg-content-bg text-foreground',
+        success: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        danger: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+        destructive: 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+        warning: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        outline: 'border-bn-border text-foreground bg-transparent',
       },
     },
     defaultVariants: {
