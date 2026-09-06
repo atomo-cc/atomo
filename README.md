@@ -66,7 +66,24 @@ atomo init my-crm --template crm
 cd my-crm && atomo dev
 ```
 
-## Frontend
+## Frontend & Enterprise Admin UI
+
+### Dashin Admin Dashboard (Recommended for Production)
+
+Atomo officially partners with [Dashin](https://github.com/dashindev/dashin) as its next-generation enterprise admin framework (React 18 + Vite + Tailwind CSS):
+
+- ⚡ **Zero-Code Runtime Dynamic Schema Engine**: Instantly renders CRUD tables, search, filters, and detail drawers from Atomo's `/meta/schema`.
+- 🗂️ **RelatedPreview Stacked Drawers**: Infinite relational drill-downs (Contact -> Company -> Deals) with breadcrumbs and loop guards.
+- 🎨 **Visual Block Canvas**: Rich drag-and-drop block layout editor powered by `@dashin-dev/field-blocks`.
+- 📊 **CQRS Projectors & Queue Observability**: Real-time event lag metrics, async queue health, and one-click read-model replay.
+- 🔀 **Declarative Workflow Designer**: Visual action pipeline editor supporting reactive `OnEvent`, `Schedule`, and manual execution.
+
+Scaffold an Atomo + Dashin fullstack app in one command:
+```bash
+npx @dashin-dev/cli new my-admin --template atomo
+```
+
+### Local Dev with `atomo-admin-ui`
 
 ```bash
 pnpm install

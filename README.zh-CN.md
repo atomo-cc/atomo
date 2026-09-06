@@ -65,7 +65,24 @@ atomo build
 atomo deploy
 ```
 
-## 前端
+## 前端与企业级 Admin UI
+
+### Dashin 企业级 Admin 框架（生产环境推荐）
+
+Atomo 官方推荐使用 [Dashin](https://github.com/dashindev/dashin) 作为生产级企业 Admin 框架（React 18 + Vite + Tailwind CSS）：
+
+- ⚡ **零代码运行时动态 Schema 引擎**：直接解析 Atomo `/meta/schema`，自动生成 CRUD 列表、搜索、过滤和抽屉表单。
+- 🗂️ **RelatedPreview 关系穿透层叠抽屉**：跨实体无限深度钻取（Contact -> Company -> Deals），具备防环死循环保护与智能面包屑。
+- 🎨 **可视化拖拽 Block 画板**：由 `@dashin-dev/field-blocks` 提供，支持灵活的可视化页面与 JSON Blocks 设计。
+- 📊 **CQRS 投影器与异步队列可观测性**：实时事件积压报警、任务执行历史与一键全量 Replay 读模型重建。
+- 🔀 **声明式工作流设计器**：可视化 Action 编排流水线，支持 `OnEvent` 响应式事件链路与定时 Cron 任务。
+
+一键初始化 Atomo + Dashin 全栈项目：
+```bash
+npx @dashin-dev/cli new my-admin --template atomo
+```
+
+### 本地开发与 `atomo-admin-ui`
 
 ```bash
 pnpm install
