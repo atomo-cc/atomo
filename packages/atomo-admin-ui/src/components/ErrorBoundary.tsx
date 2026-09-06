@@ -25,18 +25,21 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   render() {
     if (this.state.error) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-          <div className="max-w-md w-full rounded-lg border border-gray-200 bg-white p-8 text-center shadow-sm">
-            <h1 className="text-lg font-semibold text-gray-900 mb-2">Something went wrong</h1>
-            <p className="text-sm text-gray-600 mb-6">
+        <div className="min-h-screen flex items-center justify-center bg-content-bg p-6">
+          <div className="max-w-md w-full rounded-bn border border-bn-border bg-content-box p-8 text-center shadow-bn">
+            <div className="w-12 h-12 rounded-full bg-danger/10 text-danger flex items-center justify-center mx-auto mb-4">
+              <span className="text-xl font-bold">!</span>
+            </div>
+            <h1 className="text-lg font-semibold text-foreground mb-2">Something went wrong</h1>
+            <p className="text-sm text-icon-muted mb-6">
               The admin hit an unexpected error and couldn’t render this view.
             </p>
-            <pre className="mb-6 max-h-40 overflow-auto rounded bg-gray-50 p-3 text-left text-xs text-gray-500">
+            <pre className="mb-6 max-h-40 overflow-auto rounded-bn bg-content-bg border border-bn-border p-3 text-left text-xs font-mono text-danger">
               {this.state.error.message}
             </pre>
             <button
               onClick={() => window.location.reload()}
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-bn bg-primary hover:bg-primary-hover px-4 py-2 text-sm font-medium text-white shadow-sm transition-all"
             >
               Reload
             </button>

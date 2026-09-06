@@ -269,11 +269,11 @@ export function JsonEditor({
 
       {/* Preview panel */}
       {showPreview && isValid && jsonText.trim() && (
-        <div className="border border-gray-200 rounded-md p-3 bg-gray-50">
-          <div className="text-sm font-medium text-gray-700 mb-2">
+        <div className="border border-bn-border rounded-bn p-3 bg-content-bg">
+          <div className="text-sm font-medium text-foreground mb-2">
             Preview ({previewInfo?.type})
           </div>
-          <pre className="text-xs text-gray-600 overflow-auto max-h-40 whitespace-pre-wrap">
+          <pre className="text-xs text-icon-muted font-mono overflow-auto max-h-40 whitespace-pre-wrap">
             {JSON.stringify(JSON.parse(jsonText), null, 2)}
           </pre>
         </div>
@@ -281,10 +281,10 @@ export function JsonEditor({
 
       {/* Error details */}
       {validationError && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">
+        <div className="text-sm text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-bn p-3">
           <div className="font-medium mb-1">JSON syntax error:</div>
-          <div className="font-mono">{validationError}</div>
-          <div className="mt-2 text-xs text-red-500">
+          <div className="font-mono text-xs">{validationError}</div>
+          <div className="mt-2 text-xs opacity-80">
             Check that brackets, quotes, and commas are correctly matched
           </div>
         </div>

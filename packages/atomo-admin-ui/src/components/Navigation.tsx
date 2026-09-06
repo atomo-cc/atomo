@@ -98,10 +98,10 @@ export function Navigation({ user, isMobileOpen, onCloseMobileMenu }: Navigation
             </div>
             <div>
               <div className="font-bold text-foreground text-sm tracking-tight flex items-center space-x-1.5">
-                <span>Dashin Admin</span>
+                <span>{(schema?.config as any)?.title || (schema?.config as any)?.name || 'Dashin Admin'}</span>
               </div>
               <div className="text-[10px] text-icon-muted font-medium">
-                PhotoEasy Backend
+                {(schema?.config as any)?.description || 'Schema Management'}
               </div>
             </div>
           </Link>

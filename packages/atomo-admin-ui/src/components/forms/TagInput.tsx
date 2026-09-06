@@ -111,11 +111,11 @@ export function TagInput({
       {/* Tag container */}
       <div
         className={cn(
-          'min-h-[2.5rem] w-full rounded-md border border-gray-300 bg-white px-3 py-2',
-          'focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent',
+          'min-h-[2.5rem] w-full rounded-bn border border-bn-border bg-content-box px-3 py-2 text-foreground',
+          'focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary',
           disabled && 'opacity-50 cursor-not-allowed',
-          error && 'border-danger-500 focus-within:ring-danger-500',
-          'flex flex-wrap gap-2 items-center'
+          error && 'border-danger focus-within:ring-danger/20',
+          'flex flex-wrap gap-2 items-center transition-colors'
         )}
         onClick={() => !disabled && inputRef.current?.focus()}
       >
@@ -124,7 +124,7 @@ export function TagInput({
           <Badge
             key={index}
             variant="secondary"
-            className="flex items-center gap-1 pl-2 pr-1"
+            className="flex items-center gap-1 pl-2 pr-1 rounded-bn"
           >
             <span>{tag}</span>
             {!disabled && (
@@ -134,7 +134,7 @@ export function TagInput({
                   e.stopPropagation()
                   removeTag(index)
                 }}
-                className="hover:bg-gray-200 rounded-full p-0.5 ml-1"
+                className="hover:bg-content-bg rounded-full p-0.5 ml-1 text-icon-muted hover:text-foreground"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -153,7 +153,7 @@ export function TagInput({
             onFocus={() => setShowSuggestions(inputValue.length > 0 && filteredSuggestions.length > 0)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             placeholder={value.length === 0 ? placeholder : ''}
-            className="flex-1 min-w-[120px] outline-none bg-transparent"
+            className="flex-1 min-w-[120px] outline-none bg-transparent text-foreground placeholder:text-icon-muted text-sm"
           />
         )}
 
@@ -162,9 +162,9 @@ export function TagInput({
           <button
             type="button"
             onClick={() => addTag(inputValue)}
-            className="p-1 hover:bg-gray-100 rounded"
+            className="p-1 hover:bg-content-bg rounded-bn text-icon-muted hover:text-foreground"
           >
-            <Plus className="h-4 w-4 text-gray-500" />
+            <Plus className="h-4 w-4" />
           </button>
         )}
       </div>
@@ -172,12 +172,12 @@ export function TagInput({
       {/* Suggestion list */}
       {showSuggestions && filteredSuggestions.length > 0 && (
         <div className="relative">
-          <div className="absolute top-0 left-0 right-0 z-10 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+          <div className="absolute top-0 left-0 right-0 z-10 bg-content-box border border-bn-border rounded-bn shadow-bn max-h-40 overflow-y-auto">
             {filteredSuggestions.map((suggestion, index) => (
               <button
                 key={index}
                 type="button"
-                className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                className="w-full text-left px-3 py-2 hover:bg-content-bg text-sm text-foreground transition-colors"
                 onClick={() => handleSuggestionClick(suggestion)}
               >
                 {suggestion}
@@ -187,18 +187,17 @@ export function TagInput({
         </div>
       )}
 
-      {/* Error message */}
-      {error && (
-        <p className="text-sm text-danger-600">{error}</p>
-      )}
-
-      {/* Help text */}
-      {maxTags && (
-        <p className="text-xs text-gray-500">
-          {value.length} / {maxTags} tags
-          {value.length >= maxTags && ' (limit reached)'}
-        </p>
-      )}
+      {/* Helper text */}
+      <div className="flex justify-between items-center">
+        {error && (
+          <p className="text-xs text-danger">{error}</p>
+        )}
+        {maxTags && (
+          <p className="text-xs text-icon-muted">
+            {value.length}/{maxTags} tags
+          </p>
+        )}
+      </div>
     </div>
   )
 }

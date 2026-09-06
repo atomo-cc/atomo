@@ -46,46 +46,34 @@ export function Dashboard({ schema }: DashboardProps) {
     staleTime: 30_000,
   })
 
-  // Specific high-level stats for PhotoEasy
-  const genCount = counts?.GenerationJob ?? 0
-  const ledgerCount = counts?.CreditLedger ?? 0
-  const subCount = counts?.Subscription ?? 0
-  const trialCount = counts?.TrialUsage ?? 0
+  const getModelIcon = (modelName: string) => {
+    const lower = modelName.toLowerCase()
+    if (lower.includes('generation') || lower.includes('job') || lower.includes('image')) return Sparkles
+    if (lower.includes('ledger') || lower.includes('transaction') || lower.includes('receipt')) return Receipt
+    if (lower.includes('balance') || lower.includes('credit') || lower.includes('wallet')) return BarChart3
+    if (lower.includes('subscription') || lower.includes('plan')) return Crown
+    if (lower.includes('trial') || lower.includes('usage') || lower.includes('timer')) return Timer
+    return Layers
+  }
 
-  const kpis = [
-    {
-      title: 'Generation Jobs',
-      value: genCount,
-      desc: 'Total AI generation requests',
-      icon: Sparkles,
-      href: '/entities/GenerationJob',
-      color: 'from-blue-500 to-indigo-600',
-    },
-    {
-      title: 'Credit Ledger',
-      value: ledgerCount,
-      desc: 'Immutable financial audits',
-      icon: Receipt,
-      href: '/entities/CreditLedger',
-      color: 'from-emerald-500 to-teal-600',
-    },
-    {
-      title: 'Subscriptions',
-      value: subCount,
-      desc: 'Active user subscription plans',
-      icon: Crown,
-      href: '/entities/Subscription',
-      color: 'from-amber-500 to-orange-600',
-    },
-    {
-      title: 'Trial Usage',
-      value: trialCount,
-      desc: 'Anti-abuse free quota trackers',
-      icon: Timer,
-      href: '/entities/TrialUsage',
-      color: 'from-purple-500 to-pink-600',
-    },
+  const kpiGradients = [
+    'from-blue-500 to-indigo-600',
+    'from-emerald-500 to-teal-600',
+    'from-amber-500 to-orange-600',
+    'from-purple-500 to-pink-600',
   ]
+
+  const kpis = models.slice(0, 4).map((model, idx) => ({
+    title: getFieldLabel(model),
+    value: counts?.[model] ?? 0,
+    desc: `Total ${getFieldLabel(model)} records`,
+    icon: getModelIcon(model),
+    href: `/entities/${model}`,
+    color: kpiGradients[idx % kpiGradients.length],
+  }))
+
+  const systemTitle = (schema?.config as any)?.title || (schema?.config as any)?.name || 'Atomo Admin Console'
+  const systemDesc = (schema?.config as any)?.description || 'Zero-configuration, schema-driven administration for your modern cloud services.'
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto animate-fade-in">
@@ -97,10 +85,10 @@ export function Dashboard({ schema }: DashboardProps) {
             <span>Dashin x Atomo Framework</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            PhotoEasy Cloud Admin
+            {systemTitle}
           </h1>
           <p className="mt-2 text-sm sm:text-base text-white/80 leading-relaxed">
-            Zero-configuration, schema-driven administration for PhotoEasy GPT-image billing, credits ledger, and async generation tasks.
+            {systemDesc}
           </p>
         </div>
       </div>

@@ -346,10 +346,10 @@ export function FormField({
         if (fieldConfig.component) {
           // Other custom components
           return (
-            <div className="p-4 border border-dashed border-gray-300 rounded-md text-center text-gray-500">
+            <div className="p-4 border border-dashed border-bn-border rounded-bn text-center text-icon-muted text-sm">
               Custom component: {fieldConfig.component}
               <br />
-              <small>Make sure the component is registered correctly</small>
+              <small className="opacity-80">Make sure the component is registered correctly</small>
             </div>
           )
         }
