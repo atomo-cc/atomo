@@ -12,12 +12,10 @@ views (e.g. a CRM kanban) attach at runtime as component plugins.
 
 ### Core ideas
 
-- **Schema-driven** — the UI is generated from server metadata, so it stays in sync
-  with the backend models automatically.
-- **Real CRUD** — list/detail/create/edit talk to the GraphQL API with loading and
-  error states; no mock data.
-- **Layered UI** — Tailwind CSS (styling) → Radix UI (accessible primitives) → Atomo
-  components (the product component library).
+- **Schema-driven** — the UI is generated from server metadata (`/meta/schema`), so it stays in sync with backend models automatically.
+- **Powered by Dashin** — leverages [Dashin](https://github.com/dashindev/dashin) (`@dashin-dev/dashin` and `@dashin-dev/source-atomo`) for batteries-included CRUD (`CrudTable`), stacked relationship drill-in (`RelatedPreview`), and token-driven responsive design.
+- **Embedded Single-Image Delivery** — compiled directly into `/app/admin` during Docker multi-stage builds and served natively by Atomo's Axum server via `ServeDir` on the single backend port.
+- **Real CRUD & Observability** — talks to Atomo's GraphQL & REST endpoints, with built-in CQRS projector lag tracking and visual workflow pipeline management.
 
 ## Project structure
 
