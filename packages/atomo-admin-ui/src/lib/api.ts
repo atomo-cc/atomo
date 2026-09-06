@@ -66,7 +66,7 @@ class AtomoApiClient {
         // /auth/me so the mount-time session check (App.tsx) can handle an invalid
         // token in-app (render <Login/>) instead of a hard page redirect.
         const url: string = error.config?.url ?? ''
-        if (error.response?.status === 401 && !url.includes('/auth/me')) {
+        if (error.response?.status === 401 && !url.includes('/auth/me') && !url.includes('/auth/login')) {
           localStorage.removeItem('atomo_auth_token')
           // Base-aware so it stays under /admin when served from a subpath.
           window.location.href = `${(import.meta as any).env.BASE_URL}login`

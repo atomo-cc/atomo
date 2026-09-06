@@ -22,6 +22,7 @@ export function Login() {
       setError(
         err?.response?.data?.message ||
           err?.response?.data?.error ||
+          (err?.response?.status === 401 ? 'Invalid email or password' : null) ||
           err?.message ||
           'Login failed',
       )
@@ -53,6 +54,7 @@ export function Login() {
             required
             autoFocus
             autoComplete="username"
+            placeholder="admin@example.com"
             className="mt-1 w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </label>
@@ -65,6 +67,7 @@ export function Login() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
+            placeholder="change-me-too"
             className="mt-1 w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </label>
@@ -76,6 +79,10 @@ export function Login() {
         >
           {loading ? 'Signing in…' : 'Sign in'}
         </button>
+
+        <div className="mt-4 text-center text-xs text-gray-500">
+          Default admin: <span className="font-mono text-gray-700">admin@example.com</span> / <span className="font-mono text-gray-700">change-me-too</span>
+        </div>
       </form>
     </div>
   )
