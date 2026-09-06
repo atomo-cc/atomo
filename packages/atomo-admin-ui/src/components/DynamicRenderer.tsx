@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { apiClient } from '../lib/api'
 import { SchemaMetadata, ModelMetadata } from '../lib/types'
-import { EntityListView } from './views/EntityListView'
+import { DynamicAtomoEntity } from '@dashin-dev/source-atomo'
 import { EntityDetailView } from './views/EntityDetailView'
 import { Dashboard } from './views/Dashboard'
 import { WorkflowsView } from './views/WorkflowsView'
@@ -147,17 +147,13 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
         return routeError('Missing model name.')
       }
       
-      const modelMetadata = schema.models[route.modelName]
-      if (!modelMetadata) {
-        return routeError(`Model not found: ${route.modelName}`)
-      }
-      
       return (
-        <EntityListView 
-          modelName={route.modelName}
-          modelMetadata={modelMetadata}
-          schema={schema}
-        />
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
+          <DynamicAtomoEntity 
+            model={route.modelName}
+            baseUrl={apiClient.baseUrl}
+          />
+        </div>
       )
       
     case 'detail':

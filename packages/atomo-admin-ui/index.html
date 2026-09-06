@@ -7,6 +7,10 @@
     <meta name="theme-color" content="#4f46e5" />
     <meta name="description" content="Atomo Admin — schema-driven administration for your Atomo backend." />
     <title>Atomo Admin</title>
+    <script>
+      window.global = window;
+      window.process = window.process || { env: { NODE_ENV: 'production' } };
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -6,6 +6,7 @@ import { Login } from './components/Login'
 import { Toaster } from './components/ui/Toast'
 import { apiClient, AuthUser } from './lib/api'
 import { initializeServicePlugins } from './lib/service-plugin-loader'
+import { DynamicAtomoProvider } from '@dashin-dev/source-atomo'
 import './index.css'
 
 // Initialize service plugins
@@ -66,30 +67,32 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-content-bg text-foreground transition-colors">
-      {/* Dashin Sidebar Navigation */}
-      <Navigation
-        user={user}
-        isMobileOpen={isMobileOpen}
-        onCloseMobileMenu={() => setIsMobileOpen(false)}
-      />
-
-      {/* Main Content Area */}
-      <div className="lg:pl-64 flex flex-col min-h-screen transition-all">
-        {/* Dashin TopBar */}
-        <TopBar
+    <DynamicAtomoProvider baseUrl={apiClient.baseUrl}>
+      <div className="min-h-screen bg-content-bg text-foreground transition-colors">
+        {/* Dashin Sidebar Navigation */}
+        <Navigation
           user={user}
-          onToggleMobileMenu={() => setIsMobileOpen((prev) => !prev)}
+          isMobileOpen={isMobileOpen}
+          onCloseMobileMenu={() => setIsMobileOpen(false)}
         />
 
-        {/* Dynamic Route Content */}
-        <main className="flex-1 overflow-x-hidden">
-          <DynamicRenderer route={route} />
-        </main>
-      </div>
+        {/* Main Content Area */}
+        <div className="lg:pl-64 flex flex-col min-h-screen transition-all">
+          {/* Dashin TopBar */}
+          <TopBar
+            user={user}
+            onToggleMobileMenu={() => setIsMobileOpen((prev) => !prev)}
+          />
 
-      <Toaster />
-    </div>
+          {/* Dynamic Route Content */}
+          <main className="flex-1 overflow-x-hidden">
+            <DynamicRenderer route={route} />
+          </main>
+        </div>
+
+        <Toaster />
+      </div>
+    </DynamicAtomoProvider>
   )
 }
 

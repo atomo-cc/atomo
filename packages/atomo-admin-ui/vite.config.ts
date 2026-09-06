@@ -10,6 +10,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    commonjsOptions: {
+      strictRequires: true,
+      transformMixedEsModules: true,
+    },
+  },
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
   },
   server: {
     port: 5173,

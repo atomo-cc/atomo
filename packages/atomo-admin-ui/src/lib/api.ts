@@ -33,7 +33,7 @@ function camelizeKeys(obj: any): any {
 
 class AtomoApiClient {
   private client: AxiosInstance
-  private baseUrl: string
+  public baseUrl: string
   /** Signed-in user, set by App after /auth/me. Read by views for cosmetic
    *  role gating (see lib/permissions.ts) — the server enforces regardless. */
   currentUser: AuthUser | null = null

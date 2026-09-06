@@ -17,6 +17,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@dashin-dev/dashin": "2.0.0-alpha.7",
+    "@dashin-dev/source-atomo": "file:vendor/dashin-dev-source-atomo-2.0.0-alpha.7.tgz",
     "@hookform/resolvers": "^3.3.0",
     "@radix-ui/react-accordion": "^1.1.2",
     "@radix-ui/react-checkbox": "^1.0.4",
@@ -44,6 +46,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "@types/node": "^26.4.1",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
