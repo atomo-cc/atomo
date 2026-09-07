@@ -2,6 +2,8 @@
 
 At server boot, one `CurrentStateProjection` is auto-registered per entity model. Its read table is synchronized from the current base table, then model notifications refresh the affected entity from current base state.
 
+Projection columns retain the existing TEXT representation: base SQL NULL becomes an empty string, while numbers and booleans become text. This matches `TableProjection` event handling. Query the base table when distinguishing SQL NULL from an empty value matters; the projection representation does not change base-column nullability or historical completeness.
+
 Startup migration adds missing nullable TEXT projection columns in a transaction. Existing columns are preserved; incompatible types fail explicitly with `CURRENT_PROJECTION_SCHEMA_CONFLICT`, without silently dropping or retyping them. Startup synchronization upserts current active rows and removes projection rows whose base records are absent or soft-deleted. It repairs missed notifications and works with history disabled. Existing extra projection columns are preserved for retained rows.
 
 This is **current-state synchronization**, not historical replay: it never reads `event_log`, repairs missing history or clears coverage gaps. Source writes briefly wait while the initial snapshot is synchronized. Unchanged startup rows are not rewritten. Mutations, initialization and refresh acquire the shared lifecycle lock before base/projection locks; historical rebuild and retention take its exclusive side. Per-entity live refreshes are serialized and re-read current base state, so an old queued notification cannot restore an outdated payload. Notification delivery remains best-effort; a later restart can reconcile missed changes.
