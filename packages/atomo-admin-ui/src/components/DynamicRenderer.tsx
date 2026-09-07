@@ -8,6 +8,9 @@ import React, { Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { apiClient } from '../lib/api'
+import { canPerform } from '../lib/permissions'
+import { listSearchField } from '../lib/list-policy'
+import { getFieldLabel } from '../lib/utils'
 import { SchemaMetadata, ModelMetadata } from '../lib/types'
 import { DynamicAtomoEntity } from '@dashin-dev/source-atomo'
 import { EntityDetailView } from './views/EntityDetailView'
@@ -39,6 +42,7 @@ export interface DynamicRendererProps {
  * Dynamic rendering engine component
  */
 export function DynamicRenderer({ route }: DynamicRendererProps) {
+  const { data: me } = useQuery({ queryKey: ['auth-me'], queryFn: () => apiClient.getCurrentUser(), staleTime: 60_000 })
   // Load schema metadata
   const {
     data: schema,
@@ -146,11 +150,17 @@ export function DynamicRenderer({ route }: DynamicRendererProps) {
       if (!route.modelName) {
         return routeError('Missing model name.')
       }
-      
+      const listModel = schema.models[route.modelName]
+      if (!listModel) return routeError('Unknown model.')
+      const searchField = listSearchField(listModel)
       return (
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
+          <p className="text-xs text-icon-muted mb-2">Search by {getFieldLabel(searchField)}</p>
           <DynamicAtomoEntity 
             model={route.modelName}
+            title={getFieldLabel(route.modelName)}
+            disableAdd={!me || !canPerform(listModel, 'create', me.role)}
+            searchField={searchField}
             baseUrl={apiClient.baseUrl}
           />
         </div>

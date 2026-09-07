@@ -120,6 +120,10 @@ pub struct AtomoClient {
 
 impl AtomoClient {
     /// Get the database connection pool
+    pub async fn cache_status(&self) -> crate::cache::CacheStatus {
+        self.cache.status().await
+    }
+
     pub fn db_pool(&self) -> &PgPool {
         &self.pool
     }
@@ -206,6 +210,10 @@ impl AtomoClient {
     }
 
     pub async fn new(schema: &Schema) -> Result<Self> {
+        let history_config = crate::history::HistoryConfig::from_env()?;
+        history_config.validate_models(schema)?;
+        let cache_config = crate::cache::CacheConfig::from_env().map_err(anyhow::Error::msg)?;
+        validate_cache_models(&cache_config, schema)?;
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string());
 
@@ -223,8 +231,9 @@ impl AtomoClient {
             tx.commit().await?;
         }
 
-        let event_store = EventStore::new(pool.clone());
+        let event_store = EventStore::with_config(pool.clone(), history_config)?;
         event_store.init().await?;
+        event_store.initialize_models(schema.models.keys()).await?;
 
         Ok(Self {
             pool,
@@ -233,12 +242,16 @@ impl AtomoClient {
             event_store,
             embedding_store: None,
             hook_runner: Arc::new(crate::hooks::NoopHookRunner),
-            cache: crate::cache::ReadCache::from_env(60),
+            cache: crate::cache::ReadCache::with_config(cache_config),
         })
     }
 
     pub fn builder() -> AtomoClientBuilder {
         AtomoClientBuilder::new()
+    }
+
+    pub fn history_store(&self) -> &EventStore {
+        &self.event_store
     }
 
     /// Find many records
@@ -251,6 +264,7 @@ impl AtomoClient {
         offset: Option<usize>,
         include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
+        validate_where_clauses(where_clauses)?;
         // Include limit/offset in the key — otherwise two queries that differ ONLY in pagination
         // collide and the second returns the first's cached rows (page 2 == page 1). Bug caught
         // by the CRM dogfood (orderBy + offset).
@@ -261,15 +275,30 @@ impl AtomoClient {
         let cache_key = crate::cache::ReadCache::key(
             model_name,
             &format!(
-                "{:?}{:?}{:?}{:?}{:?}",
+                "many:{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
                 where_clauses,
                 order_by,
                 limit,
                 offset,
+                include,
                 current_tenant()
             ),
         );
-        if let Some(cached) = self.cache.get(&cache_key).await {
+        if !include.is_empty() {
+            self.cache.record_relational_bypass().await;
+        }
+        // Relational reads bypass caching: dependencies and nested reads are not a single cache unit.
+        let _fill_guard = if include.is_empty() {
+            Some(self.cache.lock_fill(&cache_key).await)
+        } else {
+            None
+        };
+        let generation = self.cache.generation().await;
+        if let Some(cached) = if include.is_empty() {
+            self.cache.get(&cache_key).await
+        } else {
+            None
+        } {
             if let Ok(records) = serde_json::from_value(cached) {
                 return Ok(records);
             }
@@ -289,9 +318,11 @@ impl AtomoClient {
                 self.resolve_includes(model_name, record, include).await?;
             }
         }
-        self.cache
-            .set(&cache_key, serde_json::to_value(&records)?)
-            .await;
+        if include.is_empty() {
+            self.cache
+                .set_if_generation(&cache_key, serde_json::to_value(&records)?, generation)
+                .await;
+        }
         Ok(records)
     }
 
@@ -304,6 +335,7 @@ impl AtomoClient {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<HashMap<String, Value>>> {
+        validate_where_clauses(where_clauses)?;
         let model = self
             .schema
             .models
@@ -324,6 +356,7 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         include: &[String],
     ) -> Result<Option<HashMap<String, Value>>> {
+        validate_where_clauses(where_clauses)?;
         let cache_key = crate::cache::ReadCache::key(
             model_name,
             &format!(
@@ -333,7 +366,21 @@ impl AtomoClient {
                 current_tenant()
             ),
         );
-        if let Some(cached) = self.cache.get(&cache_key).await {
+        if !include.is_empty() {
+            self.cache.record_relational_bypass().await;
+        }
+        // Relational reads bypass caching: dependencies and nested reads are not a single cache unit.
+        let _fill_guard = if include.is_empty() {
+            Some(self.cache.lock_fill(&cache_key).await)
+        } else {
+            None
+        };
+        let generation = self.cache.generation().await;
+        if let Some(cached) = if include.is_empty() {
+            self.cache.get(&cache_key).await
+        } else {
+            None
+        } {
             if let Ok(record) = serde_json::from_value(cached) {
                 return Ok(record);
             }
@@ -358,9 +405,11 @@ impl AtomoClient {
                 self.resolve_includes(model_name, rec, include).await?;
             }
         }
-        self.cache
-            .set(&cache_key, serde_json::to_value(&record)?)
-            .await;
+        if include.is_empty() {
+            self.cache
+                .set_if_generation(&cache_key, serde_json::to_value(&record)?, generation)
+                .await;
+        }
         Ok(record)
     }
 
@@ -413,6 +462,10 @@ impl AtomoClient {
         // create latency on durable storage.) This also makes create **atomic**: a row is never
         // persisted without its event. The tenant bind (RLS) lives in the same tx, as before.
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -433,6 +486,7 @@ impl AtomoClient {
         };
         self.event_store.persist_in(&mut *tx, &event).await?;
         tx.commit().await?;
+        self.cache.invalidate_model(model_name).await;
 
         // Post-commit: in-memory fan-out + after-hook + cache invalidation (unchanged).
         let _ = self.event_sender.send(event.clone());
@@ -440,7 +494,6 @@ impl AtomoClient {
             .run_after("after_create", &hook_ctx)
             .await
             .ok();
-        self.cache.invalidate_model(model_name).await;
 
         Ok(record)
     }
@@ -495,6 +548,10 @@ impl AtomoClient {
 
         // One transaction for the whole batch — a single fsync.
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -534,6 +591,7 @@ impl AtomoClient {
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
+        self.cache.invalidate_model(model_name).await;
 
         // Post-commit: fan-out + after-hooks + a single cache invalidation for the whole batch.
         for event in &events {
@@ -551,7 +609,6 @@ impl AtomoClient {
                 .await
                 .ok();
         }
-        self.cache.invalidate_model(model_name).await;
 
         Ok(records_out)
     }
@@ -566,6 +623,7 @@ impl AtomoClient {
         _include: &[String],
         actor: Option<&str>,
     ) -> Result<Vec<HashMap<String, Value>>> {
+        validate_where_clauses(where_clauses)?;
         let model = self
             .schema
             .models
@@ -604,6 +662,10 @@ impl AtomoClient {
         // — and the event writes now propagate (were `.ok()`-swallowed), so an update is never
         // recorded without its events.
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -627,6 +689,7 @@ impl AtomoClient {
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
+        self.cache.invalidate_model(model_name).await;
 
         for event in &events {
             let _ = self.event_sender.send(event.clone());
@@ -635,7 +698,6 @@ impl AtomoClient {
             .run_after("after_update", &hook_ctx)
             .await
             .ok();
-        self.cache.invalidate_model(model_name).await;
 
         Ok(records)
     }
@@ -648,6 +710,7 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        validate_where_clauses(where_clauses)?;
         let model = self
             .schema
             .models
@@ -677,6 +740,10 @@ impl AtomoClient {
         // events commit in ONE transaction (one `fsync`, not 1 + N), and the event writes now
         // propagate (were `.ok()`-swallowed).
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -707,6 +774,7 @@ impl AtomoClient {
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
+        self.cache.invalidate_model(model_name).await;
 
         for event in &events {
             let _ = self.event_sender.send(event.clone());
@@ -715,7 +783,6 @@ impl AtomoClient {
             .run_after("after_delete", &hook_ctx)
             .await
             .ok();
-        self.cache.invalidate_model(model_name).await;
 
         Ok(count)
     }
@@ -727,6 +794,7 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        validate_where_clauses(where_clauses)?;
         let model = self
             .schema
             .models
@@ -736,6 +804,10 @@ impl AtomoClient {
         let args = build_args(&params)?;
 
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -748,14 +820,10 @@ impl AtomoClient {
             .iter()
             .map(|row| {
                 let record = row_to_map(row);
-                let mut data = HashMap::new();
-                if let Some(id) = record.get("id") {
-                    data.insert("id".to_string(), id.clone());
-                }
                 ModelEvent {
                     event_type: EventType::Restored,
                     model_name: model_name.to_string(),
-                    data,
+                    data: record,
                     previous_data: None,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                     event_id: uuid::Uuid::new_v4().to_string(),
@@ -766,11 +834,12 @@ impl AtomoClient {
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
+        self.cache.invalidate_model(model_name).await;
 
         for event in &events {
             let _ = self.event_sender.send(event.clone());
         }
-        self.cache.invalidate_model(model_name).await;
+
         Ok(count)
     }
 
@@ -781,6 +850,7 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        validate_where_clauses(where_clauses)?;
         let model = self
             .schema
             .models
@@ -790,6 +860,10 @@ impl AtomoClient {
         let args = build_args(&params)?;
 
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -820,20 +894,24 @@ impl AtomoClient {
             .collect();
         self.event_store.persist_many_in(&mut tx, &events).await?;
         tx.commit().await?;
+        self.cache.invalidate_model(model_name).await;
 
         for event in &events {
             let _ = self.event_sender.send(event.clone());
         }
-        self.cache.invalidate_model(model_name).await;
+
         Ok(count)
     }
 
     /// Count records matching where clauses
     pub async fn count(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
+        validate_where_clauses(where_clauses)?;
         let cache_key = crate::cache::ReadCache::key(
             model_name,
             &format!("count:{:?}{:?}", where_clauses, current_tenant()),
         );
+        let _fill_guard = self.cache.lock_fill(&cache_key).await;
+        let generation = self.cache.generation().await;
         if let Some(cached) = self.cache.get(&cache_key).await {
             if let Some(n) = cached.as_i64() {
                 return Ok(n);
@@ -864,7 +942,7 @@ impl AtomoClient {
         let row = self.fetch_one_scoped(&sql, args).await?;
         let n = row.try_get::<i64, _>("count").unwrap_or(0);
         self.cache
-            .set(&cache_key, serde_json::Value::Number(n.into()))
+            .set_if_generation(&cache_key, serde_json::Value::Number(n.into()), generation)
             .await;
         Ok(n)
     }
@@ -875,6 +953,7 @@ impl AtomoClient {
         model_name: &str,
         where_clauses: &[WhereClause],
     ) -> Result<i64> {
+        validate_where_clauses(where_clauses)?;
         let model = self
             .schema
             .models
@@ -975,6 +1054,7 @@ impl AtomoClient {
         include: &[String],
         actor: Option<&str>,
     ) -> Result<Vec<HashMap<String, Value>>> {
+        validate_where_clauses(where_clauses)?;
         self.enforce_access(model_name, "update", role)?;
         self.update_many(model_name, where_clauses, data, include, actor)
             .await
@@ -987,6 +1067,7 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        validate_where_clauses(where_clauses)?;
         self.enforce_access(model_name, "delete", role)?;
         self.delete_many(model_name, where_clauses, actor).await
     }
@@ -1133,11 +1214,25 @@ impl AtomoClient {
     }
 }
 
+fn validate_cache_models(config: &crate::cache::CacheConfig, schema: &Schema) -> Result<()> {
+    config.validate().map_err(anyhow::Error::msg)?;
+    for model in config.models.keys() {
+        anyhow::ensure!(
+            schema.models.contains_key(model),
+            "cache policy refers to unknown model '{}'",
+            model
+        );
+    }
+    Ok(())
+}
+
 /// Builder for AtomoClient
 pub struct AtomoClientBuilder {
+    history_config: Option<crate::history::HistoryConfig>,
     database_url: Option<String>,
     enable_migrations: bool,
     enable_ai: bool,
+    cache_config: Option<crate::cache::CacheConfig>,
     hook_runner: Option<Arc<dyn crate::hooks::HookRunner>>,
 }
 
@@ -1150,9 +1245,11 @@ impl Default for AtomoClientBuilder {
 impl AtomoClientBuilder {
     pub fn new() -> Self {
         Self {
+            history_config: None,
             database_url: None,
             enable_migrations: true,
             enable_ai: false,
+            cache_config: None,
             hook_runner: None,
         }
     }
@@ -1162,8 +1259,18 @@ impl AtomoClientBuilder {
         self
     }
 
+    pub fn history_config(mut self, config: crate::history::HistoryConfig) -> Self {
+        self.history_config = Some(config);
+        self
+    }
+
     pub fn enable_migrations(mut self, enable: bool) -> Self {
         self.enable_migrations = enable;
+        self
+    }
+
+    pub fn cache_config(mut self, config: crate::cache::CacheConfig) -> Self {
+        self.cache_config = Some(config);
         self
     }
 
@@ -1178,6 +1285,16 @@ impl AtomoClientBuilder {
     }
 
     pub async fn build(self, schema: &Schema) -> Result<AtomoClient> {
+        let history_config = match self.history_config {
+            Some(config) => config,
+            None => crate::history::HistoryConfig::from_env()?,
+        };
+        history_config.validate_models(schema)?;
+        let cache_config = match self.cache_config {
+            Some(config) => config,
+            None => crate::cache::CacheConfig::from_env().map_err(anyhow::Error::msg)?,
+        };
+        validate_cache_models(&cache_config, schema)?;
         let database_url = self.database_url.unwrap_or_else(|| {
             std::env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string())
@@ -1186,8 +1303,9 @@ impl AtomoClientBuilder {
         println!("Connecting to database: {}", database_url);
         let pool = pool_from_env(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
-        let event_store = EventStore::new(pool.clone());
+        let event_store = EventStore::with_config(pool.clone(), history_config)?;
         event_store.init().await?;
+        event_store.initialize_models(schema.models.keys()).await?;
 
         // Run migrations if enabled (wrapped in a transaction so partial failures roll back)
         if self.enable_migrations {
@@ -1218,12 +1336,26 @@ impl AtomoClientBuilder {
             hook_runner: self
                 .hook_runner
                 .unwrap_or_else(|| Arc::new(crate::hooks::NoopHookRunner)),
-            cache: crate::cache::ReadCache::from_env(60),
+            cache: crate::cache::ReadCache::with_config(cache_config),
         })
     }
 }
 
-/// Build PgArguments from a Vec of serde_json::Value
+/// Reject malformed collection predicates before cache access or database mutation.
+fn validate_where_clauses(clauses: &[WhereClause]) -> Result<()> {
+    for clause in clauses {
+        if matches!(
+            clause.operator,
+            crate::query::WhereOperator::In | crate::query::WhereOperator::NotIn
+        ) && !clause.value.is_array()
+        {
+            anyhow::bail!("INVALID_FILTER: in/notIn requires an array");
+        }
+    }
+    Ok(())
+}
+
+/// Build PgArguments from scalar filter parameters or native JSON write values.
 fn build_args(params: &[Value]) -> Result<PgArguments> {
     let mut args = PgArguments::default();
     for p in params {

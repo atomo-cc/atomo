@@ -38,6 +38,8 @@ export const schema = {
   via `/meta/schema`, which hides mutation buttons the signed-in role can't use
   (cosmetic — the server enforces regardless).
 - relationships: belongsTo/hasMany with foreign keys.
+- The current admin registry links to model list pages; creation lives on those pages. A `system` or `never` creation rule hides New, and explicit role rules use the signed-in role. The server remains authoritative for mutations.
+- The embedded list searches one actual field and labels it as `Search by ...`: it prefers `title` or `name` among searchable fields, then another searchable field, then the primary key. A model without `name` is not queried against a nonexistent name column.
 - validation: simple rules (email, required, min/max, `in:a,b,c`). Builder-DSL
   `select(['a','b'])` fields emit an `in:` rule automatically — the runtime
   validator rejects out-of-set values on every write path, and the admin form

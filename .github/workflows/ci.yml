@@ -141,6 +141,7 @@ jobs:
           ATOMO_SCHEMA_PATH=packages/atomo-admin-ui/e2e/schema.e2e.ts \
           JWT_SECRET=e2e-secret \
           ADMIN_EMAIL=admin@e2e.dev ADMIN_PASSWORD=e2e-admin-pass \
+          RATE_LIMIT_RPS=1000 RATE_LIMIT_WINDOW_SECS=60 \
           PORT=3000 nohup ./target/debug/atomo-server > server.log 2>&1 &
           for i in $(seq 1 30); do
             curl -sf http://localhost:3000/health && break
@@ -168,6 +169,15 @@ jobs:
       - name: Run admin smoke
         working-directory: packages/atomo-admin-ui
         run: pnpm e2e
+
+      - name: Retain admin screenshots for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-smoke-screenshots
+          path: packages/atomo-admin-ui/test-results/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Server log on failure
         if: failure()

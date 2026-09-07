@@ -11,6 +11,8 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 ## 状态总览
 
+- 存储生命周期（未发布）：本地已实现有界缓存、可选模型历史与独立审计保留、持久化重放能力标记和管理员诊断接口。默认继续保存完整历史与审计；跨功能验证进度见仓库 `docs/implementation/storage-lifecycle/TODO.md`。配置与限制见[存储生命周期](/guide/storage-lifecycle)。
+
 - CLI 与开发运行时：已实现（init、migrate、codegen、dev、dev --workspace）
 - Schema → Rust/GraphQL/代码生成：已实现，支持热重载
 - GraphQL API：已实现，并与平台查询合并

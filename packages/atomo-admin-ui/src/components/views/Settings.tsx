@@ -6,6 +6,7 @@ import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { SchemaMetadata } from '../../lib/types'
 import { apiClient } from '../../lib/api'
+import { useAuditPolicy } from '../../lib/use-audit-policy'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -25,6 +26,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export function Settings({ schema }: SettingsProps) {
+  const auditPolicy = useAuditPolicy()
   const { data: me } = useQuery({
     queryKey: ['auth-me'],
     queryFn: () => apiClient.getCurrentUser(),
@@ -98,11 +100,12 @@ export function Settings({ schema }: SettingsProps) {
       <Card>
         <CardHeader className="py-4 border-b border-bn-border/60">
           <CardTitle>Platform Configuration</CardTitle>
-          <CardDescription>Introspected runtime capabilities reported by the loaded schema</CardDescription>
+          <CardDescription>Schema capabilities and effective runtime audit policy</CardDescription>
         </CardHeader>
         <CardContent className="p-5">
           <Row label="Active Schema Models" value={Object.keys(schema.models).length} />
-          <Row label="Audit Trail" value={<Badge variant={schema.config.auditLog ? 'success' : 'secondary'}>{schema.config.auditLog ? 'Enabled' : 'Disabled'}</Badge>} />
+          <Row label="Audit Saving" value={<Badge variant="secondary"><span data-testid="audit-policy-label">{auditPolicy.label}</span></Badge>} />
+          <p className="text-xs text-icon-muted py-2" data-testid="audit-policy-description">{auditPolicy.description}</p>
           <Row label="Soft Deletes" value={<Badge variant={schema.config.softDeletes ? 'success' : 'secondary'}>{schema.config.softDeletes ? 'Enabled' : 'Disabled'}</Badge>} />
           <Row label="Default Query Page Size" value={schema.config.defaultPageSize || 20} />
         </CardContent>

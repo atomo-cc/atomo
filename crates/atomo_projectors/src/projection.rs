@@ -4,6 +4,26 @@ use serde_json::Value;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
+/// Missing capability metadata is accepted only for legacy installations. Once present,
+/// retained/off policies or a historical gap prevent destructive replay.
+pub async fn require_complete_history_in(conn: &mut sqlx::PgConnection, model: &str) -> Result<()> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('model_history_coverage') IS NOT NULL")
+            .fetch_one(&mut *conn)
+            .await?;
+    if exists {
+        let state: Option<(String, bool)> =
+            sqlx::query_as("SELECT mode, complete FROM model_history_coverage WHERE model_name=$1")
+                .bind(model)
+                .fetch_optional(&mut *conn)
+                .await?;
+        if state.is_some_and(|(mode, complete)| mode != "full" || !complete) {
+            anyhow::bail!("HISTORY_REPLAY_UNAVAILABLE: model {model} does not have complete full history; projection unchanged");
+        }
+    }
+    Ok(())
+}
+
 /// Render a JSON value as the TEXT to store in a projection column. Strings pass through;
 /// numbers/bools/etc. are stringified (previously `as_str()` returned None for non-strings,
 /// silently binding "" — so numeric fields like Deal.value were lost).
@@ -27,6 +47,13 @@ pub trait Projection: Send + Sync {
         pool: &PgPool,
     ) -> Result<()>;
     async fn rebuild(&self, pool: &PgPool) -> Result<()>;
+    /// Custom projections must opt into connection-bound rebuild to participate in atomic rebuild_all.
+    fn supports_transactional_rebuild(&self) -> bool {
+        false
+    }
+    async fn rebuild_in(&self, _conn: &mut sqlx::PgConnection) -> Result<()> {
+        anyhow::bail!("PROJECTION_REBUILD_UNSUPPORTED: implement connection-bound rebuild_in first")
+    }
 }
 
 /// Auto-generated table projection: maintains a denormalized read table
@@ -46,25 +73,14 @@ impl TableProjection {
             columns,
         }
     }
-}
-
-#[async_trait]
-impl Projection for TableProjection {
-    fn name(&self) -> &str {
-        &self.name
-    }
-    fn source_model(&self) -> &str {
-        &self.source_model
-    }
-
-    async fn handle_event(
+    async fn handle_event_connection(
         &self,
         event_type: &str,
         data: &HashMap<String, Value>,
-        pool: &PgPool,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<()> {
         match event_type {
-            "Created" => {
+            "Created" | "Restored" => {
                 let cols: Vec<&str> = self
                     .columns
                     .iter()
@@ -87,7 +103,7 @@ impl Projection for TableProjection {
                     let val = data.get(*col).unwrap_or(&Value::Null);
                     query = query.bind(value_to_text(val));
                 }
-                query.execute(pool).await?;
+                query.execute(&mut *conn).await?;
             }
             "Updated" => {
                 if let Some(Value::String(id)) = data.get("id") {
@@ -117,14 +133,14 @@ impl Projection for TableProjection {
                         query = query.bind(value_to_text(val));
                     }
                     query = query.bind(id);
-                    query.execute(pool).await?;
+                    query.execute(&mut *conn).await?;
                 }
             }
-            "Deleted" => {
+            "Deleted" | "HardDeleted" => {
                 if let Some(Value::String(id)) = data.get("id") {
                     sqlx::query(&format!("DELETE FROM {} WHERE id = $1", self.table_name))
                         .bind(id)
-                        .execute(pool)
+                        .execute(&mut *conn)
                         .await?;
                 }
             }
@@ -132,26 +148,56 @@ impl Projection for TableProjection {
         }
         Ok(())
     }
+}
+
+#[async_trait]
+impl Projection for TableProjection {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn source_model(&self) -> &str {
+        &self.source_model
+    }
+
+    async fn handle_event(
+        &self,
+        event_type: &str,
+        data: &HashMap<String, Value>,
+        pool: &PgPool,
+    ) -> Result<()> {
+        let mut conn = pool.acquire().await?;
+        self.handle_event_connection(event_type, data, &mut conn)
+            .await
+    }
 
     async fn rebuild(&self, pool: &PgPool) -> Result<()> {
-        // Truncate, then REPLAY the model's events from the event_log in order (was previously
-        // truncate-only, which permanently emptied the read model — a data-loss hazard).
-        sqlx::query(&format!("TRUNCATE TABLE {} CASCADE", self.table_name))
-            .execute(pool)
+        let mut tx = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(718206091)")
+            .execute(&mut *tx)
             .await?;
+        require_complete_history_in(&mut tx, &self.source_model).await?;
+        self.rebuild_in(&mut tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+    fn supports_transactional_rebuild(&self) -> bool {
+        true
+    }
+    async fn rebuild_in(&self, conn: &mut sqlx::PgConnection) -> Result<()> {
+        require_complete_history_in(conn, &self.source_model).await?;
         let rows: Vec<(String, Value)> = sqlx::query_as(
             "SELECT event_type, data FROM event_log WHERE model_name = $1 ORDER BY timestamp, created_at",
-        )
-        .bind(&self.source_model)
-        .fetch_all(pool)
-        .await?;
+        ).bind(&self.source_model).fetch_all(&mut *conn).await?;
+        sqlx::query(&format!("TRUNCATE TABLE {}", self.table_name))
+            .execute(&mut *conn)
+            .await?;
         for (event_type, data) in rows {
             let map: HashMap<String, Value> = match data {
                 Value::Object(m) => m.into_iter().collect(),
                 _ => HashMap::new(),
             };
-            // Reuse the same event handler the live listener uses, so replay == live semantics.
-            self.handle_event(&event_type, &map, pool).await?;
+            self.handle_event_connection(&event_type, &map, conn)
+                .await?;
         }
         Ok(())
     }

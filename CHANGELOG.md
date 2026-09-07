@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional per-model full/off/retained mutation history and independent full/metadata/off audit policies, with opt-in age/estimated-byte retention and bounded maintenance batches. Coverage gaps persist across restarts; replay preflight refuses incomplete histories before clearing projections. Aggregate event sourcing remains independent.
+- Bounded process-local caching with enable switch, TTL/TTI, model overrides, entry/estimated-byte limits, maintenance, metrics and demand-driven coalesced refresh. Explicit multi-instance bypass avoids claiming distributed strong consistency.
+- Administrator-only `GET /storage/diagnostics` for policy, cache counters, history coverage and estimated usage; Rust builders and server configuration expose lifecycle settings.
+
+### Fixed
+- Explicit null values in single/bulk inserts and updates now use destination-typed SQL NULL instead of a TEXT-typed parameter. Nullable numeric, boolean, timestamp and JSON columns work consistently; mixed-null batches preserve binding offsets and database constraints.
+- Automatic projections now add missing nullable columns safely and reconcile current base rows on startup, including when event history is disabled. Live notifications re-read current state, while historical rebuild retains its separate completeness checks. Incompatible existing column types fail without destructive schema changes.
+- `in`/`notIn` filters now use bound scalar predicates in one SQL statement instead of passing JSONB to PostgreSQL array operators. Scoped reads and bulk mutations preserve surrounding `AND` conditions, empty-set semantics and JSON array field writes; malformed non-array set filters are rejected.
+- Existing admin Settings and Observability show effective audit saving and unknown/unavailable states instead of reporting schema-default audit as enabled.
+- The embedded admin model list now receives schema creation permissions and an actual search field; server-written models hide New, and positive searches no longer target a nonexistent default `name` field. The existing browser smoke checks semantic tables and current registry navigation while retaining permission, enum, timestamp and File safety assertions.
+- Cache point/count/list behavior is documented consistently; tenant/query keys, relational-query bypass and atomic generation barriers prevent old fills from surviving local writes, including cancelled invalidations.
+
+
 ## [0.6.4] - 2026-07-14
 
 ### Fixed

@@ -86,6 +86,7 @@ pub mod errors;
 pub mod event_store;
 pub mod events;
 pub mod graphql;
+pub mod history;
 pub mod hooks;
 pub mod prelude;
 pub mod query;
@@ -172,6 +173,8 @@ pub struct AtomoBuilder {
     enable_migrations: bool,
     enable_ai: bool,
     hook_runner: Option<Arc<dyn hooks::HookRunner>>,
+    cache_config: Option<cache::CacheConfig>,
+    history_config: Option<history::HistoryConfig>,
 }
 
 impl Default for AtomoBuilder {
@@ -189,12 +192,26 @@ impl AtomoBuilder {
             enable_migrations: true,
             enable_ai: false,
             hook_runner: None,
+            cache_config: None,
+            history_config: None,
         }
     }
 
     /// Set a custom hook runner (e.g. WASM plugin bridge)
     pub fn hook_runner(mut self, runner: Arc<dyn hooks::HookRunner>) -> Self {
         self.hook_runner = Some(runner);
+        self
+    }
+
+    /// Configure bounded read caching for this instance.
+    pub fn cache_config(mut self, config: cache::CacheConfig) -> Self {
+        self.cache_config = Some(config);
+        self
+    }
+
+    /// Configure model history independently from post-commit event delivery.
+    pub fn history_config(mut self, config: history::HistoryConfig) -> Self {
+        self.history_config = Some(config);
         self
     }
 
@@ -242,6 +259,12 @@ impl AtomoBuilder {
         }
         if let Some(runner) = self.hook_runner {
             client_builder = client_builder.hook_runner(runner);
+        }
+        if let Some(config) = self.cache_config {
+            client_builder = client_builder.cache_config(config);
+        }
+        if let Some(config) = self.history_config {
+            client_builder = client_builder.history_config(config);
         }
 
         let client = client_builder

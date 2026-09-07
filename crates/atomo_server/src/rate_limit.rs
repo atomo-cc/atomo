@@ -71,6 +71,9 @@ impl RateLimiter {
     }
 }
 
+// Both variants are complete HTTP responses at the middleware boundary. Keep
+// the existing public signature; boxing only the 429 response adds no value.
+#[allow(clippy::result_large_err)]
 pub async fn rate_limit_middleware(
     axum::extract::State(limiter): axum::extract::State<RateLimiter>,
     req: Request,
