@@ -169,6 +169,15 @@ jobs:
         working-directory: packages/atomo-admin-ui
         run: pnpm e2e
 
+      - name: Retain admin screenshots for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-smoke-screenshots
+          path: packages/atomo-admin-ui/test-results/
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Server log on failure
         if: failure()
         run: cat server.log || true

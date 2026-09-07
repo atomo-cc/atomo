@@ -7,6 +7,7 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
     headless: true,
+    screenshot: 'on',
   },
   webServer: process.env.E2E_BASE_URL
     ? undefined
