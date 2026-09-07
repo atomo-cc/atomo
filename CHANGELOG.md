@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-08
+
 ### Added
 - Optional per-model full/off/retained mutation history and independent full/metadata/off audit policies, with opt-in age/estimated-byte retention and bounded maintenance batches. Coverage gaps persist across restarts; replay preflight refuses incomplete histories before clearing projections. Aggregate event sourcing remains independent.
 - Bounded process-local caching with enable switch, TTL/TTI, model overrides, entry/estimated-byte limits, maintenance, metrics and demand-driven coalesced refresh. Explicit multi-instance bypass avoids claiming distributed strong consistency.

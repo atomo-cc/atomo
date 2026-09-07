@@ -11,7 +11,7 @@ This page is the single source of truth for delivery status and upcoming milesto
 
 ## Status Overview
 
-- Storage lifecycle (unreleased): implemented locally; bounded caching, optional model history and audit retention, persistent replay capability and admin diagnostics. Full cross-feature validation is tracked in `docs/implementation/storage-lifecycle/TODO.md`. Guide: [/guide/storage-lifecycle](/guide/storage-lifecycle).
+- Storage lifecycle (v0.7.0): bounded caching, optional model history and audit retention, persistent replay capability and admin diagnostics. Cross-feature validation is tracked in `docs/implementation/storage-lifecycle/TODO.md`; publication gates are in the adjacent `RELEASE_TODO.md`. Guide: [/guide/storage-lifecycle](/guide/storage-lifecycle).
 
 - CLI and dev runtime: ✅ implemented (init, migrate, codegen, dev, dev --workspace, test, deploy)
 - Schema → Rust/GraphQL/codegen: ✅ implemented with hot reload
