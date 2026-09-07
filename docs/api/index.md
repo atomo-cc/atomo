@@ -49,6 +49,10 @@ Event-triggered automation and external worker interfaces:
 
 [→ Workers Guide](/guide/workers)
 
+### Storage lifecycle diagnostics
+
+Administrators can inspect cache metrics, model-history coverage and audit usage through the read-only [`GET /storage/diagnostics`](/api/storage). Saving/retention policies are deployment configuration; this endpoint cannot delete data or reset history.
+
 ## Quick Reference
 
 The service API is **model-generic**: operations take a `model` argument plus JSON

@@ -21,8 +21,14 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
   business policy; library-only. See [Metered Command Primitives](/guide/advanced/metered-command-primitives).
 
 Pillars (from Atomo About & Paper):
-- River of Events: all changes are immutable events (audit/time travel).
+- River of Events: full mutation history by default, optional declared history gaps, and independent durable aggregate event streams.
 - Flowing Canvas: rich content blocks and flexible composition.
 - Energy Hub: open integrations via events and external workers.
 
 Data flows: `schema.ts` → codegen → GraphQL API + Admin UI + SDK types.
+
+## Storage lifecycle components
+
+`atomo::cache` owns bounded process-local read caching and weakly-owned expiration maintenance. `atomo::history` defines generic history/audit policy; `atomo::event_store::EventStore` applies model-history policy transactionally and persists coverage metadata. `atomo_server::audit` applies independent audit payload/retention policy. Server-owned tasks perform bounded maintenance; the aggregate store in `atomo_core` is unaffected.
+
+`atomo_projectors` checks all source-model replay capabilities before destructive rebuild, coordinating with retention through database locks. `atomo_server::storage_lifecycle_routes` exposes administrator-only, read-only usage and capability diagnostics. See [Storage lifecycle](/guide/storage-lifecycle) and [Storage API](/api/storage).

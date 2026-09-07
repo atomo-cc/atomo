@@ -697,6 +697,20 @@ pub fn create_router(
         )
         // Admin-only redirect management (requires auth)
         .nest(
+            "/storage",
+            Router::new()
+                .route(
+                    "/diagnostics",
+                    get(crate::storage_lifecycle_routes::diagnostics),
+                )
+                .route_layer(middleware::from_fn_with_state(
+                    auth_service.clone(),
+                    auth_middleware,
+                ))
+                .with_state(audit_service.clone()),
+        )
+        // Admin-only redirect management (requires auth)
+        .nest(
             "/public/redirects",
             Router::new()
                 .route("/", post(create_redirect))

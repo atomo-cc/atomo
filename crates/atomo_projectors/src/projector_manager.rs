@@ -58,14 +58,23 @@ impl ProjectorManager {
         Ok(())
     }
 
-    /// Rebuild all projections from scratch. Per-projection failures are logged, not fatal.
+    /// Preflight every model before any projection is cleared; capability errors are fatal.
     pub async fn rebuild_all(&self) -> Result<()> {
+        let mut guard = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(718206091)")
+            .execute(&mut *guard)
+            .await?;
+        for proj in &self.projections {
+            if !proj.supports_transactional_rebuild() {
+                anyhow::bail!("PROJECTION_REBUILD_UNSUPPORTED: projection {} must implement connection-bound rebuild_in",proj.name());
+            }
+            crate::projection::require_complete_history_in(&mut guard, proj.source_model()).await?;
+        }
         for proj in &self.projections {
             info!(projection = proj.name(), "Rebuilding projection");
-            if let Err(e) = proj.rebuild(&self.pool).await {
-                tracing::warn!(projection = proj.name(), error = %e, "Projection rebuild failed; skipping");
-            }
+            proj.rebuild_in(&mut guard).await?;
         }
+        guard.commit().await?;
         Ok(())
     }
 

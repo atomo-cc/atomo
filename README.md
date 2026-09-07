@@ -10,6 +10,10 @@
 
 Atomo Content Core is an open-source, self-hostable **event-sourced backend** for content-driven apps. Define your data model in a TypeScript `schema.ts` and Atomo gives you a **GraphQL API**, **authentication + RBAC**, **realtime**, and a generated **admin UI** — extensible with **actions and external workers** and deployable with **Docker** (no Rust toolchain required). Think of it as a self-hosted **Firebase/Supabase alternative** that runs on your own Postgres.
 
+Unreleased storage controls separate [model history and audit retention](docs/guide/storage-lifecycle.md) from [bounded read caching](docs/guide/caching.md). Full history and full audit remain defaults; optional policies expose replay capability and administrator-only usage diagnostics.
+
+The existing admin audit displays report runtime policy, including off and metadata modes. Model registry pages preserve creation permissions and search a declared field; the single real-browser smoke suite covers both default and disabled audit saving.
+
 ## ✨ Core Features
 
 - 🔄 **Event-Sourced Architecture**: Complete data-history tracking and time travel

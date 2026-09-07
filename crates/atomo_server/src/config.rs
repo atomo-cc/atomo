@@ -34,6 +34,15 @@ pub struct ServerConfig {
     /// Per-model filters and query fields are configured via `ATOMO_PUBLIC_READ_FILTER_<Model>`
     /// and `ATOMO_PUBLIC_READ_FIELDS_<Model>`.
     pub public_read_models: Vec<String>,
+    /// Bounded in-memory read cache; independent from durable history.
+    #[serde(default)]
+    pub cache: atomo::cache::CacheConfig,
+    /// Model mutation history policy; defaults to complete durable history.
+    #[serde(default)]
+    pub history: atomo::history::HistoryConfig,
+    /// Independent operation audit payload and retention policy.
+    #[serde(default)]
+    pub audit: atomo::history::AuditConfig,
 }
 
 impl Default for ServerConfig {
@@ -52,13 +61,21 @@ impl Default for ServerConfig {
             enable_metered_commands: false,
             enable_self_registration: false,
             public_read_models: Vec::new(),
+            cache: atomo::cache::CacheConfig::default(),
+            history: atomo::history::HistoryConfig::default(),
+            audit: atomo::history::AuditConfig::default(),
         }
     }
 }
 
 impl ServerConfig {
     pub fn from_env() -> Self {
-        Self {
+        Self::try_from_env().expect("invalid storage lifecycle configuration")
+    }
+
+    /// Parse optional policies without silently falling back on invalid settings.
+    pub fn try_from_env() -> anyhow::Result<Self> {
+        Ok(Self {
             host: std::env::var("HOST").unwrap_or_else(|_| "::".to_string()),
             port: std::env::var("PORT")
                 .unwrap_or_else(|_| "3000".to_string())
@@ -98,6 +115,29 @@ impl ServerConfig {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            cache: atomo::cache::CacheConfig::from_env().map_err(anyhow::Error::msg)?,
+            history: atomo::history::HistoryConfig::from_env()?,
+            audit: atomo::history::AuditConfig::from_env()?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod storage_config_tests {
+    use super::ServerConfig;
+
+    #[test]
+    fn older_serialized_config_preserves_storage_defaults() {
+        let mut value = serde_json::to_value(ServerConfig::default()).unwrap();
+        let fields = value.as_object_mut().unwrap();
+        fields.remove("cache");
+        fields.remove("history");
+        fields.remove("audit");
+        let parsed: ServerConfig = serde_json::from_value(value).unwrap();
+        let result = serde_json::to_value(parsed).unwrap();
+        let defaults = serde_json::to_value(ServerConfig::default()).unwrap();
+        for name in ["cache", "history", "audit"] {
+            assert_eq!(result[name], defaults[name]);
         }
     }
 }

@@ -4,6 +4,7 @@
  * Unified API client for communicating with Atomo Core.
  */
 
+import type { AuditConfiguration } from './audit-policy'
 import axios, { AxiosInstance } from 'axios'
 import { SchemaMetadata, EntityData, QueryOptions } from './types'
 import { loadSchemaMetadata } from './schema-parser'
@@ -406,6 +407,12 @@ class AtomoApiClient {
     if (params.offset) q.append('offset', String(params.offset))
     const res = await this.client.get(`/jobs/recent?${q}`)
     return res.data
+  }
+
+  /** Runtime audit policy; the diagnostics endpoint enforces administrator access. */
+  async getAuditPolicy(): Promise<AuditConfiguration> {
+    const res = await this.client.get('/storage/diagnostics')
+    return res.data.audit.config as AuditConfiguration
   }
 
   /** Recent audit-log entries (admin/manager-gated on the server). */

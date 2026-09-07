@@ -6,6 +6,8 @@ The service API is model-generic: operations take a `model` argument and JSON `w
 
 ## Where operators
 
+`in` and `notIn` require arrays. Set predicates are parameterized within one SQL statement and grouped with surrounding scope conditions, including for bulk soft deletion, restoration and permanent deletion. An empty `in` matches nothing; an empty `notIn` excludes nothing. Non-array inputs are rejected. Arrays written to JSON fields remain JSON values and are independent of set-filter binding.
+
 Per field, the `where` JSON accepts: `equals`/`eq`, `not`/`neq`, `contains`/`like`,
 `startsWith`, `endsWith`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, and `isNull`.
 `isNull: true` matches `IS NULL`; `isNull: false` matches `IS NOT NULL`. Multiple

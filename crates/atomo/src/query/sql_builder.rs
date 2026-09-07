@@ -339,15 +339,34 @@ fn build_where(where_clauses: &[WhereClause], param_offset: usize) -> (String, V
                 params.push(clause.value.clone());
                 idx += 1;
             }
-            WhereOperator::In => {
-                parts.push(format!("{} = ANY(${})", col, idx));
-                params.push(clause.value.clone());
-                idx += 1;
-            }
-            WhereOperator::NotIn => {
-                parts.push(format!("{} != ALL(${})", col, idx));
-                params.push(clause.value.clone());
-                idx += 1;
+            WhereOperator::In | WhereOperator::NotIn => {
+                // JSON arrays are native JSONB write parameters elsewhere. Expand only the
+                // filter into bound scalars rather than treating that JSONB as a PG array.
+                let Some(values) = clause.value.as_array() else {
+                    parts.push("FALSE".to_string());
+                    continue;
+                };
+                let negated = matches!(clause.operator, WhereOperator::NotIn);
+                if values.is_empty() {
+                    parts.push(if negated { "TRUE" } else { "FALSE" }.to_string());
+                    continue;
+                }
+                let mut members = Vec::new();
+                for value in values {
+                    let operator = if negated { "!=" } else { "=" };
+                    if value.is_null() {
+                        members.push(format!("{col} {operator} NULL"));
+                        continue;
+                    }
+                    let cast = if value.is_string() { "::text" } else { "" };
+                    members.push(format!("{col}{cast} {operator} ${idx}"));
+                    params.push(value.clone());
+                    idx += 1;
+                }
+                parts.push(format!(
+                    "({})",
+                    members.join(if negated { " AND " } else { " OR " })
+                ));
             }
             WhereOperator::IsNull => {
                 parts.push(format!("{} IS NULL", col));
@@ -510,5 +529,41 @@ mod tests {
             sql,
             "UPDATE deal SET deleted_at = NOW() WHERE id::text = $1 RETURNING id"
         );
+    }
+
+    #[test]
+    fn set_filters_keep_scope_offsets_and_empty_semantics() {
+        let clauses = vec![
+            eq("worldId", json!("world-a")),
+            WhereClause {
+                field: "id".into(),
+                operator: WhereOperator::In,
+                value: json!(["one", "two"]),
+            },
+        ];
+        let (sql, params) = build_where(&clauses, 2);
+        assert_eq!(
+            sql,
+            "world_id::text = $3 AND (id::text = $4 OR id::text = $5)"
+        );
+        assert_eq!(params, vec![json!("world-a"), json!("one"), json!("two")]);
+        for (operator, value, expected) in [
+            (WhereOperator::In, json!([]), "FALSE"),
+            (WhereOperator::NotIn, json!([]), "TRUE"),
+            (WhereOperator::NotIn, json!("invalid"), "FALSE"),
+        ] {
+            assert_eq!(
+                build_where(
+                    &[WhereClause {
+                        field: "id".into(),
+                        operator,
+                        value
+                    }],
+                    0
+                )
+                .0,
+                expected
+            );
+        }
     }
 }

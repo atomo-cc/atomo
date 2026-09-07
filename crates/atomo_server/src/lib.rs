@@ -37,6 +37,7 @@ pub mod rls;
 pub mod schema_metadata;
 pub mod server;
 pub mod storage;
+pub mod storage_lifecycle_routes;
 pub mod tracing_middleware;
 
 pub use aggregate::*;
@@ -105,6 +106,7 @@ pub async fn ensure_platform_tables(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             user_agent TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
+        "CREATE INDEX IF NOT EXISTS idx_audit_log_retention ON audit_log (entity_type, created_at, id)",
     ];
     for sql in stmts {
         sqlx::query(sql).execute(pool).await?;

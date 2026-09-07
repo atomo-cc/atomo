@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Activity, AlertTriangle, RefreshCw, CheckCircle2, Clock, PlayCircle, XCircle, Skull } from 'lucide-react'
 
 import { apiClient } from '../../lib/api'
+import { useAuditPolicy } from '../../lib/use-audit-policy'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -43,6 +44,7 @@ function isForbidden(error: unknown): boolean {
 }
 
 export function ObservabilityView() {
+  const auditPolicy = useAuditPolicy()
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
   const stats = useQuery({
@@ -212,13 +214,15 @@ export function ObservabilityView() {
       <Card>
         <CardHeader className="py-4 border-b border-bn-border/60">
           <CardTitle>Recent Audit Activity</CardTitle>
-          <CardDescription>Security-sensitive operations and administrative actions log</CardDescription>
+          <CardDescription data-testid="audit-policy-description">{auditPolicy.description}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {audit.isLoading ? (
             <div className="p-8 text-center text-xs text-icon-muted">Loading audit entries…</div>
-          ) : isForbidden(audit.error) || (audit.data?.length ?? 0) === 0 ? (
-            <div className="p-8 text-center text-xs text-icon-muted">No audit entries recorded yet.</div>
+          ) : audit.isError ? (
+            <div className="p-8 text-center text-xs text-icon-muted">Audit entries unavailable.</div>
+          ) : (audit.data?.length ?? 0) === 0 ? (
+            <div className="p-8 text-center text-xs text-icon-muted">{auditPolicy.empty}</div>
           ) : (
             <Table>
               <TableHeader>

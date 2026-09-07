@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration from environment or use defaults
-    let mut config = ServerConfig::from_env();
+    let mut config = ServerConfig::try_from_env()?;
 
     // Override with command line arguments
     if let Some(config_dir) = matches.get_one::<PathBuf>("config-dir") {

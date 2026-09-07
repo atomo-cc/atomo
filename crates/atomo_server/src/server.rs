@@ -48,6 +48,8 @@ pub struct AtomoServer {
 impl AtomoServer {
     /// Create a new server instance with Atomo library
     pub async fn new(config: ServerConfig) -> Result<Self> {
+        config.history.validate()?;
+        config.audit.validate()?;
         info!("📊 Loading schema from: {}", config.schema_path);
 
         let atomo = Atomo::builder()
@@ -55,6 +57,8 @@ impl AtomoServer {
             .database_url(&config.database_url)
             .enable_migrations(true)
             .enable_ai(config.enable_ai)
+            .history_config(config.history.clone())
+            .cache_config(config.cache.clone())
             .build()
             .await?;
 
@@ -130,7 +134,10 @@ impl AtomoServer {
         };
         let auth_service =
             crate::auth::HttpAuthService::new(&jwt_secret, self.atomo.db_pool().clone());
-        let audit_service = crate::audit::HttpAuditService::new(self.atomo.db_pool().clone());
+        let audit_service = crate::audit::HttpAuditService::with_config(
+            self.atomo.db_pool().clone(),
+            self.config.audit.clone(),
+        )?;
 
         // Ensure platform tables (users, sessions, audit_log) exist.
         crate::ensure_platform_tables(self.atomo.db_pool()).await?;
@@ -283,43 +290,39 @@ impl AtomoServer {
         info!("   ✓ Action dispatcher started");
 
         // Audit listener: record an audit entry for every model mutation event.
-        {
-            let audit = audit_service.clone();
-            let mut rx = self.atomo.event_receiver();
-            tokio::spawn(async move {
-                use atomo_core::audit::AuditService;
-                use atomo_core::audit::{AuditLogEntry, AuditOperation};
-                use atomo_core::types::EntityId;
-                while let Ok(ev) = rx.recv().await {
-                    let op = match ev.event_type {
-                        atomo::events::EventType::Created => AuditOperation::Create,
-                        atomo::events::EventType::Updated => AuditOperation::Update,
-                        atomo::events::EventType::Deleted => AuditOperation::Delete,
-                        atomo::events::EventType::Restored => AuditOperation::Update,
-                        atomo::events::EventType::HardDeleted => AuditOperation::Delete,
-                        atomo::events::EventType::Custom => AuditOperation::Read,
-                    };
-                    let entity_id = ev
-                        .data
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| EntityId::from_string(s).ok())
-                        .unwrap_or_else(EntityId::new);
-                    let details = serde_json::to_string(&ev.data).unwrap_or_default();
-                    let entry = AuditLogEntry::new(
-                        ev.model_name.clone(),
-                        entity_id,
-                        op,
-                        details,
-                        ev.actor.clone(),
-                    );
-                    if let Err(e) = audit.log_audit_entry(entry).await {
-                        tracing::warn!(error = %e, "Failed to write audit entry");
+        let _history_maintenance = {
+            let store = self.atomo.client().history_store().clone();
+            atomo::history::MaintenanceTask(tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                    store.config().maintenance_interval_secs,
+                ));
+                loop {
+                    interval.tick().await;
+                    if let Err(error) = store.maintain().await {
+                        tracing::warn!(%error, "history retention failed");
                     }
                 }
-            });
-            info!("   ✓ Audit listener started");
-        }
+            }))
+        };
+        let _audit_maintenance = {
+            let audit = audit_service.clone();
+            atomo::history::MaintenanceTask(tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                    audit.config().maintenance_interval_secs,
+                ));
+                loop {
+                    interval.tick().await;
+                    if let Err(error) = audit.maintain().await {
+                        tracing::warn!(%error, "audit retention failed");
+                    }
+                }
+            }))
+        };
+        let _audit_listener = crate::audit::spawn_model_audit_listener(
+            audit_service.clone(),
+            self.atomo.event_receiver(),
+        );
+        info!("   ? Audit listener started");
 
         // Optionally seed an admin user from ADMIN_EMAIL/ADMIN_PASSWORD env vars.
         crate::seed_admin(&auth_service).await?;
@@ -481,15 +484,16 @@ impl AtomoServer {
         let mut app = create_router(
             graphql_schema,
             self.atomo,
-            auth_service,
+            auth_service.clone(),
             audit_service,
             registration,
             public_read_models,
             redirect_store,
         )
         .merge(crate::handlers::workflow_router(workflow_engine.clone()))
-        .merge(crate::projector_routes::projector_router(
+        .merge(crate::projector_routes::authenticated_projector_router(
             projector_manager.clone(),
+            auth_service,
         ))
         .merge(crate::registry_routes::registry_router(
             registry_store.clone(),
