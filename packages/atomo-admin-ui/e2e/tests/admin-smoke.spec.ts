@@ -6,7 +6,9 @@
  *
  * Requires the server running on :3000 with e2e/schema.e2e.ts (see ci.yml `e2e`
  * job, or run locally: DATABASE_URL=… ATOMO_SCHEMA_PATH=…/schema.e2e.ts
- * ADMIN_EMAIL/… ./target/debug/atomo-server, then `pnpm e2e`).
+ * ADMIN_EMAIL/… RATE_LIMIT_RPS=1000 ./target/debug/atomo-server, then `pnpm e2e`).
+ * The full suite shares one IP and reloads the SPA repeatedly; its isolated server
+ * has a separate request budget. Production defaults and limiter tests are unchanged.
  */
 
 import { test, expect, request } from '@playwright/test'
@@ -34,11 +36,20 @@ test.beforeAll(async () => {
       query: `mutation { create(model: "Article", data: { title: "Smoke Article", status: "published", coverImage: "e2e-fake-media-id" }) }`,
     },
   })
-  expect(create.ok()).toBeTruthy()
+  expect(create.ok(), `seed failed: ${create.status()}`).toBeTruthy()
   const body = await create.json()
   expect(body.errors, JSON.stringify(body.errors)).toBeFalsy()
   articleId = body.data.create.id
   await api.dispose()
+})
+
+test.beforeEach(async ({ page }) => {
+  page.on('response', response => {
+    if (response.status() >= 400) {
+      // Paths/status only: never record auth headers, tokens, bodies or query strings.
+      console.warn(`admin response ${response.status()} ${new URL(response.url()).pathname}`)
+    }
+  })
 })
 
 // Sign in through the real login form once per test (state is not shared).

@@ -1,8 +1,8 @@
 # Storage lifecycle implementation plan
 
-Status: implementation in progress. Progress authority: [TODO](TODO.md).
+Status: local implementation and verification complete. Feature evidence: [TODO](TODO.md). Authorized v0.7.0 publication is tracked separately in [RELEASE_TODO.md](RELEASE_TODO.md).
 
-Provide optional, bounded model history, independent audit retention, and bounded read caching without changing the default durable model-history contract. Keep the platform generic. No public release or production database reset is part of implementation.
+Provide optional, bounded model history, independent audit retention, and bounded read caching without changing the default durable model-history contract. Keep the platform generic. The original implementation scope excluded publication; the subsequent release authorization is governed by the separate release checklist. No production database reset is authorized.
 
 ## Requirements
 
