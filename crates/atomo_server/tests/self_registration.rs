@@ -18,6 +18,24 @@ export const Thing = model('at3_things', {
 })
 "#;
 
+async fn cleanup_users(pool: &sqlx::PgPool) {
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email IN ('at3-x@test.dev','at3-a@test.dev','at3-dup@test.dev','at3-b@test.dev'))")
+        .execute(&mut *tx).await.unwrap();
+    sqlx::query("DELETE FROM users WHERE email IN ('at3-x@test.dev','at3-a@test.dev','at3-dup@test.dev','at3-b@test.dev')")
+        .execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+}
+
+async fn cleanup(pool: &sqlx::PgPool) {
+    cleanup_users(pool).await;
+    // This schema owns at3_things, but does not redefine the shared platform users table.
+    sqlx::query("DROP TABLE IF EXISTS at3_things")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 async fn build_app(reg: RegistrationConfig) -> (axum::Router, sqlx::PgPool) {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let atomo = atomo::Atomo::builder()
@@ -34,10 +52,7 @@ async fn build_app(reg: RegistrationConfig) -> (axum::Router, sqlx::PgPool) {
         .await
         .unwrap();
     let pool = atomo.db_pool().clone();
-    sqlx::query("DELETE FROM users WHERE email LIKE 'at3-%'")
-        .execute(&pool)
-        .await
-        .unwrap();
+    cleanup_users(&pool).await;
     let redirect_store = std::sync::Arc::new(
         atomo_server::public_read_redirects::RedirectStore::new(pool.clone()),
     );
@@ -70,7 +85,7 @@ async fn post(
 #[tokio::test]
 #[ignore]
 async fn register_route_absent_when_disabled() {
-    let (app, _) = build_app(RegistrationConfig::disabled()).await;
+    let (app, pool) = build_app(RegistrationConfig::disabled()).await;
     let (status, _) = post(
         &app,
         "/auth/register",
@@ -82,6 +97,7 @@ async fn register_route_absent_when_disabled() {
         StatusCode::NOT_FOUND,
         "register must not be mounted when self-registration is disabled"
     );
+    cleanup(&pool).await;
 }
 
 #[tokio::test]
@@ -115,6 +131,7 @@ async fn register_success_with_default_provisioning() {
             .unwrap();
     assert_eq!(role, "viewer");
     assert!(tenant.is_none());
+    cleanup(&pool).await;
 }
 
 #[tokio::test]
@@ -125,7 +142,7 @@ async fn register_duplicate_email_conflicts() {
         role: "viewer".to_string(),
         tenant: TenantProvisioning::None,
     };
-    let (app, _) = build_app(reg).await;
+    let (app, pool) = build_app(reg).await;
     let body = json!({ "email": "at3-dup@test.dev", "password": "password123" });
     let (first, _) = post(&app, "/auth/register", body.clone()).await;
     assert_eq!(first, StatusCode::OK);
@@ -135,6 +152,7 @@ async fn register_duplicate_email_conflicts() {
         StatusCode::CONFLICT,
         "a duplicate email must conflict, not create a second user"
     );
+    cleanup(&pool).await;
 }
 
 #[tokio::test]
@@ -169,4 +187,5 @@ async fn register_provisions_custom_role_and_per_user_tenant() {
             .unwrap();
     assert_eq!(role, "editor");
     assert_eq!(tenant.as_deref(), Some(uid.as_str()));
+    cleanup(&pool).await;
 }
