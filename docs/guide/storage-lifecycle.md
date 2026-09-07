@@ -1,6 +1,6 @@
 # Storage lifecycle
 
-This unreleased implementation separates current model state, model mutation history, operation audit and read caching. Defaults preserve full model history and full audit payloads; cache defaults remain enabled with a 60-second TTL. Local implementation and verification progress is tracked in the repository's `docs/implementation/storage-lifecycle/TODO.md`; this page is not a release announcement.
+Available in v0.7.0, storage lifecycle separates current model state, model mutation history, operation audit and read caching. Defaults preserve full model history and full audit payloads; cache defaults remain enabled with a 60-second TTL. Implementation evidence is tracked in the repository's `docs/implementation/storage-lifecycle/TODO.md`; publication verification is tracked separately in `RELEASE_TODO.md` in the same directory.
 
 ## Independent responsibilities
 

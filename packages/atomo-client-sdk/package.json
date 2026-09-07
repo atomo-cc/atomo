@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/client-sdk",
-  "version": "0.5.10",
+  "version": "0.7.0",
   "description": "TypeScript SDK for Atomo platform with full type safety",
   "type": "module",
   "publishConfig": {
