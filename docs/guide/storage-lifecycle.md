@@ -52,6 +52,8 @@ Projection rebuild checks every target model before clearing any target. Models 
 
 There is no API to erase the gap marker or fabricate a complete baseline. A future recovery procedure must establish and verify a real baseline before changing capability. Do not manually mark incomplete history complete to bypass rebuild protection. See [Projections API](/api/projections).
 
+Automatic table projections use current base rows to repair missing rows and add missing projection columns at startup. This current-state synchronization works with history off and does not read event history, reset coverage gaps, or claim historical replay is possible. Existing extra columns remain; incompatible column types require an explicit migration. Runtime refreshes re-read current state so delayed notifications cannot overwrite it with an old payload.
+
 ## Operator workflow
 
 1. Read [`GET /storage/diagnostics`](/api/storage) as an administrator to establish current usage and coverage.

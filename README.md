@@ -12,6 +12,8 @@ Atomo Content Core is an open-source, self-hostable **event-sourced backend** fo
 
 Unreleased storage controls separate [model history and audit retention](docs/guide/storage-lifecycle.md) from [bounded read caching](docs/guide/caching.md). Full history and full audit remain defaults; optional policies expose replay capability and administrator-only usage diagnostics.
 
+Automatic table projections synchronize current base rows at startup and add missing projection columns without requiring event-history replay. Historical rebuilding remains subject to complete-history checks.
+
 The existing admin audit displays report runtime policy, including off and metadata modes. Model registry pages preserve creation permissions and search a declared field; the single real-browser smoke suite covers both default and disabled audit saving.
 
 ## ✨ Core Features

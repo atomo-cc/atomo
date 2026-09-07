@@ -330,7 +330,7 @@ impl AtomoServer {
         // Start CQRS projector listener: convert ModelEvent -> ProjectorEvent and feed projections.
         // Auto-register one TableProjection per schema model (maintains a `{table}_projection` read table).
         let projector_manager = {
-            use atomo_projectors::{ProjectorEvent, ProjectorManager, TableProjection};
+            use atomo_projectors::{CurrentStateProjection, ProjectorEvent, ProjectorManager};
             let mut manager = ProjectorManager::new(self.atomo.db_pool().clone());
             for (name, model) in &self.atomo.schema().models {
                 // Skip enum-derived pseudo-models and block sub-types (only real entities have an `id`).
@@ -343,31 +343,25 @@ impl AtomoServer {
                 let table = format!("{}_projection", crate::pluralize(name));
                 let columns: Vec<String> =
                     model.fields.keys().map(|f| crate::to_snake(f)).collect();
-                // Ensure the projection table exists (id + each column as TEXT/JSONB-agnostic TEXT).
-                let cols_ddl: Vec<String> = columns
-                    .iter()
-                    .map(|c| {
-                        if c == "id" {
-                            format!("\"{}\" TEXT PRIMARY KEY", c)
-                        } else {
-                            format!("\"{}\" TEXT", c)
-                        }
-                    })
-                    .collect();
-                let ddl = format!(
-                    "CREATE TABLE IF NOT EXISTS {} ({})",
-                    table,
-                    cols_ddl.join(", ")
-                );
-                let _ = sqlx::query(&ddl).execute(self.atomo.db_pool()).await;
-                manager.register(TableProjection::new(name, &table, columns));
+                let source_table = atomo::query::sql_builder::table_name_for(model);
+                let projection = CurrentStateProjection::new(name, &source_table, &table, columns);
+                projection.initialize_and_sync(self.atomo.db_pool()).await?;
+                manager.register(projection);
             }
             let manager = std::sync::Arc::new(manager);
             let (proj_tx, proj_rx) = tokio::sync::broadcast::channel::<ProjectorEvent>(1000);
             manager.clone().start_event_listener(proj_rx);
             let mut model_rx = self.atomo.event_receiver();
             tokio::spawn(async move {
-                while let Ok(ev) = model_rx.recv().await {
+                loop {
+                    let ev = match model_rx.recv().await {
+                        Ok(event) => event,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
+                            tracing::warn!(count,"projection notifications lagged; startup synchronization can repair current state");
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    };
                     let _ = proj_tx.send(ProjectorEvent {
                         event_type: format!("{:?}", ev.event_type),
                         model_name: ev.model_name,

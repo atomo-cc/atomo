@@ -462,6 +462,10 @@ impl AtomoClient {
         // create latency on durable storage.) This also makes create **atomic**: a row is never
         // persisted without its event. The tenant bind (RLS) lives in the same tx, as before.
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -544,6 +548,10 @@ impl AtomoClient {
 
         // One transaction for the whole batch — a single fsync.
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -654,6 +662,10 @@ impl AtomoClient {
         // — and the event writes now propagate (were `.ok()`-swallowed), so an update is never
         // recorded without its events.
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -728,6 +740,10 @@ impl AtomoClient {
         // events commit in ONE transaction (one `fsync`, not 1 + N), and the event writes now
         // propagate (were `.ok()`-swallowed).
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -788,6 +804,10 @@ impl AtomoClient {
         let args = build_args(&params)?;
 
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;
@@ -840,6 +860,10 @@ impl AtomoClient {
         let args = build_args(&params)?;
 
         let mut tx = self.pool.begin().await?;
+        // Take lifecycle before base locks: initialization and historical rebuild use the same order.
+        sqlx::query("SELECT pg_advisory_xact_lock_shared(718206091)")
+            .execute(&mut *tx)
+            .await?;
         if rls_enabled() {
             if let Some(tid) = current_tenant() {
                 bind_tenant_local(&mut tx, &tid).await?;

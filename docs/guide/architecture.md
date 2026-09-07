@@ -1,5 +1,7 @@
 # Architecture Overview
 
+Automatic table projections use `atomo_projectors::CurrentStateProjection`: startup performs additive column migration and transactional synchronization from current base rows, and notifications refresh individual rows. This read-model maintenance is independent of the guarded historical replay API and does not change event-history coverage.
+
 Atomo is a Content Core: a schema-driven, event-sourced platform.
 
 - Core: Rust workspace in `crates/` — high performance, type-safe.
