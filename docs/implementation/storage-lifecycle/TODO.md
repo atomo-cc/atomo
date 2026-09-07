@@ -2,6 +2,8 @@
 
 Each item is checked immediately after its acceptance evidence passes. TODO / IN_PROGRESS / REVIEW / BLOCKED remain unchecked.
 
+- [x] AT-NU-01 DONE — reproduced TEXT-typed null failure against real PostgreSQL, then centralized context-typed SQL NULL for single/homogeneous/fallback inserts and updates. Evidence: 10 SQL builder unit tests; `nullable_mutations` PG regression covering BIGINT/boolean/timestamp/JSON, scoped clearing, omitted fields, mixed parameter offsets and batch rollback; both `batch_create` PG tests including 11,000 rows; workspace all-target clippy with `-D warnings`; dependent `atomo-server` build. No live database alteration. External rollout validation remains separate.
+
 - [x] AT-PR-01 DONE — additive columns/current-state repair, preserved old columns, explicit type conflicts, unchanged-row startup suppression, consistent lifecycle lock order and old-notification safety verified. Full serial PostgreSQL run includes both schema-evolution/concurrency tests; complete Rust tests, fmt/clippy/build and docs pass. Real isolated HTTP confirms projections exist before permanent cleanup and match retained base rows afterwards; final admin smoke passes 9/9 after the server upgrade (`data-lifecycle-admin-final.log`). Historical completeness remains unchanged.
 
 - [x] AT-QU-01 DONE — one-statement set filters preserve scope through read/update/soft-delete/restore/hard-delete, projection removal, empty/malformed inputs and JSON-array writes. Evidence: SQL builder regression and `scoped_set_filters` serial PostgreSQL test both passed in `data-lifecycle-set-filters.log`; latest workspace all-target clippy and server build passed.

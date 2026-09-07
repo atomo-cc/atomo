@@ -22,6 +22,10 @@ Provide optional, bounded model history, independent audit retention, and bounde
 
 ## Validation resources
 
+Nullable mutation regression: explicit null must become a context-typed SQL NULL for single inserts, homogeneous batch inserts and updates. Keep non-null scalar/date/JSON binding semantics and WHERE parameter numbering intact; validate with a real database before shipping. Do not alter existing live data or weaken constraints to accommodate a binding error.
+
+This correction adds no configuration, endpoint, SDK signature or admin behavior; those feature-checklist surfaces remain unchanged. The mutation API guide and Unreleased changelog document the corrected existing contract; core tests, PostgreSQL regressions, workspace lint and dependent server build provide validation.
+
 Prefer a single low-debug, non-incremental Cargo target directory with bounded build concurrency. Monitor free disk; avoid rebuilding duplicate debug/release profiles unnecessarily. Test services use isolated database names and are stopped after verification.
 
 ## Feature checklist applicability

@@ -71,16 +71,9 @@ impl SqlBuilder {
         let mut placeholders = Vec::new();
         let mut params = Vec::new();
 
-        for (i, (key, val)) in data.iter().enumerate() {
-            let snake = to_snake_case(key);
-            let is_datetime = model
-                .fields
-                .get(key)
-                .is_some_and(|f| matches!(f.field_type, crate::schema::FieldType::DateTime));
-            let cast = if is_datetime { "::timestamptz" } else { "" };
-            columns.push(snake);
-            placeholders.push(format!("${}{}", i + 1, cast));
-            params.push(val.clone());
+        for (key, val) in data {
+            columns.push(to_snake_case(key));
+            placeholders.push(write_value(model, key, val, &mut params));
         }
 
         let sql = format!(
@@ -122,14 +115,19 @@ impl SqlBuilder {
 
         let mut params = Vec::with_capacity(records.len() * ncols);
         let mut tuples = Vec::with_capacity(records.len());
-        for (ri, r) in records.iter().enumerate() {
-            let mut ph = Vec::with_capacity(ncols);
-            for (ci, col) in cols.iter().enumerate() {
-                ph.push(format!("${}", ri * ncols + ci + 1));
-                params.push(r.get(col).cloned().unwrap_or(Value::Null));
+        for record in records {
+            let mut placeholders = Vec::with_capacity(ncols);
+            for column in &cols {
+                placeholders.push(write_value(
+                    model,
+                    column,
+                    record.get(column).unwrap_or(&Value::Null),
+                    &mut params,
+                ));
             }
-            tuples.push(format!("({})", ph.join(", ")));
+            tuples.push(format!("({})", placeholders.join(", ")));
         }
+
         let column_sql = cols
             .iter()
             .map(|c| to_snake_case(c))
@@ -153,14 +151,12 @@ impl SqlBuilder {
         let mut set_clauses = Vec::new();
         let mut params = Vec::new();
 
-        for (i, (key, val)) in data.iter().enumerate() {
-            let is_datetime = model
-                .fields
-                .get(key)
-                .is_some_and(|f| matches!(f.field_type, crate::schema::FieldType::DateTime));
-            let cast = if is_datetime { "::timestamptz" } else { "" };
-            set_clauses.push(format!("{} = ${}{}", to_snake_case(key), i + 1, cast));
-            params.push(val.clone());
+        for (key, val) in data {
+            set_clauses.push(format!(
+                "{} = {}",
+                to_snake_case(key),
+                write_value(model, key, val, &mut params)
+            ));
         }
 
         let mut sql = format!(
@@ -257,6 +253,24 @@ pub fn to_snake_case(s: &str) -> String {
         result.push(c.to_lowercase().next().unwrap());
     }
     result
+}
+
+/// SQL NULL has an unknown type resolved by its destination column. Binding
+/// Option<String>::None instead declares TEXT, which fails for numeric/bool/JSON columns.
+fn write_value(model: &Model, key: &str, value: &Value, params: &mut Vec<Value>) -> String {
+    if value.is_null() {
+        return "NULL".into();
+    }
+    params.push(value.clone());
+    let is_datetime = model
+        .fields
+        .get(key)
+        .is_some_and(|field| matches!(field.field_type, crate::schema::FieldType::DateTime));
+    format!(
+        "${}{}",
+        params.len(),
+        if is_datetime { "::timestamptz" } else { "" }
+    )
 }
 
 pub fn table_name_for(model: &Model) -> String {
@@ -529,6 +543,34 @@ mod tests {
             sql,
             "UPDATE deal SET deleted_at = NOW() WHERE id::text = $1 RETURNING id"
         );
+    }
+
+    #[test]
+    fn nullable_writes_use_sql_null_without_consuming_parameter_slots() {
+        let model = model("Probe", Some("probes"));
+        let (sql, params) = SqlBuilder::update(
+            &model,
+            &[eq("id", json!("kept"))],
+            &HashMap::from([("sequence".into(), Value::Null)]),
+        );
+        assert_eq!(
+            sql,
+            "UPDATE probes SET sequence = NULL WHERE id::text = $1 RETURNING *"
+        );
+        assert_eq!(params, vec![json!("kept")]);
+        let rows = vec![
+            HashMap::from([
+                ("id".into(), json!("null")),
+                ("sequence".into(), Value::Null),
+            ]),
+            HashMap::from([("id".into(), json!("value")), ("sequence".into(), json!(7))]),
+        ];
+        let (sql, params) = SqlBuilder::insert_many(&model, &rows).unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO probes (id, sequence) VALUES ($1, NULL), ($2, $3) RETURNING *"
+        );
+        assert_eq!(params, vec![json!("null"), json!("value"), json!(7)]);
     }
 
     #[test]

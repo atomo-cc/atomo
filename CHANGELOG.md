@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Administrator-only `GET /storage/diagnostics` for policy, cache counters, history coverage and estimated usage; Rust builders and server configuration expose lifecycle settings.
 
 ### Fixed
+- Explicit null values in single/bulk inserts and updates now use destination-typed SQL NULL instead of a TEXT-typed parameter. Nullable numeric, boolean, timestamp and JSON columns work consistently; mixed-null batches preserve binding offsets and database constraints.
 - Automatic projections now add missing nullable columns safely and reconcile current base rows on startup, including when event history is disabled. Live notifications re-read current state, while historical rebuild retains its separate completeness checks. Incompatible existing column types fail without destructive schema changes.
 - `in`/`notIn` filters now use bound scalar predicates in one SQL statement instead of passing JSONB to PostgreSQL array operators. Scoped reads and bulk mutations preserve surrounding `AND` conditions, empty-set semantics and JSON array field writes; malformed non-array set filters are rejected.
 - Existing admin Settings and Observability show effective audit saving and unknown/unavailable states instead of reporting schema-default audit as enabled.

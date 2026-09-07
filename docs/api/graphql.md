@@ -6,6 +6,8 @@ The service API is model-generic: operations take a `model` argument and JSON `w
 
 ## Where operators
 
+Mutation data distinguishes omitted fields from explicit `null`: omission preserves the database default on create or leaves a field unchanged on update; explicit `null` writes SQL NULL when the column permits it. This applies to single and bulk writes, including numeric, boolean, timestamp and JSON fields. Non-null constraints remain enforced, and a failing bulk insert rolls back the batch. A JSON object or array containing nested nulls remains a JSON value.
+
 `in` and `notIn` require arrays. Set predicates are parameterized within one SQL statement and grouped with surrounding scope conditions, including for bulk soft deletion, restoration and permanent deletion. An empty `in` matches nothing; an empty `notIn` excludes nothing. Non-array inputs are rejected. Arrays written to JSON fields remain JSON values and are independent of set-filter binding.
 
 Per field, the `where` JSON accepts: `equals`/`eq`, `not`/`neq`, `contains`/`like`,
