@@ -17,7 +17,7 @@ Authorized release scope: storage lifecycle and its verified query, nullable mut
 
 - [x] REL-05N DONE (REL-04; split publication evidence) — npm login and required interactive publication verification completed. Both client-sdk and worker-sdk 0.7.0 published successfully; registry versions and full SHA512 integrity match the pre-release pack dry-runs (`.tmp/client-published.json`, `.tmp/worker-published.json`). No source/package changes were made after the tested tag.
 - [ ] REL-05D IN_PROGRESS (REL-05N) — publish and verify server image v0.7.0 and latest from main baadeea41, including successful workflow and registry digest/version/revision.
-- [ ] REL-05W IN_PROGRESS (REL-05N) — deploy documentation from the verified main and check the hosted v0.7.0 lifecycle guide.
+- [ ] REL-05W BLOCKED (REL-05N) — docs build/deploy run 34171571157 succeeded from baadeea41, but the public guide cannot resolve. Public DNS returns SERVFAIL and authoritative servers return REFUSED for docs.atomo.cc and the zone; Pages reports certificate state bad_authz. Evidence: `.tmp/docs-dns-failure.json`. Requires restoration of zone/NS delegation in the domain/DNS account, then valid HTTPS and the live guide containing v0.7.0/history/audit configuration. The GitHub Pages fallback redirects to the same failed custom domain. Do not call the hosted docs available or silently change the public domain. Image publication and its dependent runtime verification can continue independently.
 
 CLI source is unchanged from v0.6.5: optional CLI binary publication is skipped unless release preparation finds a relevant CLI change. crates.io publishing remains disabled by repository policy. Public packages and the server image are still required.
 
