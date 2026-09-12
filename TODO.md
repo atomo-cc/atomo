@@ -61,6 +61,6 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## Final gate
 
-- [ ] `cargo test --workspace` + `cargo clippy -- -D warnings` green
-- [ ] `pnpm test` (packages) green if SDK/admin touched
-- [ ] Dispatch `ci.yml`; all five jobs green
+- [x] `cargo test --workspace` green (52 suites, 0 failures) + `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [x] `pnpm test` green (worker-sdk, client-sdk, admin-ui)
+- [x] `ci.yml` dispatched on `fix/consumer-field-report` (run 34708183958): all five jobs green — Test Suite, Linting, Frontend Tests, Admin E2E Smoke, Build
