@@ -81,6 +81,47 @@ pub fn policy_statements_for(table: &str) -> Vec<String> {
     ]
 }
 
+/// Verify the connected database role cannot bypass RLS.
+///
+/// `FORCE ROW LEVEL SECURITY` covers the table *owner*, but Postgres superusers
+/// and roles with `BYPASSRLS` skip policies unconditionally — with
+/// `ATOMO_ENABLE_RLS` on, such a connection leaves tenant isolation silently
+/// inert. Call at boot and fail fast rather than discover it in production.
+///
+/// `allow_bypass` (`ATOMO_RLS_ALLOW_BYPASS_ROLE`) downgrades the refusal to an
+/// `ERROR` log for environments that knowingly run privileged connections
+/// (e.g. a managed PG that only offers superuser). Escape hatches must be
+/// deliberate, so the log stays loud.
+pub async fn check_connection_role(pool: &PgPool, allow_bypass: bool) -> anyhow::Result<()> {
+    let (role, rolsuper, rolbypassrls): (String, bool, bool) = sqlx::query_as(
+        "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if !rolsuper && !rolbypassrls {
+        return Ok(());
+    }
+
+    let why = match (rolsuper, rolbypassrls) {
+        (true, true) => "SUPERUSER and BYPASSRLS",
+        (true, false) => "SUPERUSER",
+        (false, true) => "BYPASSRLS",
+        _ => unreachable!(),
+    };
+    let msg = format!(
+        "ATOMO_ENABLE_RLS is on but database role '{role}' has {why} — row-level security \
+         is silently inert for this connection. Connect as a non-superuser, non-BYPASSRLS \
+         role, or set ATOMO_RLS_ALLOW_BYPASS_ROLE=true to proceed anyway."
+    );
+    if allow_bypass {
+        tracing::error!(role = %role, "{msg}");
+        Ok(())
+    } else {
+        anyhow::bail!(msg)
+    }
+}
+
 /// Enable RLS + (re)create the tenant-isolation policy on each given table.
 ///
 /// - When `enabled` is **false** this is a **no-op** (returns `Ok(())`

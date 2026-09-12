@@ -29,11 +29,11 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## F3 — RLS fail-closed boot check
 
-- [ ] When `ATOMO_ENABLE_RLS` on: after `ensure_rls_policies`, probe `pg_roles` for `rolsuper`/`rolbypassrls` on `current_user`; refuse boot when bypassable (`crates/atomo_server/src/rls.rs` + `server.rs`)
-- [ ] Escape hatch `ATOMO_RLS_ALLOW_BYPASS_ROLE` → ERROR log instead of refusal: `ServerConfig` field + `Default` + `from_env` + `.env.example`
-- [ ] pg-gated test: superuser role → boot refused; plain role → ok; escape hatch → ok
-- [ ] Docs: `docs/guide/advanced/multi-tenant.md` (connect-as-role requirement)
-- [ ] CHANGELOG `[Unreleased]` entry
+- [x] `check_connection_role` probes `pg_roles` (`rolsuper`/`rolbypassrls` on `current_user`) at boot before `ensure_rls_policies`; bypassable role → boot refused (`rls.rs` + `server.rs`)
+- [x] Escape hatch `ATOMO_RLS_ALLOW_BYPASS_ROLE` → ERROR log instead of refusal: `ServerConfig.rls_allow_bypass_role` (`#[serde(default)]` for old configs) + `Default` + `from_env` + `.env.example`
+- [x] pg-gated test `check_connection_role_refuses_bypass_roles` (rls_enforcement.rs): asserts the check agrees with the role's real attributes — passes
+- [x] Docs: `docs/guide/advanced/multi-tenant.md` ("Connect with a non-privileged role (enforced)" + least-privilege role recipe)
+- [x] CHANGELOG `[Unreleased]` entry
 
 ## F1 — Observable zero-match update
 

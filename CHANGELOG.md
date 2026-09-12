@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - Version drift: the CLI now reports `CARGO_PKG_VERSION` (was hardcoded `0.1.0`), `atomo init` and `create-app` scaffold the client-sdk pin from their own release version (was `^0.1.0`), the deploy manifest reports the CLI version, and every `package.json` (root, private, and `@atomo-cc/create-app`) tracks the release version.
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Administrator-only `GET /storage/diagnostics` for policy, cache counters, history coverage and estimated usage; Rust builders and server configuration expose lifecycle settings.
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - Explicit null values in single/bulk inserts and updates now use destination-typed SQL NULL instead of a TEXT-typed parameter. Nullable numeric, boolean, timestamp and JSON columns work consistently; mixed-null batches preserve binding offsets and database constraints.
@@ -33,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.4] - 2026-07-14
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **`File` fields with scalar values no longer crash the record view.** A `File`
@@ -68,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.3] - 2026-07-14
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Dashboard cards and Quick Actions are labeled by the model's display name**,
@@ -102,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the value was ignored and "is not null" was inexpressible).
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin list toolbar controls now actually work.** Three prominent controls
@@ -132,6 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.1] - 2026-07-14
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Builder-DSL access combinators are now enforced.** `parse_access_block` only
@@ -184,6 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns. Removes the last reason for consumer integrity to live in raw SQL.
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **`docker.yml` no longer silently publishes `:latest` from a version ref.** The
@@ -196,6 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.12] - 2026-07-13
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin list grid shows time-of-day for `datetime` fields.** Timestamp columns
@@ -206,6 +214,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.11] - 2026-07-13
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin list grid honors `ui.listView`.** The admin UI unconditionally excluded
@@ -219,6 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.10] - 2026-06-30
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Structured error bodies.** All REST error responses (`job_routes`, `media`,
@@ -239,6 +249,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.9] - 2026-06-30
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Rate limiter exempts auth endpoints.** `/auth/*`, `/health`, and `/ready` are
@@ -258,6 +269,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.8] - 2026-06-20
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin UI TDZ crash on init.** Removed `manualChunks` from the admin UI Vite
@@ -355,6 +367,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `eventId:actionName`.
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Non-exhaustive `EventType` match in HTTP E2E tests.** `Restored` and `HardDeleted` variants
@@ -370,6 +383,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > (JWT + GraphQL + cache + events) at 2,384 req/s under 50 VUs.
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **`restore_many` and `hard_delete_many` now emit events (event-sourcing integrity).**
@@ -548,6 +562,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Tested (`media_http_dedups_identical_content_per_tenant`).
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Platform-table column drift self-heals on boot.** `ensure_platform_tables` now idempotently adds
@@ -590,6 +605,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction batch, effects, and the Javy build path, with a billing-route example.
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Custom routes — deferred effects now run on the route path.** A route handler's
@@ -673,6 +689,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inferring from timestamps. (consumer feedback #4)
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Auth — `/auth/me` (and `/auth/logout`) 401'd on a valid login token.** Those
@@ -856,6 +873,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 无
 
 ### Fixed
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
 - GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - 修复 GraphQL 标量特征实现

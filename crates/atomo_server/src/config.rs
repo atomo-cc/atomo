@@ -19,6 +19,12 @@ pub struct ServerConfig {
     /// when on, the server installs `CREATE POLICY` per model table at boot and the data layer
     /// binds `atomo.tenant_id` per request. See `docs/guide/advanced/multi-tenant.md`.
     pub enable_rls: bool,
+    /// Escape hatch for the RLS boot check (`ATOMO_RLS_ALLOW_BYPASS_ROLE`). Default off:
+    /// with RLS enabled the server refuses to boot when the connected role is a
+    /// superuser or has `BYPASSRLS` (policies would be silently inert). Set true to
+    /// proceed with an ERROR log instead.
+    #[serde(default)]
+    pub rls_allow_bypass_role: bool,
     /// Initialize the generic metered-command primitives (`ATOMO_ENABLE_METERED_COMMANDS`).
     /// **Default off**; when enabled, creates the `expiring_tokens` and `budget_ledger` tables at
     /// boot so a consumer can compose atomic metered commands. See
@@ -58,6 +64,7 @@ impl Default for ServerConfig {
             enable_subscriptions: true,
             enable_realtime: true,
             enable_rls: false,
+            rls_allow_bypass_role: false,
             enable_metered_commands: false,
             enable_self_registration: false,
             public_read_models: Vec::new(),
@@ -101,6 +108,9 @@ impl ServerConfig {
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(true),
             enable_rls: std::env::var("ATOMO_ENABLE_RLS")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            rls_allow_bypass_role: std::env::var("ATOMO_RLS_ALLOW_BYPASS_ROLE")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
             enable_metered_commands: std::env::var("ATOMO_ENABLE_METERED_COMMANDS")

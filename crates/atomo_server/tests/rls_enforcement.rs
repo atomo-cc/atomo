@@ -110,3 +110,41 @@ async fn rls_blocks_cross_tenant_reads_and_writes() {
         .await
         .unwrap();
 }
+
+/// `check_connection_role` must agree with the role's actual attributes: it
+/// refuses superuser/BYPASSRLS connections (RLS would be silently inert) and
+/// only proceeds when `allow_bypass` downgrades that to a logged error.
+#[tokio::test]
+#[ignore]
+async fn check_connection_role_refuses_bypass_roles() {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+
+    let (role, rolsuper, rolbypassrls): (String, bool, bool) = sqlx::query_as(
+        "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let bypasses = rolsuper || rolbypassrls;
+    eprintln!("connected role: {role} (super={rolsuper}, bypassrls={rolbypassrls})");
+
+    if bypasses {
+        let err = atomo_server::rls::check_connection_role(&pool, false)
+            .await
+            .expect_err("privileged role must be refused");
+        assert!(err.to_string().contains(role.as_str()));
+        assert!(err.to_string().contains("ATOMO_RLS_ALLOW_BYPASS_ROLE"));
+        atomo_server::rls::check_connection_role(&pool, true)
+            .await
+            .expect("escape hatch must allow with an ERROR log");
+    } else {
+        // Least-privilege role: fine under both settings.
+        atomo_server::rls::check_connection_role(&pool, false)
+            .await
+            .expect("non-privileged role must pass");
+        atomo_server::rls::check_connection_role(&pool, true)
+            .await
+            .expect("non-privileged role must pass");
+    }
+}

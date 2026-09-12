@@ -169,6 +169,12 @@ impl AtomoServer {
             // per-request bind reads), so the typed config and the executor never disagree.
             let enabled = self.config.enable_rls;
             if enabled {
+                // Fail fast: superuser/BYPASSRLS connections make every policy inert.
+                crate::rls::check_connection_role(
+                    self.atomo.db_pool(),
+                    self.config.rls_allow_bypass_role,
+                )
+                .await?;
                 let table_names: Vec<String> = self
                     .atomo
                     .schema()
