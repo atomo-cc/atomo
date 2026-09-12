@@ -251,6 +251,11 @@ class AtomoApiClient {
         update(model: $model, where: $where, data: $data)
       }
     `, { model: modelName, where: { id: { equals: id } }, data })
+    if (result.update == null) {
+      throw new Error(
+        `No ${modelName} record matched this update — it may have been deleted or scoped out by tenant`
+      )
+    }
     return camelizeKeys(result.update)
   }
 

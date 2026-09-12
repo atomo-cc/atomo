@@ -37,12 +37,12 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## F1 — Observable zero-match update
 
-- [ ] GraphQL `update` → `Option<HashMap>`; `null` on zero matched rows (`crates/atomo/src/graphql.rs`)
-- [ ] `updateMany` doc: unmatched ids omitted (return type unchanged)
-- [ ] Check `packages/atomo-client-sdk` + admin UI for non-null `update` assumptions; update typings/callers
-- [ ] Unit test: scoped no-match update → `null`; pg-gated integration test for the tenant-scope no-op
-- [ ] Docs: mutation semantics (`docs/api/`)
-- [ ] CHANGELOG `[Unreleased]` entry (flag mild schema change)
+- [x] GraphQL `update` → `Option<HashMap>`; `null` on zero matched rows (`crates/atomo/src/graphql.rs`)
+- [x] `updateMany` doc: unmatched ids omitted (return type unchanged)
+- [x] Callers checked: admin UI `updateEntity` now throws on null; worker-sdk uses REST CRUD (404 already); client-sdk's named mutations unaffected
+- [x] pg-gated test `test_update_zero_match_returns_null` (http_e2e.rs): nonexistent id → null; tenant-scoped miss on NULL-tenant row → null; unscoped match → record — passes
+- [x] Docs: `docs/api/graphql.md` update/updateMany semantics + tenant-scoping note
+- [x] CHANGELOG `[Unreleased]` entry (mild schema change flagged)
 
 ## F5 — Schema parser footguns
 

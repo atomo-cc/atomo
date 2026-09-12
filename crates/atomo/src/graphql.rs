@@ -466,7 +466,7 @@ impl Mutation {
         id: Option<String>,
         #[graphql(name = "where")] where_: Option<Value>,
         data: HashMap<String, Value>,
-    ) -> GraphQLResult<HashMap<String, Value>> {
+    ) -> GraphQLResult<Option<HashMap<String, Value>>> {
         check_access(&self.schema, &model, "update", ctx)?;
         let data = normalize_input_keys(data, &self.schema, &model);
         let where_value = resolve_where(id, where_)?;
@@ -488,7 +488,9 @@ impl Mutation {
             )
             .await?;
 
-        Ok(camel_keys(results.into_iter().next().unwrap_or_default()))
+        // Zero matched rows → null (not {}), so a no-op update is observable —
+        // e.g. a tenant-scoped update that misses a NULL-tenant global row.
+        Ok(results.into_iter().next().map(camel_keys))
     }
 
     /// Bulk-update multiple records by id in a single request.
