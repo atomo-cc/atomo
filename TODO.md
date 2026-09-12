@@ -56,7 +56,7 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## F2 — Cache boundary docs (no code change)
 
-- [ ] `docs/guide/caching.md`: "what does NOT invalidate" — direct SQL, other instances (`ATOMO_CACHE_MULTI_INSTANCE`), eventual mode; recommend per-model `enabled:false` for queue-like models
+- [x] `docs/guide/caching.md`: "What does not invalidate the cache" — direct SQL, other instances (`ATOMO_CACHE_MULTI_INSTANCE`), eventual mode; poll-driven consumer guidance (no-op writes look identical to staleness; `enabled:false` for queue-like models)
 - [ ] Reply to the reporting consumer (outside this repo): F1 explains the observed loop; ask whether out-of-band writes were involved
 
 ## Final gate
