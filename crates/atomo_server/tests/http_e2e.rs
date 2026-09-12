@@ -954,3 +954,66 @@ async fn test_crm_mutation_audited_with_actor() {
             .ok();
     }
 }
+
+// Regression: GraphQL responses must declare `charset=utf-8`. async-graphql-axum
+// emits bare `application/graphql-response+json`; without a charset, generic HTTP
+// clients decode the body as latin1 and mangle non-ASCII text.
+#[tokio::test]
+#[ignore]
+async fn test_graphql_response_declares_utf8_charset() {
+    let (app, _) = build_app().await;
+
+    let login_req = Request::builder()
+        .uri("/auth/login")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"email":"admin@test.dev","password":"admin123"}"#,
+        ))
+        .unwrap();
+    let (_, login_json) = send(&app, login_req).await;
+    let token = login_json["token"].as_str().expect("no token");
+
+    // Seed a row with non-ASCII content.
+    let create_body = serde_json::json!({
+        "query": r#"mutation { create(model: "Note", data: { title: "héllo·中文" }) }"#
+    });
+    let req = Request::builder()
+        .uri("/graphql")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&create_body).unwrap()))
+        .unwrap();
+    let (status, _) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let list_body = serde_json::json!({ "query": r#"{ records(model: "Note") }"# });
+    let req = Request::builder()
+        .uri("/graphql")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&list_body).unwrap()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let content_type = resp
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(
+        content_type, "application/graphql-response+json; charset=utf-8",
+        "graphql response must declare utf-8 charset"
+    );
+    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        body.contains("héllo·中文"),
+        "non-ascii content must round-trip as utf-8: {}",
+        body
+    );
+}

@@ -112,6 +112,7 @@ Notes
 - **`updateMany`:** accepts an `items` array of `{ id, data }` pairs and returns all updated records. Each item updates one record by id.
 - Access is enforced per model from the schema `access` rules (RBAC). Send `Authorization: Bearer <jwt>`.
 - Multi-tenant scoping: send `X-Tenant-ID: <id>` to scope all operations to a tenant.
+- Responses are `application/graphql-response+json; charset=utf-8`. The charset is declared explicitly — decode bodies as UTF-8.
 - Mutations are audit-logged with the acting user (from the JWT) as `user_id`.
 - Errors carry codes in extensions: `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.
 

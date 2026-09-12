@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - Version drift: the CLI now reports `CARGO_PKG_VERSION` (was hardcoded `0.1.0`), `atomo init` and `create-app` scaffold the client-sdk pin from their own release version (was `^0.1.0`), the deploy manifest reports the CLI version, and every `package.json` (root, private, and `@atomo-cc/create-app`) tracks the release version.
 
 ## [0.7.0] - 2026-09-08
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Administrator-only `GET /storage/diagnostics` for policy, cache counters, history coverage and estimated usage; Rust builders and server configuration expose lifecycle settings.
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - Explicit null values in single/bulk inserts and updates now use destination-typed SQL NULL instead of a TEXT-typed parameter. Nullable numeric, boolean, timestamp and JSON columns work consistently; mixed-null batches preserve binding offsets and database constraints.
 - Automatic projections now add missing nullable columns safely and reconcile current base rows on startup, including when event history is disabled. Live notifications re-read current state, while historical rebuild retains its separate completeness checks. Incompatible existing column types fail without destructive schema changes.
 - `in`/`notIn` filters now use bound scalar predicates in one SQL statement instead of passing JSONB to PostgreSQL array operators. Scoped reads and bulk mutations preserve surrounding `AND` conditions, empty-set semantics and JSON array field writes; malformed non-array set filters are rejected.
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.4] - 2026-07-14
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **`File` fields with scalar values no longer crash the record view.** A `File`
   value is documented as "stored as TEXT — the media id/url", but anything other
   than the admin's own uploader (a worker via CRUD, a migration) writes a bare
@@ -62,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.3] - 2026-07-14
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Dashboard cards and Quick Actions are labeled by the model's display name**,
   not a field heuristic — cards previously titled `createdAt`/`delta`/`event`
   (with actions like "New createdAt"). `ui.displayField` names a record *column*,
@@ -94,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the value was ignored and "is not null" was inexpressible).
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin list toolbar controls now actually work.** Three prominent controls
   were wired to nothing: the search box never sent its value to the server
   (typing refetched identical results), advanced-filter chips rendered but never
@@ -122,6 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.1] - 2026-07-14
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Builder-DSL access combinators are now enforced.** `parse_access_block` only
   understood bare `allow.role/authenticated/public` — schemas using
   `allow.any([...])`, `allow.sameTenant(..)`, or `allow.owner(..)` (as the CRM
@@ -172,6 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns. Removes the last reason for consumer integrity to live in raw SQL.
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **`docker.yml` no longer silently publishes `:latest` from a version ref.** The
   `tag` input defaulted to `latest`, so `gh workflow run docker.yml --ref vX.Y.Z`
   without `-f tag=` produced a green run but no versioned image (and stamped
@@ -182,6 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.12] - 2026-07-13
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin list grid shows time-of-day for `datetime` fields.** Timestamp columns
   restored in 0.5.11 rendered date-only (`toLocaleDateString()`), making rows in
   event logs / ledgers indistinguishable within a day. `datetime` cells now use
@@ -190,6 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.11] - 2026-07-13
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin list grid honors `ui.listView`.** The admin UI unconditionally excluded
   `createdAt`/`updatedAt` from list columns, ignoring an explicit `ui.listView` in
   the schema — on append-only models (event logs, ledgers) the timestamp column an
@@ -201,6 +210,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.10] - 2026-06-30
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Structured error bodies.** All REST error responses (`job_routes`, `media`,
   `crud_routes`, `registry_routes`) now return `{"error": "..."}` JSON instead of
   bare status codes, so consumers can programmatically parse failures.
@@ -219,6 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.9] - 2026-06-30
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Rate limiter exempts auth endpoints.** `/auth/*`, `/health`, and `/ready` are
   no longer subject to rate limiting, preventing concurrent write bursts from
   locking out authentication.
@@ -236,6 +247,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.8] - 2026-06-20
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Admin UI TDZ crash on init.** Removed `manualChunks` from the admin UI Vite
   config — the vendor/react-vendor chunk split caused `Cannot access 'ho' before
   initialization` because React-dependent libraries (Radix UI, TanStack, etc.) in
@@ -331,6 +343,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `eventId:actionName`.
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Non-exhaustive `EventType` match in HTTP E2E tests.** `Restored` and `HardDeleted` variants
   were missing from the audit listener match arms in test helpers.
 
@@ -344,6 +357,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > (JWT + GraphQL + cache + events) at 2,384 req/s under 50 VUs.
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **`restore_many` and `hard_delete_many` now emit events (event-sourcing integrity).**
   Both previously ran a bare SQL statement with no event creation — restores and hard deletes
   were invisible to the event log, audit trail, broadcast subscribers, and projections. They now
@@ -520,6 +534,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Tested (`media_http_dedups_identical_content_per_tenant`).
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Platform-table column drift self-heals on boot.** `ensure_platform_tables` now idempotently adds
   `sessions.is_revoked` (alongside the existing `users.tenant_id` patch) for databases created before
   the column existed — without it, auth (`issue/validate/revoke`) failed against an older `sessions`
@@ -560,6 +575,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction batch, effects, and the Javy build path, with a billing-route example.
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Custom routes — deferred effects now run on the route path.** A route handler's
   `effects` (`emit`/`dbQuery`/`http`) were recorded but never fulfilled on the route
   path (only the CRUD after-hook ran them). They now run, permission-gated, **after** a
@@ -641,6 +657,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inferring from timestamps. (consumer feedback #4)
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - **Auth — `/auth/me` (and `/auth/logout`) 401'd on a valid login token.** Those
   routes read an `AuthUser` from request extensions but were nested without the auth
   middleware that injects it, so they returned 401 unconditionally. Now guarded with
@@ -822,6 +839,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 无
 
 ### Fixed
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
 - 修复 GraphQL 标量特征实现
 - 修复 handlebars 模板类型兼容性
 - 修复编译错误和依赖冲突

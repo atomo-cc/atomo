@@ -7,7 +7,7 @@ use atomo::graphql::UserRoleCtx;
 use atomo::graphql::{Mutation as ServiceMutation, Query as ServiceQuery, Subscription};
 use atomo::prelude::*;
 use atomo_core::types::EntityId;
-use axum::http::{header, HeaderMap};
+use axum::http::{header, HeaderMap, HeaderValue};
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
@@ -172,7 +172,7 @@ fn tenant_header_allowed(user_tenant: Option<&str>, header_tenant: &str) -> bool
 pub async fn graphql_handler(
     Extension(schema): Extension<AtomoGraphQLSchema>,
     req: axum::extract::Request,
-) -> GraphQLResponse {
+) -> axum::response::Response {
     static GQL_COUNTER: once_cell::sync::Lazy<prometheus::IntCounterVec> =
         once_cell::sync::Lazy::new(|| {
             prometheus::register_int_counter_vec!(
@@ -252,7 +252,15 @@ pub async fn graphql_handler(
     let elapsed = start.elapsed().as_secs_f64();
     GQL_COUNTER.with_label_values(&[op.as_str(), status]).inc();
     GQL_HISTO.with_label_values(&[op.as_str()]).observe(elapsed);
-    resp.into()
+    // async-graphql-axum emits `application/graphql-response+json` with no charset, so
+    // generic HTTP clients (e.g. package:http) decode non-ASCII bodies as latin1. Pin
+    // utf-8 here so every consumer decodes correctly without bodyBytes workarounds.
+    let mut response = GraphQLResponse::from(resp).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/graphql-response+json; charset=utf-8"),
+    );
+    response
 }
 
 fn model_in_public_read_allowlist(config: &str, model: &str) -> bool {

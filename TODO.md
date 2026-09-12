@@ -6,17 +6,18 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## F7 — Version drift
 
-- [ ] `atomo_cli`: `#[command(version = env!("CARGO_PKG_VERSION"))]` (`src/main.rs:26`)
-- [ ] `init.rs`/`deploy.rs`/`workspace_dev.rs`: scaffold SDK pin derives from CLI version (no `^0.1.0` literal)
-- [ ] Align non-publishable `package.json` versions (root, admin-ui, atomo-schema, create-app) or document the policy; update AGENTS.md release checklist if a step is missing
-- [ ] Verify: `atomo --version` matches crate version; scaffolded package.json pins current SDK
-- [ ] CHANGELOG `[Unreleased]` entry
+- [x] `atomo_cli`: `#[command(version)]` → `CARGO_PKG_VERSION` (`src/main.rs:26`)
+- [x] `init.rs`/`deploy.rs`: SDK pin + deploy manifest derive from `CARGO_PKG_VERSION`; `create-app` pins from its own package version (workspace_dev's `0.1.0` is the generated service package — correct as-is)
+- [x] All `package.json`s aligned to 0.7.0; `create-app` added to publishable list + publish + verify steps in AGENTS.md release checklist
+- [x] Verify: `atomo --version` → `atomo 0.7.0`; create-app scaffolds `@atomo-cc/client-sdk: ^0.7.0`
+- [x] CHANGELOG `[Unreleased]` entry
 
 ## F6 — GraphQL charset
 
-- [ ] `graphql_handler`: overwrite `Content-Type` → `application/graphql-response+json; charset=utf-8` (`crates/atomo_server/src/handlers.rs`)
-- [ ] Integration test: non-ASCII GraphQL response carries the charset
-- [ ] CHANGELOG `[Unreleased]` entry
+- [x] `graphql_handler` now returns `Response` and overwrites `Content-Type` → `application/graphql-response+json; charset=utf-8` (`crates/atomo_server/src/handlers.rs`)
+- [x] Integration test `test_graphql_response_declares_utf8_charset` (http_e2e.rs, pg-gated): header + non-ASCII round-trip — passes
+- [x] Docs note in `docs/api/graphql.md`
+- [x] CHANGELOG `[Unreleased]` entry
 
 ## F4 — Rate limiter 429 body
 
