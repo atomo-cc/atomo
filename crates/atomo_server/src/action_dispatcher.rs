@@ -174,6 +174,7 @@ mod tests {
             models,
             actions,
             builtins: Default::default(),
+            warnings: Vec::new(),
         }
     }
 

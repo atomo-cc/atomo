@@ -424,18 +424,45 @@ impl TypeScriptParser {
     pub fn parse_schema(&self, content: &str) -> Result<Schema> {
         let models = self.parse(content)?;
         let actions = Self::parse_actions(content);
-        let meta_keys: std::collections::HashSet<String> =
-            Self::parse_model_metadata(content).into_keys().collect();
+        // Membership comes from the models block's entry NAMES — an entry with empty
+        // metadata (`Note: {}`) is still a declared model. (Previously membership came
+        // from parsed metadata keys, so an all-defaults entry silently dropped the model.)
+        let declared: std::collections::HashSet<String> = Self::sub_block(content, "models")
+            .map(|b| {
+                Self::top_level_entries(&b)
+                    .into_iter()
+                    .map(|(n, _)| n)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut warnings = Vec::new();
         let mut schema_models = HashMap::new();
         for model in models {
-            if meta_keys.contains(&model.name) {
+            if declared.contains(&model.name) {
                 schema_models.insert(model.name.clone(), model);
+            } else if model.fields.contains_key("id") && !model.fields.contains_key("_enum_type") {
+                // Entity-shaped (has `id`) but unregistered — almost certainly a
+                // forgotten schema.models entry, not a helper type.
+                warnings.push(format!(
+                    "interface '{}' looks like a model but is not listed in schema.models — it was dropped",
+                    model.name
+                ));
             }
         }
+        for key in &declared {
+            if !schema_models.contains_key(key) {
+                warnings.push(format!(
+                    "schema.models entry '{key}' has no matching interface — it was ignored"
+                ));
+            }
+        }
+        warnings.extend(model_block_diagnostics(content, &schema_models));
+        warnings.extend(reserved_identifier_warnings(&schema_models));
         Ok(Schema {
             models: schema_models,
             actions,
             builtins: Self::parse_builtins(content),
+            warnings,
         })
     }
 
@@ -876,6 +903,294 @@ fn parse_type_alias(lines: &[&str], start_index: usize) -> Result<(String, Strin
     Ok((type_name, placeholder_definition, lines_consumed))
 }
 
+/// PostgreSQL reserved words that cannot be used as unquoted identifiers.
+/// Columns are quoted at emission now, so these parse fine — but a warning is
+/// still worth surfacing since they surprise consumers running raw SQL.
+pub(crate) const PG_RESERVED: &[&str] = &[
+    "all",
+    "analyse",
+    "analyze",
+    "and",
+    "any",
+    "array",
+    "as",
+    "asc",
+    "asymmetric",
+    "both",
+    "case",
+    "cast",
+    "check",
+    "collate",
+    "column",
+    "constraint",
+    "create",
+    "current_catalog",
+    "current_date",
+    "current_role",
+    "current_time",
+    "current_timestamp",
+    "current_user",
+    "default",
+    "deferrable",
+    "desc",
+    "distinct",
+    "do",
+    "else",
+    "end",
+    "except",
+    "false",
+    "fetch",
+    "for",
+    "foreign",
+    "from",
+    "grant",
+    "group",
+    "having",
+    "in",
+    "initially",
+    "intersect",
+    "into",
+    "lateral",
+    "leading",
+    "limit",
+    "localtime",
+    "localtimestamp",
+    "not",
+    "null",
+    "offset",
+    "on",
+    "only",
+    "or",
+    "order",
+    "placing",
+    "primary",
+    "references",
+    "returning",
+    "select",
+    "session_user",
+    "some",
+    "symmetric",
+    "table",
+    "then",
+    "to",
+    "trailing",
+    "true",
+    "union",
+    "unique",
+    "user",
+    "using",
+    "variadic",
+    "when",
+    "where",
+    "window",
+    "with",
+];
+
+pub(crate) fn camel_to_snake_simple(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for ch in s.chars() {
+        if ch.is_uppercase() {
+            out.push('_');
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// All depth-0 `key:` occurrences inside a brace block, regardless of value kind.
+/// Unlike `top_level_entries` this also catches scalar/array/function values —
+/// needed to detect unrecognized keys the value-oriented walkers ignore.
+pub(crate) fn top_level_keys(block: &str) -> Vec<String> {
+    let key_re = Regex::new(r"(\w+)\s*:").unwrap();
+    let mut out = Vec::new();
+    for cap in key_re.captures_iter(block) {
+        let start = cap.get(0).unwrap().start();
+        // Only real member positions: a key is preceded by `{`, `,`, or nothing.
+        // This skips `word:` occurrences inside string literals.
+        let preceded_by_member_start = block[..start]
+            .trim_end()
+            .chars()
+            .last()
+            .map(|c| c == '{' || c == ',')
+            .unwrap_or(true);
+        if !preceded_by_member_start {
+            continue;
+        }
+        let mut depth = 0i64;
+        for ch in block[..start].chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        if depth == 0 {
+            out.push(cap[1].to_string());
+        }
+    }
+    out
+}
+
+/// Depth-0 spread check: returns true if `...` appears at brace depth 0 of `block`.
+pub(crate) fn has_toplevel_spread(block: &str) -> bool {
+    for m in block.match_indices("...") {
+        let mut depth = 0i64;
+        for ch in block[..m.0].chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        if depth == 0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Scan `export const schema` for constructs the value-oriented parser cannot
+/// represent: spreads, unrecognized per-model keys, unrecognized keys inside
+/// access/validation/relationships blocks, and relationship entries missing
+/// `type`/`model` (skipped by `parse_model_metadata`).
+fn model_block_diagnostics(content: &str, models: &HashMap<String, Model>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    // `export const schema = {` — `=`, not `:`, so sub_block doesn't find it.
+    let schema_block = Regex::new(r"schema\s*=\s*\{")
+        .unwrap()
+        .find(content)
+        .and_then(|m| {
+            let start = m.end();
+            let bytes = content.as_bytes();
+            let mut depth = 1usize;
+            let mut j = start;
+            while j < bytes.len() && depth > 0 {
+                match bytes[j] {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                j += 1;
+            }
+            (depth == 0).then(|| content[start..j.saturating_sub(1)].to_string())
+        });
+    let Some(schema_block) = schema_block else {
+        return warnings;
+    };
+    if has_toplevel_spread(&schema_block) {
+        warnings.push(
+            "spread expression in `export const schema` cannot be resolved statically — spread content is dropped"
+                .to_string(),
+        );
+    }
+    const KNOWN_MODEL_KEYS: &[&str] = &[
+        "tableName",
+        "validation",
+        "access",
+        "relationships",
+        "events",
+        "ui",
+    ];
+    let Some(models_block) = TypeScriptParser::sub_block(&schema_block, "models") else {
+        return warnings;
+    };
+    if has_toplevel_spread(&models_block) {
+        warnings.push(
+            "spread expression in schema.models cannot be resolved statically — declare the model explicitly"
+                .to_string(),
+        );
+    }
+    for (name, block) in TypeScriptParser::top_level_entries(&models_block) {
+        for key in top_level_keys(&block) {
+            if !KNOWN_MODEL_KEYS.contains(&key.as_str()) {
+                warnings.push(format!(
+                    "schema.models.{name}: unrecognized key '{key}' ignored (known: {})",
+                    KNOWN_MODEL_KEYS.join(", ")
+                ));
+            }
+        }
+        if let Some(access_block) = TypeScriptParser::sub_block(&block, "access") {
+            const ACCESS_OPS: &[&str] = &["create", "read", "update", "delete"];
+            for key in top_level_keys(&access_block) {
+                if !ACCESS_OPS.contains(&key.as_str()) {
+                    warnings.push(format!(
+                        "schema.models.{name}.access: unrecognized key '{key}' ignored (known: create, read, update, delete)"
+                    ));
+                }
+            }
+        }
+        if let Some(validation_block) = TypeScriptParser::sub_block(&block, "validation") {
+            if let Some(model) = models.get(&name) {
+                for key in top_level_keys(&validation_block) {
+                    if !model.fields.contains_key(&key) {
+                        warnings.push(format!(
+                            "schema.models.{name}.validation: '{key}' is not a field of '{name}' — rules never applied"
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(rel_block) = TypeScriptParser::sub_block(&block, "relationships") {
+            const REL_KEYS: &[&str] = &["type", "model", "foreignKey"];
+            for (rel, rdef) in TypeScriptParser::top_level_entries(&rel_block) {
+                let has = |k: &str| {
+                    Regex::new(&format!(r#"{}\s*:\s*['"]"#, k))
+                        .unwrap()
+                        .is_match(&rdef)
+                };
+                if !(has("type") && has("model")) {
+                    warnings.push(format!(
+                        "schema.models.{name}.relationships.{rel}: missing 'type'/'model' — ignored"
+                    ));
+                }
+                for key in top_level_keys(&rdef) {
+                    if !REL_KEYS.contains(&key.as_str()) {
+                        warnings.push(format!(
+                            "schema.models.{name}.relationships.{rel}: unrecognized key '{key}' ignored"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    warnings
+}
+
+/// Warn on model/field names that are PostgreSQL reserved words. Identifiers are
+/// quoted at SQL emission now, so these work — but they still trip up consumers
+/// running raw SQL against the generated tables.
+pub(crate) fn reserved_identifier_warnings(models: &HashMap<String, Model>) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut names: Vec<&String> = models.keys().collect();
+    names.sort();
+    for name in names {
+        let model = &models[name];
+        // Mirror sql_builder::table_name: explicit tableName else snake(name)+'s'.
+        let table = model
+            .table_name
+            .clone()
+            .unwrap_or_else(|| camel_to_snake_simple(&model.name) + "s");
+        if PG_RESERVED.contains(&table.as_str()) {
+            warnings.push(format!(
+                "model '{name}' maps to table '{table}' which is a PostgreSQL reserved word"
+            ));
+        }
+        let mut fields: Vec<&String> = model.fields.keys().collect();
+        fields.sort();
+        for field_name in fields {
+            let col = camel_to_snake_simple(field_name);
+            if PG_RESERVED.contains(&col.as_str()) {
+                warnings.push(format!(
+                    "model '{name}' field '{field_name}' maps to column '{col}' which is a PostgreSQL reserved word"
+                ));
+            }
+        }
+    }
+    warnings
+}
+
 #[cfg(test)]
 mod validation_tests {
     use super::*;
@@ -1313,5 +1628,161 @@ mod validation_tests {
         assert!(schema.actions.is_empty());
         let user = schema.models.get("User").unwrap();
         assert!(user.events.is_empty());
+    }
+
+    // ── schema diagnostics (Schema.warnings) ────────────────────────────────
+
+    #[test]
+    fn warns_on_entity_shaped_interface_not_in_models() {
+        let content = r#"
+        export interface Post { id: string; title: string; }
+        export interface Comment { id: string; body: string; }
+        export interface TextBlock { kind: string; }
+        export const schema = { models: { Post: { tableName: "posts" } } };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert_eq!(schema.models.len(), 1);
+        assert!(
+            schema
+                .warnings
+                .iter()
+                .any(|w| w.contains("'Comment'") && w.contains("not listed in schema.models")),
+            "expected dropped-interface warning, got: {:?}",
+            schema.warnings
+        );
+        // Helper type without `id` is intentionally excluded — no warning.
+        assert!(!schema.warnings.iter().any(|w| w.contains("TextBlock")));
+    }
+
+    #[test]
+    fn warns_on_models_entry_with_no_interface() {
+        let content = r#"
+        export interface Post { id: string; }
+        export const schema = { models: { Post: {}, Ghost: {} } };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert!(schema
+            .warnings
+            .iter()
+            .any(|w| w.contains("'Ghost'") && w.contains("no matching interface")));
+    }
+
+    #[test]
+    fn empty_metadata_entry_still_registers_model() {
+        // `Note: {}` has no parseable metadata but IS declared — must be kept.
+        let content = r#"
+        export interface Note { id: string; body: string; }
+        export const schema = { models: { Note: {} } };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert!(schema.models.contains_key("Note"));
+    }
+
+    #[test]
+    fn warns_on_unrecognized_keys_and_bad_relationship() {
+        let content = r#"
+        export interface Post { id: string; title: string; }
+        export interface Author { id: string; name: string; }
+        export const schema = {
+          models: {
+            Post: {
+              tableName: "posts",
+              cacheTTL: 300,
+              access: { read: "public", list: "admin" },
+              validation: { titel: "required" },
+              relationships: {
+                author: { type: "belongsTo", model: "Author", foreignKey: "authorId", cascade: true },
+                comments: { type: "hasMany" },
+              },
+            },
+            Author: {},
+          },
+        };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        let w = &schema.warnings;
+        assert!(
+            w.iter().any(|x| x.contains("unrecognized key 'cacheTTL'")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("access") && x.contains("'list'")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("validation") && x.contains("'titel'")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("relationships.author") && x.contains("'cascade'")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("relationships.comments")
+                    && x.contains("missing 'type'/'model'")),
+            "{w:?}"
+        );
+    }
+
+    #[test]
+    fn warns_on_reserved_word_fields() {
+        let content = r#"
+        export interface Job { id: string; order: number; user: string; title: string; }
+        export const schema = { models: { Job: { tableName: "jobs" } } };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert!(
+            schema
+                .warnings
+                .iter()
+                .any(|w| w.contains("'order'") && w.contains("reserved word")),
+            "{:?}",
+            schema.warnings
+        );
+        assert!(
+            schema
+                .warnings
+                .iter()
+                .any(|w| w.contains("'user'") && w.contains("reserved word")),
+            "{:?}",
+            schema.warnings
+        );
+        assert!(!schema.warnings.iter().any(|w| w.contains("'title'")));
+    }
+
+    #[test]
+    fn warns_on_spread_in_models() {
+        let content = r#"
+        const base = {};
+        export interface Post { id: string; }
+        export const schema = { models: { Post: {}, ...base } };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert!(schema
+            .warnings
+            .iter()
+            .any(|w| w.contains("spread expression in schema.models")));
+    }
+
+    #[test]
+    fn clean_schema_has_no_warnings() {
+        let content = r#"
+        export interface Post { id: string; title: string; }
+        export const schema = {
+          models: {
+            Post: {
+              tableName: "posts",
+              access: { read: "public" },
+              validation: { title: "required" },
+            },
+          },
+        };
+        "#;
+        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
+        assert_eq!(schema.warnings, Vec::<String>::new());
     }
 }

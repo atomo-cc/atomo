@@ -113,6 +113,13 @@ impl AtomoServer {
             }
         }
 
+        // Schema parser diagnostics: constructs the regex parsers couldn't represent
+        // (unregistered interfaces, unrecognized access/validation/relationships keys,
+        // reserved-word identifiers) used to drop silently. Now surfaced at boot.
+        for warning in &self.atomo.schema().warnings {
+            tracing::warn!(schema = %warning, "schema diagnostic");
+        }
+
         // Generate extended GraphQL schema that includes both service and platform queries
         let graphql_schema = crate::handlers::build_extended_schema(&self.atomo);
         info!("   ✓ Extended GraphQL schema generated (service + platform)");

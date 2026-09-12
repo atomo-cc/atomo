@@ -106,6 +106,11 @@ enum Commands {
         #[command(subcommand)]
         command: ProjectCommands,
     },
+    /// Inspect and validate the schema file
+    Schema {
+        #[command(subcommand)]
+        command: SchemaCommands,
+    },
 }
 
 #[tokio::main]
@@ -172,6 +177,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Project { command } => {
             project_command(command).await?;
+        }
+        Commands::Schema { command } => {
+            schema_command(command).await?;
         }
     }
 

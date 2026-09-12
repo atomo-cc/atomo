@@ -34,6 +34,10 @@ atomo seed [--file ./seed.sql]
 
 # Run service tests (runs `cargo test` in the service directory)
 atomo test [--service-path <path>] [-f, --filter <name>]
+
+# Parse the schema and report diagnostics (dropped constructs, unrecognized
+# keys, reserved-word identifiers). Exits non-zero on parse errors.
+atomo schema check [--schema <path>]   # defaults to ./schema.ts
 ```
 
 ### Workspace Dev

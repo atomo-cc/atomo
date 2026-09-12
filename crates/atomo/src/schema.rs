@@ -30,7 +30,8 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
 
     for model in schema.models.values() {
         let table = crate::query::sql_builder::table_name_for(model);
-        let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", table);
+        let qt = crate::query::sql_builder::quote_ident(&table);
+        let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", qt);
 
         let mut columns = Vec::new();
         let mut index_cols: Vec<String> = Vec::new();
@@ -48,7 +49,7 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             if is_primary {
                 columns.push(format!(
                     "  {} TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text",
-                    col
+                    crate::query::sql_builder::quote_ident(&col)
                 ));
                 continue;
             }
@@ -57,7 +58,13 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             // `notes: ContentBlock[]` doesn't force every insert to pass it.
             let default = column_default_clause(field);
             let nullable = if field.optional { "" } else { " NOT NULL" };
-            columns.push(format!("  {} {}{}{}", col, column_type, default, nullable));
+            columns.push(format!(
+                "  {} {}{}{}",
+                crate::query::sql_builder::quote_ident(&col),
+                column_type,
+                default,
+                nullable
+            ));
             // `@unique`/`@index` annotations are reconciled as post-table indexes (idempotent and
             // applicable to tables created before the annotation existed), not inline constraints.
             if field
@@ -88,16 +95,16 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             .map(|f| to_snake_case(&f.name))
             .collect();
         if !declared.contains("created_at") {
-            columns.push("  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
+            columns.push("  \"created_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
         }
         if !declared.contains("updated_at") {
-            columns.push("  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
+            columns.push("  \"updated_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
         }
         if !declared.contains("deleted_at") {
-            columns.push("  deleted_at TIMESTAMPTZ".to_string());
+            columns.push("  \"deleted_at\" TIMESTAMPTZ".to_string());
         }
         if !declared.contains("tenant_id") {
-            columns.push("  tenant_id TEXT".to_string());
+            columns.push("  \"tenant_id\" TEXT".to_string());
         }
         sql.push_str(&columns.join(",\n"));
         sql.push_str("\n);");
@@ -125,17 +132,23 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
             if field.optional || !default.is_empty() {
                 let nullable = if field.optional { "" } else { " NOT NULL" };
                 migrations.push(format!(
-                    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {column_type}{default}{nullable};"
+                    "ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} {column_type}{default}{nullable};",
+                    crate::query::sql_builder::quote_ident(&table),
+                    crate::query::sql_builder::quote_ident(&col)
                 ));
             } else {
+                // String-literal compares (table_name = '…') keep raw names; the
+                // DDL identifiers inside get quoted.
+                let qt = crate::query::sql_builder::quote_ident(&table);
+                let qc = crate::query::sql_builder::quote_ident(&col);
                 migrations.push(format!(
                     "DO $$ BEGIN \
                      IF NOT EXISTS (SELECT 1 FROM information_schema.columns \
                        WHERE table_schema = current_schema() AND table_name = '{table}' AND column_name = '{col}') THEN \
-                       IF EXISTS (SELECT 1 FROM {table} LIMIT 1) THEN \
+                       IF EXISTS (SELECT 1 FROM {qt} LIMIT 1) THEN \
                          RAISE EXCEPTION 'atomo: cannot add required column {table}.{col} with no default to a populated table; declare a .default(...) on the field, or write an explicit backfill migration (add it nullable, backfill, then SET NOT NULL)'; \
                        ELSE \
-                         ALTER TABLE {table} ADD COLUMN {col} {column_type} NOT NULL; \
+                         ALTER TABLE {qt} ADD COLUMN {qc} {column_type} NOT NULL; \
                        END IF; \
                      END IF; END $$;"
                 ));
@@ -146,8 +159,10 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         // these columns were introduced (e.g. the platform `users` table).
         for col_def in [("deleted_at", "TIMESTAMPTZ"), ("tenant_id", "TEXT")] {
             migrations.push(format!(
-                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {} {};",
-                col_def.0, col_def.1
+                "ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} {};",
+                qt,
+                crate::query::sql_builder::quote_ident(col_def.0),
+                col_def.1
             ));
         }
 
@@ -156,14 +171,20 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
         // the column was unique, mirroring the @index pass.
         for col in &unique_cols {
             migrations.push(format!(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{col} ON {table} ({col});"
+                "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {} ({});",
+                crate::query::sql_builder::quote_ident(&format!("uq_{table}_{col}")),
+                qt,
+                crate::query::sql_builder::quote_ident(col)
             ));
         }
 
         // Secondary indexes from `@index` annotations (idempotent).
         for col in &index_cols {
             migrations.push(format!(
-                "CREATE INDEX IF NOT EXISTS idx_{table}_{col} ON {table} ({col});"
+                "CREATE INDEX IF NOT EXISTS {} ON {} ({});",
+                crate::query::sql_builder::quote_ident(&format!("idx_{table}_{col}")),
+                qt,
+                crate::query::sql_builder::quote_ident(col)
             ));
         }
 
@@ -206,11 +227,16 @@ pub fn generate_migrations(schema: &Schema) -> Result<Vec<String>> {
                 continue;
             }
             let cname = format!("fk_{}_{}", table, fk_col);
+            // `conname = '…'` compares the raw name; DDL identifiers get quoted.
             migrations.push(format!(
                 "DO $$ BEGIN \
                  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
-                 ALTER TABLE {table} ADD CONSTRAINT {cname} FOREIGN KEY ({fk_col}) REFERENCES {target}(id); \
-                 END IF; END $$;"
+                 ALTER TABLE {} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}(\"id\"); \
+                 END IF; END $$;",
+                crate::query::sql_builder::quote_ident(&table),
+                crate::query::sql_builder::quote_ident(&cname),
+                crate::query::sql_builder::quote_ident(&fk_col),
+                crate::query::sql_builder::quote_ident(target)
             ));
         }
     }
@@ -241,23 +267,27 @@ fn push_constraint_migrations(
     constraints: &[ModelConstraint],
     migrations: &mut Vec<String>,
 ) {
+    use crate::query::sql_builder::quote_ident as qi;
+    let qt = qi(table);
     for (n, c) in constraints.iter().enumerate() {
         match c {
             // Composite uniqueness via a UNIQUE INDEX (idempotent with IF NOT EXISTS).
             ModelConstraint::Unique(cols) => {
                 let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
                 migrations.push(format!(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list});",
-                    joined = snake.join("_"),
-                    list = snake.join(", ")
+                    "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {} ({});",
+                    qi(&format!("uq_{table}_{}", snake.join("_"))),
+                    qt,
+                    snake.iter().map(|c| qi(c)).collect::<Vec<_>>().join(", ")
                 ));
             }
             ModelConstraint::Index(cols) => {
                 let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
                 migrations.push(format!(
-                    "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list});",
-                    joined = snake.join("_"),
-                    list = snake.join(", ")
+                    "CREATE INDEX IF NOT EXISTS {} ON {} ({});",
+                    qi(&format!("idx_{table}_{}", snake.join("_"))),
+                    qt,
+                    snake.iter().map(|c| qi(c)).collect::<Vec<_>>().join(", ")
                 ));
             }
             // PARTIAL unique/index: same as above plus a `WHERE <predicate>`. The
@@ -267,27 +297,31 @@ fn push_constraint_migrations(
             ModelConstraint::UniqueWhere(cols, predicate) => {
                 let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
                 migrations.push(format!(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
-                    joined = snake.join("_"),
-                    list = snake.join(", ")
+                    "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {} ({}) WHERE {predicate};",
+                    qi(&format!("uq_{table}_{}", snake.join("_"))),
+                    qt,
+                    snake.iter().map(|c| qi(c)).collect::<Vec<_>>().join(", ")
                 ));
             }
             ModelConstraint::IndexWhere(cols, predicate) => {
                 let snake: Vec<String> = cols.iter().map(|c| to_snake_case(c)).collect();
                 migrations.push(format!(
-                    "CREATE INDEX IF NOT EXISTS idx_{table}_{joined} ON {table} ({list}) WHERE {predicate};",
-                    joined = snake.join("_"),
-                    list = snake.join(", ")
+                    "CREATE INDEX IF NOT EXISTS {} ON {} ({}) WHERE {predicate};",
+                    qi(&format!("idx_{table}_{}", snake.join("_"))),
+                    qt,
+                    snake.iter().map(|c| qi(c)).collect::<Vec<_>>().join(", ")
                 ));
             }
             // CHECK as a guarded ALTER (same idempotency pattern as the FK pass).
+            // The `conname = '…'` compare keeps the raw name; DDL gets quoted.
             ModelConstraint::Check(expr) => {
                 let cname = format!("chk_{table}_{n}");
                 migrations.push(format!(
                     "DO $$ BEGIN \
                      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
-                     ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({expr}); \
-                     END IF; END $$;"
+                     ALTER TABLE {qt} ADD CONSTRAINT {} CHECK ({expr}); \
+                     END IF; END $$;",
+                    qi(&cname)
                 ));
             }
         }
@@ -327,8 +361,9 @@ pub fn generate_builtin_extension_migrations(schema: &Schema) -> Result<Vec<Stri
                 );
             }
             migrations.push(format!(
-                "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ty};",
-                col = to_snake_case(field)
+                "ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} {ty};",
+                crate::query::sql_builder::quote_ident(table),
+                crate::query::sql_builder::quote_ident(&to_snake_case(field))
             ));
         }
         push_constraint_migrations(table, &ext.constraints, &mut migrations);
@@ -341,7 +376,8 @@ pub fn generate_builtin_extension_migrations(schema: &Schema) -> Result<Vec<Stri
 /// Rules that already have SQL-level equivalents (`required` -> NOT NULL, `unique` -> UNIQUE,
 /// `exists:*` -> FK) are intentionally skipped — they are handled elsewhere.
 fn validation_checks(table: &str, field_name: &str, field: &Field, rules: &str) -> Vec<String> {
-    let col = to_snake_case(field_name);
+    let col_raw = to_snake_case(field_name);
+    let col = crate::query::sql_builder::quote_ident(&col_raw);
     let is_number = matches!(field.field_type, FieldType::Number);
     let optional = field.optional;
     let mut stmts = Vec::new();
@@ -400,12 +436,14 @@ fn validation_checks(table: &str, field_name: &str, field: &Field, rules: &str) 
             expr
         };
 
-        let cname = format!("chk_{table}_{col}_{rule_name}");
+        let cname = format!("chk_{table}_{col_raw}_{rule_name}");
         stmts.push(format!(
             "DO $$ BEGIN \
              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN \
-             ALTER TABLE {table} ADD CONSTRAINT {cname} CHECK ({full_expr}); \
-             END IF; END $$;"
+             ALTER TABLE {} ADD CONSTRAINT {} CHECK ({full_expr}); \
+             END IF; END $$;",
+            crate::query::sql_builder::quote_ident(table),
+            crate::query::sql_builder::quote_ident(&cname)
         ));
     }
 
@@ -598,18 +636,19 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
 
         // Every table gets soft-delete + tenant columns.
         assert!(
-            sql.contains("deleted_at TIMESTAMPTZ"),
+            sql.contains("\"deleted_at\" TIMESTAMPTZ"),
             "deleted_at missing:\n{}",
             sql
         );
         assert!(
-            sql.contains("tenant_id TEXT"),
+            sql.contains("\"tenant_id\" TEXT"),
             "tenant_id missing:\n{}",
             sql
         );
@@ -617,18 +656,18 @@ mod tests {
         // model that declares neither still gets both, so the list view's default
         // `ORDER BY created_at` never hits a missing column.
         assert!(
-            sql.contains("created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+            sql.contains("\"created_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
             "auto created_at missing:\n{}",
             sql
         );
         assert!(
-            sql.contains("updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+            sql.contains("\"updated_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
             "auto updated_at missing:\n{}",
             sql
         );
         // belongsTo → FK constraint to the target table's id (referential integrity).
         assert!(
-            sql.contains("ALTER TABLE deal ADD CONSTRAINT fk_deal_contact_id FOREIGN KEY (contact_id) REFERENCES contact(id)"),
+            sql.contains("ALTER TABLE \"deal\" ADD CONSTRAINT \"fk_deal_contact_id\" FOREIGN KEY (\"contact_id\") REFERENCES \"contact\"(\"id\")"),
             "FK not emitted:\n{}", sql
         );
     }
@@ -658,18 +697,18 @@ mod tests {
             "guarded required-add missing:\n{sql}"
         );
         assert!(
-            sql.contains("ALTER TABLE uploads ADD COLUMN session_hash TEXT NOT NULL;"),
+            sql.contains("ALTER TABLE \"uploads\" ADD COLUMN \"session_hash\" TEXT NOT NULL;"),
             "empty-table branch missing:\n{sql}"
         );
         assert!(
-            !sql.contains("ADD COLUMN IF NOT EXISTS session_hash TEXT NOT NULL;"),
+            !sql.contains("ADD COLUMN IF NOT EXISTS \"session_hash\" TEXT NOT NULL;"),
             "must not emit an unguarded NOT NULL add:\n{sql}"
         );
         // Optional field: a plain nullable add.
-        assert!(
-            sql.contains("ALTER TABLE uploads ADD COLUMN IF NOT EXISTS consumed_at TIMESTAMPTZ;")
-        );
-        assert!(!sql.contains("ALTER TABLE uploads ADD COLUMN IF NOT EXISTS id"));
+        assert!(sql.contains(
+            "ALTER TABLE \"uploads\" ADD COLUMN IF NOT EXISTS \"consumed_at\" TIMESTAMPTZ;"
+        ));
+        assert!(!sql.contains("ALTER TABLE \"uploads\" ADD COLUMN IF NOT EXISTS \"id\""));
     }
 
     #[test]
@@ -689,13 +728,13 @@ mod tests {
         let sql = generate_migrations(&schema).unwrap().join("\n");
         // CREATE TABLE column carries the declared default...
         assert!(
-            sql.contains("status TEXT DEFAULT 'draft'"),
+            sql.contains("\"status\" TEXT DEFAULT 'draft'"),
             "create-table default missing:\n{sql}"
         );
         // ...and the forward-migration add carries it too, so it backfills existing rows.
         assert!(
             sql.contains(
-                "ALTER TABLE listings ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'draft';"
+                "ALTER TABLE \"listings\" ADD COLUMN IF NOT EXISTS \"status\" TEXT DEFAULT 'draft';"
             ),
             "forward-migration default missing:\n{sql}"
         );
@@ -720,7 +759,7 @@ mod tests {
         // so it is a plain idempotent add, not a guarded one.
         assert!(
             sql.contains(
-                "ALTER TABLE listings ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'draft' NOT NULL;"
+                "ALTER TABLE \"listings\" ADD COLUMN IF NOT EXISTS \"status\" TEXT DEFAULT 'draft' NOT NULL;"
             ),
             "safe required-with-default add missing:\n{sql}"
         );
@@ -760,6 +799,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
@@ -767,20 +807,20 @@ mod tests {
         // @unique -> UNIQUE INDEX (reconcilable on existing tables, not an inline constraint).
         assert!(
             sql.contains(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_idempotency_key ON credit_ledger (idempotency_key)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS \"uq_credit_ledger_idempotency_key\" ON \"credit_ledger\" (\"idempotency_key\")"
             ),
             "unique index missing:\n{sql}"
         );
         // The column is still emitted (now without the inline UNIQUE keyword).
         assert!(
-            sql.contains("idempotency_key TEXT NOT NULL")
-                && !sql.contains("idempotency_key TEXT NOT NULL UNIQUE"),
+            sql.contains("\"idempotency_key\" TEXT NOT NULL")
+                && !sql.contains("\"idempotency_key\" TEXT NOT NULL UNIQUE"),
             "unique column should be emitted without an inline UNIQUE:\n{sql}"
         );
         // @index -> CREATE INDEX.
         assert!(
             sql.contains(
-                "CREATE INDEX IF NOT EXISTS idx_credit_ledger_account_id ON credit_ledger (account_id)"
+                "CREATE INDEX IF NOT EXISTS \"idx_credit_ledger_account_id\" ON \"credit_ledger\" (\"account_id\")"
             ),
             "index missing:\n{sql}"
         );
@@ -827,6 +867,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
@@ -836,7 +877,7 @@ mod tests {
             "email CHECK constraint name missing:\n{sql}"
         );
         assert!(
-            sql.contains("email ~ '^[^@]+@[^@]+\\.[^@]+$'"),
+            sql.contains("\"email\" ~ '^[^@]+@[^@]+\\.[^@]+$'"),
             "email regex CHECK missing:\n{sql}"
         );
     }
@@ -862,16 +903,17 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
 
         assert!(
-            sql.contains("chk_posts_title_min") && sql.contains("length(title) >= 1"),
+            sql.contains("chk_posts_title_min") && sql.contains("length(\"title\") >= 1"),
             "min length CHECK missing:\n{sql}"
         );
         assert!(
-            sql.contains("chk_posts_title_max") && sql.contains("length(title) <= 100"),
+            sql.contains("chk_posts_title_max") && sql.contains("length(\"title\") <= 100"),
             "max length CHECK missing:\n{sql}"
         );
     }
@@ -897,16 +939,17 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
 
         assert!(
-            sql.contains("chk_payments_amount_min") && sql.contains("amount >= 0"),
+            sql.contains("chk_payments_amount_min") && sql.contains("\"amount\" >= 0"),
             "min value CHECK missing:\n{sql}"
         );
         assert!(
-            sql.contains("chk_payments_amount_max") && sql.contains("amount <= 1000"),
+            sql.contains("chk_payments_amount_max") && sql.contains("\"amount\" <= 1000"),
             "max value CHECK missing:\n{sql}"
         );
         // Ensure it uses value comparison, not length.
@@ -936,6 +979,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
@@ -945,7 +989,7 @@ mod tests {
             "url CHECK constraint name missing:\n{sql}"
         );
         assert!(
-            sql.contains("website ~ '^https?://'"),
+            sql.contains("\"website\" ~ '^https?://'"),
             "url regex CHECK missing:\n{sql}"
         );
     }
@@ -970,12 +1014,13 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
 
         assert!(
-            sql.contains("website IS NULL OR (website ~ '^https?://')"),
+            sql.contains("\"website\" IS NULL OR (\"website\" ~ '^https?://')"),
             "optional field should be wrapped with IS NULL OR:\n{sql}"
         );
     }
@@ -1006,6 +1051,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
@@ -1048,6 +1094,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
@@ -1095,23 +1142,24 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: HashMap::new(),
+            warnings: Vec::new(),
         })
         .unwrap()
         .join("\n");
 
         // Composite unique -> UNIQUE INDEX (the idempotency key).
         assert!(
-            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_account_id_idempotency_key ON credit_ledger (account_id, idempotency_key)"),
+            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS \"uq_credit_ledger_account_id_idempotency_key\" ON \"credit_ledger\" (\"account_id\", \"idempotency_key\")"),
             "composite unique index missing:\n{sql}"
         );
         // CHECK -> guarded ADD CONSTRAINT.
         assert!(
-            sql.contains("ADD CONSTRAINT chk_credit_ledger_1 CHECK (amount <> 0)"),
+            sql.contains("ADD CONSTRAINT \"chk_credit_ledger_1\" CHECK (amount <> 0)"),
             "check constraint missing:\n{sql}"
         );
         // Partial unique (consumer feedback #6) -> UNIQUE INDEX ... WHERE <predicate>.
         assert!(
-            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_account_id ON credit_ledger (account_id) WHERE account_id IS NOT NULL"),
+            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS \"uq_credit_ledger_account_id\" ON \"credit_ledger\" (\"account_id\") WHERE account_id IS NOT NULL"),
             "partial unique index missing:\n{sql}"
         );
     }
@@ -1136,6 +1184,7 @@ mod tests {
             models: HashMap::new(),
             actions: HashMap::new(),
             builtins,
+            warnings: Vec::new(),
         };
 
         // Not in generate_migrations: platform tables don't exist yet at that point.
@@ -1149,11 +1198,13 @@ mod tests {
             .unwrap()
             .join("\n");
         assert!(
-            sql.contains("ALTER TABLE users ADD COLUMN IF NOT EXISTS store_account_id TEXT;"),
+            sql.contains(
+                "ALTER TABLE \"users\" ADD COLUMN IF NOT EXISTS \"store_account_id\" TEXT;"
+            ),
             "extension column missing:\n{sql}"
         );
         assert!(
-            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_store_account_id ON users (store_account_id) WHERE store_account_id IS NOT NULL"),
+            sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS \"uq_users_store_account_id\" ON \"users\" (\"store_account_id\") WHERE store_account_id IS NOT NULL"),
             "partial unique on built-in table missing:\n{sql}"
         );
         // Column ALTER must precede the index that depends on it.
@@ -1179,6 +1230,7 @@ mod tests {
             models: HashMap::new(),
             actions: HashMap::new(),
             builtins,
+            warnings: Vec::new(),
         };
         let err = generate_builtin_extension_migrations(&schema)
             .unwrap_err()
@@ -1201,6 +1253,7 @@ mod tests {
             models: HashMap::new(),
             actions: HashMap::new(),
             builtins,
+            warnings: Vec::new(),
         };
         let err = generate_builtin_extension_migrations(&schema)
             .unwrap_err()

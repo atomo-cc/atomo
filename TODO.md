@@ -46,13 +46,13 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## F5 — Schema parser footguns
 
-- [ ] `quote_ident()` helper; apply to all column/table emissions in `sql_builder.rs` + `schema.rs` (migrations, where, order-by, constraints)
-- [ ] Regression test: field named `order` (and one more reserved word) parses → migrates → inserts → updates
-- [ ] Parser collects `SchemaWarning`s: exported models not in `schema.models`, `access`/`validation`/`relationships` blocks with unrecognized inner keys, reserved-word field names
-- [ ] Surface warnings: `warn!` at server boot + `atomo schema check` output
-- [ ] Test: `schema check` on fixture with a dropped construct prints the warning
-- [ ] Docs: schema DSL page notes diagnostics + reserved words
-- [ ] CHANGELOG `[Unreleased]` entry
+- [x] `quote_ident()` applied to all table/column/index/constraint emissions (`sql_builder.rs`, `schema.rs`, `client.rs`, `rls.rs`, `projection.rs`, `migrate.rs`); stale unquoted-SQL assertions updated (80+55 tests green)
+- [x] Regression test `reserved_identifiers.rs` (pg-gated): `order` column parses → migrates → inserts → filters → sorts → updates — passes
+- [x] `Schema.warnings` collected by BOTH parsers (TS interfaces + builder DSL): entity-shaped interfaces missing from `schema.models`, models entries with no interface, unrecognized keys in `access`/`validation`/`relationships`/model options, dropped DSL fields/access rules/`on` kinds/constraints entries, spreads, reserved-word identifiers. Fixed in passing: `Note: {}` empty-metadata entries no longer drop the model; DSL `constraints:` is now parsed (was silently ignored — caught live on crm-service)
+- [x] Surface: `warn!` per warning at server boot (`server.rs`) + new `atomo schema check [--schema]` command; verified on crm-service schema.ts
+- [x] Tests: 7 TS-parser diagnostics + 3 DSL diagnostics tests incl. clean-schema no-warning guards
+- [x] Docs: `docs/guide/modeling.md` "Schema diagnostics" + `docs/api/cli.md` command entry; `@atomo-cc/schema` gains `unique`/`index`/`check`/`ModelDef.constraints`
+- [x] CHANGELOG `[Unreleased]` entry
 
 ## F2 — Cache boundary docs (no code change)
 

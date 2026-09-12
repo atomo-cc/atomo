@@ -438,6 +438,7 @@ mod tests {
             models: std::collections::HashMap::new(),
             actions: std::collections::HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
         assert!(model_check(&schema, "Ghost").is_some());
     }
@@ -464,6 +465,7 @@ mod tests {
             models,
             actions: std::collections::HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
         assert!(model_check(&schema, "Post").is_none());
     }

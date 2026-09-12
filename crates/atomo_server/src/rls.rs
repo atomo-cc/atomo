@@ -66,15 +66,17 @@ pub fn rls_enabled() -> bool {
 /// `DROP POLICY IF EXISTS` first makes re-running on boot safe even if the policy
 /// definition changed between releases.
 pub fn policy_statements_for(table: &str) -> Vec<String> {
+    let qt = atomo::query::sql_builder::quote_ident(table);
+    let qp = atomo::query::sql_builder::quote_ident(POLICY_NAME);
     vec![
-        format!("ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;"),
+        format!("ALTER TABLE {qt} ENABLE ROW LEVEL SECURITY;"),
         // FORCE so the table-owning role (which the app may connect as) is also
         // subject to the policy. Without this, RLS silently does nothing for the
         // owner — the common "it didn't work" footgun.
-        format!("ALTER TABLE {table} FORCE ROW LEVEL SECURITY;"),
-        format!("DROP POLICY IF EXISTS {POLICY_NAME} ON {table};"),
+        format!("ALTER TABLE {qt} FORCE ROW LEVEL SECURITY;"),
+        format!("DROP POLICY IF EXISTS {qp} ON {qt};"),
         format!(
-            "CREATE POLICY {POLICY_NAME} ON {table} \
+            "CREATE POLICY {qp} ON {qt} \
              USING (tenant_id IS NULL OR tenant_id = current_setting('{TENANT_SETTING}', true)) \
              WITH CHECK (tenant_id IS NULL OR tenant_id = current_setting('{TENANT_SETTING}', true));"
         ),

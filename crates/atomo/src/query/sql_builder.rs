@@ -5,6 +5,13 @@ use std::collections::HashMap;
 
 pub struct SqlBuilder;
 
+/// Quote a Postgres identifier — always, not just when it looks risky.
+/// Unconditional quoting makes reserved words (`order`, `user`, `select`)
+/// and mixed-case names safe at every emission site, and escapes stray `"`s.
+pub fn quote_ident(ident: &str) -> String {
+    format!("\"{}\"", ident.replace('"', "\"\""))
+}
+
 impl SqlBuilder {
     /// Build SELECT query. Returns (sql, params)
     pub fn select(
@@ -14,7 +21,7 @@ impl SqlBuilder {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> (String, Vec<Value>) {
-        let mut sql = format!("SELECT * FROM {}", table_name(model));
+        let mut sql = format!("SELECT * FROM {}", quote_ident(&table_name(model)));
         let (where_sql, params) = build_where(where_clauses, 0);
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
@@ -41,7 +48,7 @@ impl SqlBuilder {
                         OrderDirection::Asc => "ASC",
                         OrderDirection::Desc => "DESC",
                     };
-                    format!("{} {}", to_snake_case(f), dir)
+                    format!("{} {}", quote_ident(&to_snake_case(f)), dir)
                 })
                 .collect();
             if !clauses.is_empty() {
@@ -72,13 +79,13 @@ impl SqlBuilder {
         let mut params = Vec::new();
 
         for (key, val) in data {
-            columns.push(to_snake_case(key));
+            columns.push(quote_ident(&to_snake_case(key)));
             placeholders.push(write_value(model, key, val, &mut params));
         }
 
         let sql = format!(
             "INSERT INTO {} ({}) VALUES ({}) RETURNING *",
-            table_name(model),
+            quote_ident(&table_name(model)),
             columns.join(", "),
             placeholders.join(", ")
         );
@@ -130,12 +137,12 @@ impl SqlBuilder {
 
         let column_sql = cols
             .iter()
-            .map(|c| to_snake_case(c))
+            .map(|c| quote_ident(&to_snake_case(c)))
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
             "INSERT INTO {} ({}) VALUES {} RETURNING *",
-            table_name(model),
+            quote_ident(&table_name(model)),
             column_sql,
             tuples.join(", ")
         );
@@ -154,14 +161,14 @@ impl SqlBuilder {
         for (key, val) in data {
             set_clauses.push(format!(
                 "{} = {}",
-                to_snake_case(key),
+                quote_ident(&to_snake_case(key)),
                 write_value(model, key, val, &mut params)
             ));
         }
 
         let mut sql = format!(
             "UPDATE {} SET {}",
-            table_name(model),
+            quote_ident(&table_name(model)),
             set_clauses.join(", ")
         );
 
@@ -176,36 +183,42 @@ impl SqlBuilder {
 
     /// Build DELETE query. Returns (sql, params)
     pub fn delete(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
-        let mut sql = format!("DELETE FROM {}", table_name(model));
+        let mut sql = format!("DELETE FROM {}", quote_ident(&table_name(model)));
         let (where_sql, params) = build_where(where_clauses, 0);
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
-        sql.push_str(" RETURNING id");
+        sql.push_str(" RETURNING \"id\"");
         (sql, params)
     }
 
     /// Build a soft-delete UPDATE (sets deleted_at = NOW())
     pub fn soft_delete(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
-        let mut sql = format!("UPDATE {} SET deleted_at = NOW()", table_name(model));
+        let mut sql = format!(
+            "UPDATE {} SET \"deleted_at\" = NOW()",
+            quote_ident(&table_name(model))
+        );
         let (where_sql, params) = build_where(where_clauses, 0);
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
         // Return the affected ids so the Deleted event can carry them (projections/audit need
         // the id to remove the right row — previously the event had empty data).
-        sql.push_str(" RETURNING id");
+        sql.push_str(" RETURNING \"id\"");
         (sql, params)
     }
 
     /// Build a restore UPDATE (clears deleted_at) for soft-deleted records.
     pub fn restore(model: &Model, where_clauses: &[WhereClause]) -> (String, Vec<Value>) {
-        let mut sql = format!("UPDATE {} SET deleted_at = NULL", table_name(model));
+        let mut sql = format!(
+            "UPDATE {} SET \"deleted_at\" = NULL",
+            quote_ident(&table_name(model))
+        );
         let (where_sql, params) = build_where(where_clauses, 0);
         if !where_sql.is_empty() {
             sql.push_str(&format!(" WHERE {}", where_sql));
         }
-        sql.push_str(" RETURNING id");
+        sql.push_str(" RETURNING \"id\"");
         (sql, params)
     }
 
@@ -294,7 +307,7 @@ fn build_where(where_clauses: &[WhereClause], param_offset: usize) -> (String, V
     let mut idx = param_offset + 1;
 
     for clause in where_clauses {
-        let col = to_snake_case(&clause.field);
+        let col = quote_ident(&to_snake_case(&clause.field));
         match &clause.operator {
             WhereOperator::Equals => {
                 // For string values, cast the column to text so the comparison works
@@ -443,7 +456,7 @@ mod tests {
         // Columns sorted for determinism; one statement with two value tuples.
         assert_eq!(
             sql,
-            "INSERT INTO notes (body, title) VALUES ($1, $2), ($3, $4) RETURNING *"
+            "INSERT INTO \"notes\" (\"body\", \"title\") VALUES ($1, $2), ($3, $4) RETURNING *"
         );
         assert_eq!(params, vec![json!("x"), json!("a"), json!("y"), json!("b")]);
 
@@ -460,18 +473,18 @@ mod tests {
     fn equals_casts_strings_to_text_but_not_numbers() {
         // String value → ::text cast (so it works against TEXT and UUID id columns).
         let (sql, params) = build_where(&[eq("id", json!("abc"))], 0);
-        assert_eq!(sql, "id::text = $1");
+        assert_eq!(sql, "\"id\"::text = $1");
         assert_eq!(params, vec![json!("abc")]);
         // Numeric value → no cast.
         let (sql, _) = build_where(&[eq("value", json!(50000))], 0);
-        assert_eq!(sql, "value = $1");
+        assert_eq!(sql, "\"value\" = $1");
     }
 
     #[test]
     fn build_where_honors_param_offset_and_field_snake_case() {
         // Offset 2 (e.g. after an UPDATE's SET params) → placeholders start at $3.
         let (sql, _) = build_where(&[eq("companyId", json!("c1"))], 2);
-        assert_eq!(sql, "company_id::text = $3");
+        assert_eq!(sql, "\"company_id\"::text = $3");
     }
 
     #[test]
@@ -485,7 +498,7 @@ mod tests {
         );
         assert_eq!(
             sql,
-            "SELECT * FROM deal WHERE stage::text = $1 ORDER BY created_at DESC LIMIT 20 OFFSET 40"
+            "SELECT * FROM \"deal\" WHERE \"stage\"::text = $1 ORDER BY \"created_at\" DESC LIMIT 20 OFFSET 40"
         );
     }
 
@@ -505,7 +518,7 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(sql, "SELECT * FROM deal ORDER BY created_at DESC");
+        assert_eq!(sql, "SELECT * FROM \"deal\" ORDER BY \"created_at\" DESC");
 
         // All-unknown order → no ORDER BY clause at all (not a SQL error).
         let (sql2, _) = SqlBuilder::select(
@@ -515,7 +528,7 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(sql2, "SELECT * FROM deal");
+        assert_eq!(sql2, "SELECT * FROM \"deal\"");
     }
 
     #[test]
@@ -530,7 +543,7 @@ mod tests {
         // SET uses $1, WHERE uses $2 (offset by set count); RETURNING * appended.
         assert_eq!(
             sql,
-            "UPDATE deal SET stage = $1 WHERE id::text = $2 RETURNING *"
+            "UPDATE \"deal\" SET \"stage\" = $1 WHERE \"id\"::text = $2 RETURNING *"
         );
         assert_eq!(params, vec![json!("won"), json!("d1")]);
     }
@@ -541,7 +554,7 @@ mod tests {
             SqlBuilder::soft_delete(&model("Deal", Some("deal")), &[eq("id", json!("d1"))]);
         assert_eq!(
             sql,
-            "UPDATE deal SET deleted_at = NOW() WHERE id::text = $1 RETURNING id"
+            "UPDATE \"deal\" SET \"deleted_at\" = NOW() WHERE \"id\"::text = $1 RETURNING \"id\""
         );
     }
 
@@ -555,7 +568,7 @@ mod tests {
         );
         assert_eq!(
             sql,
-            "UPDATE probes SET sequence = NULL WHERE id::text = $1 RETURNING *"
+            "UPDATE \"probes\" SET \"sequence\" = NULL WHERE \"id\"::text = $1 RETURNING *"
         );
         assert_eq!(params, vec![json!("kept")]);
         let rows = vec![
@@ -568,9 +581,50 @@ mod tests {
         let (sql, params) = SqlBuilder::insert_many(&model, &rows).unwrap();
         assert_eq!(
             sql,
-            "INSERT INTO probes (id, sequence) VALUES ($1, NULL), ($2, $3) RETURNING *"
+            "INSERT INTO \"probes\" (\"id\", \"sequence\") VALUES ($1, NULL), ($2, $3) RETURNING *"
         );
         assert_eq!(params, vec![json!("null"), json!("value"), json!(7)]);
+    }
+
+    #[test]
+    fn reserved_word_identifiers_are_quoted() {
+        // Postgres reserved words as field names (`order`, `user`) previously
+        // produced syntax errors at migration and query time. Quoting is
+        // unconditional so the whole reserved-word class is covered.
+        let mut m = model("Ticket", Some("tickets"));
+        for f in ["order", "user"] {
+            m.fields.insert(
+                f.to_string(),
+                crate::schema::Field {
+                    name: f.to_string(),
+                    field_type: crate::schema::FieldType::String,
+                    optional: true,
+                    attributes: vec![],
+                },
+            );
+        }
+        let data = HashMap::from([("order".into(), json!(5))]);
+        let (sql, _) = SqlBuilder::insert(&m, &data);
+        assert_eq!(
+            sql,
+            "INSERT INTO \"tickets\" (\"order\") VALUES ($1) RETURNING *"
+        );
+        let (sql, _) = SqlBuilder::update(&m, &[eq("order", json!(1))], &data);
+        assert_eq!(
+            sql,
+            "UPDATE \"tickets\" SET \"order\" = $1 WHERE \"order\" = $2 RETURNING *"
+        );
+        let (sql, _) = SqlBuilder::select(
+            &m,
+            &[eq("user", json!("u1"))],
+            &[("order".into(), OrderDirection::Asc)],
+            None,
+            None,
+        );
+        assert_eq!(
+            sql,
+            "SELECT * FROM \"tickets\" WHERE \"user\"::text = $1 ORDER BY \"order\" ASC"
+        );
     }
 
     #[test]
@@ -586,7 +640,7 @@ mod tests {
         let (sql, params) = build_where(&clauses, 2);
         assert_eq!(
             sql,
-            "world_id::text = $3 AND (id::text = $4 OR id::text = $5)"
+            "\"world_id\"::text = $3 AND (\"id\"::text = $4 OR \"id\"::text = $5)"
         );
         assert_eq!(params, vec![json!("world-a"), json!("one"), json!("two")]);
         for (operator, value, expected) in [

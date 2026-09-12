@@ -76,3 +76,29 @@ platform tables are ensured. Rules, enforced fail-loud at startup:
 - **Nullable columns only**: a `NOT NULL` type is rejected (it would break existing rows).
 - Constraint strings use the same `@@unique([..]) WHERE ..` / `@@index([..])` /
   `@@check(..)` annotations as models; predicates are raw SQL over snake_case columns.
+
+## Schema diagnostics
+
+The schema parsers are intentionally permissive — they extract what they
+recognize and used to drop the rest with zero output. Dropped constructs are
+now collected as **warnings**, logged at server boot (`WARN schema diagnostic`)
+and printed by `atomo schema check [--schema <path>]`:
+
+- An `export interface` with an `id` field that isn't listed in
+  `schema.models` — almost certainly a forgotten registration.
+- A `schema.models` entry with no matching interface.
+- Unrecognized keys inside `models` entries and inside their `access`,
+  `validation`, and `relationships` blocks (e.g. `access: { list: 'admin' }`,
+  `validation` on a non-existent field, a `relationships` entry missing
+  `type`/`model`).
+- In the builder DSL: fields using an unknown builder, `access` rules that
+  don't parse (that operation is left **ungated**), unknown `model()` option
+  keys, and unsupported `on` event kinds.
+- Field or table names that are PostgreSQL reserved words (`order`, `user`,
+  `select`, …). These work — all emitted identifiers are double-quoted — but
+  they still surprise anyone running raw SQL against the generated tables.
+
+Builder-DSL models also support a `constraints` option —
+`constraints: [unique(['tenantId', 'email']), index(['a']), check('...')]` —
+equivalent to the `@@unique`/`@@index`/`@@check` model annotations, with
+`.where('predicate')` for partial indexes.

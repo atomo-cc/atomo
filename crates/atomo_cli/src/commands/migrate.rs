@@ -391,19 +391,25 @@ fn generate_migration_sql(
     Ok(sql)
 }
 
+/// Quote a Postgres identifier — always, so reserved words and mixed-case
+/// names are safe in generated migration SQL.
+fn qi(ident: &str) -> String {
+    format!("\"{}\"", ident.replace('"', "\"\""))
+}
+
 fn generate_create_table_sql(model: &Model) -> Result<String> {
     let mut sql = String::new();
     let table_name = model.name.to_lowercase();
 
     sql.push_str(&format!("-- Create table for {}\n", model.name));
-    sql.push_str(&format!("CREATE TABLE {} (\n", table_name));
+    sql.push_str(&format!("CREATE TABLE {} (\n", qi(&table_name)));
 
     let mut columns = Vec::new();
 
     // Add id column if not present
     let has_id = model.fields.contains_key("id");
     if !has_id {
-        columns.push("    id UUID PRIMARY KEY DEFAULT gen_random_uuid()".to_string());
+        columns.push("    \"id\" UUID PRIMARY KEY DEFAULT gen_random_uuid()".to_string());
     }
 
     // Add model fields (skip standard audit fields that will be added later)
@@ -417,21 +423,23 @@ fn generate_create_table_sql(model: &Model) -> Result<String> {
     }
 
     // Add audit columns
-    columns.push("    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
-    columns.push("    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
-    columns.push("    version INTEGER NOT NULL DEFAULT 1".to_string());
+    columns.push("    \"created_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
+    columns.push("    \"updated_at\" TIMESTAMPTZ NOT NULL DEFAULT NOW()".to_string());
+    columns.push("    \"version\" INTEGER NOT NULL DEFAULT 1".to_string());
 
     sql.push_str(&columns.join(",\n"));
     sql.push_str("\n);\n");
 
     // Add indexes
     sql.push_str(&format!(
-        "CREATE INDEX idx_{}_created_at ON {} (created_at);\n",
-        table_name, table_name
+        "CREATE INDEX {} ON {} (\"created_at\");\n",
+        qi(&format!("idx_{table_name}_created_at")),
+        qi(&table_name)
     ));
     sql.push_str(&format!(
-        "CREATE INDEX idx_{}_updated_at ON {} (updated_at);\n",
-        table_name, table_name
+        "CREATE INDEX {} ON {} (\"updated_at\");\n",
+        qi(&format!("idx_{table_name}_updated_at")),
+        qi(&table_name)
     ));
 
     Ok(sql)
@@ -491,7 +499,11 @@ fn generate_table_alterations(model: &Model, existing_table: &DatabaseTable) -> 
                 let new_type = field_type_to_pg(&field.field_type);
                 sql.push_str(&format!(
                     "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING {}::{};\n",
-                    table_name, db_col_name, new_type, db_col_name, new_type
+                    qi(&table_name),
+                    qi(&db_col_name),
+                    new_type,
+                    qi(&db_col_name),
+                    new_type
                 ));
             }
 
@@ -499,19 +511,21 @@ fn generate_table_alterations(model: &Model, existing_table: &DatabaseTable) -> 
             if !field.optional && existing_col.is_nullable {
                 sql.push_str(&format!(
                     "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL;\n",
-                    table_name, db_col_name
+                    qi(&table_name),
+                    qi(&db_col_name)
                 ));
             } else if field.optional && !existing_col.is_nullable && !existing_col.is_primary_key {
                 sql.push_str(&format!(
                     "ALTER TABLE {} ALTER COLUMN {} DROP NOT NULL;\n",
-                    table_name, db_col_name
+                    qi(&table_name),
+                    qi(&db_col_name)
                 ));
             }
         } else {
             // New column
             sql.push_str(&format!(
                 "ALTER TABLE {} ADD COLUMN {};\n",
-                table_name,
+                qi(&table_name),
                 generate_column_definition(field_name, field)?
             ));
         }
@@ -522,7 +536,8 @@ fn generate_table_alterations(model: &Model, existing_table: &DatabaseTable) -> 
         if !matched_db_columns.contains(col_name) {
             sql.push_str(&format!(
                 "-- ALTER TABLE {} DROP COLUMN {}; -- Uncomment to drop\n",
-                table_name, col_name
+                qi(&table_name),
+                qi(col_name)
             ));
         }
     }
@@ -548,7 +563,7 @@ fn generate_column_definition(field_name: &str, field: &Field) -> Result<String>
 
     // Convert camelCase to snake_case for database columns
     let db_field_name = camel_to_snake_case(field_name);
-    let mut def = format!("{} {}", db_field_name, pg_type);
+    let mut def = format!("{} {}", qi(&db_field_name), pg_type);
 
     if field_name == "id" {
         def.push_str(" PRIMARY KEY DEFAULT gen_random_uuid()");

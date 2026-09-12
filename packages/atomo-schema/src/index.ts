@@ -88,6 +88,27 @@ export function action(_name: string): ActionBuilder {
   return self;
 }
 
+// ── Model-level constraints ─────────────────────────────────────────────────
+
+export interface ModelConstraint {
+  /** `.where('predicate')` — partial unique index / partial index. */
+  where(predicate: string): ModelConstraint;
+}
+
+function constraintBuilder(): ModelConstraint {
+  const self: ModelConstraint = {
+    where: () => self,
+  };
+  return self;
+}
+
+/** `unique(['tenantId', 'email'])` — composite uniqueness over field names. */
+export function unique(_fields: string[]): ModelConstraint { return constraintBuilder(); }
+/** `index(['tenantId', 'companyId'])` — composite secondary index. */
+export function index(_fields: string[]): ModelConstraint { return constraintBuilder(); }
+/** `check('amount <> 0')` — raw SQL CHECK expression over column names. */
+export function check(_expr: string): ModelConstraint { return constraintBuilder(); }
+
 // ── Model builder ───────────────────────────────────────────────────────────
 
 export interface ModelDef {
@@ -103,6 +124,7 @@ export interface ModelDef {
     updated?: ActionRef[];
     deleted?: ActionRef[];
   };
+  constraints?: ModelConstraint[];
 }
 
 export interface ModelInstance {
