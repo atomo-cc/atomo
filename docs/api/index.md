@@ -153,7 +153,13 @@ The server applies a per-IP token-bucket rate limiter (in-memory). It is configu
 - `RATE_LIMIT_RPS` — max requests per window (default `100`)
 - `RATE_LIMIT_WINDOW_SECS` — window length in seconds (default `60`)
 
-The client IP is taken from the `X-Forwarded-For` header (first hop) when present. Requests over the limit receive `429 Too Many Requests` with a `Retry-After` header (seconds until the bucket refills).
+Client identity: the `X-Forwarded-For` header (first hop) when present, else the real peer address. A spoofed `X-Forwarded-For` can mint fresh buckets on a directly-exposed server — set `ATOMO_TRUST_X_FORWARDED_FOR=false` when not behind a trusted proxy to rate-limit on the peer address instead.
+
+Requests over the limit receive `429 Too Many Requests` with a `Retry-After` header and a JSON body:
+
+```json
+{ "error": "rate_limited", "retryAfter": 42 }
+```
 
 **Exempted paths:** `/auth/*`, `/health`, and `/ready` are never rate-limited.
 

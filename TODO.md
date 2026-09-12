@@ -21,11 +21,11 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 
 ## F4 — Rate limiter 429 body
 
-- [ ] 429 response gains JSON body `{"error":"rate_limited","retryAfter":<secs>}` (`crates/atomo_server/src/rate_limit.rs`); `Retry-After` header stays
-- [ ] Decide: gate `x-forwarded-for` trust behind env (default off) or defer as follow-up — record decision here
-- [ ] Unit test: status + `retry-after` + body shape
-- [ ] Docs: rate-limit behaviour (`docs/api/`)
-- [ ] CHANGELOG `[Unreleased]` entry
+- [x] 429 response gains JSON body `{"error":"rate_limited","retryAfter":<secs>}` (`crates/atomo_server/src/rate_limit.rs`); `Retry-After` header stays
+- [x] Decision — fixed in scope: identity = trusted XFF (default, keeps proxied deployments correct) else real peer via `ConnectInfo` wired at serve; `ATOMO_TRUST_X_FORWARDED_FOR=false` opts out. Bonus fix: direct clients previously all shared the 127.0.0.1 fallback bucket
+- [x] Unit tests: JSON body + `retry-after`, per-peer buckets, untrusted/trusted XFF — pass
+- [x] Docs: `docs/api/index.md` + `docs/guide/configuration.md` + `.env.example`
+- [x] CHANGELOG `[Unreleased]` entry
 
 ## F3 — RLS fail-closed boot check
 

@@ -552,7 +552,13 @@ impl AtomoServer {
             spawn_schema_watcher(self.config.schema_path.clone());
         }
 
-        serve(listener, app).await?;
+        // ConnectInfo exposes the real peer addr to middleware — the rate limiter
+        // uses it when x-forwarded-for is absent or untrusted.
+        serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await?;
 
         Ok(())
     }
