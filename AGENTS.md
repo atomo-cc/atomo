@@ -107,9 +107,15 @@ skip steps silently — if one doesn't apply, say so.
 2. **CHANGELOG cutover** — rename `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD` and add a
    fresh empty `## [Unreleased]` section above it.
 3. **Bump Rust crate versions** — update `version` in all 9 `crates/*/Cargo.toml`.
-4. **Bump npm package versions** — update `version` in publishable
-   `packages/*/package.json` to match (currently: `@atomo-cc/client-sdk`,
-   `@atomo-cc/worker-sdk`).
+4. **Bump npm package versions** — update `version` in **every**
+   `packages/*/package.json` **and the root** `package.json` to match.
+   Publishable: `@atomo-cc/client-sdk`, `@atomo-cc/worker-sdk`,
+   `@atomo-cc/create-app` (it scaffolds the client-sdk pin from its own
+   version — releasing in lockstep keeps the pin correct). Private/unpublished
+   packages (`@atomo-cc/admin-ui`, `@atomo-cc/schema`) still bump so a browsing
+   consumer never sees a stale `0.1.x` beside a `vX.Y.Z` release. The CLI's
+   `--version` and `atomo init`/`deploy` manifest versions derive from
+   `CARGO_PKG_VERSION` — nothing to hand-edit there.
 5. **Regenerate lockfiles** — `cargo check --workspace` (Cargo.lock) and
    `corepack pnpm@8.15.0 install --lockfile-only` (pnpm-lock.yaml).
 
@@ -127,6 +133,7 @@ skip steps silently — if one doesn't apply, say so.
    ```
    cd packages/atomo-client-sdk && npm publish --access public
    cd packages/atomo-worker-sdk && npm publish --access public
+   cd packages/create-app && npm publish --access public
    ```
    Ensure `npm whoami` shows the right account. `prepublishOnly` rebuilds `dist/`.
 10. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
@@ -145,8 +152,9 @@ skip steps silently — if one doesn't apply, say so.
     (`gh run list --workflow=docker.yml --limit=3`).
 12. **Verify Docker image** — `docker pull ghcr.io/atomo-cc/atomo-server:vX.Y.Z`
     (or check GHCR package page).
-13. **Verify npm** — `npm view @atomo-cc/client-sdk version` and
-    `npm view @atomo-cc/worker-sdk version` should show the new version.
+13. **Verify npm** — `npm view @atomo-cc/client-sdk version`,
+    `npm view @atomo-cc/worker-sdk version`, and `npm view @atomo-cc/create-app
+    version` should show the new version.
 14. **Notify consumers** — if a consumer (e.g. a sibling service) pins the image
     tag in `docker-compose.yml`, update its tag and `docker compose pull`.
 

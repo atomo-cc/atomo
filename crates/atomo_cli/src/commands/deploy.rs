@@ -30,7 +30,7 @@ pub async fn deploy_command(env: String) -> Result<()> {
     // Step 3: Generate deployment manifest
     println!("   📋 Generating deployment manifest...");
     let manifest = serde_json::json!({
-        "version": "0.1.0",
+        "version": env!("CARGO_PKG_VERSION"),
         "environment": env,
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "schema": schema_path.unwrap().to_string_lossy(),

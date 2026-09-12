@@ -23,7 +23,7 @@ fn load_env() {
 #[derive(Parser)]
 #[command(name = "atomo")]
 #[command(about = "Atomo CLI - The command line interface for Atomo Content Core")]
-#[command(version = "0.1.0")]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

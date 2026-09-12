@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/schema",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "Builder-pattern DSL for defining Atomo schemas",
   "type": "module",
   "main": "dist/index.js",

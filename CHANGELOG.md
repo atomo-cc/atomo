@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Version drift: the CLI now reports `CARGO_PKG_VERSION` (was hardcoded `0.1.0`), `atomo init` and `create-app` scaffold the client-sdk pin from their own release version (was `^0.1.0`), the deploy manifest reports the CLI version, and every `package.json` (root, private, and `@atomo-cc/create-app`) tracks the release version.
+
 ## [0.7.0] - 2026-09-08
 
 ### Added
