@@ -1,0 +1,308 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 33f491d..cc9d840 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Fixed
++- Multipart media uploads now honor explicit tenant context for unbound administrators while rejecting bound-user tenant switches, malformed tenant paths and worker tenant impersonation. Tenant-scoped dedup preserves existing legacy media ownership.
++
++### Added
++- Authenticated tenant-scoped media metadata endpoint for checksum and ownership verification; public media URLs do not expose private metadata.
++
+ ## [0.7.0] - 2026-09-08
+ 
+ ### Added
+diff --git a/crates/atomo_server/src/media.rs b/crates/atomo_server/src/media.rs
+index 15b19fd..bd79971 100644
+--- a/crates/atomo_server/src/media.rs
++++ b/crates/atomo_server/src/media.rs
+@@ -536,6 +536,7 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
+         .route("/media/commit", post(commit))
+         .route("/media/gc", post(gc))
+         .route("/media/{id}", get(serve_media).delete(delete_media))
++        .route("/media/{id}/metadata", get(media_metadata))
+         // Hard backstop with headroom for multipart framing; the precise per-file limit is the
+         // in-handler `bytes.len() > max_size` check, which returns a clean 413.
+         .layer(DefaultBodyLimit::max(max.saturating_add(1024 * 1024)))
+@@ -552,16 +553,86 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
+         .with_state(state)
+ }
+ 
++/// Explicit context is trusted only for an unbound administrator. Bound users cannot switch.
++fn media_tenant(
++    user: &AuthUser,
++    headers: &HeaderMap,
++) -> std::result::Result<Option<String>, StatusCode> {
++    let values: Vec<_> = headers.get_all("x-tenant-id").iter().collect();
++    if values.is_empty() {
++        return Ok(user.tenant_id.clone());
++    }
++    if values.len() != 1 {
++        return Err(StatusCode::BAD_REQUEST);
++    }
++    let tenant = values[0].to_str().map_err(|_| StatusCode::BAD_REQUEST)?;
++    // Tenant becomes part of a storage key; never accept path syntax or ambiguous whitespace.
++    if tenant.is_empty()
++        || tenant.len() > 128
++        || !tenant
++            .bytes()
++            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
++    {
++        return Err(StatusCode::BAD_REQUEST);
++    }
++    match user.tenant_id.as_deref() {
++        Some(bound) if bound == tenant => Ok(Some(tenant.to_owned())),
++        None if matches!(user.role, crate::platform_models::UserRole::Admin) => {
++            Ok(Some(tenant.to_owned()))
++        }
++        _ => Err(StatusCode::FORBIDDEN),
++    }
++}
++
++/// Metadata is authenticated and tenant scoped even when byte serving is public.
++async fn media_metadata(
++    State(state): State<Arc<MediaState>>,
++    user: Option<Extension<AuthUser>>,
++    Path(id): Path<String>,
++    headers: HeaderMap,
++) -> Response {
++    let Some(Extension(user)) = user else {
++        return StatusCode::UNAUTHORIZED.into_response();
++    };
++    let tenant = match media_tenant(&user, &headers) {
++        Ok(Some(tenant)) => tenant,
++        Ok(None) => return StatusCode::FORBIDDEN.into_response(),
++        Err(status) => return status.into_response(),
++    };
++    match sqlx::query("SELECT id, tenant_id, checksum, size, content_type FROM media WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL")
++        .bind(&id).bind(&tenant).fetch_optional(&state.pool).await {
++        Ok(Some(row)) => Json(json!({
++            "id": row.get::<String,_>("id"),
++            "tenantId": row.get::<String,_>("tenant_id"),
++            "checksum": row.get::<Option<String>,_>("checksum"),
++            "size": row.get::<i64,_>("size"),
++            "contentType": row.get::<String,_>("content_type"),
++        })).into_response(),
++        Ok(None) => StatusCode::NOT_FOUND.into_response(),
++        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
++    }
++}
++
+ async fn upload(
+     State(state): State<Arc<MediaState>>,
+     user: Option<Extension<AuthUser>>,
+     worker: Option<Extension<WorkerIdentity>>,
++    headers: HeaderMap,
+     mut multipart: Multipart,
+ ) -> Response {
+     // Accept either a user JWT (owner = that user/tenant) or a worker token (owner = the worker, no
+     // tenant). One of the two must be present.
+     let (owner_id, tenant_id): (String, Option<String>) = match (user, worker) {
+-        (Some(Extension(u)), _) => (u.id, u.tenant_id),
++        (Some(Extension(u)), _) => {
++            let tenant = match media_tenant(&u, &headers) {
++                Ok(tenant) => tenant,
++                Err(status) => return status.into_response(),
++            };
++            (u.id, tenant)
++        }
++        (None, Some(_)) if headers.contains_key("x-tenant-id") => {
++            return StatusCode::FORBIDDEN.into_response()
++        }
+         (None, Some(Extension(w))) => (format!("worker:{}", w.id), None),
+         (None, None) => {
+             return (
+@@ -876,6 +947,37 @@ async fn delete_media(
+ mod tests {
+     use super::content_type_allowed;
+ 
++    #[test]
++    fn explicit_tenant_requires_admin_or_matching_binding() {
++        use super::*;
++        use crate::platform_models::UserRole;
++        let mut user = AuthUser {
++            id: "u".into(),
++            email: "u@test".into(),
++            role: UserRole::Admin,
++            session_id: "s".into(),
++            tenant_id: None,
++        };
++        let mut headers = HeaderMap::new();
++        assert_eq!(media_tenant(&user, &headers).unwrap(), None);
++        headers.insert("x-tenant-id", "tenant-a".parse().unwrap());
++        assert_eq!(
++            media_tenant(&user, &headers).unwrap().as_deref(),
++            Some("tenant-a")
++        );
++        user.role = UserRole::Viewer;
++        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::FORBIDDEN));
++        user.tenant_id = Some("tenant-a".into());
++        assert!(media_tenant(&user, &headers).is_ok());
++        headers.insert("x-tenant-id", "tenant-b".parse().unwrap());
++        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::FORBIDDEN));
++        headers.insert("x-tenant-id", "../x".parse().unwrap());
++        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::BAD_REQUEST));
++        headers.insert("x-tenant-id", "tenant-a".parse().unwrap());
++        headers.append("x-tenant-id", "tenant-a".parse().unwrap());
++        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::BAD_REQUEST));
++    }
++
+     #[test]
+     fn allowlist_blocks_xss_risky_and_allows_common() {
+         assert!(content_type_allowed("image/png"));
+diff --git a/crates/atomo_server/tests/media_http.rs b/crates/atomo_server/tests/media_http.rs
+index 0173814..3355afe 100644
+--- a/crates/atomo_server/tests/media_http.rs
++++ b/crates/atomo_server/tests/media_http.rs
+@@ -559,3 +559,116 @@ async fn media_http_dedups_identical_content_per_tenant() {
+ 
+     tokio::fs::remove_dir_all(&dir).await.ok();
+ }
++
++/// Regression: an unbound admin's explicit tenant must reach storage and dedup.
++#[tokio::test]
++#[ignore]
++async fn media_http_explicit_admin_tenant_and_private_metadata() {
++    let pool = connect().await;
++    let auth = HttpAuthService::new("test-secret", pool.clone());
++    let admin = seed_user_token(&pool, &auth, None).await;
++    let suffix = uuid::Uuid::new_v4().to_string();
++    let a = format!("a-{suffix}");
++    let b = format!("b-{suffix}");
++    let bound = seed_user_token(&pool, &auth, Some(&a)).await;
++    let viewer_id = atomo_core::types::EntityId::new().to_string();
++    let viewer_email = format!("viewer-{suffix}@test.dev");
++    sqlx::query("INSERT INTO users (id,email,password_hash,first_name,last_name,role,is_active,tenant_id) VALUES ($1,$2,'x','V','R','viewer',true,NULL)")
++        .bind(&viewer_id).bind(&viewer_email).execute(&pool).await.unwrap();
++    let viewer = auth
++        .issue_tokens(&viewer_id, &viewer_email, "viewer")
++        .await
++        .unwrap()
++        .0;
++    let dir = std::env::temp_dir().join(format!("atomo-tenant-http-{suffix}"));
++    let storage = Arc::new(LocalStorage::new(&dir));
++    let (tx, _) = tokio::sync::broadcast::channel(16);
++    let state = Arc::new(MediaState::new(pool.clone(), storage, tx));
++    state.init().await.unwrap();
++    let app = media_router(state, auth);
++    let mut ids = Vec::new();
++    for tenant in [None, Some(a.as_str()), Some(b.as_str()), Some(a.as_str())] {
++        let mut request = upload_req(Some(&admin), "image/png", PNG);
++        if let Some(t) = tenant {
++            request
++                .headers_mut()
++                .insert("x-tenant-id", t.parse().unwrap());
++        }
++        let response = app.clone().oneshot(request).await.unwrap();
++        assert_eq!(response.status(), StatusCode::OK);
++        ids.push(
++            json_body(response).await["id"]
++                .as_str()
++                .unwrap()
++                .to_string(),
++        );
++    }
++    let mut request = upload_req(Some(&viewer), "image/png", PNG);
++    request
++        .headers_mut()
++        .insert("x-tenant-id", a.parse().unwrap());
++    assert_eq!(
++        app.clone().oneshot(request).await.unwrap().status(),
++        StatusCode::FORBIDDEN
++    );
++    assert_ne!(ids[0], ids[1]);
++    assert_ne!(ids[1], ids[2]);
++    assert_eq!(ids[1], ids[3]);
++    for tenant in [&b, "../escape"] {
++        let mut request = upload_req(Some(&bound), "image/png", PNG);
++        request
++            .headers_mut()
++            .insert("x-tenant-id", tenant.parse().unwrap());
++        let response = app.clone().oneshot(request).await.unwrap();
++        assert!(matches!(
++            response.status(),
++            StatusCode::FORBIDDEN | StatusCode::BAD_REQUEST
++        ));
++    }
++    for (id, token, tenant, status) in [
++        (
++            &ids[1],
++            Some(admin.as_str()),
++            Some(a.as_str()),
++            StatusCode::OK,
++        ),
++        (
++            &ids[2],
++            Some(admin.as_str()),
++            Some(a.as_str()),
++            StatusCode::NOT_FOUND,
++        ),
++        (
++            &ids[0],
++            Some(admin.as_str()),
++            Some(a.as_str()),
++            StatusCode::NOT_FOUND,
++        ),
++        (&ids[1], None, Some(a.as_str()), StatusCode::UNAUTHORIZED),
++        (
++            &ids[1],
++            Some(bound.as_str()),
++            Some(b.as_str()),
++            StatusCode::FORBIDDEN,
++        ),
++    ] {
++        let mut request = Request::builder().uri(format!("/media/{id}/metadata"));
++        if let Some(t) = token {
++            request = request.header("Authorization", format!("Bearer {t}"));
++        }
++        if let Some(t) = tenant {
++            request = request.header("x-tenant-id", t);
++        }
++        let response = app
++            .clone()
++            .oneshot(request.body(Body::empty()).unwrap())
++            .await
++            .unwrap();
++        assert_eq!(response.status(), status);
++        if status == StatusCode::OK {
++            let data = json_body(response).await;
++            assert_eq!(data["tenantId"], a);
++            assert_eq!(data["checksum"].as_str().unwrap().len(), 64);
++        }
++    }
++}
+diff --git a/docs/api/storage.md b/docs/api/storage.md
+index 7df9886..a4b25a9 100644
+--- a/docs/api/storage.md
++++ b/docs/api/storage.md
+@@ -25,3 +25,27 @@ Authorization: Bearer <admin-jwt>
+ Successful responses return 200. Missing/invalid authentication returns 401; an authenticated non-admin returns 403; unavailable history/audit diagnostics return 503. Database usage aggregation can scan history/audit tables; poll deliberately, not per application request. Cache statistics apply only to the serving process and reset when it restarts.
+ 
+ The endpoint has no mutation, deletion, retention-trigger or coverage-reset operation. See [Storage lifecycle](/guide/storage-lifecycle), [Caching](/guide/caching) and [Audit API](/api/audit).
++
++
++### Trusted tenant upload context and private metadata
++
++`POST /media` accepts `x-tenant-id` from an authenticated unbound administrator.
++A tenant-bound user can supply only their own tenant; a conflicting header returns
++403. An unbound non-administrator cannot select a tenant. A missing header keeps
++existing user binding (including legacy NULL uploads). Worker tokens cannot select
++an arbitrary tenant. Explicit tenant IDs must be 1?128 ASCII letters, digits,
++underscores or hyphens; malformed or repeated headers return 400. Deduplication
++continues to use tenant plus byte checksum: uploading the same bytes in a selected
++tenant does not adopt or reassign an existing NULL/other-tenant media row.
++
++`GET /media/{id}/metadata` requires user authentication and a resolved tenant using
++the same rules. Returns `{id, tenantId, checksum, size, contentType}` directly from
++live metadata. `checksum` is SHA-256 hex, or null for older unverified records.
++Missing, deleted, NULL-owned and foreign-tenant media return 404 under a selected
++tenant. Missing authentication returns 401; no resolved tenant returns 403.
++Storage paths and uploader identifiers are not exposed. Public byte serving is
++unchanged; knowing a public media URL does not grant access to metadata.
++
++This change covers multipart upload; presigned upload/commit retain their existing
++user-bound context. Existing NULL media must be reuploaded through authenticated
++multipart with explicit context to obtain a tenant-owned copy, never reassigned.

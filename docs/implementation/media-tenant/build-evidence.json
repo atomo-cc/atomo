@@ -1,0 +1,36 @@
+{
+  "sourceHead": "73b375017fe7a9428b73a2f57835a602abef8bf4",
+  "image": "sha256:be7d116cb0b96afe83e5f2ac19a34c8e457a0a680335d6d667088c5252556e50",
+  "patchSha256": "7a919ccca8bb0f6a0547fcd7e401dc2921cdcbc32def7a1d239cef3e5744f84a",
+  "files": {
+    "crates/atomo_server/src/media.rs": "9e85aeb3c28fb4ce436245d4757d5949c2fb1f9f0952c0b97a6013024e6ae5ed",
+    "crates/atomo_server/tests/media_http.rs": "87b9c280e4446c35f4915f928c108e03caf740209d98db11786e5a568c518217",
+    "docs/api/storage.md": "57c8665a3a82407b7b0a80a2257c79987b56f133d9f622a3ce5465b70c48f323",
+    "CHANGELOG.md": "a7da4a404a45d67fd7c250560fa89ae392e3d6ce4edfd49a8f903ffe0ff44153"
+  },
+  "tests": {
+    "mediaUnit": 4,
+    "mediaPostgresHttp": 7,
+    "passed": true
+  },
+  "note": "Product binary built before rustfmt and additional test-only changes; behavior source unchanged. Final source separately compiled by release tests. No shared service deployed.",
+  "restoredDatabaseSmoke": {
+    "passed": true,
+    "schemaBaseModels": 20,
+    "mediaTable": true,
+    "baseFingerprintsUnchanged": true,
+    "realHttpTenantUploads": true,
+    "conditionalRevisionAppendAndCas": true,
+    "pinnedDeleteRejectedAndBytesReadable": true,
+    "sharedServiceDeployed": false
+  },
+  "concurrentCasSmoke": {
+    "passed": true,
+    "simultaneousCandidates": 2,
+    "winnerCount": 1,
+    "emptyLoserCount": 1,
+    "retainedRevisions": 2,
+    "sameOperationNoopCasRetry": true,
+    "independentReferencePreserved": true
+  }
+}

@@ -559,3 +559,116 @@ async fn media_http_dedups_identical_content_per_tenant() {
 
     tokio::fs::remove_dir_all(&dir).await.ok();
 }
+
+/// Regression: an unbound admin's explicit tenant must reach storage and dedup.
+#[tokio::test]
+#[ignore]
+async fn media_http_explicit_admin_tenant_and_private_metadata() {
+    let pool = connect().await;
+    let auth = HttpAuthService::new("test-secret", pool.clone());
+    let admin = seed_user_token(&pool, &auth, None).await;
+    let suffix = uuid::Uuid::new_v4().to_string();
+    let a = format!("a-{suffix}");
+    let b = format!("b-{suffix}");
+    let bound = seed_user_token(&pool, &auth, Some(&a)).await;
+    let viewer_id = atomo_core::types::EntityId::new().to_string();
+    let viewer_email = format!("viewer-{suffix}@test.dev");
+    sqlx::query("INSERT INTO users (id,email,password_hash,first_name,last_name,role,is_active,tenant_id) VALUES ($1,$2,'x','V','R','viewer',true,NULL)")
+        .bind(&viewer_id).bind(&viewer_email).execute(&pool).await.unwrap();
+    let viewer = auth
+        .issue_tokens(&viewer_id, &viewer_email, "viewer")
+        .await
+        .unwrap()
+        .0;
+    let dir = std::env::temp_dir().join(format!("atomo-tenant-http-{suffix}"));
+    let storage = Arc::new(LocalStorage::new(&dir));
+    let (tx, _) = tokio::sync::broadcast::channel(16);
+    let state = Arc::new(MediaState::new(pool.clone(), storage, tx));
+    state.init().await.unwrap();
+    let app = media_router(state, auth);
+    let mut ids = Vec::new();
+    for tenant in [None, Some(a.as_str()), Some(b.as_str()), Some(a.as_str())] {
+        let mut request = upload_req(Some(&admin), "image/png", PNG);
+        if let Some(t) = tenant {
+            request
+                .headers_mut()
+                .insert("x-tenant-id", t.parse().unwrap());
+        }
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        ids.push(
+            json_body(response).await["id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    let mut request = upload_req(Some(&viewer), "image/png", PNG);
+    request
+        .headers_mut()
+        .insert("x-tenant-id", a.parse().unwrap());
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_ne!(ids[0], ids[1]);
+    assert_ne!(ids[1], ids[2]);
+    assert_eq!(ids[1], ids[3]);
+    for tenant in [&b, "../escape"] {
+        let mut request = upload_req(Some(&bound), "image/png", PNG);
+        request
+            .headers_mut()
+            .insert("x-tenant-id", tenant.parse().unwrap());
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert!(matches!(
+            response.status(),
+            StatusCode::FORBIDDEN | StatusCode::BAD_REQUEST
+        ));
+    }
+    for (id, token, tenant, status) in [
+        (
+            &ids[1],
+            Some(admin.as_str()),
+            Some(a.as_str()),
+            StatusCode::OK,
+        ),
+        (
+            &ids[2],
+            Some(admin.as_str()),
+            Some(a.as_str()),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            &ids[0],
+            Some(admin.as_str()),
+            Some(a.as_str()),
+            StatusCode::NOT_FOUND,
+        ),
+        (&ids[1], None, Some(a.as_str()), StatusCode::UNAUTHORIZED),
+        (
+            &ids[1],
+            Some(bound.as_str()),
+            Some(b.as_str()),
+            StatusCode::FORBIDDEN,
+        ),
+    ] {
+        let mut request = Request::builder().uri(format!("/media/{id}/metadata"));
+        if let Some(t) = token {
+            request = request.header("Authorization", format!("Bearer {t}"));
+        }
+        if let Some(t) = tenant {
+            request = request.header("x-tenant-id", t);
+        }
+        let response = app
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        if status == StatusCode::OK {
+            let data = json_body(response).await;
+            assert_eq!(data["tenantId"], a);
+            assert_eq!(data["checksum"].as_str().unwrap().len(), 64);
+        }
+    }
+}
