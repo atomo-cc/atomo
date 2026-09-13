@@ -23,11 +23,12 @@ async fn crm_contact_notes_semantic_search() {
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     // Requires the pgvector extension — skip cleanly on databases that can't
     // provide it (local dev Postgres without pgvector; CI uses pgvector/pgvector).
-    let vector_available: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name='vector')")
-            .fetch_one(&pool)
-            .await
-            .unwrap_or(false);
+    let vector_available: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name='vector')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
     if !vector_available {
         eprintln!("SKIP crm_ai: pgvector extension not available on this database");
         return;
