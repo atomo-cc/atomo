@@ -61,7 +61,15 @@ participates in audit/history/projections — this is what makes Atomo's upload 
 - `POST /media` — multipart upload → store bytes + insert metadata + emit event →
   `{id, url, contentType, size}`. **Behind `auth_middleware`**; also accepts an `X-Worker-Token`
   (via `optional_worker_auth_middleware`) so external workers can store generated artifacts
-  without a user session (owner mapped to `worker:{id}`, no tenant).
+  without a user session (owner mapped to `worker:{id}`, no tenant). An explicit
+  `x-tenant-id` header is honored only for an **unbound administrator**; tenant-bound users
+  may only supply their own tenant (mismatch → `403`), worker tokens cannot select a tenant,
+  and malformed/duplicated headers return `400`.
+- `GET /media/{id}/metadata` — authenticated, tenant-scoped metadata
+  (`{id, tenantId, checksum, size, contentType}`) for verifying checksum/ownership without
+  exposing storage keys or uploader identity. Missing auth → `401`, unresolved tenant → `403`,
+  foreign/NULL-owned/deleted media → `404`. Byte serving remains public-by-key — a public media
+  URL does not grant metadata access.
 - `GET /media/{id}` — serve bytes (local) or 302 → presigned URL (S3). Gated by read access +
   tenant scope. The local proxy path honors HTTP **Range** requests (206 / `Content-Range`, 416 for
   an unsatisfiable range) so `video`/`audio` can seek, advertises `Accept-Ranges: bytes`, and emits
@@ -176,6 +184,12 @@ fast-follows.
   local = None/stat). **Verified against MinIO** (`s3_presigned_put_is_uploadable`,
   `media_presign_commit_roundtrip`). For large media a worker bypasses the server entirely. *(The
   `storage-s3` feature needs rustc ≥ 1.91 — the latest aws-sdk MSRV.)*
+- **Explicit tenant upload context + private metadata** — ✅ `POST /media` honors
+  `x-tenant-id` from an unbound administrator (bound users can't switch; workers can't select),
+  and `GET /media/{id}/metadata` serves authenticated tenant-scoped metadata while byte serving
+  stays public-by-key. Tested by `media_http_explicit_admin_tenant_and_private_metadata` and the
+  `media_tenant` resolver unit test; rollout evidence lives in
+  `docs/implementation/media-tenant/`.
 
 ## Verifying the S3 backend locally (MinIO)
 
