@@ -51,6 +51,31 @@ Identical plain reads coalesce using bounded lock stripes. Optional refresh is s
 - Direct SQL, other processes and other server instances do not participate in local invalidation. Set `ATOMO_CACHE_MULTI_INSTANCE=true` (or disable the cache) when reads must observe those writers. There is no distributed invalidation service or cross-instance strong-consistency claim.
 - Cache keys partition tenants and query filters; the cache does not grant authorization. Trusted core APIs remain distinct from request-boundary RBAC.
 
+## What does not invalidate the cache
+
+A cached entry is only evicted by TTL/TTI expiry, capacity pressure, or — in
+`strong` mode — a committed write through the **same serving process**. Writes
+through this instance's REST/GraphQL/worker APIs invalidate normally. Everything
+below is invisible until expiry:
+
+- **Direct SQL** — `psql` sessions, backfill scripts, hand-edited migrations.
+- **Other server instances** — a second `atomo-server` on the same database has
+  its own cache (set `ATOMO_CACHE_MULTI_INSTANCE=true` to bypass).
+- **`eventual` mode writes** — entries survive even local writes until TTL.
+
+Two practical consequences for poll-driven consumers (e.g. a worker polling a
+job row for status changes):
+
+- A stale-looking read is often **not** a cache gap: a tenant-scoped write that
+  matched zero rows is a no-op — the database itself is unchanged, so every
+  poll returns the same value from cache *and* from the database. Check that
+  the write actually landed first (the GraphQL `update` mutation returns `null`
+  on zero matches).
+- Queue/status models are poor cache candidates even without out-of-band
+  writes: every poll is a cache miss in disguise. Prefer
+  `ATOMO_CACHE_MODELS='{"Job":{"enabled":false}}'` for those models, keeping
+  the cache for read-heavy reference data.
+
 ## Diagnostics and Rust configuration
 
 Administrators can inspect counters and effective policy using [`GET /storage/diagnostics`](/api/storage). Counters include hits, misses, expiration, eviction, skipped admissions, rejected stale fills, invalidations and relational bypasses. Entries and estimated bytes reflect the current process only.

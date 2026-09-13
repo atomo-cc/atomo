@@ -11,6 +11,11 @@ pub struct Schema {
     /// integrity on platform tables lives in the schema instead of hand-written SQL.
     #[serde(default)]
     pub builtins: HashMap<String, BuiltinExtension>,
+    /// Non-fatal diagnostics produced while parsing: dropped or unrecognized
+    /// constructs that used to disappear silently. Surfaced as `warn!` at server
+    /// boot and printed by the CLI — never treated as errors.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -21,12 +21,21 @@ fn vec_on_axis(axis: usize) -> Vec<f32> {
 async fn crm_contact_notes_semantic_search() {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    // Requires the pgvector extension — skip cleanly on databases that can't
+    // provide it (local dev Postgres without pgvector; CI uses pgvector/pgvector).
+    let vector_available: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name='vector')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(false);
+    if !vector_available {
+        eprintln!("SKIP crm_ai: pgvector extension not available on this database");
+        return;
+    }
     let store = EmbeddingStore::new(pool.clone());
-    // Requires the pgvector extension; init creates it + the embeddings table.
-    store
-        .init()
-        .await
-        .expect("pgvector init (needs the `vector` extension)");
+    // init creates the extension + the embeddings table.
+    store.init().await.expect("pgvector init");
 
     store.delete("Contact", "c-onboarding").await.ok();
     store.delete("Contact", "c-billing").await.ok();

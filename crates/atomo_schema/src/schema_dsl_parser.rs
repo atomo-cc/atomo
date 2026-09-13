@@ -29,12 +29,24 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
     let actions = parse_action_defs(content);
     let table_to_model = parse_model_names(content);
     let mut models = HashMap::new();
+    let mut warnings = Vec::new();
 
     for (model_name, table_name, body) in parse_model_blocks(content) {
         let fields = parse_fields_block(&body);
         let access = parse_access_block(&body);
         let events = parse_on_block(&body);
+        let (constraints, constraint_warnings) = parse_constraints_block(&model_name, &body);
+        warnings.extend(constraint_warnings);
         let (field_map, validation, relationships) = resolve_fields(&fields, &table_to_model);
+
+        warnings.extend(fields_block_diagnostics(
+            &model_name,
+            &body,
+            &field_map.keys().cloned().collect(),
+        ));
+        warnings.extend(access_block_diagnostics(&model_name, &body, &access));
+        warnings.extend(on_block_diagnostics(&model_name, &body));
+        warnings.extend(model_option_diagnostics(&model_name, &body));
 
         models.insert(
             model_name.clone(),
@@ -46,7 +58,7 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
                 validation,
                 table_name: Some(table_name),
                 relationships,
-                constraints: Vec::new(),
+                constraints,
                 events,
                 ui: None,
             },
@@ -81,12 +93,17 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
         );
     }
 
+    warnings.extend(crate::typescript_parser::reserved_identifier_warnings(
+        &models,
+    ));
+
     Ok(Schema {
         models,
         actions: action_defs,
         // The defineModel DSL path doesn't support built-in table extensions;
         // declare them via the `builtins` block in schema metadata instead.
         builtins: std::collections::HashMap::new(),
+        warnings,
     })
 }
 
@@ -587,6 +604,198 @@ fn parse_on_block(body: &str) -> ModelEvents {
         updated: parse_event_list(&inner, "updated"),
         deleted: parse_event_list(&inner, "deleted"),
     }
+}
+
+// ── constraints block ───────────────────────────────────────────────────────
+
+/// Find `key: [` in `body` and return the balanced inner array.
+fn dsl_sub_array(body: &str, key: &str) -> Option<String> {
+    let re = Regex::new(&format!(r"\b{}\s*:\s*\[", regex::escape(key))).unwrap();
+    let m = re.find(body)?;
+    let bytes = body.as_bytes();
+    let mut depth = 1usize;
+    let mut i = m.end();
+    while i < bytes.len() && depth > 0 {
+        match bytes[i] {
+            b'[' => depth += 1,
+            b']' => depth -= 1,
+            b'\'' | b'"' | b'`' => {
+                let q = bytes[i];
+                i += 1;
+                while i < bytes.len() && bytes[i] != q {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    (depth == 0).then(|| body[m.end()..i.saturating_sub(1)].to_string())
+}
+
+/// Parse `constraints: [unique([..]), index([..]), check('..'), ...]` into
+/// [`ModelConstraint`]s. Entries can chain `.where('predicate')` for partial
+/// indexes. Unrecognized entries are dropped — reported as warnings.
+fn parse_constraints_block(model_name: &str, body: &str) -> (Vec<ModelConstraint>, Vec<String>) {
+    let mut constraints = Vec::new();
+    let mut warnings = Vec::new();
+    let Some(inner) = dsl_sub_array(body, "constraints") else {
+        return (constraints, warnings);
+    };
+    let entry_re = Regex::new(r"(unique|index|check)\s*\(").unwrap();
+    let mut cursor = 0usize;
+    for cap in entry_re.captures_iter(&inner) {
+        // Anything between the previous entry and this one that isn't
+        // whitespace/commas is an unrecognized constraint expression.
+        let gap = inner[cursor..cap.get(0).unwrap().start()].trim();
+        if !gap.is_empty() && gap != "," {
+            warnings.push(format!(
+                "model '{model_name}': unrecognized constraint '{gap}' — ignored"
+            ));
+        }
+        let kind = cap[1].to_string();
+        let (arg, after) = extract_paren_arg(&inner, cap.get(0).unwrap().end());
+        let chain = take_chain(&inner[after..]);
+        cursor = after + chain.len();
+        match kind.as_str() {
+            "check" => {
+                if let Some(expr) = arg {
+                    constraints.push(ModelConstraint::Check(
+                        expr.trim_matches(|c| c == '\'' || c == '"').to_string(),
+                    ));
+                }
+            }
+            "unique" | "index" => {
+                let fields: Vec<String> = arg
+                    .map(|a| {
+                        Regex::new(r"['\x22]([^'\x22]+)['\x22]")
+                            .unwrap()
+                            .captures_iter(&a)
+                            .map(|c| c[1].to_string())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if fields.is_empty() {
+                    warnings.push(format!(
+                        "model '{model_name}': {kind}() constraint has no fields — ignored"
+                    ));
+                    continue;
+                }
+                let pred = extract_chain_string(&chain, "where")
+                    .map(|w| w.trim_matches(|c| c == '\'' || c == '"').to_string());
+                constraints.push(match (kind.as_str(), pred) {
+                    ("unique", Some(p)) => ModelConstraint::UniqueWhere(fields, p),
+                    ("unique", None) => ModelConstraint::Unique(fields),
+                    ("index", Some(p)) => ModelConstraint::IndexWhere(fields, p),
+                    _ => ModelConstraint::Index(fields),
+                });
+            }
+            _ => unreachable!(),
+        }
+    }
+    let tail = inner[cursor..].trim();
+    if !tail.is_empty() && tail != "," {
+        warnings.push(format!(
+            "model '{model_name}': unrecognized constraint '{tail}' — ignored"
+        ));
+    }
+    (constraints, warnings)
+}
+
+// ── diagnostics ─────────────────────────────────────────────────────────────
+
+/// Find `key: {` in `body` and return the balanced inner block.
+fn dsl_sub_block(body: &str, key: &str) -> Option<String> {
+    let re = Regex::new(&format!(r"\b{}\s*:\s*\{{", regex::escape(key))).unwrap();
+    let m = re.find(body)?;
+    balanced_brace_body(body, m.end())
+}
+
+/// Fields declared in `fields: { ... }` that no known builder matched are
+/// dropped silently — surface them.
+fn fields_block_diagnostics(
+    model_name: &str,
+    body: &str,
+    parsed: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let Some(inner) = dsl_sub_block(body, "fields") else {
+        return warnings;
+    };
+    for key in crate::typescript_parser::top_level_keys(&inner) {
+        if !parsed.contains(&key) {
+            warnings.push(format!(
+                "model '{model_name}': field '{key}' uses an unrecognized builder — dropped"
+            ));
+        }
+    }
+    warnings
+}
+
+/// `access: { ... }` entries that didn't parse into a rule leave that operation
+/// UNGATED — previously silent. Warn per op key present but unparsed, and on
+/// non-CRUD keys.
+fn access_block_diagnostics(
+    model_name: &str,
+    body: &str,
+    access: &Option<AccessControl>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let Some(inner) = dsl_sub_block(body, "access") else {
+        return warnings;
+    };
+    for key in crate::typescript_parser::top_level_keys(&inner) {
+        let parsed_rule = match key.as_str() {
+            "create" => access.as_ref().and_then(|a| a.create.as_ref()),
+            "read" => access.as_ref().and_then(|a| a.read.as_ref()),
+            "update" => access.as_ref().and_then(|a| a.update.as_ref()),
+            "delete" => access.as_ref().and_then(|a| a.delete.as_ref()),
+            _ => {
+                warnings.push(format!(
+                    "model '{model_name}': unrecognized access key '{key}' — ignored"
+                ));
+                continue;
+            }
+        };
+        if parsed_rule.is_none() {
+            warnings.push(format!(
+                "model '{model_name}': access.{key} expression not recognized — operation left ungated"
+            ));
+        }
+    }
+    warnings
+}
+
+/// `on: { ... }` event kinds other than created/updated/deleted never fire —
+/// surface typos like `deletedd` or unsupported kinds like `read`.
+fn on_block_diagnostics(model_name: &str, body: &str) -> Vec<String> {
+    const KNOWN: &[&str] = &["created", "updated", "deleted"];
+    let mut warnings = Vec::new();
+    let Some(inner) = dsl_sub_block(body, "on") else {
+        return warnings;
+    };
+    for key in crate::typescript_parser::top_level_keys(&inner) {
+        if !KNOWN.contains(&key.as_str()) {
+            warnings.push(format!(
+                "model '{model_name}': unrecognized event kind 'on.{key}' — ignored (known: created, updated, deleted)"
+            ));
+        }
+    }
+    warnings
+}
+
+/// Top-level `model('table', { ... })` option keys other than the supported
+/// fields/access/on are ignored — surface typos like `acess` or `hooks`.
+fn model_option_diagnostics(model_name: &str, body: &str) -> Vec<String> {
+    const KNOWN: &[&str] = &["fields", "access", "on", "constraints"];
+    crate::typescript_parser::top_level_keys(body)
+        .into_iter()
+        .filter(|k| !KNOWN.contains(&k.as_str()))
+        .map(|k| format!("model '{model_name}': unrecognized option key '{k}' — ignored"))
+        .collect()
 }
 
 fn parse_event_list(on_block: &str, event_kind: &str) -> Vec<EventActionBinding> {
@@ -1295,5 +1504,113 @@ export const Order = model('orders', {
         assert_eq!(order.events.updated.len(), 2);
         assert_eq!(order.events.updated[0].action, "onOrderShipped");
         assert_eq!(order.events.updated[1].action, "onOrderRefunded");
+    }
+
+    // ── diagnostics (Schema.warnings) ───────────────────────────────────────
+
+    #[test]
+    fn warns_on_dropped_field_ungated_access_and_bad_option() {
+        let content = r#"
+import { model, text, number, customType, allow } from '@atomo/schema'
+export const Job = model('jobs', {
+  fields: {
+    id: text().id(),
+    title: text().required(),
+    order: number(),
+    payload: customType().optional(),
+  },
+  access: {
+    read: allow.public(),
+    update: allow.customRule('owner'),
+  },
+  on: { read: [] },
+  indexes: ['title'],
+})
+"#;
+        let schema = parse_builder_dsl(content).unwrap();
+        let w = &schema.warnings;
+        assert!(
+            w.iter()
+                .any(|x| x.contains("field 'payload'") && x.contains("dropped")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("access.update") && x.contains("left ungated")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter().any(|x| x.contains("event kind 'on.read'")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("unrecognized option key 'indexes'")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|x| x.contains("'order'") && x.contains("reserved word")),
+            "{w:?}"
+        );
+    }
+
+    #[test]
+    fn clean_dsl_has_no_warnings() {
+        let schema = parse_builder_dsl(CRM_DSL).unwrap();
+        assert_eq!(
+            schema.warnings,
+            Vec::<String>::new(),
+            "{:?}",
+            schema.warnings
+        );
+    }
+
+    #[test]
+    fn parses_model_level_constraints() {
+        let content = r#"
+import { model, text, unique, index, check } from '@atomo/schema'
+export const Contact = model('contacts', {
+  fields: {
+    id: text().id(),
+    tenantId: text(),
+    email: text(),
+  },
+  constraints: [
+    unique(['tenantId', 'email']),
+    index(['tenantId']),
+    index(['email']).where('email IS NOT NULL'),
+    check('id IS NOT NULL'),
+    bogus(['x']),
+  ],
+})
+"#;
+        let schema = parse_builder_dsl(content).unwrap();
+        let m = &schema.models["Contact"];
+        assert_eq!(m.constraints.len(), 4, "{:?}", m.constraints);
+        assert_eq!(
+            m.constraints[0],
+            ModelConstraint::Unique(vec!["tenantId".into(), "email".into()])
+        );
+        assert_eq!(
+            m.constraints[1],
+            ModelConstraint::Index(vec!["tenantId".into()])
+        );
+        assert_eq!(
+            m.constraints[2],
+            ModelConstraint::IndexWhere(vec!["email".into()], "email IS NOT NULL".into())
+        );
+        assert_eq!(
+            m.constraints[3],
+            ModelConstraint::Check("id IS NOT NULL".into())
+        );
+        assert!(
+            schema
+                .warnings
+                .iter()
+                .any(|w| w.contains("unrecognized constraint") && w.contains("bogus")),
+            "{:?}",
+            schema.warnings
+        );
     }
 }

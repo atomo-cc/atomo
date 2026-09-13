@@ -954,3 +954,161 @@ async fn test_crm_mutation_audited_with_actor() {
             .ok();
     }
 }
+
+// Regression: GraphQL responses must declare `charset=utf-8`. async-graphql-axum
+// emits bare `application/graphql-response+json`; without a charset, generic HTTP
+// clients decode the body as latin1 and mangle non-ASCII text.
+#[tokio::test]
+#[ignore]
+async fn test_graphql_response_declares_utf8_charset() {
+    let (app, _) = build_app().await;
+
+    let login_req = Request::builder()
+        .uri("/auth/login")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"email":"admin@test.dev","password":"admin123"}"#,
+        ))
+        .unwrap();
+    let (_, login_json) = send(&app, login_req).await;
+    let token = login_json["token"].as_str().expect("no token");
+
+    // Seed a row with non-ASCII content.
+    let create_body = serde_json::json!({
+        "query": r#"mutation { create(model: "Note", data: { title: "héllo·中文" }) }"#
+    });
+    let req = Request::builder()
+        .uri("/graphql")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&create_body).unwrap()))
+        .unwrap();
+    let (status, _) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let list_body = serde_json::json!({ "query": r#"{ records(model: "Note") }"# });
+    let req = Request::builder()
+        .uri("/graphql")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", token))
+        .body(Body::from(serde_json::to_vec(&list_body).unwrap()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let content_type = resp
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(
+        content_type, "application/graphql-response+json; charset=utf-8",
+        "graphql response must declare utf-8 charset"
+    );
+    let bytes = axum::body::to_bytes(resp.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        body.contains("héllo·中文"),
+        "non-ascii content must round-trip as utf-8: {}",
+        body
+    );
+}
+
+// Regression: a GraphQL `update` that matches zero rows must be observable.
+// Previously it returned `{}` — indistinguishable from success, which let a
+// tenant-scoped update silently miss NULL-tenant global rows. Now `null`.
+#[tokio::test]
+#[ignore]
+async fn test_update_zero_match_returns_null() {
+    let (app, _) = build_app().await;
+
+    let login_req = Request::builder()
+        .uri("/auth/login")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"email":"admin@test.dev","password":"admin123"}"#,
+        ))
+        .unwrap();
+    let (_, login_json) = send(&app, login_req).await;
+    let token = login_json["token"].as_str().expect("no token");
+
+    let gql = |body: serde_json::Value, tenant: Option<&str>| {
+        let mut b = Request::builder()
+            .uri("/graphql")
+            .method("POST")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {}", token));
+        if let Some(t) = tenant {
+            b = b.header("x-tenant-id", t);
+        }
+        b.body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
+    };
+    let update = |where_: serde_json::Value| {
+        serde_json::json!({
+            "query": "mutation($w: JSON!, $d: JSON!){ update(model: \"Note\", where: $w, data: $d) }",
+            "variables": { "w": where_, "d": { "title": "zeroed" } }
+        })
+    };
+
+    // 1. Nonexistent id → null, no error.
+    let (status, json) = send(
+        &app,
+        gql(
+            update(serde_json::json!({ "id": { "equals": "no-such-id" } })),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        json["data"]["update"].is_null(),
+        "zero-match update must return null, got: {json}"
+    );
+
+    // 2. Create an unscoped row (tenant_id NULL), then a tenant-scoped update
+    //    must NOT match it — this is the reported footgun — and must say so
+    //    via null rather than a fake success.
+    let create = serde_json::json!({
+        "query": r#"mutation { create(model: "Note", data: { title: "global" }) }"#
+    });
+    let (status, created) = send(&app, gql(create, None)).await;
+    assert_eq!(status, StatusCode::OK);
+    let global_id = created["data"]["create"]["id"]
+        .as_str()
+        .expect("create id")
+        .to_string();
+
+    let (_, scoped) = send(
+        &app,
+        gql(
+            update(serde_json::json!({ "id": { "equals": global_id } })),
+            Some("tenant-z"),
+        ),
+    )
+    .await;
+    assert!(
+        scoped["data"]["update"].is_null(),
+        "tenant-scoped update on a NULL-tenant row must return null, got: {scoped}"
+    );
+
+    // 3. The same update unscoped still matches — the row exists; only the
+    //    tenant scope excluded it.
+    let (_, unscoped) = send(
+        &app,
+        gql(
+            update(serde_json::json!({ "id": { "equals": global_id } })),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(
+        unscoped["data"]["update"]["title"], "zeroed",
+        "matching update must return the updated record, got: {unscoped}"
+    );
+}

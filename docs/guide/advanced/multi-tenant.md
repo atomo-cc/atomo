@@ -62,6 +62,26 @@ CREATE POLICY atomo_tenant_isolation ON <t>
 Setup is **idempotent** (safe on every boot). The policy is **permissive**: rows with
 `tenant_id IS NULL` stay visible/writable, so single-tenant deployments are unaffected.
 
+### Connect with a non-privileged role (enforced)
+
+`FORCE` covers the table owner, but Postgres **superusers** and roles with **BYPASSRLS**
+skip policies unconditionally — RLS would be silently inert for that connection. So when
+`ATOMO_ENABLE_RLS` is on, the server inspects `pg_roles` at boot and **refuses to start**
+if the connected role is `rolsuper` or `rolbypassrls`. Connect as a least-privilege app
+role instead, e.g.:
+
+```sql
+CREATE ROLE atomo_app LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE <db> TO atomo_app;
+GRANT USAGE ON SCHEMA public TO atomo_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO atomo_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO atomo_app;
+```
+
+If the environment genuinely cannot offer a non-privileged role (some managed PGs), set
+`ATOMO_RLS_ALLOW_BYPASS_ROLE=true` to proceed anyway — the refusal is downgraded to a
+loud `ERROR` log at every boot.
+
 ### What it enforces
 
 A forgotten `WHERE tenant_id = …` cannot leak across tenants: Postgres filters every row against

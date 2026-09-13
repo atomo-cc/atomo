@@ -56,6 +56,7 @@ fn test_schema() -> atomo_schema::Schema {
         models,
         actions: std::collections::HashMap::new(),
         builtins: Default::default(),
+        warnings: Vec::new(),
     }
 }
 

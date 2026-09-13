@@ -64,6 +64,10 @@ pub struct TableProjection {
     pub columns: Vec<String>,
 }
 
+fn qi(ident: &str) -> String {
+    format!("\"{}\"", ident.replace('"', "\"\""))
+}
+
 impl TableProjection {
     pub fn new(source_model: &str, table_name: &str, columns: Vec<String>) -> Self {
         Self {
@@ -94,8 +98,8 @@ impl TableProjection {
                     (1..=cols.len()).map(|i| format!("${}", i)).collect();
                 let sql = format!(
                     "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT DO NOTHING",
-                    self.table_name,
-                    cols.join(", "),
+                    qi(&self.table_name),
+                    cols.iter().map(|c| qi(c)).collect::<Vec<_>>().join(", "),
                     placeholders.join(", ")
                 );
                 let mut query = sqlx::query(&sql);
@@ -112,14 +116,14 @@ impl TableProjection {
                         .iter()
                         .filter(|c| *c != "id" && data.contains_key(*c))
                         .enumerate()
-                        .map(|(i, c)| format!("{} = ${}", c, i + 1))
+                        .map(|(i, c)| format!("{} = ${}", qi(c), i + 1))
                         .collect();
                     if sets.is_empty() {
                         return Ok(());
                     }
                     let sql = format!(
-                        "UPDATE {} SET {} WHERE id = ${}",
-                        self.table_name,
+                        "UPDATE {} SET {} WHERE \"id\" = ${}",
+                        qi(&self.table_name),
                         sets.join(", "),
                         sets.len() + 1
                     );
@@ -138,10 +142,13 @@ impl TableProjection {
             }
             "Deleted" | "HardDeleted" => {
                 if let Some(Value::String(id)) = data.get("id") {
-                    sqlx::query(&format!("DELETE FROM {} WHERE id = $1", self.table_name))
-                        .bind(id)
-                        .execute(&mut *conn)
-                        .await?;
+                    sqlx::query(&format!(
+                        "DELETE FROM {} WHERE \"id\" = $1",
+                        qi(&self.table_name)
+                    ))
+                    .bind(id)
+                    .execute(&mut *conn)
+                    .await?;
                 }
             }
             _ => {}
@@ -188,7 +195,7 @@ impl Projection for TableProjection {
         let rows: Vec<(String, Value)> = sqlx::query_as(
             "SELECT event_type, data FROM event_log WHERE model_name = $1 ORDER BY timestamp, created_at",
         ).bind(&self.source_model).fetch_all(&mut *conn).await?;
-        sqlx::query(&format!("TRUNCATE TABLE {}", self.table_name))
+        sqlx::query(&format!("TRUNCATE TABLE {}", qi(&self.table_name)))
             .execute(&mut *conn)
             .await?;
         for (event_type, data) in rows {

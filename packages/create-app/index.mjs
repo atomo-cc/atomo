@@ -10,7 +10,7 @@
 // one needs no toolchain. The heavy CLI commands (dev/generate) remain Rust.
 
 import { existsSync } from 'node:fs'
-import { mkdir, cp, writeFile, readdir } from 'node:fs/promises'
+import { mkdir, cp, writeFile, readdir, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -45,7 +45,12 @@ function parseArgs(argv) {
   return { name, template }
 }
 
-function projectPackageJson(name) {
+async function ownVersion() {
+  const pkg = JSON.parse(await readFile(join(here, 'package.json'), 'utf8'))
+  return pkg.version
+}
+
+function projectPackageJson(name, sdkVersion) {
   return JSON.stringify(
     {
       name,
@@ -58,7 +63,8 @@ function projectPackageJson(name) {
         'atomo:migrate': 'atomo migrate',
       },
       dependencies: {
-        '@atomo-cc/client-sdk': '^0.1.0',
+        // The scaffolder is released in lockstep with the SDK — pin the line it came from.
+        '@atomo-cc/client-sdk': `^${sdkVersion}`,
       },
       devDependencies: {
         typescript: '^5.0.0',
@@ -186,7 +192,10 @@ async function main() {
   // Scaffold.
   await mkdir(join(targetDir, 'atomo'), { recursive: true })
   await cp(schemaSrc, join(targetDir, 'atomo', 'schema.ts'))
-  await writeFile(join(targetDir, 'package.json'), projectPackageJson(name))
+  await writeFile(
+    join(targetDir, 'package.json'),
+    projectPackageJson(name, await ownVersion()),
+  )
   await writeFile(join(targetDir, 'docker-compose.yml'), COMPOSE)
   await writeFile(join(targetDir, 'README.md'), readme(name))
   await writeFile(join(targetDir, '.gitignore'), GITIGNORE)

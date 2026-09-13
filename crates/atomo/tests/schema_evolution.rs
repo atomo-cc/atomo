@@ -97,6 +97,7 @@ fn unique_schema(table: &str) -> Schema {
         models,
         actions: HashMap::new(),
         builtins: Default::default(),
+        warnings: Vec::new(),
     }
 }
 

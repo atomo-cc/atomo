@@ -108,6 +108,7 @@ mod tests {
             models: HashMap::new(),
             actions,
             builtins: Default::default(),
+            warnings: Vec::new(),
         }
     }
 

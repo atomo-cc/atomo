@@ -113,6 +113,13 @@ impl AtomoServer {
             }
         }
 
+        // Schema parser diagnostics: constructs the regex parsers couldn't represent
+        // (unregistered interfaces, unrecognized access/validation/relationships keys,
+        // reserved-word identifiers) used to drop silently. Now surfaced at boot.
+        for warning in &self.atomo.schema().warnings {
+            tracing::warn!(schema = %warning, "schema diagnostic");
+        }
+
         // Generate extended GraphQL schema that includes both service and platform queries
         let graphql_schema = crate::handlers::build_extended_schema(&self.atomo);
         info!("   ✓ Extended GraphQL schema generated (service + platform)");
@@ -169,6 +176,12 @@ impl AtomoServer {
             // per-request bind reads), so the typed config and the executor never disagree.
             let enabled = self.config.enable_rls;
             if enabled {
+                // Fail fast: superuser/BYPASSRLS connections make every policy inert.
+                crate::rls::check_connection_role(
+                    self.atomo.db_pool(),
+                    self.config.rls_allow_bypass_role,
+                )
+                .await?;
                 let table_names: Vec<String> = self
                     .atomo
                     .schema()
@@ -552,7 +565,13 @@ impl AtomoServer {
             spawn_schema_watcher(self.config.schema_path.clone());
         }
 
-        serve(listener, app).await?;
+        // ConnectInfo exposes the real peer addr to middleware — the rate limiter
+        // uses it when x-forwarded-for is absent or untrusted.
+        serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await?;
 
         Ok(())
     }

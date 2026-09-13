@@ -43,7 +43,7 @@ pub async fn init_command(name: String, template: Option<String>) -> Result<()> 
             "atomo:migrate": "atomo migrate"
         },
         "dependencies": {
-            "@atomo-cc/client-sdk": "^0.1.0"
+            "@atomo-cc/client-sdk": concat!("^", env!("CARGO_PKG_VERSION"))
         },
         "devDependencies": {
             "typescript": "^5.0.0"

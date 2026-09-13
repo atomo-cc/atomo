@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/monorepo",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Atomo Content Core - The Next-Generation Content Management Platform",
   "scripts": {

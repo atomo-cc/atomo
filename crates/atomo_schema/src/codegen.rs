@@ -276,6 +276,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -307,6 +308,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -350,6 +352,7 @@ mod tests {
             models,
             actions,
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -396,6 +399,7 @@ mod tests {
             models: HashMap::new(),
             actions,
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -428,6 +432,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -478,6 +483,7 @@ mod tests {
             models: HashMap::new(),
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -531,6 +537,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
 
         let ts = generate_typescript_client(&schema);
@@ -573,6 +580,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         });
 
         // Insert in forward order.
@@ -583,6 +591,7 @@ mod tests {
             models: models2,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         });
 
         assert_eq!(
@@ -635,6 +644,7 @@ mod tests {
             models,
             actions,
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
         let ts = generate_typescript_client(&schema);
 
@@ -693,6 +703,7 @@ mod tests {
             models,
             actions: HashMap::new(),
             builtins: Default::default(),
+            warnings: Vec::new(),
         };
         let ts = generate_typescript_client(&schema);
 

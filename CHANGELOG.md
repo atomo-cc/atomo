@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- GraphQL `update` now returns `null` when the `where` filter matches zero rows instead of a fake-success `{}` — a no-op update (e.g. a tenant-scoped update missing a NULL-tenant global row) is finally observable. Mild schema change: the mutation's return type is now nullable. The admin UI surfaces this as an explicit error.
+- With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
+- Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.
+- GraphQL responses now declare `charset=utf-8` on `application/graphql-response+json`, so generic HTTP clients decode non-ASCII bodies correctly instead of defaulting to latin1.
+- Version drift: the CLI now reports `CARGO_PKG_VERSION` (was hardcoded `0.1.0`), `atomo init` and `create-app` scaffold the client-sdk pin from their own release version (was `^0.1.0`), the deploy manifest reports the CLI version, and every `package.json` (root, private, and `@atomo-cc/create-app`) tracks the release version.
+- All SQL identifiers emitted by migrations, queries, and constraint DDL are now double-quoted — a field or table named `order`, `user`, or any other PostgreSQL reserved word no longer crash-loops the server at boot migrations.
+- A `schema.models` entry with empty metadata (`Note: {}`) no longer silently drops the model — membership now comes from the block's declared entries, not from parsed metadata keys.
+- Builder-DSL `constraints: [unique([..]), index([..]), check('..')]` (with `.where('predicate')` for partial indexes) is now parsed and migrated — it was previously ignored silently, so declared unique/index constraints were never applied.
+
+### Added
+- Schema diagnostics: the parsers now collect non-fatal `Schema.warnings` for constructs they can't represent — entity-shaped interfaces missing from `schema.models`, `models` entries with no interface, unrecognized keys in `access`/`validation`/`relationships`/model-option blocks, dropped DSL fields and access rules, and reserved-word identifiers. Warnings are logged at server boot and printed by the new `atomo schema check [--schema <path>]` command.
+- Authenticated tenant-scoped media metadata endpoint for checksum and ownership verification; public media URLs do not expose private metadata.
+
 ## [0.7.0] - 2026-09-08
 
 ### Added

@@ -23,7 +23,7 @@ fn load_env() {
 #[derive(Parser)]
 #[command(name = "atomo")]
 #[command(about = "Atomo CLI - The command line interface for Atomo Content Core")]
-#[command(version = "0.1.0")]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -106,6 +106,11 @@ enum Commands {
         #[command(subcommand)]
         command: ProjectCommands,
     },
+    /// Inspect and validate the schema file
+    Schema {
+        #[command(subcommand)]
+        command: SchemaCommands,
+    },
 }
 
 #[tokio::main]
@@ -172,6 +177,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Project { command } => {
             project_command(command).await?;
+        }
+        Commands::Schema { command } => {
+            schema_command(command).await?;
         }
     }
 

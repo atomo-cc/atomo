@@ -930,12 +930,13 @@ impl AtomoClient {
             value: serde_json::Value::Null,
         });
         let (where_sql, params) = crate::query::sql_builder::build_where_pub(&clauses, 0);
+        let qtable = crate::query::sql_builder::quote_ident(&table);
         let sql = if where_sql.is_empty() {
-            format!("SELECT COUNT(*) as count FROM {}", table)
+            format!("SELECT COUNT(*) as count FROM {}", qtable)
         } else {
             format!(
                 "SELECT COUNT(*) as count FROM {} WHERE {}",
-                table, where_sql
+                qtable, where_sql
             )
         };
         let args = build_args(&params)?;
@@ -969,7 +970,8 @@ impl AtomoClient {
         let (where_sql, params) = crate::query::sql_builder::build_where_pub(&clauses, 0);
         let sql = format!(
             "SELECT COUNT(*) as count FROM {} WHERE {}",
-            table, where_sql
+            crate::query::sql_builder::quote_ident(&table),
+            where_sql
         );
         let args = build_args(&params)?;
         let row = self.fetch_one_scoped(&sql, args).await?;

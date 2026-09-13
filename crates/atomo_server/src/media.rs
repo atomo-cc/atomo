@@ -536,6 +536,7 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
         .route("/media/commit", post(commit))
         .route("/media/gc", post(gc))
         .route("/media/{id}", get(serve_media).delete(delete_media))
+        .route("/media/{id}/metadata", get(media_metadata))
         // Hard backstop with headroom for multipart framing; the precise per-file limit is the
         // in-handler `bytes.len() > max_size` check, which returns a clean 413.
         .layer(DefaultBodyLimit::max(max.saturating_add(1024 * 1024)))
@@ -552,16 +553,86 @@ pub fn media_router(state: Arc<MediaState>, auth: HttpAuthService) -> Router {
         .with_state(state)
 }
 
+/// Explicit context is trusted only for an unbound administrator. Bound users cannot switch.
+fn media_tenant(
+    user: &AuthUser,
+    headers: &HeaderMap,
+) -> std::result::Result<Option<String>, StatusCode> {
+    let values: Vec<_> = headers.get_all("x-tenant-id").iter().collect();
+    if values.is_empty() {
+        return Ok(user.tenant_id.clone());
+    }
+    if values.len() != 1 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let tenant = values[0].to_str().map_err(|_| StatusCode::BAD_REQUEST)?;
+    // Tenant becomes part of a storage key; never accept path syntax or ambiguous whitespace.
+    if tenant.is_empty()
+        || tenant.len() > 128
+        || !tenant
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    match user.tenant_id.as_deref() {
+        Some(bound) if bound == tenant => Ok(Some(tenant.to_owned())),
+        None if matches!(user.role, crate::platform_models::UserRole::Admin) => {
+            Ok(Some(tenant.to_owned()))
+        }
+        _ => Err(StatusCode::FORBIDDEN),
+    }
+}
+
+/// Metadata is authenticated and tenant scoped even when byte serving is public.
+async fn media_metadata(
+    State(state): State<Arc<MediaState>>,
+    user: Option<Extension<AuthUser>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(Extension(user)) = user else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let tenant = match media_tenant(&user, &headers) {
+        Ok(Some(tenant)) => tenant,
+        Ok(None) => return StatusCode::FORBIDDEN.into_response(),
+        Err(status) => return status.into_response(),
+    };
+    match sqlx::query("SELECT id, tenant_id, checksum, size, content_type FROM media WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL")
+        .bind(&id).bind(&tenant).fetch_optional(&state.pool).await {
+        Ok(Some(row)) => Json(json!({
+            "id": row.get::<String,_>("id"),
+            "tenantId": row.get::<String,_>("tenant_id"),
+            "checksum": row.get::<Option<String>,_>("checksum"),
+            "size": row.get::<i64,_>("size"),
+            "contentType": row.get::<String,_>("content_type"),
+        })).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 async fn upload(
     State(state): State<Arc<MediaState>>,
     user: Option<Extension<AuthUser>>,
     worker: Option<Extension<WorkerIdentity>>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
     // Accept either a user JWT (owner = that user/tenant) or a worker token (owner = the worker, no
     // tenant). One of the two must be present.
     let (owner_id, tenant_id): (String, Option<String>) = match (user, worker) {
-        (Some(Extension(u)), _) => (u.id, u.tenant_id),
+        (Some(Extension(u)), _) => {
+            let tenant = match media_tenant(&u, &headers) {
+                Ok(tenant) => tenant,
+                Err(status) => return status.into_response(),
+            };
+            (u.id, tenant)
+        }
+        (None, Some(_)) if headers.contains_key("x-tenant-id") => {
+            return StatusCode::FORBIDDEN.into_response()
+        }
         (None, Some(Extension(w))) => (format!("worker:{}", w.id), None),
         (None, None) => {
             return (
@@ -875,6 +946,37 @@ async fn delete_media(
 #[cfg(test)]
 mod tests {
     use super::content_type_allowed;
+
+    #[test]
+    fn explicit_tenant_requires_admin_or_matching_binding() {
+        use super::*;
+        use crate::platform_models::UserRole;
+        let mut user = AuthUser {
+            id: "u".into(),
+            email: "u@test".into(),
+            role: UserRole::Admin,
+            session_id: "s".into(),
+            tenant_id: None,
+        };
+        let mut headers = HeaderMap::new();
+        assert_eq!(media_tenant(&user, &headers).unwrap(), None);
+        headers.insert("x-tenant-id", "tenant-a".parse().unwrap());
+        assert_eq!(
+            media_tenant(&user, &headers).unwrap().as_deref(),
+            Some("tenant-a")
+        );
+        user.role = UserRole::Viewer;
+        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::FORBIDDEN));
+        user.tenant_id = Some("tenant-a".into());
+        assert!(media_tenant(&user, &headers).is_ok());
+        headers.insert("x-tenant-id", "tenant-b".parse().unwrap());
+        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::FORBIDDEN));
+        headers.insert("x-tenant-id", "../x".parse().unwrap());
+        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::BAD_REQUEST));
+        headers.insert("x-tenant-id", "tenant-a".parse().unwrap());
+        headers.append("x-tenant-id", "tenant-a".parse().unwrap());
+        assert_eq!(media_tenant(&user, &headers), Err(StatusCode::BAD_REQUEST));
+    }
 
     #[test]
     fn allowlist_blocks_xss_risky_and_allows_common() {
