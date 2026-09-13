@@ -671,4 +671,6 @@ async fn media_http_explicit_admin_tenant_and_private_metadata() {
             assert_eq!(data["checksum"].as_str().unwrap().len(), 64);
         }
     }
+
+    tokio::fs::remove_dir_all(&dir).await.ok();
 }

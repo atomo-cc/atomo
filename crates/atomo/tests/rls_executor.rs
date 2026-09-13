@@ -56,6 +56,16 @@ async fn find_many_enforces_rls_under_tenant_scope() {
         return;
     }
 
+    // Clear any policy left over by a crashed earlier run — with RLS live, the
+    // unbound seed INSERTs below fail WITH CHECK before the test can start.
+    for stmt in [
+        "ALTER TABLE widgets NO FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE widgets DISABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS atomo_tenant_isolation ON widgets",
+    ] {
+        sqlx::query(stmt).execute(pool).await.ok();
+    }
+
     // Seed BEFORE enabling RLS (afterwards WITH CHECK blocks unbound inserts of tenant rows).
     sqlx::query("DELETE FROM widgets").execute(pool).await.ok();
     sqlx::query(
