@@ -97,3 +97,14 @@ atomo seed
 # Specify a custom seed file
 atomo seed --file ./seed-demo.sql
 ```
+
+
+### Release binary verification
+
+The manual `release.yml` workflow builds the requested source ref with the locked
+workspace dependencies and an explicit target for each Linux/macOS/Windows asset.
+For pre-release review, dispatch it with `publish=false` and the release branch
+as `tag`; binaries are retained as workflow artifacts without creating a GitHub
+Release. Publishing against a version tag reuses an existing Release and replaces
+same-name assets on reruns. Linux/Windows check the reported CLI version; the
+macOS x86_64 build checks its binary architecture.

@@ -11,32 +11,37 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.1.0)'
+        description: 'Release tag, or source ref when publish is false'
         required: true
+      publish:
+        description: 'Create/reuse a Release and upload its binaries (false only retains build artifacts)'
+        type: boolean
+        default: true
 
-# The default GITHUB_TOKEN is read-only on this repo, so actions/create-release@v1 +
-# upload-release-asset@v1 fail with "Resource not accessible by integration". Grant
-# write access to repository contents (the GitHub Releases API) for this workflow.
+# Release creation/upload needs contents write; publish=false skips both operations.
 permissions:
   contents: write
 
 jobs:
   create-release:
-    name: Create Release
+    name: Prepare Release
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Describe operation
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.event.inputs.tag }}
-          release_name: Release ${{ github.event.inputs.tag }}
-          draft: false
-          prerelease: false
+          SOURCE_REF: ${{ inputs.tag }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          printf 'Source ref: %s\nPublish: %s\n' "$SOURCE_REF" "$PUBLISH"
+
+      - name: Create or reuse Release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "Release $RELEASE_TAG"
 
   build-release:
     name: Build Release
@@ -65,6 +70,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -74,17 +81,37 @@ jobs:
           cache: false
 
       - name: Build CLI
-        run: cargo build --release -p atomo_cli
+        run: cargo build --release --locked -p atomo_cli --target ${{ matrix.target }}
+
+      - name: Verify CLI version on native runners
+        if: matrix.build != 'macos'
+        shell: bash
+        run: |
+          expected=$(node -p "require('./package.json').version")
+          actual=$("target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" --version)
+          test "$actual" = "atomo $expected"
+
+      - name: Verify macOS architecture
+        if: matrix.build == 'macos'
+        run: file "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" | grep -F x86_64
+
+      - name: Retain CLI for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.build }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+        if: inputs.publish
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/release/${{ matrix.artifact_name }}
-          asset_name: ${{ matrix.asset_name }}
-          asset_content_type: application/octet-stream
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "${{ matrix.asset_name }}"
+          gh release upload "$RELEASE_TAG" "${{ matrix.asset_name }}" --repo "$GITHUB_REPOSITORY" --clobber
 
   # NOTE: crates.io publish disabled — re-enable when ready for public release.
   # publish-crates:
