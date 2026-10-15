@@ -46,7 +46,7 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
   endpoints); the former AI-search/collaboration/notification mockups were removed —
   restore from commit `ca0123f^` if a real backend for them lands.
 
-Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.6.1`) rather than `:latest` for
+Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.8.0`) rather than `:latest` for
 reproducibility.
 
 ## 🚀 Quick Start

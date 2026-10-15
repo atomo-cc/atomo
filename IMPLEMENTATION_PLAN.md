@@ -1,5 +1,27 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## v0.8.0 release preparation (2026-10-15)
+
+Prepare v0.8.0 for additive schema/media interfaces and the nullable GraphQL
+update result. Do not publish tags, npm, images, docs or a public Release until
+the prepared release is approved. Current product code 084ac35 passed all five
+main CI jobs (38746219853) and clean Docker build/runtime smoke (9/9, exit 0).
+
+Before version edits, repair CLI release automation: reuse an existing Release,
+checkout the requested ref, build the declared target with the lockfile, and
+support a non-publishing preparation run that retains the three CLI binaries.
+Verify workflow structure/shell logic and build all three targets remotely.
+Then cut changelog, bump every Rust crate/root/package manifest and regenerate
+both lockfiles without unrelated dependency updates. Build and inspect all
+three npm packages (create-app registry is still 0.1.3), run local Rust gates,
+open a release PR and run five-job CI on its exact code. Update TODO immediately
+after each verified step. npm whoami currently returns 401; no secrets are needed
+in chat. Public publishing and consumer upgrades remain separate final steps.
+No application API/config/env/page changes are introduced by release preparation.
+Existing CLI docs, README, contributor release checklist and changelog cover the
+workflow change. Architecture/roadmap component lists and API endpoints are
+unchanged; no new config flag, env variable, crate or docs page needs wiring.
+
 ## PR #82 — latest-stable CI follow-up
 
 PR #82 is open on `refactor/admin-scaffold-ownership`. First CI run

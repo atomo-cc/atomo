@@ -1,5 +1,21 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## v0.8.0 release preparation (2026-10-15)
+
+- [x] Verify merged product code 084ac35: all five main CI jobs 38746219853 pass; clean Docker build and container admin smoke 9/9, exit 0. Image SHA and cleanup evidence: `.tmp/postmerge-pr82/merge-result.json`. PR #82 merged and its branch deleted.
+- [x] Audit release preflight: registry client/worker 0.7.0, create-app 0.1.3; npm whoami fails 401. Choose 0.8.0 for additive APIs and nullable GraphQL update result.
+- [x] Repair CLI workflow source ref/targets, existing-Release reuse and publish=false mode. actionlint 1.7.12 and actual workflow shell checks pass (reuse/create/error propagation/asset naming/rerun). Evidence: `.tmp/release-080/workflow-shell-results.json`.
+- [ ] Verify remote non-publishing Linux/macOS/Windows builds and retained artifacts.
+- [x] Cut changelog and bump all nine Rust crates, root and five npm manifests to 0.8.0. Regenerated both lockfiles; audit proves only nine workspace version changes in Cargo.lock and no pnpm-lock diff.
+- [x] Local Rust check and all-target strict clippy pass; all three npm tarballs built and inspected (SDK exports and create-app templates present), real scaffolder tests 9/9. Evidence: `.tmp/release-080/{check,clippy}.log`, `npm-pack-results.json`.
+- [x] Rebuilt real Rust CLI reports atomo 0.8.0; init generates client-sdk ^0.8.0. Docs build (13.31s), fmt/diff checks pass. Evidence: `.tmp/release-080/{cli-version,cli-init,docs}.log`.
+- [ ] Open release PR and verify five-job CI on the prepared release code.
+- [ ] Restore npm authentication and confirm expected publishing account.
+- [ ] Obtain final release approval for the concrete prepared version/PR/artifacts; then merge/tag/publish and run post-release checks. No publishing performed yet.
+
+Next: push release preparation, open its PR and dispatch CI plus non-publishing CLI builds. Historical local timeout
+attribution remains unresolved; post-merge Docker packaging is now verified.
+
 ## PR #82 — latest-stable CI follow-up
 
 - [x] Push three focused commits and open https://github.com/atomo-cc/atomo/pull/82; dispatch CI 38736776136 on f2173e5. Frontend passed; lint exposed async-trait 0.1.89 generated-code double_must_use under Rust 1.99.
