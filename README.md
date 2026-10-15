@@ -115,6 +115,16 @@ Both `packages/atomo-admin-ui` and `packages/atomo-client-sdk` should keep type-
 
 ## 📁 Project Structure
 
+### Scaffold and admin ownership
+
+`packages/create-app` owns schema + Compose scaffolding (`--template crm`);
+the server image serves `packages/atomo-admin-ui` at `/admin`. Do not maintain a
+second frontend shell in a dashboard framework template. The source scaffolder
+accepts `fullstack-atomo` as a compatibility alias for `crm`.
+
+The Admin CI job runs the same smoke in dev, production preview, and through the
+native server's `/admin/` static-asset route. Docker image deployment is a separate check.
+
 ```
 atomo/
 ├── crates/                    # Rust core libraries

@@ -18,6 +18,8 @@ not change for this parser correction. The other review findings are tracked sep
 Verified: schema suite 106/106 and the real CLI integration test passed; workspace
 tests/check/clippy, dependent server build, fmt and diff checks passed.
 
+Independent admin scaffold ownership and runtime coverage: [plan](docs/implementation/admin-scaffold/IMPLEMENTATION_PLAN.md); progress in root TODO.md.
+
 Source: a field report from a consumer that shipped per-user tenants on the
 atomo backend (RLS + PerUser registration + worker tokens). Every item below was
 **verified against this repo's code** before being scheduled — verdicts and code

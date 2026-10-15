@@ -23,6 +23,27 @@ Atomo is pre-1.0. There are two ways to run it:
 
 ### Quickstart (Docker) — recommended
 
+For a new scaffold, use the canonical JavaScript entry:
+
+```bash
+npx @atomo-cc/create-app my-admin --template crm
+cd my-admin
+docker compose up
+```
+
+The API is on `:3000` and the packaged Admin UI is at `/admin`. The source
+scaffolder additionally accepts `fullstack-atomo` as a compatibility alias for
+`crm`; use `crm` on already-published versions. No separate frontend Dockerfile
+is needed. Dashboard-framework adapters remain framework-owned; the fullstack
+scaffold and actual admin runtime checks belong to Atomo.
+
+Contributors can test the server's actual admin route by building
+`packages/atomo-admin-ui` with an empty `VITE_API_URL` and `pnpm build:server`,
+starting the e2e backend with `ATOMO_ADMIN_DIR` pointing to that `dist` directory,
+then running the existing smoke with `E2E_BASE_URL=http://127.0.0.1:3000/admin/`.
+Use `E2E_API_URL` for the backend's origin when using a different port. This checks
+native server assets and deep links; Docker image packaging remains separate.
+
 The fastest path. A minimal blog example that runs in 60 seconds with **no Rust toolchain**:
 
 ```bash

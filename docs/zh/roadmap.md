@@ -5,6 +5,10 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 # 路线图
 
+脚手架归属：`create-app` 是 schema/Compose 的统一入口，实际管理前端位于
+`atomo-admin-ui`。Admin CI 复用同一份真实后台 smoke，覆盖开发模式、生产预览和
+原生服务的 `/admin/` 静态资源及深链接；Docker 镜像部署仍需单独验证。
+
 本页是 Atomo 的唯一权威路线图，汇总实施状态与接下来要做的工作。长期愿景与架构请参见“愿景与架构”。
 
 - 愿景：/zh/vision

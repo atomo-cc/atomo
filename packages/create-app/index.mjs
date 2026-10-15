@@ -175,13 +175,15 @@ async function main() {
   if (help) {
     console.log(
       `Usage: npm create @atomo-cc/app <name> [-- --template <name>]\n` +
-        `Templates: ${templates.join(', ')}`,
+        `Templates: ${templates.join(', ')}\n` +
+        `Compatibility alias: fullstack-atomo -> crm (server includes /admin)`,
     )
     return
   }
   if (!name) fail('missing project name. Usage: npm create @atomo-cc/app <name>')
 
-  const schemaSrc = join(templatesDir, template, 'schema.ts')
+  const canonicalTemplate = template === 'fullstack-atomo' ? 'crm' : template
+  const schemaSrc = join(templatesDir, canonicalTemplate, 'schema.ts')
   if (!existsSync(schemaSrc)) {
     fail(`unknown template "${template}". Available: ${templates.join(', ')}`)
   }

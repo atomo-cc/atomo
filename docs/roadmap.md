@@ -5,6 +5,11 @@ description: Living implementation status and upcoming milestones for Atomo.
 
 # Roadmap
 
+Scaffold ownership: `create-app` is the canonical schema/Compose entry; the real
+admin lives in `atomo-admin-ui`. The Admin CI job defines dev, production-preview
+and native-server `/admin/` coverage using one real-backend smoke spec. Docker
+deployment remains a separate verification gate.
+
 This page is the single source of truth for delivery status and upcoming milestones. For the long‑term vision and architecture, see Vision & Architecture.
 
 - Vision: /vision

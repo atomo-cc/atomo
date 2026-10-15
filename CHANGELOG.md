@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Canonical fullstack scaffolding stays in `create-app`; `fullstack-atomo` is a compatibility alias for `crm` with the packaged `/admin` UI. Real-entry scaffold tests verify package contents and refusal to overwrite existing projects.
+- Admin CI runs one real-backend smoke spec in dev, production preview, and through the native server at `/admin/`, including deep links. Browser page errors fail the smoke, and login lifecycle diagnostics record only status/timing/failure. Dependency and release versions are unchanged.
+
 ### Fixed
+- Admin dev/preview smoke can select an isolated proxy backend with existing `E2E_API_URL` while keeping `VITE_API_URL` empty, avoiding unintended cross-origin login calls.
 - Builder-DSL constraints no longer panic when CHECK expressions or partial-index predicates contain `index(`, `unique(` or `check(` inside SQL strings; nested SQL quotes are preserved.
 - GraphQL `update` now returns `null` when the `where` filter matches zero rows instead of a fake-success `{}` — a no-op update (e.g. a tenant-scoped update missing a NULL-tenant global row) is finally observable. Mild schema change: the mutation's return type is now nullable. The admin UI surfaces this as an explicit error.
 - With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).

@@ -34,6 +34,7 @@
     "cli"
   ],
   "scripts": {
+    "test": "node --test tests/scaffold.test.mjs",
     "sync:templates": "node -e \"import('node:fs').then(fs=>fs.cpSync('../../crates/atomo_cli/templates','templates',{recursive:true}))\""
   },
   "repository": {
