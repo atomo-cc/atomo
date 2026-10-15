@@ -96,12 +96,6 @@ non-BYPASSRLS application role that can own/migrate its schema.
 `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` explicitly overrides the boot refusal and logs
 an error; it does not make PostgreSQL enforce policies for privileged roles.
 
-## Remaining scope
-
-Relational membership, a user belonging to several tenants, event-store tenant
-APIs, synchronous atomic commands and old-data migration need separate work.
-The server does not infer membership from an arbitrary model or request header.
-
 All model policies are installed in **one transaction**, in a stable table order.
 Any installation error (including a missing table, missing `tenant_id`, or insufficient
 ownership privileges) **refuses startup** and rolls back the entire batch, restoring
@@ -132,6 +126,12 @@ loud `ERROR` log at every boot.
 This flag only bypasses the connection-role check; it never suppresses policy
 installation errors. For an existing database, check ownership of each managed
 table before enabling RLS; granting database access does not transfer table ownership.
+
+## Remaining scope
+
+Relational membership, a user belonging to several tenants, event-store tenant
+APIs, synchronous atomic commands and old-data migration need separate work.
+The server does not infer membership from an arbitrary model or request header.
 
 See [Access control](/guide/advanced/access-hooks), [Workers](/guide/workers),
 and [GraphQL](/api/graphql).

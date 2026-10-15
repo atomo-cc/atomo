@@ -165,17 +165,17 @@ Only check an item after its verification passes in WSL Docker.
 - [x] Reject fractional/overflow/unsafe integer input before conversion: GraphQL and Worker HTTP regressions passed (exit 0); additional boundary checks pending below.
 - [x] Parse action input/returns and secure queue admission: HTTP auth/role/tenant/input rejection, no-enqueue assertions and scoped retry checks passed.
 - [x] Parser/unit (322), isolated PostgreSQL (100), GraphQL/Worker CRUD/action negatives and dependent server/CLI build passed; exact commands in tests/m1/REPORT.md.
-- [ ] Strict clippy gate: fails in unchanged async-trait expansions on Rust 1.99. Diagnostic run with only clippy::double_must_use excepted passed; not a strict pass.
+- [x] Strict clippy gate passes after main synchronization (exit 0, no exceptions); prior macro failure is retained as historical evidence.
 - [x] Applicable docs/changelog and generic report updated; artifact/count/secret checks passed. VitePress rendering and admin e2e not run (see report).
 - [x] Remaining relational membership/multi-tenant identity, action policy limits and M2/M3 boundaries recorded explicitly in tests/m1/REPORT.md.
 
-Immediate next step: reviewer inspects tests/m1/REPORT.md and evidence.json. M1 stops here. Strict lint remains open; relational membership/multi-tenant identity and M2/M3 are not implemented. No commits or remote operations were performed.
+Immediate next step: reviewer inspects tests/m1/REPORT.md and evidence.json. M1 stops for review. Main synchronization resolves strict lint; relational membership/multi-tenant identity and M2/M3 are not implemented. Local checkpoint and merge commits were authorized; no remote operations were performed.
 
 - [x] Boundary, bulk rollback, raw owner-field and legacy action equivalence checks passed in WSL Docker.
 
 ## M1 main synchronization
 
 - [x] Checkpoint generic implementation: 33cf529; local provenance, credentials and logs excluded, staged diff checked.
-- [ ] Merge verified local main and resolve parser/RLS/docs conflicts.
-- [ ] Verify targeted parser/security regressions, ordinary and fresh-database PostgreSQL suites, builds, fmt, strict lint and SDK checks.
-- [ ] Record exact commit/test evidence and stop for review.
+- [x] Merge 039f2f0 resolves four conflicts, preserving upstream parser/CI/version changes and atomic sorted schema RLS; targeted parser (111), RLS (7), HTTP security (1) passed.
+- [x] Targeted parser/security, workspace 325, fresh PostgreSQL 105, server/CLI builds, fmt, strict clippy and SDK 23/type checks passed (all exit 0).
+- [x] Exact commit/test evidence and compatibility recorded locally; stop for review, no M2/M3 or remote operations.
