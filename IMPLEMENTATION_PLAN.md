@@ -22,9 +22,20 @@ Existing CLI docs, README, contributor release checklist and changelog cover the
 workflow change. Architecture/roadmap component lists and API endpoints are
 unchanged; no new config flag, env variable, crate or docs page needs wiring.
 
+Verified release preparation on e128a81: CI 38751496488 passes all five jobs;
+non-publishing CLI run 38751504410 passes Linux/macOS/Windows. Downloaded artifacts
+have the expected x86_64 ELF/Mach-O/PE headers and recorded SHA-256 hashes. Real
+npm tarballs, packed create-app execution, Rust CLI init/version, strict local
+Rust gates, docs build and release-shell checks pass. PR #83 contains the prepared
+release. The subsequent handoff commit changes only TODO/plan evidence. npm
+identity still returns 401; v0.8.0 tag/Release do not exist, and no npm/image/docs
+publication was performed. Next step requires restored npm identity and final
+release approval. Main CI and artifact publishing/verification must follow the
+release checklist after approval; crates.io remains disabled.
+
 ## PR #82 — latest-stable CI follow-up
 
-PR #82 is open on `refactor/admin-scaffold-ownership`. First CI run
+Historical PR #82 checkpoint on `refactor/admin-scaffold-ownership`: first CI run
 38736776136 tests f2173e5. Rust 1.99 Clippy rejects `#[must_use]` added by the
 locked async-trait 0.1.89 macro (double_must_use); local verification used 1.97.
 Update the local stable toolchain to match CI and use upstream async-trait 0.1.92,
