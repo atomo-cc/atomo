@@ -16,6 +16,8 @@ pub struct WhereClause {
 /// Supported where operators
 #[derive(Debug, Clone)]
 pub enum WhereOperator {
+    And(Vec<WhereClause>),
+    Or(Vec<WhereClause>),
     Equals,
     NotEquals,
     Contains,

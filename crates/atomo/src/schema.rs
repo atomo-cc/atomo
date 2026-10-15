@@ -10,18 +10,19 @@ use std::collections::HashMap;
 pub use atomo_schema::{
     is_builder_dsl, parse_builder_dsl, AccessRule, ActionCondition, ActionDef, ActionInputDef,
     ActionInputField, ActionReturn, EventActionBinding, Field, FieldAttribute, FieldType, Model,
-    ModelConstraint, ModelEvents, Schema, TypeScriptParser,
+    ModelConstraint, ModelEvents, Schema, TenantPolicy, TypeScriptParser,
 };
 
 /// Parse a schema string into a Schema object. Auto-detects the builder DSL
 /// (`@atomo/schema` imports) vs the legacy TypeScript-interface format.
 pub fn parse_typescript_schema(content: &str) -> Result<Schema> {
-    if is_builder_dsl(content) {
-        parse_builder_dsl(content)
+    let schema = if is_builder_dsl(content) {
+        parse_builder_dsl(content)?
     } else {
-        let parser = TypeScriptParser::new();
-        parser.parse_schema(content)
-    }
+        TypeScriptParser::new().parse_schema(content)?
+    };
+    schema.validate_security()?;
+    Ok(schema)
 }
 
 /// Generate database migrations from schema
@@ -602,6 +603,7 @@ mod tests {
             constraints: Vec::new(),
             events: Default::default(),
             ui: None,
+            tenant_policy: Default::default(),
         }
     }
 
@@ -844,6 +846,7 @@ mod tests {
             constraints: Vec::new(),
             events: Default::default(),
             ui: None,
+            tenant_policy: Default::default(),
         }
     }
 

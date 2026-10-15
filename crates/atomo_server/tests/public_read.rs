@@ -13,6 +13,7 @@ use tower::ServiceExt;
 const SCHEMA: &str = r#"
 import { model, text, allow } from '@atomo/schema'
 export const PubDoc = model('at2_pub_docs', {
+  tenant: 'global',
   fields: {
     id: text().id(),
     slug: text().required(),

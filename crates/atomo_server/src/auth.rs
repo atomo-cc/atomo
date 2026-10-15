@@ -989,3 +989,28 @@ pub mod handlers {
         }
     }
 }
+
+/// Resolve the same verified identity and tenant for every HTTP entry point.
+pub fn request_principal(
+    user: Option<&AuthUser>,
+    target: Option<&str>,
+) -> Result<atomo::security::Principal, StatusCode> {
+    let Some(user) = user else {
+        return if target.is_some() {
+            Err(StatusCode::UNAUTHORIZED)
+        } else {
+            Ok(Default::default())
+        };
+    };
+    let tenant = atomo::security::resolve_tenant(
+        user.tenant_id.as_deref(),
+        target,
+        matches!(user.role, UserRole::Admin),
+    )
+    .map_err(|_| StatusCode::FORBIDDEN)?;
+    Ok(atomo::security::Principal {
+        user_id: Some(user.id.clone()),
+        role: Some(format!("{:?}", user.role)),
+        tenant_id: tenant,
+    })
+}

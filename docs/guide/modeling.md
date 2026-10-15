@@ -102,3 +102,9 @@ Builder-DSL models also support a `constraints` option —
 `constraints: [unique(['tenantId', 'email']), index(['a']), check('...')]` —
 equivalent to the `@@unique`/`@@index`/`@@check` model annotations, with
 `.where('predicate')` for partial indexes.
+
+## Unreleased security semantics
+
+Builder `allow.owner(field)` and `allow.sameTenant(field)` retain their fields; `allow.any([...])` and `allow.all([...])` preserve their complete expression trees. Unknown security declarations fail loading. `.fromAuth("userId" | "tenantId")` fills immutable source fields from verified identity. Models default to `tenant: "required"`; use `tenant: "global"` deliberately for shared null-tenant records. See [tenant isolation and upgrade policy](/guide/advanced/multi-tenant).
+
+`number()` still maps to PostgreSQL BIGINT. Shared writes and action input validation accept JSON integer tokens only, within JavaScript safe integer bounds (-9007199254740991 through 9007199254740991). Fractional values, numeric strings, floating-point tokens and larger integers are rejected before SQL conversion. Full-range BIGINT string encoding and decimal/float types are not introduced here. Declared nullable fields retain null behavior and existing required/min/max constraints still apply.

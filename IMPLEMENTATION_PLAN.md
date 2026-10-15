@@ -226,3 +226,28 @@ Feature Change Checklist:
 Every item: unit tests co-located + integration test where wired, `cargo test`,
 `cargo clippy -- -D warnings`, docs page, `CHANGELOG.md [Unreleased]` entry.
 Final gate: dispatch `ci.yml` on the merged result and confirm all five jobs.
+
+## M1 — Schema security repair (2026-10-15)
+
+Work only in the authorized task worktree at base 8042c4f. Read-only external
+acceptance material has been inspected; all implementation fixtures stay generic.
+Rust compilation, formatting, tests and execution run inside WSL Docker only.
+
+- [x] Negative parser regressions recorded failing at baseline; data/HTTP acceptance negatives and final whole-workspace gates executed.
+- [x] Structured permissions and fail-closed declarations verified.
+- [x] Verified request identity/tenant resolution and job delegation verified.
+- [x] Source fields, safe integers and parent/tenant invariants verified.
+- [x] Action contracts and secure async admission verified.
+- [x] Isolated PostgreSQL/HTTP, dependent build, compatibility report and qualified lint diagnostic completed.
+- [ ] Strict clippy remains open in unchanged async-trait macro expansions (Rust 1.99); see tests/m1/REPORT.md.
+
+Relational membership and multi-tenant identity are a separate design item, not an
+alias for authenticated. M2/M3 and old-data migrations are outside this milestone.
+Local checkpoint and merge commits are authorized for the M1 main synchronization. No remote changes, consumer changes or volume deletion are authorized.
+
+## M1 main synchronization
+
+- [ ] Preserve generic M1 changes in an explicit-file checkpoint commit.
+- [ ] Merge the verified local main commit; preserve SQL literals and atomic, sorted, fail-closed required/global RLS installation.
+- [ ] Run targeted regressions, workspace tests, fresh PostgreSQL tests, dependent builds, fmt, strict clippy and SDK checks in the required environments.
+- [ ] Update local acceptance evidence with commit identities, conflict decisions and remaining limitations.

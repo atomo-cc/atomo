@@ -51,6 +51,7 @@ impl DslParser {
                 constraints: Vec::new(),
                 events: Default::default(),
                 ui: None,
+                tenant_policy: Default::default(),
             });
         }
 

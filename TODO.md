@@ -64,3 +64,31 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 - [x] `cargo test --workspace` green (52 suites, 0 failures) + `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [x] `pnpm test` green (worker-sdk, client-sdk, admin-ui)
 - [x] `ci.yml` dispatched on `fix/consumer-field-report` (run 34708183958): all five jobs green — Test Suite, Linting, Frontend Tests, Admin E2E Smoke, Build
+
+## M1 — Schema security repair (2026-10-15)
+
+Active milestone. Existing F-series evidence above belongs to prior work.
+Only check an item after its verification passes in WSL Docker.
+
+- [x] Reproduce parser owner/composition, fromAuth and action gaps: 3 failures on baseline; initial repair passed 3/3; final parser regression suite passes 5/5 (exit 0).
+- [x] Preserve and execute owner/tenant/any/all; reject unsupported security syntax: parser suite + SQL/HTTP negatives passed.
+- [x] Unify tenant resolution, mismatch rejection, missing-header binding and explicit global policy: PostgreSQL + production HTTP routers passed (exit 0).
+- [x] Execute fromAuth; reject spoofing/updates/unknown sources: parser and PostgreSQL HTTP regressions passed (exit 0).
+- [x] Enforce parent visibility/tenant agreement: create, rebind, explicit global-parent and bulk rollback PostgreSQL regressions passed.
+- [x] Reject fractional/overflow/unsafe integer input before conversion: GraphQL and Worker HTTP regressions passed (exit 0); additional boundary checks pending below.
+- [x] Parse action input/returns and secure queue admission: HTTP auth/role/tenant/input rejection, no-enqueue assertions and scoped retry checks passed.
+- [x] Parser/unit (322), isolated PostgreSQL (100), GraphQL/Worker CRUD/action negatives and dependent server/CLI build passed; exact commands in tests/m1/REPORT.md.
+- [ ] Strict clippy gate: fails in unchanged async-trait expansions on Rust 1.99. Diagnostic run with only clippy::double_must_use excepted passed; not a strict pass.
+- [x] Applicable docs/changelog and generic report updated; artifact/count/secret checks passed. VitePress rendering and admin e2e not run (see report).
+- [x] Remaining relational membership/multi-tenant identity, action policy limits and M2/M3 boundaries recorded explicitly in tests/m1/REPORT.md.
+
+Immediate next step: reviewer inspects tests/m1/REPORT.md and evidence.json. M1 stops here. Strict lint remains open; relational membership/multi-tenant identity and M2/M3 are not implemented. No commits or remote operations were performed.
+
+- [x] Boundary, bulk rollback, raw owner-field and legacy action equivalence checks passed in WSL Docker.
+
+## M1 main synchronization
+
+- [ ] Checkpoint existing generic implementation without local provenance or secrets.
+- [ ] Merge verified local main and resolve parser/RLS/docs conflicts.
+- [ ] Verify targeted parser/security regressions, ordinary and fresh-database PostgreSQL suites, builds, fmt, strict lint and SDK checks.
+- [ ] Record exact commit/test evidence and stop for review.

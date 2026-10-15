@@ -26,18 +26,44 @@ pub fn is_builder_dsl(content: &str) -> bool {
 
 /// Parse a builder-DSL schema into a [`Schema`].
 pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
-    let actions = parse_action_defs(content);
+    let actions = parse_action_defs(content)?;
     let table_to_model = parse_model_names(content);
     let mut models = HashMap::new();
     let mut warnings = Vec::new();
 
     for (model_name, table_name, body) in parse_model_blocks(content) {
         let fields = parse_fields_block(&body);
-        let access = parse_access_block(&body);
+        let access = parse_access_block(&body)?;
         let events = parse_on_block(&body);
         let (constraints, constraint_warnings) = parse_constraints_block(&model_name, &body);
         warnings.extend(constraint_warnings);
         let (field_map, validation, relationships) = resolve_fields(&fields, &table_to_model);
+        for f in &fields {
+            if Regex::new(r"\.\s*fromAuth\b").unwrap().is_match(&f.chain) {
+                let source = extract_chain_string(&f.chain, "fromAuth");
+                anyhow::ensure!(
+                    matches!(source.as_deref(), Some("userId" | "tenantId")),
+                    "Unsupported fromAuth source on {}.{}",
+                    model_name,
+                    f.name
+                );
+            }
+        }
+        if let Some(ac) = &access {
+            for rule in [&ac.create, &ac.read, &ac.update, &ac.delete]
+                .into_iter()
+                .flatten()
+            {
+                validate_rule_fields(rule, &field_map)?;
+            }
+        }
+        for rel in relationships.values() {
+            anyhow::ensure!(
+                table_to_model.values().any(|name| name == &rel.model),
+                "Unknown relationship model {}",
+                rel.model
+            );
+        }
 
         warnings.extend(fields_block_diagnostics(
             &model_name,
@@ -61,6 +87,7 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
                 constraints,
                 events,
                 ui: None,
+                tenant_policy: parse_tenant_policy(&body)?,
             },
         );
     }
@@ -87,12 +114,34 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
             ActionDef {
                 name: ad.name,
                 input,
-                returns: ad.returns,
+                returns: ad.returns.map(|r| match r {
+                    ActionReturn::Model(m) => {
+                        ActionReturn::Model(table_to_model.get(&m).cloned().unwrap_or(m))
+                    }
+                    other => other,
+                }),
                 source_model: resolved_model.or(ad.source_model),
             },
         );
     }
 
+    for action in action_defs.values() {
+        if let Some(ActionReturn::Model(name)) = &action.returns {
+            anyhow::ensure!(
+                models.contains_key(name),
+                "Unknown action return model {name}"
+            );
+        }
+        if let ActionInputDef::PickFields { model, fields } = &action.input {
+            let source = models
+                .get(model)
+                .ok_or_else(|| anyhow::anyhow!("Unknown action source model {model}"))?;
+            anyhow::ensure!(
+                fields.iter().all(|f| source.fields.contains_key(f)),
+                "Unknown action input field"
+            );
+        }
+    }
     warnings.extend(crate::typescript_parser::reserved_identifier_warnings(
         &models,
     ));
@@ -109,7 +158,7 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
 
 // ── action() parsing ────────────────────────────────────────────────────────
 
-fn parse_action_defs(content: &str) -> Vec<ActionDef> {
+fn parse_action_defs(content: &str) -> Result<Vec<ActionDef>> {
     let mut actions = Vec::new();
     let re =
         Regex::new(r"export\s+const\s+(\w+)\s*=\s*action\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)")
@@ -121,6 +170,22 @@ fn parse_action_defs(content: &str) -> Vec<ActionDef> {
 
         let after = &content[cap.get(0).unwrap().end()..];
         let chain = take_chain(after);
+        let mut cursor = 0;
+        let mut seen = std::collections::HashSet::new();
+        let method_re = Regex::new(r"^\s*\.\s*(\w+)\s*\(").unwrap();
+        while let Some(call) = method_re.captures(&chain[cursor..]) {
+            let method = call[1].to_owned();
+            anyhow::ensure!(
+                ["from", "input", "returns"].contains(&method.as_str()) && seen.insert(method),
+                "Unsupported or duplicate action method"
+            );
+            let (_, end) = extract_paren_arg(&chain, cursor + call.get(0).unwrap().end());
+            cursor = end;
+        }
+        anyhow::ensure!(
+            !seen.contains("returns") || extract_chain_string(&chain, "returns").is_some(),
+            "Action returns requires a model name"
+        );
 
         let from = extract_chain_string(&chain, "from");
         let input_fields = extract_chain_array(&chain, "input");
@@ -132,18 +197,56 @@ fn parse_action_defs(content: &str) -> Vec<ActionDef> {
                 fields,
             }
         } else {
-            ActionInputDef::Object { fields: vec![] }
+            let fields = if let Some(pos) = Regex::new(r"\.input\s*\(").unwrap().find(&chain) {
+                let (arg, _) = extract_paren_arg(&chain, pos.end());
+                let arg = arg.unwrap_or_default();
+                anyhow::ensure!(arg.trim().starts_with('{'), "Unsupported action input");
+                let raw = parse_fields_block(&format!("fields: {arg}"));
+                anyhow::ensure!(
+                    split_top_level_commas(
+                        arg.trim().trim_start_matches('{').trim_end_matches('}')
+                    )
+                    .into_iter()
+                    .filter(|s| !s.trim().is_empty())
+                    .count()
+                        == raw.len(),
+                    "Unsupported action input field"
+                );
+                anyhow::ensure!(
+                    raw.iter()
+                        .all(|f| !Regex::new(r"\.\s*fromAuth\b").unwrap().is_match(&f.chain)),
+                    "Action source fields are not supported; use verified actor context"
+                );
+                let (_, validation, _) = resolve_fields(&raw, &HashMap::new());
+                raw.iter()
+                    .map(|f| ActionInputField {
+                        name: f.name.clone(),
+                        field_type: match f.base_type.as_str() {
+                            "number" => "number",
+                            "boolean" => "boolean",
+                            "json" => "json",
+                            _ => "string",
+                        }
+                        .into(),
+                        required: f.chain.contains(".required()"),
+                        validation: validation.get(&f.name).cloned().unwrap_or_default(),
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            ActionInputDef::Object { fields }
         };
 
         actions.push(ActionDef {
             name: action_name,
             input,
-            returns: None,
+            returns: extract_chain_string(&chain, "returns").map(ActionReturn::Model),
             source_model,
         });
     }
 
-    actions
+    Ok(actions)
 }
 
 /// Consume a chain of `.method(...)` calls from the start of `s`.
@@ -155,6 +258,9 @@ fn take_chain(s: &str) -> String {
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
             b'.' => {
                 i += 1;
+                while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
                 // skip method name
                 while i < bytes.len() && bytes[i].is_ascii_alphanumeric()
                     || (i < bytes.len() && bytes[i] == b'_')
@@ -198,7 +304,7 @@ fn take_chain(s: &str) -> String {
 
 fn extract_chain_string(chain: &str, method: &str) -> Option<String> {
     let re = Regex::new(&format!(
-        r"\.{}\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)",
+        r"\.\s*{}\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*\)",
         method
     ))
     .ok()?;
@@ -206,7 +312,7 @@ fn extract_chain_string(chain: &str, method: &str) -> Option<String> {
 }
 
 fn extract_chain_array(chain: &str, method: &str) -> Option<Vec<String>> {
-    let re = Regex::new(&format!(r"\.{}\s*\(\s*\[([^\]]*)\]\s*\)", method)).ok()?;
+    let re = Regex::new(&format!(r"\.\s*{}\s*\(\s*\[([^\]]*)\]\s*\)", method)).ok()?;
     let cap = re.captures(chain)?;
     let inner = &cap[1];
     let items: Vec<String> = Regex::new(r"['\x22]([^'\x22]+)['\x22]")
@@ -412,6 +518,9 @@ fn resolve_fields(
             attrs.push(FieldAttribute::Default(def));
         }
 
+        if let Some(source) = extract_chain_string(chain, "fromAuth") {
+            attrs.push(FieldAttribute::FromAuth(source));
+        }
         // Validation rules
         let mut rules = Vec::new();
         if is_required {
@@ -501,7 +610,7 @@ fn base_to_field_type(base: &str, arg: &Option<String>) -> (FieldType, Option<St
 }
 
 fn extract_chain_number(chain: &str, method: &str) -> Option<i64> {
-    let re = Regex::new(&format!(r"\.{}\s*\(\s*(-?\d+)\s*\)", method)).ok()?;
+    let re = Regex::new(&format!(r"\.\s*{}\s*\(\s*(-?\d+)\s*\)", method)).ok()?;
     re.captures(chain).and_then(|c| c[1].parse().ok())
 }
 
@@ -515,78 +624,130 @@ fn capitalize(s: &str) -> String {
 
 // ── access block ────────────────────────────────────────────────────────────
 
-fn parse_access_block(body: &str) -> Option<AccessControl> {
-    let re = Regex::new(r"access\s*:\s*\{").unwrap();
-    let m = re.find(body)?;
-    let inner = balanced_brace_body(body, m.end())?;
-
-    let parse_rule = |op: &str| -> Option<AccessRule> {
-        // Grab this op's full rule expression (to end of line) so combinator forms
-        // like allow.any([allow.role('a'), allow.role('b')]) are seen whole.
-        // Previously only bare allow.role/authenticated/public matched — any other
-        // form (allow.any, allow.sameTenant, allow.owner) parsed to None, which
-        // silently DISABLED access control for that operation.
-        let expr_re = Regex::new(&format!(r"{}\s*:\s*(allow\s*\.[^\n]+)", op)).ok()?;
-        let expr = expr_re.captures(&inner)?.get(1)?.as_str().to_string();
-
-        // allow.public() — anonymous allowed, nothing further to gate.
-        if Regex::new(r"\bpublic\s*\(\s*\)").unwrap().is_match(&expr) {
-            return Some(AccessRule::Boolean("public".to_string()));
-        }
-
-        // allow.authenticated(), allow.sameTenant(..), allow.owner(..): all require a
-        // logged-in principal. Tenant scoping / ownership are enforced by the data
-        // layer's tenant_id isolation and owner checks — at THIS layer (role gating)
-        // they gate to "any authenticated user", never to "no rule". Checked BEFORE
-        // roles: in a mixed any-of like any([owner(..), role('admin')]) a roles-only
-        // gate would wrongly deny legitimate owners, so the sound approximation for
-        // the whole expression is "authenticated".
-        if Regex::new(r"\b(authenticated|sameTenant|owner)\s*\(")
-            .unwrap()
-            .is_match(&expr)
-        {
-            return Some(AccessRule::Boolean("authenticated".to_string()));
-        }
-
-        // Role gates: collect every role('x') / role(['x','y']) mention. Covers both
-        // the bare form and combinators like allow.any([allow.role('admin'), ...]) —
-        // any-of over roles is exactly what the pipe-joined rule string expresses.
-        let roles: Vec<String> = Regex::new(r"role\s*\(\s*\[?([^)\]]*)\]?\s*\)")
-            .unwrap()
-            .captures_iter(&expr)
-            .flat_map(|cap| {
-                Regex::new(r"['\x22]([^'\x22]+)['\x22]")
-                    .unwrap()
-                    .captures_iter(&cap[1])
-                    .map(|c| c[1].to_string())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        if !roles.is_empty() {
-            return Some(AccessRule::Boolean(roles.join("|")));
-        }
-
-        None
-    };
-
-    let create = parse_rule("create");
-    let read = parse_rule("read");
-    let update = parse_rule("update");
-    let delete = parse_rule("delete");
-
-    if create.is_some() || read.is_some() || update.is_some() || delete.is_some() {
-        Some(AccessControl {
-            create,
-            read,
-            update,
-            delete,
-        })
-    } else {
-        None
+pub(crate) fn parse_tenant_policy(body: &str) -> Result<TenantPolicy> {
+    let re = Regex::new(r#"tenant\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+    match re.captures(body).map(|c| c[1].to_string()).as_deref() {
+        None | Some("required") => Ok(TenantPolicy::Required),
+        Some("global") => Ok(TenantPolicy::Global),
+        _ => anyhow::bail!("Unsupported tenant policy"),
     }
 }
 
-// ── on (events) block ───────────────────────────────────────────────────────
+pub(crate) fn validate_rule_fields(
+    rule: &AccessRule,
+    fields: &HashMap<String, Field>,
+) -> Result<()> {
+    match rule {
+        AccessRule::Owner(f) | AccessRule::SameTenant(f) => anyhow::ensure!(
+            fields.contains_key(f) || f == "tenantId",
+            "Unknown access field {f}"
+        ),
+        AccessRule::And(rs) | AccessRule::Or(rs) => {
+            for r in rs {
+                validate_rule_fields(r, fields)?;
+            }
+        }
+        _ => (),
+    }
+    Ok(())
+}
+
+fn parse_allow(expr: &str) -> Result<AccessRule> {
+    let expr = expr.trim();
+    if expr.starts_with('\'') || expr.starts_with('"') {
+        let role: String = serde_json::from_str(&expr.replace('\'', "\""))?;
+        anyhow::ensure!(!role.is_empty(), "Empty access rule");
+        return Ok(AccessRule::Boolean(role));
+    }
+    let re = Regex::new(r"^allow\s*\.\s*(\w+)\s*\(").unwrap();
+    let cap = re
+        .captures(expr)
+        .ok_or_else(|| anyhow::anyhow!("Unsupported access expression: {expr}"))?;
+    let (arg, end) = extract_paren_arg(expr, cap.get(0).unwrap().end());
+    anyhow::ensure!(
+        expr[end..].trim().is_empty(),
+        "Unsupported access expression suffix"
+    );
+    let arg = arg.unwrap_or_default();
+    let string =
+        || -> Result<String> { serde_json::from_str(&arg.replace('\'', "\"")).map_err(Into::into) };
+    Ok(match &cap[1] {
+        "public" | "authenticated" if arg.is_empty() => AccessRule::Boolean(cap[1].into()),
+        "owner" => AccessRule::Owner(string()?),
+        "sameTenant" => AccessRule::SameTenant(string()?),
+        "role" => {
+            let roles: Vec<String> = if arg.starts_with('[') {
+                serde_json::from_str(&arg.replace('\'', "\""))?
+            } else {
+                vec![string()?]
+            };
+            anyhow::ensure!(
+                !roles.is_empty() && roles.iter().all(|r| !r.is_empty() && !r.contains('|')),
+                "Invalid role list"
+            );
+            AccessRule::Boolean(roles.join("|"))
+        }
+        kind @ ("any" | "all") => {
+            anyhow::ensure!(
+                arg.starts_with('[') && arg.ends_with(']'),
+                "Access combinator requires array"
+            );
+            let rules = split_top_level_commas(&arg[1..arg.len() - 1])
+                .into_iter()
+                .filter(|r| !r.trim().is_empty())
+                .map(parse_allow)
+                .collect::<Result<Vec<_>>>()?;
+            anyhow::ensure!(!rules.is_empty(), "Empty access combinator");
+            if kind == "any" {
+                AccessRule::Or(rules)
+            } else {
+                AccessRule::And(rules)
+            }
+        }
+        _ => anyhow::bail!("Unsupported access expression: {expr}"),
+    })
+}
+
+pub(crate) fn parse_access_block(body: &str) -> Result<Option<AccessControl>> {
+    let re = Regex::new(r"access\s*:\s*\{").unwrap();
+    let Some(m) = re.find(body) else {
+        anyhow::ensure!(
+            !split_top_level_commas(body)
+                .iter()
+                .any(|entry| entry.trim().starts_with("access:")),
+            "Unsupported access declaration"
+        );
+        return Ok(None);
+    };
+    let inner = balanced_brace_body(body, m.end())
+        .ok_or_else(|| anyhow::anyhow!("Malformed access block"))?;
+    let mut rules = HashMap::new();
+    for entry in split_top_level_commas(&inner) {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (op, expr) = entry
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("Malformed access entry"))?;
+        anyhow::ensure!(
+            ["read", "create", "update", "delete"].contains(&op.trim()),
+            "Unknown access operation"
+        );
+        anyhow::ensure!(
+            rules
+                .insert(op.trim().to_owned(), parse_allow(expr)?)
+                .is_none(),
+            "Duplicate access operation"
+        );
+    }
+    Ok(Some(AccessControl {
+        create: rules.remove("create"),
+        read: rules.remove("read"),
+        update: rules.remove("update"),
+        delete: rules.remove("delete"),
+    }))
+}
 
 fn parse_on_block(body: &str) -> ModelEvents {
     let re = Regex::new(r"\bon\s*:\s*\{").unwrap();
@@ -790,7 +951,7 @@ fn on_block_diagnostics(model_name: &str, body: &str) -> Vec<String> {
 /// Top-level `model('table', { ... })` option keys other than the supported
 /// fields/access/on are ignored — surface typos like `acess` or `hooks`.
 fn model_option_diagnostics(model_name: &str, body: &str) -> Vec<String> {
-    const KNOWN: &[&str] = &["fields", "access", "on", "constraints"];
+    const KNOWN: &[&str] = &["fields", "access", "on", "constraints", "tenant"];
     crate::typescript_parser::top_level_keys(body)
         .into_iter()
         .filter(|k| !KNOWN.contains(&k.as_str()))
@@ -885,7 +1046,7 @@ fn parse_event_list(on_block: &str, event_kind: &str) -> Vec<EventActionBinding>
     bindings
 }
 
-fn split_top_level_commas(s: &str) -> Vec<&str> {
+pub(crate) fn split_top_level_commas(s: &str) -> Vec<&str> {
     let bytes = s.as_bytes();
     let mut depth = 0usize;
     let mut splits = Vec::new();
@@ -1185,7 +1346,7 @@ export const Deal = model('deals', {
         // handled them, they parsed to None — access control silently OFF.
         let dsl = r#"
 export const Contact = model('contacts', {
-  fields: { id: text().id() },
+  fields: { id: text().id(), ownerId: text() },
   access: {
     read: allow.sameTenant('tenantId'),
     create: allow.any([allow.role('admin'), allow.role('manager'), allow.role('sales')]),
@@ -1197,25 +1358,10 @@ export const Contact = model('contacts', {
         let schema = parse_builder_dsl(dsl).unwrap();
         let ac = schema.models["Contact"].access.as_ref().expect("access");
 
-        // any-of over roles → pipe-joined role gate.
-        match &ac.create {
-            Some(AccessRule::Boolean(s)) => assert_eq!(s, "admin|manager|sales"),
-            other => panic!("expected Boolean, got {:?}", other),
-        }
-        match &ac.delete {
-            Some(AccessRule::Boolean(s)) => assert_eq!(s, "admin|manager"),
-            other => panic!("expected Boolean, got {:?}", other),
-        }
-        // sameTenant → any authenticated user at the role layer.
-        match &ac.read {
-            Some(AccessRule::Boolean(s)) => assert_eq!(s, "authenticated"),
-            other => panic!("expected Boolean, got {:?}", other),
-        }
-        // mixed any(owner, roles) → authenticated, so legitimate owners aren't denied.
-        match &ac.update {
-            Some(AccessRule::Boolean(s)) => assert_eq!(s, "authenticated"),
-            other => panic!("expected Boolean, got {:?}", other),
-        }
+        assert!(matches!(ac.create, Some(AccessRule::Or(_))));
+        assert!(matches!(ac.delete, Some(AccessRule::Or(_))));
+        assert!(matches!(ac.read, Some(AccessRule::SameTenant(_))));
+        assert!(matches!(ac.update, Some(AccessRule::Or(_))));
     }
 
     #[test]
@@ -1527,32 +1673,11 @@ export const Job = model('jobs', {
   indexes: ['title'],
 })
 "#;
-        let schema = parse_builder_dsl(content).unwrap();
-        let w = &schema.warnings;
-        assert!(
-            w.iter()
-                .any(|x| x.contains("field 'payload'") && x.contains("dropped")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("access.update") && x.contains("left ungated")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter().any(|x| x.contains("event kind 'on.read'")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("unrecognized option key 'indexes'")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("'order'") && x.contains("reserved word")),
-            "{w:?}"
-        );
+        assert!(parse_builder_dsl(content).is_err());
+        let safe = content.replace("allow.customRule('owner')", "allow.role('admin')");
+        let schema = parse_builder_dsl(&safe).unwrap();
+        assert!(schema.warnings.iter().any(|w| w.contains("payload")));
+        assert!(schema.warnings.iter().any(|w| w.contains("indexes")));
     }
 
     #[test]

@@ -154,6 +154,9 @@ export class JobsClient {
 // ── CRUD Client ──────────────────────────────────────────────────────────────
 
 export interface ActorSnapshot {
+  /** Verified delegation from a currently leased job. */
+  jobId?: string;
+  leaseId?: string;
   userId?: string;
   role?: string;
   tenantId?: string;
@@ -255,19 +258,6 @@ export class CrudClient {
   }
 }
 
-/** Extract an ActorSnapshot from a job payload (as written by the action dispatcher). */
-function actorFromPayload(payload: unknown): ActorSnapshot | undefined {
-  if (typeof payload !== "object" || payload === null) return undefined;
-  const p = payload as Record<string, unknown>;
-  const actor = typeof p.actor === "string" ? p.actor : undefined;
-  const tenantId = typeof p.tenantId === "string" ? p.tenantId : undefined;
-  const role = typeof p.role === "string" ? p.role : undefined;
-  if (!actor && !tenantId && !role) return undefined;
-  return { userId: actor, tenantId, role };
-}
-
-// ── handleJob ────────────────────────────────────────────────────────────────
-
 /** Minimal surface `handleJob` needs — lets tests pass a fake client. */
 export type JobLifecycle = Pick<JobsClient, "heartbeat" | "complete" | "fail" | "progress">;
 
@@ -362,7 +352,7 @@ export function createWorker(opts: WorkerOptions): Worker {
       }
       for (const job of jobs) {
         inFlight++;
-        const actor = actorFromPayload(job.payload);
+        const actor = { jobId: job.id, leaseId: job.leaseId };
         const crud = new CrudClient(opts.url, opts.token, fetchImpl, actor);
         const p = handleJob(client, job, handlers.get(job.kind), {
           visibilitySecs,

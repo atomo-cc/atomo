@@ -326,3 +326,5 @@ impl ModelClient {
         events::SubscriptionBuilder::new(self.client.clone(), &self.model_name)
     }
 }
+
+pub mod security;

@@ -18,6 +18,9 @@ use crate::schema::Schema;
 /// Scope where clauses by tenant_id
 pub fn scope_by_tenant(where_clauses: &[WhereClause], tenant_id: Option<&str>) -> Vec<WhereClause> {
     let mut clauses = where_clauses.to_vec();
+    if crate::security::current().is_some() {
+        return clauses;
+    }
     if let Some(tid) = tenant_id {
         clauses.push(WhereClause {
             field: "tenant_id".to_string(),
@@ -217,7 +220,7 @@ impl AtomoClient {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string());
 
-        println!("Connecting to database: {}", database_url);
+        tracing::debug!("Connecting to PostgreSQL");
         let pool = pool_from_env(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
 
@@ -264,6 +267,13 @@ impl AtomoClient {
         offset: Option<usize>,
         include: &[String],
     ) -> Result<Vec<HashMap<String, Value>>> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "read", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         // Include limit/offset in the key — otherwise two queries that differ ONLY in pagination
         // collide and the second returns the first's cached rows (page 2 == page 1). Bug caught
@@ -335,6 +345,13 @@ impl AtomoClient {
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> Result<Vec<HashMap<String, Value>>> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "read", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let model = self
             .schema
@@ -356,6 +373,13 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         include: &[String],
     ) -> Result<Option<HashMap<String, Value>>> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "read", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let cache_key = crate::cache::ReadCache::key(
             model_name,
@@ -444,6 +468,8 @@ impl AtomoClient {
             crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
         };
 
+        let data = crate::security::prepare(model, &data, false)?;
+        crate::security::check_row(model, "create", &data)?;
         // Enforce declared validation rules in the data layer so EVERY create path (SDK,
         // internal callers, GraphQL) is validated — not just the GraphQL resolver. Runs after
         // before_create so hooks can normalize first. Only the model's explicit rules apply.
@@ -474,6 +500,7 @@ impl AtomoClient {
         let row = sqlx::query_with(&sql, args).fetch_one(&mut *tx).await?;
         let record = row_to_map(&row);
 
+        self.check_relations(&mut tx, model, &record).await?;
         let event = ModelEvent {
             event_type: EventType::Created,
             model_name: model_name.to_string(),
@@ -537,6 +564,8 @@ impl AtomoClient {
                 crate::hooks::HookResult::Continue(d) => d,
                 crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
             };
+            let data = crate::security::prepare(model, &data, false)?;
+            crate::security::check_row(model, "create", &data)?;
             if !model.validation.is_empty() {
                 let errors = crate::validation::validate(&data, &model.validation);
                 if let Some(e) = errors.first() {
@@ -575,6 +604,9 @@ impl AtomoClient {
                 out
             };
         // Events: one multi-row INSERT into event_log for the whole batch.
+        for record in &records_out {
+            self.check_relations(&mut tx, model, record).await?;
+        }
         let origin = current_origin();
         let events: Vec<ModelEvent> = records_out
             .iter()
@@ -623,6 +655,13 @@ impl AtomoClient {
         _include: &[String],
         actor: Option<&str>,
     ) -> Result<Vec<HashMap<String, Value>>> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "update", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let model = self
             .schema
@@ -645,6 +684,7 @@ impl AtomoClient {
             crate::hooks::HookResult::Abort(msg) => return Err(anyhow::anyhow!(msg)),
         };
 
+        let data = crate::security::prepare(model, &data, true)?;
         // Update-aware validation: only the fields present in this patch are checked, so a
         // partial update never trips `required` on an omitted field, but a field being set must
         // still satisfy its rules. Enforced in the data layer (every update path), not just GraphQL.
@@ -673,6 +713,10 @@ impl AtomoClient {
         }
         let rows = sqlx::query_with(&sql, args).fetch_all(&mut *tx).await?;
         let records: Vec<HashMap<String, Value>> = rows.iter().map(row_to_map).collect();
+        for record in &records {
+            crate::security::check_row(model, "update", record)?;
+            self.check_relations(&mut tx, model, record).await?;
+        }
         let origin = current_origin();
         let events: Vec<ModelEvent> = records
             .iter()
@@ -710,6 +754,13 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "delete", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let model = self
             .schema
@@ -794,6 +845,13 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "update", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let model = self
             .schema
@@ -850,6 +908,13 @@ impl AtomoClient {
         where_clauses: &[WhereClause],
         actor: Option<&str>,
     ) -> Result<usize> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "delete", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let model = self
             .schema
@@ -905,6 +970,13 @@ impl AtomoClient {
 
     /// Count records matching where clauses
     pub async fn count(&self, model_name: &str, where_clauses: &[WhereClause]) -> Result<i64> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "read", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let cache_key = crate::cache::ReadCache::key(
             model_name,
@@ -954,6 +1026,13 @@ impl AtomoClient {
         model_name: &str,
         where_clauses: &[WhereClause],
     ) -> Result<i64> {
+        let model = self
+            .schema
+            .models
+            .get(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model"))?;
+        let secured = crate::security::filter(model, "read", where_clauses)?;
+        let where_clauses = secured.as_slice();
         validate_where_clauses(where_clauses)?;
         let model = self
             .schema
@@ -1044,7 +1123,13 @@ impl AtomoClient {
         actor: Option<&str>,
     ) -> Result<HashMap<String, Value>> {
         self.enforce_access(model_name, "create", role)?;
-        self.create(model_name, data, include, actor).await
+        let principal = crate::security::current().unwrap_or(crate::security::Principal {
+            user_id: actor.map(String::from),
+            role: role.map(String::from),
+            tenant_id: current_tenant(),
+        });
+        crate::security::with_principal(principal, self.create(model_name, data, include, actor))
+            .await
     }
 
     pub async fn update_many_checked(
@@ -1058,8 +1143,16 @@ impl AtomoClient {
     ) -> Result<Vec<HashMap<String, Value>>> {
         validate_where_clauses(where_clauses)?;
         self.enforce_access(model_name, "update", role)?;
-        self.update_many(model_name, where_clauses, data, include, actor)
-            .await
+        let principal = crate::security::current().unwrap_or(crate::security::Principal {
+            user_id: actor.map(String::from),
+            role: role.map(String::from),
+            tenant_id: current_tenant(),
+        });
+        crate::security::with_principal(
+            principal,
+            self.update_many(model_name, where_clauses, data, include, actor),
+        )
+        .await
     }
 
     pub async fn delete_many_checked(
@@ -1071,7 +1164,72 @@ impl AtomoClient {
     ) -> Result<usize> {
         validate_where_clauses(where_clauses)?;
         self.enforce_access(model_name, "delete", role)?;
-        self.delete_many(model_name, where_clauses, actor).await
+        let principal = crate::security::current().unwrap_or(crate::security::Principal {
+            user_id: actor.map(String::from),
+            role: role.map(String::from),
+            tenant_id: current_tenant(),
+        });
+        crate::security::with_principal(
+            principal,
+            self.delete_many(model_name, where_clauses, actor),
+        )
+        .await
+    }
+
+    async fn check_relations(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        model: &crate::schema::Model,
+        record: &HashMap<String, Value>,
+    ) -> Result<()> {
+        if crate::security::current().is_none() {
+            return Ok(());
+        }
+        for (name, rel) in model
+            .relationships
+            .iter()
+            .filter(|(_, r)| r.kind == "belongsTo")
+        {
+            let fk = rel
+                .foreign_key
+                .clone()
+                .unwrap_or_else(|| format!("{name}Id"));
+            let Some(value) = record
+                .get(&crate::query::sql_builder::to_snake_case(&fk))
+                .filter(|v| !v.is_null())
+            else {
+                continue;
+            };
+            let parent = self
+                .schema
+                .models
+                .get(&rel.model)
+                .ok_or_else(|| anyhow::anyhow!("Unknown relationship model"))?;
+            let clauses = crate::security::filter(
+                parent,
+                "read",
+                &[WhereClause {
+                    field: "id".into(),
+                    operator: crate::query::WhereOperator::Equals,
+                    value: value.clone(),
+                }],
+            )?;
+            let (mut sql, params) = SqlBuilder::select_active(parent, &clauses, &[], None, None);
+            sql.push_str(" FOR SHARE");
+            let row = sqlx::query_with(&sql, build_args(&params)?)
+                .fetch_optional(&mut **tx)
+                .await?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Access denied: parent is not visible in this tenant")
+                })?;
+            let parent_record = row_to_map(&row);
+            if parent.tenant_policy != atomo_schema::TenantPolicy::Global
+                && record.get("tenant_id") != parent_record.get("tenant_id")
+            {
+                anyhow::bail!("Access denied: parent/child tenant mismatch");
+            }
+        }
+        Ok(())
     }
 
     /// Get a clonable sender to publish events onto the model-event stream
@@ -1302,7 +1460,7 @@ impl AtomoClientBuilder {
                 .unwrap_or_else(|_| "postgresql://localhost/atomo".to_string())
         });
 
-        println!("Connecting to database: {}", database_url);
+        tracing::debug!("Connecting to PostgreSQL");
         let pool = pool_from_env(&database_url).await?;
         let (event_sender, _) = broadcast::channel(1000);
         let event_store = EventStore::with_config(pool.clone(), history_config)?;
@@ -1346,6 +1504,11 @@ impl AtomoClientBuilder {
 /// Reject malformed collection predicates before cache access or database mutation.
 fn validate_where_clauses(clauses: &[WhereClause]) -> Result<()> {
     for clause in clauses {
+        if let crate::query::WhereOperator::And(children)
+        | crate::query::WhereOperator::Or(children) = &clause.operator
+        {
+            validate_where_clauses(children)?;
+        }
         if matches!(
             clause.operator,
             crate::query::WhereOperator::In | crate::query::WhereOperator::NotIn

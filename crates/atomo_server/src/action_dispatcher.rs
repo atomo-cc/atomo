@@ -40,7 +40,7 @@ pub fn spawn_action_dispatcher(
                 let tenant_id = ev.data.get("tenant_id").and_then(|v| v.as_str());
 
                 if let Err(e) = job_store
-                    .enqueue(
+                    .enqueue_as(
                         ACTION_QUEUE,
                         &binding.action,
                         payload,
@@ -48,6 +48,7 @@ pub fn spawn_action_dispatcher(
                         5,
                         0,
                         tenant_id,
+                        ev.actor.as_deref(),
                     )
                     .await
                 {
@@ -168,6 +169,7 @@ mod tests {
                     deleted: vec![],
                 },
                 ui: None,
+                tenant_policy: Default::default(),
             },
         );
         Schema {

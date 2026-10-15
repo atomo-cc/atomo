@@ -18,6 +18,109 @@ pub struct Schema {
     pub warnings: Vec<String>,
 }
 
+impl Schema {
+    /// Validate runtime security semantics before a schema can serve requests.
+    pub fn validate_security(&self) -> anyhow::Result<()> {
+        fn rule(expression: &AccessRule, model: &Model) -> anyhow::Result<()> {
+            match expression {
+                AccessRule::Owner(f) | AccessRule::SameTenant(f) => {
+                    anyhow::ensure!(
+                        f == "tenantId"
+                            || model.fields.get(f).is_some_and(|f| matches!(
+                                f.field_type,
+                                FieldType::String | FieldType::EntityId
+                            )),
+                        "Invalid security field {f}"
+                    );
+                }
+                AccessRule::And(rs) | AccessRule::Or(rs) => {
+                    for r in rs {
+                        rule(r, model)?;
+                    }
+                }
+                AccessRule::Query(_) => anyhow::bail!(
+                    "Legacy query access expressions are not supported by the runtime"
+                ),
+                AccessRule::Boolean(value) => anyhow::ensure!(
+                    value.split('|').all(|r| !r.is_empty()
+                        && r.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')),
+                    "Unsupported runtime access expression"
+                ),
+            }
+            Ok(())
+        }
+        for model in self.models.values() {
+            for field in model.fields.values() {
+                for attr in &field.attributes {
+                    if let FieldAttribute::FromAuth(source) = attr {
+                        anyhow::ensure!(
+                            ["userId", "tenantId"].contains(&source.as_str())
+                                && matches!(
+                                    field.field_type,
+                                    FieldType::String | FieldType::EntityId
+                                ),
+                            "Unsupported authentication source or field type"
+                        );
+                    }
+                }
+            }
+            if let Some(access) = &model.access {
+                for r in [&access.create, &access.read, &access.update, &access.delete]
+                    .into_iter()
+                    .flatten()
+                {
+                    rule(r, model)?;
+                }
+            }
+            for (name, rel) in &model.relationships {
+                anyhow::ensure!(
+                    self.models.contains_key(&rel.model),
+                    "Unknown relationship model {}",
+                    rel.model
+                );
+                anyhow::ensure!(
+                    ["belongsTo", "hasMany"].contains(&rel.kind.as_str()),
+                    "Unsupported relationship kind"
+                );
+                if rel.kind == "belongsTo" {
+                    let fk = rel
+                        .foreign_key
+                        .clone()
+                        .unwrap_or_else(|| format!("{name}Id"));
+                    anyhow::ensure!(
+                        model.fields.contains_key(&fk),
+                        "Unknown relationship field {fk}"
+                    );
+                } else {
+                    let mut chars = model.name.chars();
+                    let prefix = chars
+                        .next()
+                        .map(|c| c.to_lowercase().collect::<String>())
+                        .unwrap_or_default();
+                    let fk = rel
+                        .foreign_key
+                        .clone()
+                        .unwrap_or_else(|| format!("{prefix}{}Id", chars.as_str()));
+                    anyhow::ensure!(
+                        self.models[&rel.model].fields.contains_key(&fk),
+                        "Unknown relationship field {fk}"
+                    );
+                }
+            }
+        }
+        for action in self.actions.values() {
+            if let Some(ActionReturn::Model(name)) = &action.returns {
+                anyhow::ensure!(
+                    self.models.contains_key(name),
+                    "Unknown action return model {name}"
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BuiltinExtension {
     /// Extra columns: field name (camelCase, converted to snake_case) → SQL type.
@@ -53,6 +156,8 @@ pub struct ActionInputField {
     pub field_type: String,
     #[serde(default)]
     pub required: bool,
+    #[serde(default)]
+    pub validation: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,9 +166,19 @@ pub enum ActionReturn {
     Void,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TenantPolicy {
+    #[default]
+    Required,
+    Global,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Model {
     pub name: String,
+    #[serde(default)]
+    pub tenant_policy: TenantPolicy,
     pub fields: HashMap<String, Field>,
     pub access: Option<AccessControl>,
     pub hooks: Option<HookDefinitions>,
@@ -230,6 +345,7 @@ pub enum FieldAttribute {
     ForeignKey,
     Timestamp,
     Default(String),
+    FromAuth(String),
 }
 
 // =============================================================================
@@ -277,7 +393,7 @@ impl AccessControl {
 
 impl AccessRule {
     /// Decide a single rule against a role. Handles the `public`/`authenticated` tokens and
-    /// pipe-OR role lists (`"sales|manager|admin"`). Non-Boolean rules currently allow.
+    /// pipe-OR role lists. Row-dependent rules require further shared-layer filtering.
     pub fn decide(&self, role: Option<&str>) -> AccessDecision {
         match self {
             AccessRule::Boolean(roles_str) => {
@@ -298,7 +414,34 @@ impl AccessRule {
                     None => AccessDecision::NeedsAuth,
                 }
             }
-            _ => AccessDecision::Allow,
+            AccessRule::Owner(_) | AccessRule::SameTenant(_) => {
+                if role.is_some() {
+                    AccessDecision::Allow
+                } else {
+                    AccessDecision::NeedsAuth
+                }
+            }
+            AccessRule::And(rules) => {
+                let decisions: Vec<_> = rules.iter().map(|r| r.decide(role)).collect();
+                if decisions.contains(&AccessDecision::NeedsAuth) {
+                    AccessDecision::NeedsAuth
+                } else if decisions.contains(&AccessDecision::Forbidden) {
+                    AccessDecision::Forbidden
+                } else {
+                    AccessDecision::Allow
+                }
+            }
+            AccessRule::Or(rules) => {
+                let decisions: Vec<_> = rules.iter().map(|r| r.decide(role)).collect();
+                if decisions.contains(&AccessDecision::Allow) {
+                    AccessDecision::Allow
+                } else if decisions.contains(&AccessDecision::NeedsAuth) {
+                    AccessDecision::NeedsAuth
+                } else {
+                    AccessDecision::Forbidden
+                }
+            }
+            AccessRule::Query(_) => AccessDecision::Forbidden,
         }
     }
 }
@@ -307,7 +450,9 @@ impl AccessRule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AccessRule {
     /// Simple boolean check function
-    Boolean(String), // Function code as string
+    Boolean(String), // Role token or pipe-separated role list
+    Owner(String),
+    SameTenant(String),
     /// Complex query condition
     Query(QueryCondition),
     /// Combination of conditions

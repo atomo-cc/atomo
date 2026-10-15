@@ -355,3 +355,5 @@ Thanks to all contributors and the following open-source projects:
 **Make content management simple and powerful!** 🚀
 
 [Get Started](https://github.com/atomo-cc/atomo/releases) | [Read the Docs](docs/) | [Join the Community](https://github.com/atomo-cc/atomo/discussions)
+
+Unreleased schema security repair: structured owner/tenant rules, verified source fields, tenant-required models with explicit global policy, parent visibility checks and safe integer input. See [tenant compatibility guidance](docs/guide/advanced/multi-tenant.md). Multi-tenant membership and atomic commands remain separate work.

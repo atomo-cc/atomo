@@ -99,6 +99,7 @@ mod tests {
                     name: "title".into(),
                     field_type: "string".into(),
                     required: true,
+                    validation: Default::default(),
                 }],
             },
             returns: Some(ActionReturn::Model("posts".into())),

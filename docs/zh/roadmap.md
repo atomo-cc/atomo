@@ -11,6 +11,8 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 ## 状态总览
 
+- 未发布的 M1 安全修复候选：保留 owner/tenant/any/all 行规则，执行 fromAuth、默认要求租户并支持显式全局模型，校验父子租户和安全整数，保护异步 action 与 Worker 委托。通用成员关系、多租户身份、原子命令和 CLI 类型生成仍需独立里程碑。验收记录见仓库 `tests/m1/REPORT.md`。
+
 - 存储生命周期（v0.7.0）：有界缓存、可选模型历史与独立审计保留、持久化重放能力标记和管理员诊断接口。默认继续保存完整历史与审计；跨功能验证见仓库 `docs/implementation/storage-lifecycle/TODO.md`，发布验收见同目录 `RELEASE_TODO.md`。配置与限制见[存储生命周期](/guide/storage-lifecycle)。
 
 - CLI 与开发运行时：已实现（init、migrate、codegen、dev、dev --workspace）

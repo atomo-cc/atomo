@@ -7,6 +7,7 @@ use std::collections::HashMap;
 /// Per-model metadata extracted from the `export const schema` object in one unified pass.
 #[derive(Default)]
 struct ModelMetadata {
+    tenant_policy: Option<TenantPolicy>,
     table_name: Option<String>,
     validation: HashMap<String, String>,
     access: Option<AccessControl>,
@@ -93,6 +94,9 @@ impl TypeScriptParser {
         let mut meta = Self::parse_model_metadata(content);
         for model in &mut models {
             if let Some(m) = meta.remove(&model.name) {
+                if let Some(policy) = m.tenant_policy {
+                    model.tenant_policy = policy;
+                }
                 if model.table_name.is_none() {
                     model.table_name = m.table_name;
                 }
@@ -115,6 +119,25 @@ impl TypeScriptParser {
             }
         }
 
+        if let Some(block) = Self::sub_block(content, "models") {
+            for (name, definition) in Self::top_level_entries(&block) {
+                if let Some(model) = models.iter_mut().find(|m| m.name == name) {
+                    model.tenant_policy =
+                        crate::schema_dsl_parser::parse_tenant_policy(&definition)?;
+                    if Self::sub_block(&definition, "access").is_some() {
+                        model.access = crate::schema_dsl_parser::parse_access_block(&definition)?;
+                    }
+                    if let Some(access) = &model.access {
+                        for rule in [&access.create, &access.read, &access.update, &access.delete]
+                            .into_iter()
+                            .flatten()
+                        {
+                            crate::schema_dsl_parser::validate_rule_fields(rule, &model.fields)?;
+                        }
+                    }
+                }
+            }
+        }
         Ok(models)
     }
 
@@ -131,6 +154,14 @@ impl TypeScriptParser {
         };
         for (name, block) in Self::top_level_entries(&models_block) {
             let mut m = ModelMetadata::default();
+            let tenant = Regex::new(r#"tenant\s*:\s*['"]([^'"]+)['"]"#).unwrap();
+            if let Some(c) = tenant.captures(&block) {
+                m.tenant_policy = match &c[1] {
+                    "global" => Some(TenantPolicy::Global),
+                    "required" => Some(TenantPolicy::Required),
+                    _ => None,
+                };
+            }
             // tableName: "x"
             let tn_re = Regex::new(r#"tableName\s*:\s*['"]([^'"]+)['"]"#).unwrap();
             if let Some(c) = tn_re.captures(&block) {
@@ -216,7 +247,8 @@ impl TypeScriptParser {
                     m.ui = Some(ui);
                 }
             }
-            if m.table_name.is_some()
+            if m.tenant_policy.is_some()
+                || m.table_name.is_some()
                 || !m.validation.is_empty()
                 || m.access.is_some()
                 || !m.relationships.is_empty()
@@ -398,7 +430,10 @@ impl TypeScriptParser {
         Some(ActionDef {
             name: name.to_string(),
             input,
-            returns: None,
+            returns: Regex::new(r#"returns\s*:\s*['"]([^'"]+)['"]"#)
+                .ok()?
+                .captures(block)
+                .map(|c| ActionReturn::Model(c[1].to_owned())),
             source_model,
         })
     }
@@ -413,6 +448,62 @@ impl TypeScriptParser {
                 return Some(ActionInputDef::PickFields { model, fields });
             }
         }
+        if let Some(object) = Self::sub_block(&input_block, "object") {
+            let mut fields = Vec::new();
+            let type_re = Regex::new(r#"type\s*:\s*['"](string|number|boolean|json)['"]"#).ok()?;
+            let validation_re = Regex::new(r#"validation\s*:\s*['"]([^'"]*)['"]"#).ok()?;
+            for entry in crate::schema_dsl_parser::split_top_level_commas(&object) {
+                if entry.trim().is_empty() {
+                    continue;
+                }
+                let (name, declaration) = entry.split_once(':')?;
+                let name = name.trim().trim_matches(['\'', '"']).to_owned();
+                let declaration = declaration.trim();
+                let (field_type, required, mut validation) = if declaration.starts_with('{') {
+                    let body = declaration.strip_prefix('{')?.strip_suffix('}')?;
+                    let keys = top_level_keys(body);
+                    if keys
+                        .iter()
+                        .any(|k| !["type", "required", "validation"].contains(&k.as_str()))
+                    {
+                        return None;
+                    }
+                    let required_re = Regex::new(r"required\s*:\s*(true|false)\b").ok()?;
+                    if keys.iter().any(|k| k == "required") && !required_re.is_match(declaration) {
+                        return None;
+                    }
+                    let field_type = type_re.captures(declaration)?[1].to_owned();
+                    let required = Regex::new(r"required\s*:\s*true")
+                        .ok()?
+                        .is_match(declaration);
+                    let validation = validation_re
+                        .captures(declaration)
+                        .map(|c| c[1].to_owned())
+                        .unwrap_or_default();
+                    (field_type, required, validation)
+                } else {
+                    let field_type = declaration.trim_matches(['\'', '"']).to_owned();
+                    if !["string", "number", "boolean", "json"].contains(&field_type.as_str()) {
+                        return None;
+                    }
+                    (field_type, true, String::new())
+                };
+                if required {
+                    validation = if validation.is_empty() {
+                        "required".into()
+                    } else {
+                        format!("required|{validation}")
+                    };
+                }
+                fields.push(ActionInputField {
+                    name,
+                    field_type,
+                    required,
+                    validation,
+                });
+            }
+            return Some(ActionInputDef::Object { fields });
+        }
         None
     }
 
@@ -424,6 +515,14 @@ impl TypeScriptParser {
     pub fn parse_schema(&self, content: &str) -> Result<Schema> {
         let models = self.parse(content)?;
         let actions = Self::parse_actions(content);
+        if let Some(block) = Self::sub_block(content, "actions") {
+            for (name, _) in Self::top_level_entries(&block) {
+                anyhow::ensure!(
+                    actions.contains_key(&name),
+                    "Unsupported action declaration {name}"
+                );
+            }
+        }
         // Membership comes from the models block's entry NAMES — an entry with empty
         // metadata (`Note: {}`) is still a declared model. (Previously membership came
         // from parsed metadata keys, so an all-defaults entry silently dropped the model.)
@@ -605,6 +704,7 @@ impl TypeScriptParser {
                 constraints: Vec::new(),
                 events: Default::default(),
                 ui: None,
+                tenant_policy: Default::default(),
             });
         }
 
@@ -702,6 +802,7 @@ fn parse_interface(lines: &[&str], start_index: usize, name: String) -> Result<(
         constraints,
         events: Default::default(),
         ui: None,
+        tenant_policy: Default::default(),
     };
     let lines_consumed = i - start_index;
 
@@ -1087,6 +1188,7 @@ fn model_block_diagnostics(content: &str, models: &HashMap<String, Model>) -> Ve
     }
     const KNOWN_MODEL_KEYS: &[&str] = &[
         "tableName",
+        "tenant",
         "validation",
         "access",
         "relationships",
@@ -1699,33 +1801,7 @@ mod validation_tests {
           },
         };
         "#;
-        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
-        let w = &schema.warnings;
-        assert!(
-            w.iter().any(|x| x.contains("unrecognized key 'cacheTTL'")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("access") && x.contains("'list'")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("validation") && x.contains("'titel'")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("relationships.author") && x.contains("'cascade'")),
-            "{w:?}"
-        );
-        assert!(
-            w.iter()
-                .any(|x| x.contains("relationships.comments")
-                    && x.contains("missing 'type'/'model'")),
-            "{w:?}"
-        );
+        assert!(TypeScriptParser::new().parse_schema(content).is_err());
     }
 
     #[test]

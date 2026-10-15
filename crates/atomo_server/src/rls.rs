@@ -1,38 +1,7 @@
-//! Opt-in, DB-enforced multi-tenant **Row-Level Security (RLS)**.
-//!
-//! This is the *defense-in-depth* half of Atomo's multi-tenant story (the
-//! "pool" model: shared schema + `tenant_id` + Postgres RLS). The application
-//! layer already scopes reads/writes by `tenant_id` (see `auth.rs` +
-//! `handlers.rs`); RLS makes a **forgotten `WHERE tenant_id = …` clause unable
-//! to leak across tenants** because the database itself filters every row.
-//!
-//! # Opt-in / additive
-//!
-//! Everything here is gated behind the `ATOMO_ENABLE_RLS` env flag (default
-//! **false**). When the flag is off, [`ensure_rls_policies`] is a no-op and
-//! behavior is byte-for-byte unchanged. Turning it on is additive: the policy
-//! `tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true)`
-//! is permissive for `NULL` tenants, so single-tenant deployments (which leave
-//! `tenant_id` NULL) keep working untouched.
-//!
-//! # The four pieces (see docs/guide/advanced/multi-project-design.md)
-//!
-//! 1. **Policy generation + setup** — [`ensure_rls_policies`] runs, per model
-//!    table: `ENABLE ROW LEVEL SECURITY` + a `CREATE POLICY` keyed on the
-//!    `atomo.tenant_id` session var (with `WITH CHECK` for writes). Idempotent.
-//! 2. **Per-transaction binding** — [`bind_tenant`] runs `SET LOCAL
-//!    atomo.tenant_id = $1` inside a transaction, so the policy resolves to the
-//!    request's tenant. `SET LOCAL` is transaction-scoped → safe under PgBouncer
-//!    transaction pooling.
-//! 3. **Boot hook** — called from `server.rs run()` after tables exist.
-//! 4. **Event-store scoping** — out of scope here (planned follow-up).
-//!
-//! # Caveat: table owners / superusers bypass RLS
-//!
-//! By default the table *owner* and superusers bypass RLS. For full enforcement
-//! the application should connect as a non-owner role, or the tables should be
-//! created with `FORCE ROW LEVEL SECURITY`. We emit `FORCE` as well so the
-//! owning role is also constrained — see [`ensure_rls_policies`].
+//! Database tenant isolation. Server boot uses schema-aware required/global
+//! policies through ensure_schema_rls. Legacy low-level policy helpers retain
+//! their explicit permissive behavior for library callers. Application row
+//! permissions are separately enforced by atomo::security; RLS is defense in depth.
 
 use sqlx::PgPool;
 
@@ -244,8 +213,41 @@ pub async fn bind_tenant(
 //   - `atomo/tests/rls_executor.rs` (`find_many` under `with_tenant_scope`, incl. the
 //     "forgot the WHERE" case and tenant-keyed cache).
 //
-// Remaining follow-ups: the GraphQL *subscription/WS* path is not yet scoped, and
-// event-store per-tenant scoping (step 4) is still planned.
+// GraphQL WebSocket delivery applies verified tenant and row rules.
+// Event-store per-tenant APIs remain a separate follow-up.
+
+/// Schema-aware policies: existing null rows stay stored but are inaccessible in
+/// required-tenant models. Only an explicit global model admits global rows.
+pub async fn ensure_schema_rls(
+    pool: &PgPool,
+    schema: &atomo::schema::Schema,
+) -> anyhow::Result<()> {
+    for model in schema
+        .models
+        .values()
+        .filter(|m| m.fields.contains_key("id") && !m.fields.contains_key("_enum_type"))
+    {
+        let table = atomo::query::sql_builder::table_name_for(model);
+        let mut statements = policy_statements_for(&table);
+        let condition = if model.tenant_policy == atomo::schema::TenantPolicy::Global {
+            "tenant_id IS NULL".to_owned()
+        } else {
+            format!(
+                "tenant_id IS NOT NULL AND tenant_id = current_setting('{TENANT_SETTING}', true)"
+            )
+        };
+        let qt = atomo::query::sql_builder::quote_ident(&table);
+        let qp = atomo::query::sql_builder::quote_ident(POLICY_NAME);
+        *statements.last_mut().unwrap() =
+            format!("CREATE POLICY {qp} ON {qt} USING ({condition}) WITH CHECK ({condition})");
+        let mut tx = pool.begin().await?;
+        for sql in statements {
+            sqlx::query(&sql).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

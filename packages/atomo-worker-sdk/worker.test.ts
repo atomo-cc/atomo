@@ -5,6 +5,7 @@ import {
   CrudClient,
   CrudError,
   NonRetryableError,
+  createWorker,
   type JobLifecycle,
   type LeasedJob,
 } from "./index";
@@ -24,6 +25,32 @@ const nopCrud = new CrudClient("http://h", "tok", nopFetch as unknown as typeof 
 
 // Heartbeat interval far in the future so it never fires during a test.
 const OPTS = { visibilitySecs: 30, heartbeatSecs: 9999, crud: nopCrud };
+
+it("createWorker delegates CRUD by lease and ignores actor claims in the payload", async () => {
+  let delivered = false;
+  let actor: unknown;
+  let complete!: () => void;
+  const completed = new Promise<void>((resolve) => { complete = resolve; });
+  const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith("/jobs/lease")) {
+      const jobs = delivered ? [] : [{ ...JOB, payload: { actor: "forged-admin", role: "admin" } }];
+      delivered = true;
+      return new Response(JSON.stringify({ jobs }));
+    }
+    if (String(url).includes("/api/worker/crud/")) {
+      actor = JSON.parse(init?.body as string).actor;
+      return new Response(JSON.stringify({ id: "record-1" }), { status: 201 });
+    }
+    if (String(url).endsWith("/complete")) complete();
+    return new Response(null, { status: 204 });
+  });
+  const worker = createWorker({ url: "http://example.invalid", token: "local-test", queues: ["q"], pollIntervalMs: 1, fetch: fetchMock as typeof fetch });
+  worker.on(JOB.kind, async ({ crud }) => crud.create("Record", { title: "test" }));
+  worker.start();
+  await completed;
+  await worker.stop();
+  expect(actor).toEqual({ jobId: JOB.id, leaseId: JOB.leaseId });
+});
 
 function fakeClient(): JobLifecycle & {
   heartbeat: ReturnType<typeof vi.fn>;

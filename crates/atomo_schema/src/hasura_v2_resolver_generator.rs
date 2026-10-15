@@ -1293,6 +1293,7 @@ mod tests {
             constraints: Vec::new(),
             events: ModelEvents::default(),
             ui: None,
+            tenant_policy: Default::default(),
         }
     }
 

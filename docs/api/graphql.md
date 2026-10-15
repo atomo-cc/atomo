@@ -109,10 +109,10 @@ Notes
 - `where` operators: `equals`, `not`, `contains`, `startsWith`, `endsWith`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`.
 - **`id` shorthand:** `update`, `delete`, `restore`, and `hardDelete` accept an `id` argument as sugar for `where: { id: { equals: "..." } }`. An error is returned if both `id` and `where` are provided, or if neither is.
 - `delete` is a soft delete (sets `deleted_at`); use `restore` to undo or `hardDelete` to purge. `records`/`paginatedRecords` exclude soft-deleted rows; `deletedRecords` shows only them.
-- **`update` returns `null` when the `where` filter matches zero rows** — a no-op update is observable, not a fake success. Watch for this under tenant scoping: a `tenant_id IS NULL` global row is invisible to a scoped `update`, so it returns `null` rather than updating.
+- **`update` returns `null` when the `where` filter matches zero rows** — a no-op update is observable, not a fake success. In tenant-required models, legacy null-tenant rows are inaccessible; explicitly global models remain usable under their global policy.
 - **`updateMany`:** accepts an `items` array of `{ id, data }` pairs and returns all updated records. Each item updates one record by id; ids that match nothing are simply omitted from the result array.
 - Access is enforced per model from the schema `access` rules (RBAC). Send `Authorization: Bearer <jwt>`.
-- Multi-tenant scoping: send `X-Tenant-ID: <id>` to scope all operations to a tenant.
+- Multi-tenant scoping: verified user bindings are automatic; `X-Tenant-ID` may select only an authorized tenant.
 - Responses are `application/graphql-response+json; charset=utf-8`. The charset is declared explicitly — decode bodies as UTF-8.
 - Mutations are audit-logged with the acting user (from the JWT) as `user_id`.
 - Errors carry codes in extensions: `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.
@@ -123,3 +123,7 @@ Notes
 - Override the port with `atomo dev --port <n>` or `atomo-server --port <n>`
 
 See also: the `schema.ts` in each service (e.g., `services/crm-service/schema.ts`).
+
+## Unreleased row and tenant security
+
+Owner/tenant/any/all rules are evaluated by shared SQL predicates before pagination and counts. Missing tenant headers bind to the authenticated user; conflicting headers return HTTP 403. Required-tenant models deny unbound requests. Explicit global models retain only null-tenant records. Source fields reject forged input and updates, integer fields reject conversion-prone input, and inaccessible or foreign-tenant parents reject the transaction. See [compatibility and policy details](/guide/advanced/multi-tenant). Multi-field mutations and updateMany still do not constitute a cross-model transaction.

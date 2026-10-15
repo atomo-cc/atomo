@@ -129,12 +129,11 @@ mod tests {
         let committed = std::fs::read_to_string(&committed_path)
             .expect("committed generated/client.ts should exist");
 
-        if generated.trim() != committed.trim() {
-            std::fs::write(&committed_path, &generated).expect("auto-update generated/client.ts");
-            panic!(
-                "codegen output drifted — auto-updated services/crm-service/generated/client.ts. \
-                 Re-run to confirm."
-            );
+        if std::env::var_os("ATOMO_UPDATE_GENERATED").is_some() {
+            std::fs::write(&committed_path, &generated)
+                .expect("regenerate fixture through source generator");
+        } else {
+            assert!(generated.trim() == committed.replace("\r\n", "\n").trim(), "codegen drift; set ATOMO_UPDATE_GENERATED=1 to regenerate through the source generator");
         }
     }
 

@@ -80,3 +80,7 @@ worker.start();
 - `createWorker(options)` → `Worker` with `.on(kind, handler)`, `.start()`, `.stop()`.
 - `NonRetryableError` — throw to skip retries.
 - `handleJob`, `JobsClient` — lower-level building blocks (exported for testing/advanced use).
+
+### Unreleased delegation requirement
+
+`createWorker` forwards the current jobId/leaseId with `ctx.crud`. Server CRUD verifies the active lease and server-stored actor delegation, and reloads current identity/role/tenant. Standalone `CrudClient` callers must supply these references in ActorSnapshot. Arbitrary actor-only snapshots, stale leases and old jobs without verified delegation are rejected; payload.actor is not authority.

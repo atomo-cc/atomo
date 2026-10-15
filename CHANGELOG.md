@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Preserve owner/sameTenant/any/all access rules; reject unsupported security syntax. Shared request CRUD filters rows before pagination and verifies updates and visible parent tenants transactionally.
+- Bind missing tenant headers to verified identity; reject conflicts. Models now require tenant context by default; explicit global models admit null rows. Existing null rows remain stored and require operator review; no automatic reassignment or deletion.
+- Execute immutable fromAuth userId/tenantId fields; reject forged values. Reject fractional, overflow and unsafe JSON integer input before PostgreSQL BIGINT conversion.
+- Parse callable builder action returns/object inputs and require authentication, conservative return-model create authorization, tenant context and validated input. Actions remain asynchronous with scoped optional idempotency keys. Worker CRUD requires a live job lease and server-stored delegation; upgrade workers and review old queued jobs.
+- Remove database URL logging from client/server startup.
+
 ### Fixed
 - GraphQL `update` now returns `null` when the `where` filter matches zero rows instead of a fake-success `{}` — a no-op update (e.g. a tenant-scoped update missing a NULL-tenant global row) is finally observable. Mild schema change: the mutation's return type is now nullable. The admin UI surfaces this as an explicit error.
 - With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).

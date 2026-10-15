@@ -61,10 +61,13 @@ async fn graphql_ws_handler(
                     let mut data = async_graphql::Data::default();
                     data.insert(UserRoleCtx(format!("{:?}", user.role)));
                     data.insert(atomo::graphql::UserIdCtx(user.id.clone()));
-                    // Optional tenant scoping for the subscription (S3a): pass `tenant` in the
-                    // connection_init payload to receive only that tenant's events.
-                    if let Some(tid) = value.get("tenant").and_then(|v| v.as_str()) {
-                        data.insert(atomo::graphql::TenantCtx(tid.to_string()));
+                    let principal = crate::auth::request_principal(
+                        Some(&user),
+                        value.get("tenant").and_then(|v| v.as_str()),
+                    )
+                    .map_err(|_| async_graphql::Error::new("Forbidden tenant"))?;
+                    if let Some(tid) = principal.tenant_id {
+                        data.insert(atomo::graphql::TenantCtx(tid));
                     }
                     Ok(data)
                 })
@@ -102,6 +105,7 @@ pub fn build_extended_schema(atomo: &Atomo) -> AtomoGraphQLSchema {
     ));
 
     let mut builder = GraphQLSchema::build(query, mutation, subscription)
+        .extension(atomo::graphql::RequestSecurity)
         .data(client)
         .data(pool)
         .data(job_store);
@@ -165,6 +169,7 @@ impl atomo::workflow::MutationExecutor for GraphQlMutationExecutor {
 /// Decide whether an authenticated request may use a given `x-tenant-id` header value.
 /// A user bound to a tenant (`user_tenant = Some`) may ONLY use its own tenant; a user with no
 /// binding may pass any (legacy/single-tenant-admin). Security-critical — unit-tested below.
+#[cfg(test)]
 fn tenant_header_allowed(user_tenant: Option<&str>, header_tenant: &str) -> bool {
     user_tenant.is_none_or(|ut| ut == header_tenant)
 }
@@ -195,11 +200,15 @@ pub async fn graphql_handler(
 
     // Extract auth user from request extensions (set by auth middleware)
     let auth_user = req.extensions().get::<crate::auth::AuthUser>().cloned();
-    let tenant_id = req
+    let tenant_id = match req
         .headers()
         .get("x-tenant-id")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from);
+        .map(|v| v.to_str())
+        .transpose()
+    {
+        Ok(value) => value.map(String::from),
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
 
     // Parse GraphQL request from body
     let body = axum::body::to_bytes(req.into_body(), 2_000_000)
@@ -210,29 +219,18 @@ pub async fn graphql_handler(
         Err(_) => async_graphql::Request::new(""),
     };
 
-    // Inject user role into GraphQL context
-    let mut user_tenant: Option<String> = None;
-    let authenticated = auth_user.is_some();
-    if let Some(user) = auth_user {
-        inner = inner.data(UserRoleCtx(format!("{:?}", user.role)));
-        inner = inner.data(atomo::graphql::UserIdCtx(user.id.clone()));
-        user_tenant = user.tenant_id.clone();
+    let principal = match crate::auth::request_principal(auth_user.as_ref(), tenant_id.as_deref()) {
+        Ok(p) => p,
+        Err(status) => return status.into_response(),
+    };
+    if let Some(role) = &principal.role {
+        inner = inner.data(UserRoleCtx(role.clone()));
     }
-    // Tenant scoping (S3b): only honor x-tenant-id for AUTHENTICATED requests, AND — when the
-    // user has a tenant binding — only if the header matches it. A user bound to tenant A cannot
-    // act as tenant B. Users without a binding (user_tenant=None) may still pass a header (legacy
-    // / single-tenant-admin behavior). A mismatch drops the header (scoping falls back to none →
-    // the request sees only unscoped/own rows, never another tenant's).
-    // The tenant we'll bind for DB-enforced RLS (when ATOMO_ENABLE_RLS is on). Only set when
-    // the header is allowed for this user — same gate as TenantCtx, so app-layer scoping and
-    // RLS binding can never disagree.
-    let mut rls_scope: Option<String> = None;
-    if let Some(tid) = tenant_id {
-        let allowed = authenticated && tenant_header_allowed(user_tenant.as_deref(), &tid);
-        if allowed {
-            rls_scope = Some(tid.clone());
-            inner = inner.data(atomo::graphql::TenantCtx(tid));
-        }
+    if let Some(id) = &principal.user_id {
+        inner = inner.data(atomo::graphql::UserIdCtx(id.clone()));
+    }
+    if let Some(tenant) = &principal.tenant_id {
+        inner = inner.data(atomo::graphql::TenantCtx(tenant.clone()));
     }
 
     let op = inner
@@ -243,7 +241,7 @@ pub async fn graphql_handler(
     // Bind the tenant as a task-local scope for the whole request execution: when RLS is on,
     // every query the resolvers run wraps itself in a transaction that SET LOCALs the tenant.
     // No-op when RLS is off or no tenant is in scope.
-    let resp = atomo::graphql::with_tenant_scope(rls_scope, schema.execute(inner)).await;
+    let resp = atomo::security::with_principal(principal, schema.execute(inner)).await;
     let status = if resp.errors.is_empty() {
         "ok"
     } else {
@@ -392,7 +390,8 @@ pub async fn public_records(
         "where": Value::Object(where_value),
         "limit": limit,
     })));
-    let response = schema.execute(request).await;
+    let response =
+        atomo::security::with_principal(Default::default(), schema.execute(request)).await;
     if !response.errors.is_empty() {
         return Err(StatusCode::FORBIDDEN);
     }
