@@ -1,5 +1,23 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## v0.8.0 release preparation (2026-10-15)
+
+- [x] Verify merged product code 084ac35: all five main CI jobs 38746219853 pass; clean Docker build and container admin smoke 9/9, exit 0. Image SHA and cleanup evidence: `.tmp/postmerge-pr82/merge-result.json`. PR #82 merged and its branch deleted.
+- [x] Audit release preflight: registry client/worker 0.7.0, create-app 0.1.3; npm whoami fails 401. Choose 0.8.0 for additive APIs and nullable GraphQL update result.
+- [x] Repair CLI workflow source ref/targets, existing-Release reuse and publish=false mode. actionlint 1.7.12 and actual workflow shell checks pass (reuse/create/error propagation/asset naming/rerun). Evidence: `.tmp/release-080/workflow-shell-results.json`.
+- [x] Remote non-publishing CLI run 38751504410 passes on e128a81 for Linux/macOS/Windows. All three archives downloaded; binary headers confirm x86_64 ELF/Mach-O/PE. Native version checks pass, Release creation/uploads skipped. Evidence: `.tmp/release-080/{cli-result,cli-artifact-audit}.json`.
+- [x] Cut changelog and bump all nine Rust crates, root and five npm manifests to 0.8.0. Regenerated both lockfiles; audit proves only nine workspace version changes in Cargo.lock and no pnpm-lock diff.
+- [x] Local Rust check and all-target strict clippy pass; all three npm tarballs built and inspected (SDK exports and create-app templates present), real scaffolder tests 9/9. Evidence: `.tmp/release-080/{check,clippy}.log`, `npm-pack-results.json`.
+- [x] Rebuilt real Rust CLI reports atomo 0.8.0; init generates client-sdk ^0.8.0. Docs build (13.31s), fmt/diff checks pass. Evidence: `.tmp/release-080/{cli-version,cli-init,docs}.log`.
+- [x] Open release PR https://github.com/atomo-cc/atomo/pull/83; all five jobs pass on e128a81: https://github.com/atomo-cc/atomo/actions/runs/38751496488 (includes PostgreSQL and all admin modes). This final handoff only updates TODO/plan; tested code/dependencies/workflow remain identical.
+- [x] Restore npm authentication using the user-supplied granular token (kept outside the repository). npm whoami succeeds as hixbuilder, listed maintainer for all three packages. Organization-level access listing returns 403; direct publishing and token write/2FA settings are not yet exercised. Evidence: `.tmp/release-080/npm-auth-result.json`.
+- [ ] Obtain final release approval for the concrete prepared version/PR/artifacts; then merge/tag/publish and run post-release checks. No publishing performed yet.
+
+Next: confirm publishing v0.8.0 (npm identity has been restored); then merge PR #83, rerun main CI, tag/create Release, publish all three npm
+packages, dispatch Docker/docs/CLI workflows and verify published artifacts.
+Do not enable crates.io publishing. Historical local timeout attribution remains
+unresolved; post-merge Docker packaging is now verified.
+
 ## PR #82 — latest-stable CI follow-up
 
 - [x] Push three focused commits and open https://github.com/atomo-cc/atomo/pull/82; dispatch CI 38736776136 on f2173e5. Frontend passed; lint exposed async-trait 0.1.89 generated-code double_must_use under Rust 1.99.
@@ -10,7 +28,7 @@
 - [x] Remote run 38738387183 retains artifact 11975095386 (1,938,847 bytes); downloaded archive contains 9 screenshots per dev/production/server mode. Smoke passes 9/9 each (21.7s/16.3s/15.6s). Evidence: `.tmp/pr82-e2e-second.log`, `.tmp/pr82-artifact-audit.json`.
 - [x] Push CI correction 349e3aa and verify all five jobs pass on run https://github.com/atomo-cc/atomo/actions/runs/38738387183 (Test Suite including PostgreSQL, Frontend Tests, Admin E2E Smoke, Linting, Build). This handoff only records results in TODO/plan; tested code remains 349e3aa.
 
-Next: review PR #82 for merge. No merge/release performed. Historical timeout attribution and Docker-image packaging verification remain open.
+PR #82 was subsequently merged as 084ac35. Main CI 38746219853 and clean Docker packaging/runtime smoke pass (9/9, exit 0); owned containers/network removed. Historical timeout attribution remains unresolved.
 
 ## 2026-10-15 RLS policy installation
 
@@ -20,9 +38,9 @@ Next: review PR #82 for merge. No merge/release performed. Historical timeout at
 - [x] Updated multi-tenant/config guides, architecture, both roadmaps, README/CHANGELOG and existing env comments. Workspace tests/check, all-target clippy (`-D warnings`), server build, fmt/diff and docs build (17.69s) passed. Evidence: `.tmp/rls-review-20261015/{workspace-tests,workspace-check,workspace-clippy-final,server-build,docs-build}.log`.
 - [x] Verified the real startup failure under both nonprivileged and explicitly allowed superuser roles. Repaired the existing executor fixture to drop widgets (including its superuser skip path); checked zero leftover RLS model tables, then removed the owned PostgreSQL container/volume. Evidence: `.tmp/rls-review-20261015/{bypass-startup,executor-super-skip}.log` and `cleanup.json`.
 
-PR #82 is open and pushed; final-branch remote CI is tracked above.
-Docker-image verification and historical E2E timeout attribution remain open.
-No merge, product version change or publication occurred.
+PR #82 is merged; main CI and Docker verification are recorded above.
+Historical E2E timeout attribution remains open. The new release preparation
+is tracked at the top; no public v0.8.0 publication has occurred.
 
 ## 2026-10-15 constraint parser panic
 

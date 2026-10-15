@@ -133,6 +133,11 @@ skip steps silently — if one doesn't apply, say so.
    `CARGO_PKG_VERSION` — nothing to hand-edit there.
 5. **Regenerate lockfiles** — `cargo check --workspace` (Cargo.lock) and
    `corepack pnpm@8.15.0 install --lockfile-only` (pnpm-lock.yaml).
+   The CLI release workflow also supports a preparation run on the release branch:
+   `gh workflow run release.yml --ref <release-branch> -f tag=<release-branch> -f publish=false`.
+   This builds the requested ref for Linux/macOS/Windows and retains artifacts,
+   without creating a Release or uploading release assets. Check all three builds
+   before publishing; Linux/Windows verify CLI version and macOS checks x86_64.
 
 ### Release
 
