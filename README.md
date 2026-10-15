@@ -38,6 +38,7 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
   **file storage**, and a generated **admin UI** — all self-hostable via Docker.
 - **Solid today (cont.):** opt-in **multi-tenant Row-Level Security** (`ATOMO_ENABLE_RLS`) —
   DB-enforced tenant isolation as defense-in-depth on top of the app-layer `tenant_id` scoping.
+  Policy installation is atomic across model tables and refuses startup on any setup error.
 - **Early / in progress:** AI + pgvector workflows (needs a pgvector env), the
   **multi-project control plane** (`atomo_control_plane` — foundations + `atomo project` CLI;
   not yet a runnable service), and the local-first SDK. See the [roadmap](docs/roadmap.md).
@@ -45,7 +46,7 @@ Atomo is **pre-1.0 but real** — the published Docker image runs a working back
   endpoints); the former AI-search/collaboration/notification mockups were removed —
   restore from commit `ca0123f^` if a real backend for them lands.
 
-Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.6.1`) rather than `:latest` for
+Pin a version (e.g. `ghcr.io/atomo-cc/atomo-server:v0.8.0`) rather than `:latest` for
 reproducibility.
 
 ## 🚀 Quick Start
@@ -114,6 +115,16 @@ Recommended MVP loop:
 Both `packages/atomo-admin-ui` and `packages/atomo-client-sdk` should keep type-checking green; verify the frontend/SDK baseline with `pnpm --filter "./packages/*" test`.
 
 ## 📁 Project Structure
+
+### Scaffold and admin ownership
+
+`packages/create-app` owns schema + Compose scaffolding (`--template crm`);
+the server image serves `packages/atomo-admin-ui` at `/admin`. Do not maintain a
+second frontend shell in a dashboard framework template. The source scaffolder
+accepts `fullstack-atomo` as a compatibility alias for `crm`.
+
+The Admin CI job runs the same smoke in dev, production preview, and through the
+native server's `/admin/` static-asset route. Docker image deployment is a separate check.
 
 ```
 atomo/
@@ -299,7 +310,7 @@ For the detailed roadmap and current progress see docs/roadmap.md; for the platf
 - [x] File upload/storage (`File` field, multipart, content-type validation + magic-byte sniffing, event-sourced; local backend ✅, S3 backend behind the `storage-s3` feature; see docs/guide/advanced/upload-storage-plan)
 - [x] Metered command primitives (`atomo_server::metered`: expiring single-use token store + integer-unit budget ledger + transactional `JobStore::enqueue_tx`) — compose a metered command atomically; library-only, no business policy; see docs/guide/advanced/metered-command-primitives
 - [~] Workflow engine (triggers, conditions, retries, YAML loading, HTTP steps; Mutation/Plugin steps TBD)
-- [~] Multi-tenant isolation (`tenant_id` column + read/write isolation; subscription filtering / user binding / PG RLS TBD)
+- [~] Multi-tenant isolation (`tenant_id` scoping, user binding, subscription filtering and opt-in PG RLS shipped; RLS installation is atomic and fails startup on errors; WS-path RLS and event-store tenant scoping remain TODO)
 - [~] AI workflow integration (pgvector EmbeddingStore; not yet end-to-end verified, needs a pgvector environment)
 - [~] Local-first SDK (offline queue, reconnect sync; not yet integration-tested)
 

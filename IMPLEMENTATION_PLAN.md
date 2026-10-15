@@ -1,5 +1,142 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## v0.8.0 release preparation (2026-10-15)
+
+Prepare v0.8.0 for additive schema/media interfaces and the nullable GraphQL
+update result. Do not publish tags, npm, images, docs or a public Release until
+the prepared release is approved. Current product code 084ac35 passed all five
+main CI jobs (38746219853) and clean Docker build/runtime smoke (9/9, exit 0).
+
+Before version edits, repair CLI release automation: reuse an existing Release,
+checkout the requested ref, build the declared target with the lockfile, and
+support a non-publishing preparation run that retains the three CLI binaries.
+Verify workflow structure/shell logic and build all three targets remotely.
+Then cut changelog, bump every Rust crate/root/package manifest and regenerate
+both lockfiles without unrelated dependency updates. Build and inspect all
+three npm packages (create-app registry is still 0.1.3), run local Rust gates,
+open a release PR and run five-job CI on its exact code. Update TODO immediately
+after each verified step. npm whoami currently returns 401; no secrets are needed
+in chat. Public publishing and consumer upgrades remain separate final steps.
+No application API/config/env/page changes are introduced by release preparation.
+Existing CLI docs, README, contributor release checklist and changelog cover the
+workflow change. Architecture/roadmap component lists and API endpoints are
+unchanged; no new config flag, env variable, crate or docs page needs wiring.
+
+Verified release preparation on e128a81: CI 38751496488 passes all five jobs;
+non-publishing CLI run 38751504410 passes Linux/macOS/Windows. Downloaded artifacts
+have the expected x86_64 ELF/Mach-O/PE headers and recorded SHA-256 hashes. Real
+npm tarballs, packed create-app execution, Rust CLI init/version, strict local
+Rust gates, docs build and release-shell checks pass. PR #83 contains the prepared
+release. The subsequent handoff commit changes only TODO/plan evidence. npm
+identity was subsequently restored as hixbuilder using a user-supplied granular
+token stored outside the repository; all three packages list this maintainer.
+Organization-level access listing returns 403; token write/2FA settings remain
+unverified until a publish is attempted. v0.8.0 tag/Release do not exist, and no
+npm/image/docs publication was performed. Next step requires final release approval. Main CI and artifact publishing/verification must follow the
+release checklist after approval; crates.io remains disabled.
+
+Publication authorized: user confirmed continuing the prepared v0.8.0 release.
+PR #83 merged as 27d71bb; post-merge CI 38756500055 is the next gate. After all
+five jobs pass, publish the source tag/Release, the exact validated npm tarballs
+and the Docker/docs/CLI artifacts. Verify registry integrity and versions,
+versioned/latest image digests and actual image runtime, all CLI assets and live
+docs. Update TODO after each verified phase. Store non-secret evidence under
+.tmp/release-080; credentials stay outside the repository. No consumer deployment
+was selected, and crates.io remains disabled. Final evidence-only repository
+updates must use a follow-up documentation PR, not a direct push to main.
+
+Publication completed on 2026-10-15: v0.8.0 is tagged at 27d71bb and public.
+Post-merge CI 38756500055 and Docker/docs/CLI workflows 38757674572/38757685942/
+38757696375 all pass. All three npm versions/latest tags and SHA512 match the
+prepared tarballs; accepted uploads required async registry processing, not
+repeated submissions. One granular-token configuration handled all three without
+interactive challenges. Public image tags share digest
+sha256:28ee4b32d4925317eedf3ce30bccd44faba62530be4d4dcfc2e28fdaf5d24008;
+actual published-image runtime reports v0.8.0/27d71bb and admin smoke passes 9/9
+(10.7s, exit 0). All release CLI assets are verified, including downloaded Windows
+version 0.8.0; HTTPS docs contain current content. Owned containers/network removed.
+Final evidence is .tmp/release-080/final-release-result.json. A documentation-only
+follow-up reconciles TODO/plan and maintainer batch-authentication guidance,
+including historical next/latest wording; the released tag/artifacts are immutable.
+crates.io and downstream consumer deployment are not part of this publication.
+
+## PR #82 — latest-stable CI follow-up
+
+Historical PR #82 checkpoint on `refactor/admin-scaffold-ownership`: first CI run
+38736776136 tests f2173e5. Rust 1.99 Clippy rejects `#[must_use]` added by the
+locked async-trait 0.1.89 macro (double_must_use); local verification used 1.97.
+Update the local stable toolchain to match CI and use upstream async-trait 0.1.92,
+whose release fixes this generated-code lint. Keep -D warnings and all existing
+CI assertions. Constrain the workspace minimum and update only its necessary
+lockfile resolution, then verify workspace tests/clippy/build and rerun all five
+CI jobs on the final pushed code. No runtime API/config/env/page changes; only
+the changelog and tracking docs need updates for this dependency correction.
+
+The first remote admin job passed all three 9-test modes but uploaded no
+screenshots: Playwright resolved the newly explicit relative outputDir against
+the e2e config directory, while CI collects the package-root test-results path.
+Resolve outputDir explicitly from the admin package root, preserving absolute
+overrides. Verify the resolved configuration and then require a nonempty remote
+artifact. Update the existing contributor instructions; no new spec or env var.
+
+Verified: correction 349e3aa passes all five jobs in CI run 38738387183,
+including PostgreSQL integration and all three admin modes (9/9 each). Artifact
+11975095386 was downloaded and contains 27 screenshots, nine per mode. Local
+Rust 1.99 tests/check/all-target strict clippy/server build and format/diff checks
+also pass. The subsequent handoff commit changes only TODO/plan evidence; runtime
+code and CI configuration remain identical to tested 349e3aa. PR #82 is ready
+for review; merge/release and Docker-image packaging verification are not done.
+
+## 2026-10-15 RLS policy installation
+
+Make opt-in policy installation atomic across the entire requested table set:
+begin one PostgreSQL transaction, execute every policy DDL statement on that
+transaction, propagate errors with table context, and commit only after all
+tables succeed. Existing `server.run()` already propagates installation errors
+before binding the listener. Preserve the disabled no-op and role-bypass flag
+(the latter must not suppress installation errors).
+
+First add failing PostgreSQL regressions for a missing table and a later
+CREATE POLICY failure (missing tenant_id) that must preserve every table's prior
+flags/policies. Add a successful/idempotent installation case and a co-located
+disabled/no-connection test. Verify tests against a new owned PostgreSQL database
+and a non-superuser owner role, then workspace tests/check/clippy, server build,
+formatting and docs. Update the multi-tenant/config guides, architecture,
+roadmaps, README, CHANGELOG and existing env comments. No new env/config fields,
+API endpoints, crates, pages or nav entries; API route documentation is unchanged.
+No release/push/merge or unrelated admin changes are included.
+Verification also checks that RLS fixtures drop their model tables; repair the
+existing executor test's leftover `widgets` cleanup if needed.
+
+Verified: both original failure regressions failed before the fix; final RLS
+suite 6/6 and executor 1/1 passed under a non-superuser/no-BYPASSRLS owner. Real
+server.run() failure also passed with an explicitly allowed superuser connection.
+Workspace default tests/check, all-target clippy, server build, fmt/diff and docs
+build passed. The executor fixture now drops its table, including its superuser
+skip path; zero RLS model fixtures remained before removing the owned database
+container and volume. Evidence is in `.tmp/rls-review-20261015/`. At the
+verification checkpoint no remote CI, release, commit or push had been performed.
+
+## 2026-10-15 constraint parser panic
+
+Reproduced through the real `atomo-cli schema check` entry: a valid CHECK
+expression containing `index(` panics with exit 101 because the constraints
+regex scans inside already-consumed arguments. Search only after the previous
+complete constraint and its chained calls. Preserve public types and diagnostics.
+
+Verification: add parser regressions and a real CLI integration test; first
+observe failure, then run schema tests, CLI integration, dependent server build,
+workspace check/clippy and formatting. Document the fix in modeling and Unreleased.
+No new endpoints, config, environment variables, crates or pages; API docs/nav,
+README feature list, architecture/workspace tree and feature-status roadmaps do
+not change for this parser correction. The other review findings are tracked separately.
+
+
+Verified: schema suite 106/106 and the real CLI integration test passed; workspace
+tests/check/clippy, dependent server build, fmt and diff checks passed.
+
+Independent admin scaffold ownership and runtime coverage: [plan](docs/implementation/admin-scaffold/IMPLEMENTATION_PLAN.md); progress in root TODO.md.
+
 Source: a field report from a consumer that shipped per-user tenants on the
 atomo backend (RLS + PerUser registration + worker tokens). Every item below was
 **verified against this repo's code** before being scheduled — verdicts and code
@@ -247,7 +384,7 @@ Local checkpoint and merge commits are authorized for the M1 main synchronizatio
 
 ## M1 main synchronization
 
-- [ ] Preserve generic M1 changes in an explicit-file checkpoint commit.
+- [x] Preserve generic M1 changes: checkpoint 33cf529; explicit files reviewed and git diff --cached --check passed.
 - [ ] Merge the verified local main commit; preserve SQL literals and atomic, sorted, fail-closed required/global RLS installation.
 - [ ] Run targeted regressions, workspace tests, fresh PostgreSQL tests, dependent builds, fmt, strict clippy and SDK checks in the required environments.
 - [ ] Update local acceptance evidence with commit identities, conflict decisions and remaining limitations.

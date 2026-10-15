@@ -33,6 +33,21 @@
   gating). When adding an admin-visible behavior, extend this ONE spec — no e2e sprawl.
   Run locally: start Postgres + `atomo-server` with the e2e schema env, then `pnpm e2e`
   from `packages/atomo-admin-ui` (see the ci.yml `e2e` job for the exact env).
+  For production runtime coverage, build the actual admin SPA with an empty
+  `VITE_API_URL` (same-origin), then set `E2E_PRODUCTION=1` and run the same spec.
+  Dev and preview inherit the Vite API proxy; configure an isolated backend with
+  `E2E_API_URL` and keep `VITE_API_URL` empty for same-origin browser calls.
+  `E2E_FRONTEND_PORT` and `E2E_OUTPUT_DIR` isolate local runs.
+  Relative `E2E_OUTPUT_DIR` paths are rooted at the admin package (matching CI's
+  screenshot upload path); absolute overrides are preserved.
+  For native-server `/admin/` coverage, build with empty `VITE_API_URL` and
+  `pnpm build:server`, start the e2e server with `ATOMO_ADMIN_DIR` pointing to
+  `dist`, and set `E2E_BASE_URL=http://127.0.0.1:3000/admin/` (plus `E2E_API_URL`
+  if the backend uses another port). The same spec preserves the subpath for
+  navigation; this verifies the server route, not Docker image packaging.
+  A five-minute suite timeout bounds hangs; never count pass markers without exit 0.
+  `packages/create-app` owns schema/Compose scaffolding and tests its real CLI;
+  frontend shell tests are not backend or Docker image verification.
 - CI (`ci.yml`, manual dispatch: `gh workflow run ci.yml --ref main`) runs five jobs:
   Rust Test Suite (incl. the pg-gated pass), Frontend Tests (type-check + vitest for
   all packages), Admin E2E Smoke, Linting (fmt + clippy latest-stable — keep the local
@@ -118,6 +133,11 @@ skip steps silently — if one doesn't apply, say so.
    `CARGO_PKG_VERSION` — nothing to hand-edit there.
 5. **Regenerate lockfiles** — `cargo check --workspace` (Cargo.lock) and
    `corepack pnpm@8.15.0 install --lockfile-only` (pnpm-lock.yaml).
+   The CLI release workflow also supports a preparation run on the release branch:
+   `gh workflow run release.yml --ref <release-branch> -f tag=<release-branch> -f publish=false`.
+   This builds the requested ref for Linux/macOS/Windows and retains artifacts,
+   without creating a Release or uploading release assets. Check all three builds
+   before publishing; Linux/Windows verify CLI version and macOS checks x86_64.
 
 ### Release
 
@@ -136,6 +156,18 @@ skip steps silently — if one doesn't apply, say so.
    cd packages/create-app && npm publish --access public
    ```
    Ensure `npm whoami` shows the right account. `prepublishOnly` rebuilds `dist/`.
+   When package settings allow tokens, a granular token with write permission
+   for all three packages and Bypass 2FA can authenticate the complete batch;
+   keep it outside the repository and load
+   it through a temporary npm user config/environment, never print or commit it.
+   Identity verification alone does not prove publish permissions. A successful
+   upload may be accepted for asynchronous processing: record the submission,
+   poll registry visibility/integrity, and never re-upload a pending version.
+   Compare published `dist.integrity` with the verified tarball and verify each
+   package's dist-tag. Trusted publishing is the longer-term token-free option;
+   direct publishing with bypass-2FA tokens is scheduled to end in January 2027
+   ([npm token policy](https://docs.npmjs.com/about-access-tokens/),
+   [trusted publishing](https://docs.npmjs.com/trusted-publishers/)).
 10. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
     - `docker.yml -f tag=vX.Y.Z` — pushes server image `:vX.Y.Z` **and** moves
       `:latest` in one run (any `v*` tag input publishes both). The `-f tag=` input

@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/create-app",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Scaffold a new Atomo project and run it with no Rust (Docker)",
   "type": "module",
   "bin": {
@@ -34,6 +34,7 @@
     "cli"
   ],
   "scripts": {
+    "test": "node --test tests/scaffold.test.mjs",
     "sync:templates": "node -e \"import('node:fs').then(fs=>fs.cpSync('../../crates/atomo_cli/templates','templates',{recursive:true}))\""
   },
   "repository": {

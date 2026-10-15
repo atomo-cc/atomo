@@ -7,14 +7,18 @@ import react from "@vitejs/plugin-react";
 // same config serves both root (dev) and the /admin subpath (production image).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
-  const backend = new URL(env.VITE_API_URL || "http://localhost:3000");
+  // Tests can select an isolated backend without compiling a cross-origin API
+  // URL into the client. Both dev and preview inherit this same proxy target.
+  const backend = new URL(
+    process.env.E2E_API_URL || env.VITE_API_URL || "http://localhost:3000",
+  );
   if (
     !["http:", "https:"].includes(backend.protocol) ||
     backend.username ||
     backend.password
   ) {
     throw new Error(
-      "VITE_API_URL must be an HTTP(S) backend URL without credentials",
+      "E2E_API_URL or VITE_API_URL must be an HTTP(S) backend URL without credentials",
     );
   }
   const target = backend.toString().replace(/\/$/, "");

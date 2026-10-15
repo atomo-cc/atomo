@@ -1,0 +1,11 @@
+#!/bin/sh
+# Run with WSL; source credentials privately and create a new database each time.
+set -eu
+set -a
+. tests/m1/.env
+set +a
+M1_DATABASE="m1_sync_${1:-full}_$(date +%s)"
+export M1_DATABASE
+printf '%s\n' "$M1_DATABASE" >> tests/m1/sync-databases.txt
+docker compose -f tests/m1/compose.yaml exec -T -e M1_PASSWORD -e M1_DATABASE db sh < tests/m1/init-db.sh > tests/m1/sync-init.log 2>&1
+docker compose -f tests/m1/compose.yaml run --rm rust bash tests/m1/sync-checks.sh "${1:-full}"

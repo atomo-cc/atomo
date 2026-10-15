@@ -143,6 +143,7 @@ jobs:
           ADMIN_EMAIL=admin@e2e.dev ADMIN_PASSWORD=e2e-admin-pass \
           RATE_LIMIT_RPS=1000 RATE_LIMIT_WINDOW_SECS=60 \
           PORT=3000 nohup ./target/debug/atomo-server > server.log 2>&1 &
+          echo $! > server.pid
           for i in $(seq 1 30); do
             curl -sf http://localhost:3000/health && break
             sleep 1
@@ -170,6 +171,51 @@ jobs:
         working-directory: packages/atomo-admin-ui
         run: pnpm e2e
 
+      - name: Build actual admin production SPA
+        working-directory: packages/atomo-admin-ui
+        env:
+          # Match packaged admin: same-origin API calls through preview's Vite proxy.
+          VITE_API_URL: ''
+        run: pnpm build
+
+      - name: Run same admin smoke against production preview
+        working-directory: packages/atomo-admin-ui
+        env:
+          E2E_PRODUCTION: '1'
+          E2E_OUTPUT_DIR: test-results/production
+        run: pnpm e2e
+
+      - name: Build admin for the server subpath
+        working-directory: packages/atomo-admin-ui
+        env:
+          VITE_API_URL: ''
+        run: pnpm build:server
+
+      - name: Run same admin smoke through the server at /admin/
+        working-directory: packages/atomo-admin-ui
+        env:
+          E2E_API_URL: http://127.0.0.1:3001
+          E2E_BASE_URL: http://127.0.0.1:3001/admin/
+          E2E_OUTPUT_DIR: test-results/server
+        run: |
+          kill "$(cat "$GITHUB_WORKSPACE/server.pid")"
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/atomo_e2e \
+          ATOMO_SCHEMA_PATH="$GITHUB_WORKSPACE/packages/atomo-admin-ui/e2e/schema.e2e.ts" \
+          ATOMO_ADMIN_DIR="$GITHUB_WORKSPACE/packages/atomo-admin-ui/dist" \
+          JWT_SECRET=e2e-secret \
+          ADMIN_EMAIL=admin@e2e.dev ADMIN_PASSWORD=e2e-admin-pass \
+          RATE_LIMIT_RPS=1000 RATE_LIMIT_WINDOW_SECS=60 \
+          HOST=127.0.0.1 PORT=3001 \
+          "$GITHUB_WORKSPACE/target/debug/atomo-server" > "$GITHUB_WORKSPACE/server-admin.log" 2>&1 &
+          admin_server_pid=$!
+          trap 'kill "$admin_server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3001/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:3001/health || { cat "$GITHUB_WORKSPACE/server-admin.log"; exit 1; }
+          pnpm e2e
+
       - name: Retain admin screenshots for review
         if: always()
         uses: actions/upload-artifact@v4
@@ -181,7 +227,7 @@ jobs:
 
       - name: Server log on failure
         if: failure()
-        run: cat server.log || true
+        run: cat server.log server-admin.log || true
 
   lint:
     name: Linting

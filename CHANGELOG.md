@@ -14,7 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parse callable builder action returns/object inputs and require authentication, conservative return-model create authorization, tenant context and validated input. Actions remain asynchronous with scoped optional idempotency keys. Worker CRUD requires a live job lease and server-stored delegation; upgrade workers and review old queued jobs.
 - Remove database URL logging from client/server startup.
 
+## [0.8.0] - 2026-10-15
+
+### Changed
+- Canonical fullstack scaffolding stays in `create-app`; `fullstack-atomo` is a compatibility alias for `crm` with the packaged `/admin` UI. Real-entry scaffold tests verify package contents and refusal to overwrite existing projects.
+- Admin CI runs one real-backend smoke spec in dev, production preview, and through the native server at `/admin/`, including deep links. Browser page errors fail the smoke, and login lifecycle diagnostics record only status/timing/failure. npm dependency versions are unchanged.
+
 ### Fixed
+- CLI release builds reuse an existing GitHub Release, check out the requested source ref, build each declared target explicitly, and retain binaries in non-publishing preparation runs.
+- Keep admin smoke screenshots under the package-root artifact directory in CI while preserving absolute local output overrides.
+- Update async-trait to its generated-code `double_must_use` lint fix so strict Clippy checks pass on current stable Rust.
+- With RLS enabled, any policy installation error now aborts startup and rolls back the entire table batch, preserving existing policies and RLS flags. Previously failed DDL was only warned about. The boot role must be able to manage every model table; `ATOMO_RLS_ALLOW_BYPASS_ROLE` does not suppress installation failures.
+- Admin dev/preview smoke can select an isolated proxy backend with existing `E2E_API_URL` while keeping `VITE_API_URL` empty, avoiding unintended cross-origin login calls.
+- Builder-DSL constraints no longer panic when CHECK expressions or partial-index predicates contain `index(`, `unique(` or `check(` inside SQL strings; nested SQL quotes are preserved.
 - GraphQL `update` now returns `null` when the `where` filter matches zero rows instead of a fake-success `{}` — a no-op update (e.g. a tenant-scoped update missing a NULL-tenant global row) is finally observable. Mild schema change: the mutation's return type is now nullable. The admin UI surfaces this as an explicit error.
 - With `ATOMO_ENABLE_RLS` on, the server now refuses to boot when the connected database role is a superuser or has `BYPASSRLS` — Postgres skips RLS policies unconditionally for those roles, leaving tenant isolation silently inert. `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` is the deliberate escape hatch (boots with an `ERROR` log).
 - Rate-limited (`429`) responses now carry a JSON body `{"error":"rate_limited","retryAfter":<secs>}` alongside the `Retry-After` header. Client identity falls back to the real peer address when `X-Forwarded-For` is absent (previously all direct clients shared one bucket), and `ATOMO_TRUST_X_FORWARDED_FOR=false` lets directly-exposed servers ignore a spoofable XFF header.

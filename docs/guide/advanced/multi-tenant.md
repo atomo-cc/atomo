@@ -102,5 +102,36 @@ Relational membership, a user belonging to several tenants, event-store tenant
 APIs, synchronous atomic commands and old-data migration need separate work.
 The server does not infer membership from an arbitrary model or request header.
 
+All model policies are installed in **one transaction**, in a stable table order.
+Any installation error (including a missing table, missing `tenant_id`, or insufficient
+ownership privileges) **refuses startup** and rolls back the entire batch, restoring
+previous policies and RLS flags. Earlier versions only warned and could continue with
+incomplete protection. Repair schema/ownership errors before restarting an RLS-enabled
+deployment; they can no longer be ignored.
+
+### Connect with a non-privileged role (enforced)
+
+`FORCE` covers the table owner, but Postgres **superusers** and roles with **BYPASSRLS**
+skip policies unconditionally — RLS would be silently inert for that connection. So when
+`ATOMO_ENABLE_RLS` is on, the server inspects `pg_roles` at boot and **refuses to start**
+if the connected role is `rolsuper` or `rolbypassrls`. Connect as a non-superuser,
+non-BYPASSRLS role that owns the managed tables (or has the required ownership-role
+membership). PostgreSQL requires table ownership to manage policies; ordinary CRUD
+grants alone do not suffice ([PostgreSQL row security documentation](https://www.postgresql.org/docs/16/ddl-rowsecurity.html)).
+For a new, dedicated database, an administrator can provision its application owner:
+
+```sql
+CREATE ROLE atomo_app LOGIN PASSWORD '…';
+CREATE DATABASE atomo_service OWNER atomo_app;
+-- Connect the server as atomo_app so migrations create tables under that owner.
+```
+
+If the environment genuinely cannot offer a non-privileged role (some managed PGs), set
+`ATOMO_RLS_ALLOW_BYPASS_ROLE=true` to proceed anyway — the refusal is downgraded to a
+loud `ERROR` log at every boot.
+This flag only bypasses the connection-role check; it never suppresses policy
+installation errors. For an existing database, check ownership of each managed
+table before enabling RLS; granting database access does not transfer table ownership.
+
 See [Access control](/guide/advanced/access-hooks), [Workers](/guide/workers),
 and [GraphQL](/api/graphql).
