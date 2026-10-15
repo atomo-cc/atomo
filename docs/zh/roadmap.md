@@ -5,6 +5,10 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 
 # 路线图
 
+脚手架归属：`create-app` 是 schema/Compose 的统一入口，实际管理前端位于
+`atomo-admin-ui`。Admin CI 复用同一份真实后台 smoke，覆盖开发模式、生产预览和
+原生服务的 `/admin/` 静态资源及深链接；Docker 镜像部署仍需单独验证。
+
 本页是 Atomo 的唯一权威路线图，汇总实施状态与接下来要做的工作。长期愿景与架构请参见“愿景与架构”。
 
 - 愿景：/zh/vision
@@ -50,6 +54,7 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 - 实时 GraphQL 订阅（WebSocket，按模型过滤）
 - AI 集成（pgvector EmbeddingStore，相似度搜索）
 - 多租户隔离（TenantCtx 行级作用域）
+- RLS 启动保护：全部模型策略在同一事务安装；缺表、缺少 tenant_id 或策略 DDL 权限错误会回滚并拒绝启动。连接角色绕过开关不会忽略安装失败。
 - GraphQL 解析器中基于 schema access 规则的 RBAC 强制
 - 事件溯源：event_log 持久化与回放；CQRS 读投影
 - 工作流引擎：触发器、条件、重试策略、cron 调度

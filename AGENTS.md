@@ -33,6 +33,21 @@
   gating). When adding an admin-visible behavior, extend this ONE spec — no e2e sprawl.
   Run locally: start Postgres + `atomo-server` with the e2e schema env, then `pnpm e2e`
   from `packages/atomo-admin-ui` (see the ci.yml `e2e` job for the exact env).
+  For production runtime coverage, build the actual admin SPA with an empty
+  `VITE_API_URL` (same-origin), then set `E2E_PRODUCTION=1` and run the same spec.
+  Dev and preview inherit the Vite API proxy; configure an isolated backend with
+  `E2E_API_URL` and keep `VITE_API_URL` empty for same-origin browser calls.
+  `E2E_FRONTEND_PORT` and `E2E_OUTPUT_DIR` isolate local runs.
+  Relative `E2E_OUTPUT_DIR` paths are rooted at the admin package (matching CI's
+  screenshot upload path); absolute overrides are preserved.
+  For native-server `/admin/` coverage, build with empty `VITE_API_URL` and
+  `pnpm build:server`, start the e2e server with `ATOMO_ADMIN_DIR` pointing to
+  `dist`, and set `E2E_BASE_URL=http://127.0.0.1:3000/admin/` (plus `E2E_API_URL`
+  if the backend uses another port). The same spec preserves the subpath for
+  navigation; this verifies the server route, not Docker image packaging.
+  A five-minute suite timeout bounds hangs; never count pass markers without exit 0.
+  `packages/create-app` owns schema/Compose scaffolding and tests its real CLI;
+  frontend shell tests are not backend or Docker image verification.
 - CI (`ci.yml`, manual dispatch: `gh workflow run ci.yml --ref main`) runs five jobs:
   Rust Test Suite (incl. the pg-gated pass), Frontend Tests (type-check + vitest for
   all packages), Admin E2E Smoke, Linting (fmt + clippy latest-stable — keep the local

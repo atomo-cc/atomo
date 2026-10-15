@@ -10,6 +10,7 @@
  - Log format: `LOG_FORMAT=json` for JSON logs; otherwise pretty logs.
  - Security headers: override CSP with `CSP` if needed; disable all security headers via `DISABLE_SECURITY_HEADERS=true` (not recommended).
 - Auth hashing: argon2id (default); legacy bcrypt hashes are verified for migration.
+- RLS: `ATOMO_ENABLE_RLS=true` installs all model policies in one transaction and refuses startup on any installation error. The boot role must manage the tables' policies (CRUD grants alone are insufficient). `ATOMO_RLS_ALLOW_BYPASS_ROLE=true` only bypasses the superuser/BYPASSRLS role check, not installation failures. See [Multi-tenant isolation](/guide/advanced/multi-tenant).
 
 ## Service Config
 - Each service includes metadata in `package.json` under `atomo`:

@@ -1,5 +1,59 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## PR #82 — latest-stable CI follow-up
+
+- [x] Push three focused commits and open https://github.com/atomo-cc/atomo/pull/82; dispatch CI 38736776136 on f2173e5. Frontend passed; lint exposed async-trait 0.1.89 generated-code double_must_use under Rust 1.99.
+- [x] Align local stable with CI (Rust 1.99.0) and update async-trait to upstream 0.1.92. All-target workspace clippy passes with -D warnings; lock audit confirms only async-trait replacement and its new syn 3.0.9 dependency. Evidence: `.tmp/pr82-clippy-rust199.log`, `.tmp/pr82-lock-audit.json`.
+- [x] Latest-stable workspace tests/check and all-target clippy pass; fmt/diff checks pass. Existing PostgreSQL/admin verification is supplemented by the initial remote green jobs. Logs: `.tmp/pr82-{tests,check,clippy}-rust199.log`.
+- [x] Server build on Rust 1.99 passes: `.tmp/pr82-build-rust199.log`.
+- [x] Resolve smoke output directories against the admin package root; actual Playwright configuration checks pass for default, relative and absolute paths.
+- [x] Remote run 38738387183 retains artifact 11975095386 (1,938,847 bytes); downloaded archive contains 9 screenshots per dev/production/server mode. Smoke passes 9/9 each (21.7s/16.3s/15.6s). Evidence: `.tmp/pr82-e2e-second.log`, `.tmp/pr82-artifact-audit.json`.
+- [x] Push CI correction 349e3aa and verify all five jobs pass on run https://github.com/atomo-cc/atomo/actions/runs/38738387183 (Test Suite including PostgreSQL, Frontend Tests, Admin E2E Smoke, Linting, Build). This handoff only records results in TODO/plan; tested code remains 349e3aa.
+
+Next: review PR #82 for merge. No merge/release performed. Historical timeout attribution and Docker-image packaging verification remain open.
+
+## 2026-10-15 RLS policy installation
+
+- [x] PostgreSQL regressions reproduce both failures on a non-superuser owner: missing table and missing tenant_id return success instead of errors (2 failed / 1 success-idempotence passed). Snapshots cover flags and old policies; disabled/no-connection unit passed in workspace tests. Evidence: `.tmp/rls-review-20261015/regressions-before.log`.
+- [x] Install all requested policies in one transaction, with stable table lock order and contextual errors; final PostgreSQL tests prove full-batch rollback of flags and old policies, successful commit and idempotence.
+- [x] Real server.run() rejects damaged policy installation even with the role-bypass flag enabled. Non-superuser/no-BYPASSRLS owner: RLS integration 6/6 + query-executor tenant isolation 1/1 passed. Evidence: `.tmp/rls-review-20261015/{nonprivileged-final,executor-final}.log`.
+- [x] Updated multi-tenant/config guides, architecture, both roadmaps, README/CHANGELOG and existing env comments. Workspace tests/check, all-target clippy (`-D warnings`), server build, fmt/diff and docs build (17.69s) passed. Evidence: `.tmp/rls-review-20261015/{workspace-tests,workspace-check,workspace-clippy-final,server-build,docs-build}.log`.
+- [x] Verified the real startup failure under both nonprivileged and explicitly allowed superuser roles. Repaired the existing executor fixture to drop widgets (including its superuser skip path); checked zero leftover RLS model tables, then removed the owned PostgreSQL container/volume. Evidence: `.tmp/rls-review-20261015/{bypass-startup,executor-super-skip}.log` and `cleanup.json`.
+
+PR #82 is open and pushed; final-branch remote CI is tracked above.
+Docker-image verification and historical E2E timeout attribution remain open.
+No merge, product version change or publication occurred.
+
+## 2026-10-15 constraint parser panic
+
+- [x] Reproduce CHECK/partial-index string parsing failures: new parser regression fails with the same slice panic; real `atomo-cli schema check` probe exits 101.
+- [x] Limit constraint scanning to unconsumed entries and preserve SQL literal quotes; schema suite 106/106 and real CLI integration regression passed.
+- [x] Document quoted expression support and Unreleased fix; workspace tests/check, all-target workspace clippy (`-D warnings`), dependent server build, fmt and diff checks passed. Logs: `.tmp/review-constraint-{workspace-test,check,clippy,server-build}.log`.
+
+Schema fix: `c9b23b8`. Admin scaffold/runtime coverage: `f9a4cca`.
+The verified RLS installation fix is f2173e5; final remote CI and
+Docker-image verification remain open.
+
+## 2026-10-07 Admin scaffold ownership
+
+Plan: docs/implementation/admin-scaffold/IMPLEMENTATION_PLAN.md.
+
+- [x] Inventory: create-app already provides schema + Compose + packaged /admin; reuse it.
+- [x] Add fullstack-atomo compatibility alias, real CLI tests, package-content verification (9/9 Node 20 tests, npm pack dry-run included).
+- [x] Add actual admin production preview mode to existing E2E; fail browser page errors (production TypeScript + Vite build passed; runtime verification below).
+- [x] Verify production build + existing E2E against isolated local backend/database: final same-origin dev 9/9 (21.64s), preview 9/9 twice (21.11s/22.33s), native `/admin/` 9/9 twice (19.06s/18.47s); every run exited 0. Evidence under `.tmp/e2e-review-20261015/`.
+- [ ] Investigate final same-origin production login timeout (case 8, Axios 10s); no retirement based on reruns alone.
+  - [x] Capture safe login timing on disposable backend: 5 direct + 5 proxy requests all 200, 344–406ms; per-browser login lifecycle logged without bodies/headers/tokens. Evidence: `.tmp/e2e-review-20261015/login-timing.json`.
+  - [x] Observe bounded browser/preview cleanup: browser close 97/191ms and preview ~1.6s; both complete processes exit 0. Historical delay not reproduced or attributed; timeouts/retries unchanged.
+  - [x] Two consecutive isolated production-preview runs: 9/9 each, exit 0, 29.50s/26.39s; no overlapping builds. Evidence: `.tmp/e2e-review-20261015/production-{1,2}{.log,-exit.json}`. These passes do not establish the old timeout's cause.
+- [x] Support `/admin/` navigation in the same smoke and verify native server static assets/deep links: two full exit-0 passes. Existing CI job extended; YAML and each e2e shell step pass syntax checks. Documentation build also passed.
+- [x] Decouple test proxy selection from the client URL using existing `E2E_API_URL`; final same-origin dev and two production runs pass with empty `VITE_API_URL`. The earlier absolute-API dev diagnostic hit CORS and was stopped (not a pass); no CORS rules changed.
+- [x] Documentation build (9.14s), workflow YAML/e2e shell syntax and diff checks passed. Owned native backend stopped and labeled disposable database/container volume removed; logs retained. Historical timeout attribution, remote CI and Docker-image verification remain open; no duplicate-template retirement is authorized by local passes alone.
+- [x] Diagnose browser fixture shutdown delay (pw:test log); bounded unchanged-shell run exited 0, 9/9 passed (3.1m). First interrupted run is not counted as a pass. Verify new headless channel and managed preview before retirement.
+- [x] Update README/CHANGELOG/existing public guides/roadmap; VitePress build passed (30.75s, rerun 26.75s; nonblocking large-chunk warning).
+- [x] Historical 2026-10-07 handoff: final 8 passed / 1 failed plus preview teardown timeout; owned backend/database cleaned up. Changes were uncommitted at that checkpoint. Later verified results are recorded above.
+
+
 Plan and per-item evidence/verdicts: `IMPLEMENTATION_PLAN.md`.
 Rule: mark `[x]` only after the item's verification passes. Work in plan order
 (F7 → F6 → F4 → F3 → F1 → F5 → F2); one focused commit/PR per item.

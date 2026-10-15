@@ -1,11 +1,19 @@
 # Architecture Overview
 
+Fullstack schema/Compose scaffolding is owned by `packages/create-app`; the real
+admin frontend is `packages/atomo-admin-ui`, served at `/admin` in the server
+image. The Admin CI job runs the same real-backend smoke suite in dev, production
+preview, and native-server `/admin/` modes. Docker packaging is verified separately. Generic dashboard UI and adapter
+contracts remain in their framework packages.
+
 Automatic table projections use `atomo_projectors::CurrentStateProjection`: startup performs additive column migration and transactional synchronization from current base rows, and notifications refresh individual rows. This read-model maintenance is independent of the guarded historical replay API and does not change event-history coverage.
 
 Atomo is a Content Core: a schema-driven, event-sourced platform.
 
 - Core: Rust workspace in `crates/` — high performance, type-safe.
 - Server: `atomo_server` (Axum + async-graphql) with subscriptions.
+  Opt-in RLS policy installation is transactional across model tables; any setup
+  error rolls back the batch and aborts startup before the listener binds.
 - CLI: `atomo_cli` orchestrates codegen, dev runtime, build, deploy.
 - Schema: `atomo_schema` parses `schema.ts` (SWC) and generates code.
 - Projectors: `atomo_projectors` build read models from the event log.

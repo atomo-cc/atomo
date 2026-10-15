@@ -16,6 +16,8 @@ import { test, expect, request } from '@playwright/test'
 const API = process.env.E2E_API_URL || 'http://localhost:3000'
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL || 'admin@e2e.dev'
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'e2e-admin-pass'
+const ADMIN_BASE = new URL(process.env.E2E_BASE_URL || 'http://localhost/').pathname.replace(/\/$/, '')
+const adminPath = (path: string) => `${ADMIN_BASE}${path}`
 
 let articleId: string
 
@@ -44,7 +46,35 @@ test.beforeAll(async () => {
 })
 
 test.beforeEach(async ({ page }) => {
+  const loginStarted = new Map<import('@playwright/test').Request, number>()
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/auth/login') {
+      loginStarted.set(request, Date.now())
+    }
+  })
+  page.on('requestfinished', request => {
+    const started = loginStarted.get(request)
+    if (started !== undefined) {
+      console.info(`admin login finished in ${Date.now() - started}ms`)
+      loginStarted.delete(request)
+    }
+  })
+  page.on('requestfailed', request => {
+    const started = loginStarted.get(request)
+    if (started !== undefined) {
+      console.warn(`admin login failed after ${Date.now() - started}ms: ${request.failure()?.errorText}`)
+      loginStarted.delete(request)
+    }
+  })
+  page.on('pageerror', error => {
+    // A rendered login shell is not a pass if production JS crashes later.
+    throw new Error(`Admin runtime error: ${error.message}`)
+  })
   page.on('response', response => {
+    const started = loginStarted.get(response.request())
+    if (started !== undefined) {
+      console.info(`admin login response ${response.status()} in ${Date.now() - started}ms`)
+    }
     if (response.status() >= 400) {
       // Paths/status only: never record auth headers, tokens, bodies or query strings.
       console.warn(`admin response ${response.status()} ${new URL(response.url()).pathname}`)
@@ -54,7 +84,7 @@ test.beforeEach(async ({ page }) => {
 
 // Sign in through the real login form once per test (state is not shared).
 async function signIn(page: import('@playwright/test').Page) {
-  await page.goto('/')
+  await page.goto(adminPath('/'))
   await page.locator('input[type=email]').fill(ADMIN_EMAIL)
   await page.locator('input[type=password]').fill(ADMIN_PASSWORD)
   await page.locator('button[type=submit]').click()
@@ -69,16 +99,16 @@ test('dashboard: model labels and registry links preserve create permissions (#1
   await expect(page.getByText('Created At', { exact: true })).toHaveCount(0)
 
   // Current dashboard links to model registries; creation lives on each model page.
-  await page.locator('main a[href="/entities/Article"]').first().click()
+  await page.locator(`main a[href="${adminPath('/entities/Article')}"]`).first().click()
   await expect(page.getByRole('button', { name: /^\+?\s*New(?:\s|$)|^Create(?:\s|$)/ }).first()).toBeVisible()
-  await page.goto('/entities/AuditEvent')
+  await page.goto(adminPath('/entities/AuditEvent'))
   await expect(page.getByRole('heading', { name: 'Audit Event', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /^\+?\s*New(?:\s|$)|^Create(?:\s|$)/ })).toHaveCount(0)
 })
 
 test('list grid: declared listView columns render, timestamps show time-of-day (#8/#9)', async ({ page }) => {
   await signIn(page)
-  await page.goto('/entities/Article')
+  await page.goto(adminPath('/entities/Article'))
 
   // Declared columns, including the timestamp the schema opted into.
   await expect(page.getByText('Created At').first()).toBeVisible()
@@ -92,7 +122,7 @@ test('list grid: declared listView columns render, timestamps show time-of-day (
 
 test('list search is wired to the server and honestly labeled', async ({ page }) => {
   await signIn(page)
-  await page.goto('/entities/Article')
+  await page.goto(adminPath('/entities/Article'))
   await expect(page.getByText('Smoke Article').first()).toBeVisible({ timeout: 15_000 })
 
   const search = page.getByRole('textbox', { name: 'Search', exact: true })
@@ -114,7 +144,7 @@ test('list search is wired to the server and honestly labeled', async ({ page })
 
 test('create form: in:-constrained field renders a dropdown of allowed values', async ({ page }) => {
   await signIn(page)
-  await page.goto('/entities/Article/new')
+  await page.goto(adminPath('/entities/Article/new'))
 
   const combo = page.getByRole('combobox').first()
   await expect(combo).toBeVisible({ timeout: 15_000 })
@@ -125,7 +155,7 @@ test('create form: in:-constrained field renders a dropdown of allowed values', 
 
 test('server-written model: list page offers no create affordance', async ({ page }) => {
   await signIn(page)
-  await page.goto('/entities/AuditEvent')
+  await page.goto(adminPath('/entities/AuditEvent'))
 
   await expect(page.getByRole('heading', { name: 'Audit Event', exact: true })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: /^\+?\s*New(?:\s|$)|^Create(?:\s|$)/ })).toHaveCount(0)
@@ -137,19 +167,19 @@ test('File field with a scalar media-id value renders, never crashes (#12)', asy
   // Record view: the scalar coverImage must not take down the page — it renders
   // as a single-item file preview showing the media id. (Field values live in
   // form inputs, so assert on the heading + the preview text, not input values.)
-  await page.goto(`/entities/Article/${articleId}`)
+  await page.goto(adminPath(`/entities/Article/${articleId}`))
   await expect(page.getByRole('heading', { name: 'Article', exact: true })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('e2e-fake-media-id').first()).toBeVisible()
   await expect(page.getByText(/Something went wrong|is not a function/)).toHaveCount(0)
 
   // List view: the file column falls back to the id text when the image 404s.
-  await page.goto('/entities/Article')
+  await page.goto(adminPath('/entities/Article'))
   await expect(page.getByText('e2e-fake-media-id').first()).toBeVisible({ timeout: 15_000 })
 })
 
 test('observability: real queue numbers render for an admin', async ({ page }) => {
   await signIn(page)
-  await page.goto('/observability')
+  await page.goto(adminPath('/observability'))
 
   await expect(page.getByRole('heading', { name: 'Observability' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('Recent jobs')).toBeVisible()
@@ -161,12 +191,12 @@ test('observability: real queue numbers render for an admin', async ({ page }) =
 // a server with off/metadata/model overrides; default CI configuration saves full details.
 test('settings and observability report runtime audit policy instead of schema defaults', async ({ page }) => {
   await signIn(page)
-  await page.goto('/settings')
+  await page.goto(adminPath('/settings'))
   const expected = process.env.E2E_AUDIT_POLICY_LABEL || 'Full details'
   await expect(page.getByTestId('audit-policy-label')).toHaveText(expected, { timeout: 15_000 })
   const description = await page.getByTestId('audit-policy-description').textContent()
   expect(description).toBeTruthy()
-  await page.goto('/observability')
+  await page.goto(adminPath('/observability'))
   await expect(page.getByTestId('audit-policy-description')).toHaveText(description!)
 })
 
@@ -175,7 +205,7 @@ test('settings does not claim audit saving is enabled when policy cannot be read
   // Inject a diagnostics outage only; login, schema and SPA remain backed by the real server.
   await page.route('**/storage/diagnostics', route => route.fulfill({ status: 503, body: '' }))
   const failedPolicy = page.waitForResponse(response => response.url().includes('/storage/diagnostics') && response.status() === 503)
-  await page.goto('/settings')
+  await page.goto(adminPath('/settings'))
   await failedPolicy
   await expect(page.getByTestId('audit-policy-label')).toHaveText('Unknown')
   await expect(page.getByTestId('audit-policy-description')).toContainText('unavailable')

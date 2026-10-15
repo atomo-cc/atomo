@@ -16,13 +16,13 @@ pub struct ServerConfig {
     /// Mount the ephemeral realtime tier (`/realtime/ws`, `/realtime/health`).
     pub enable_realtime: bool,
     /// Opt-in DB-enforced multi-tenant Row-Level Security (`ATOMO_ENABLE_RLS`). Default off;
-    /// when on, the server installs `CREATE POLICY` per model table at boot and the data layer
+    /// when on, the server installs policies atomically at boot (any error aborts) and the data layer
     /// binds `atomo.tenant_id` per request. See `docs/guide/advanced/multi-tenant.md`.
     pub enable_rls: bool,
     /// Escape hatch for the RLS boot check (`ATOMO_RLS_ALLOW_BYPASS_ROLE`). Default off:
     /// with RLS enabled the server refuses to boot when the connected role is a
     /// superuser or has `BYPASSRLS` (policies would be silently inert). Set true to
-    /// proceed with an ERROR log instead.
+    /// proceed with an ERROR log instead. Policy installation errors still abort startup.
     #[serde(default)]
     pub rls_allow_bypass_role: bool,
     /// Initialize the generic metered-command primitives (`ATOMO_ENABLE_METERED_COMMANDS`).

@@ -53,6 +53,10 @@ async fn find_many_enforces_rls_under_tenant_scope() {
         .unwrap();
     if is_super {
         eprintln!("SKIP rls_executor: superuser role bypasses RLS");
+        sqlx::query("DROP TABLE widgets")
+            .execute(pool)
+            .await
+            .unwrap();
         return;
     }
 
@@ -110,14 +114,10 @@ async fn find_many_enforces_rls_under_tenant_scope() {
         "unbound find_many must see only NULL-tenant rows"
     );
 
-    // Cleanup: disable RLS + remove rows (leave the table; harmless).
+    // The fixture owns this model table; drop its policies and indexes with it.
     std::env::remove_var("ATOMO_ENABLE_RLS");
-    for stmt in [
-        "ALTER TABLE widgets NO FORCE ROW LEVEL SECURITY",
-        "ALTER TABLE widgets DISABLE ROW LEVEL SECURITY",
-        "DROP POLICY IF EXISTS atomo_tenant_isolation ON widgets",
-        "DELETE FROM widgets",
-    ] {
-        sqlx::query(stmt).execute(pool).await.ok();
-    }
+    sqlx::query("DROP TABLE widgets")
+        .execute(pool)
+        .await
+        .unwrap();
 }
