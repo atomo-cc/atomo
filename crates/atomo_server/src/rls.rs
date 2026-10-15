@@ -29,11 +29,12 @@
 //!
 //! # Caveat: table owners / superusers bypass RLS
 //!
-//! By default the table *owner* and superusers bypass RLS. For full enforcement
-//! the application should connect as a non-owner role, or the tables should be
-//! created with `FORCE ROW LEVEL SECURITY`. We emit `FORCE` as well so the
-//! owning role is also constrained — see [`ensure_rls_policies`].
+//! Table owners bypass RLS by default. The boot role needs table-management
+//! privileges to install policies; we emit `FORCE ROW LEVEL SECURITY` so the
+//! owning role is constrained too. Superusers/BYPASSRLS roles still bypass
+//! FORCE, so [`check_connection_role`] rejects them unless explicitly allowed.
 
+use anyhow::Context;
 use sqlx::PgPool;
 
 /// The Postgres session variable the tenant-isolation policy reads.
@@ -129,13 +130,13 @@ pub async fn check_connection_role(pool: &PgPool, allow_bypass: bool) -> anyhow:
 /// - When `enabled` is **false** this is a **no-op** (returns `Ok(())`
 ///   immediately) — nothing is touched, behavior is unchanged. Callers pass
 ///   [`rls_enabled`].
-/// - When **true**, runs [`policy_statements_for`] for every table. Idempotent
-///   and safe to run on every boot.
+/// - When **true**, runs [`policy_statements_for`] for every table in one
+///   transaction. Idempotent and safe to run on every boot.
 ///
-/// A table that does not exist (or has no `tenant_id` column) produces a warning
-/// rather than aborting boot — RLS is opt-in defense-in-depth and must not take
-/// the server down. (In practice every model table has a nullable `tenant_id`;
-/// see `generate_migrations` in the `atomo` crate.)
+/// Any DDL failure (missing table/tenant_id, insufficient ownership, etc.) aborts
+/// startup and rolls back the whole batch, including replaced policies and RLS
+/// flags on earlier tables. The connection role must be able to alter every
+/// table. The separate role-bypass escape hatch does not suppress these errors.
 pub async fn ensure_rls_policies(
     pool: &PgPool,
     table_names: &[String],
@@ -145,28 +146,32 @@ pub async fn ensure_rls_policies(
         return Ok(());
     }
 
-    let mut applied = 0usize;
-    for table in table_names {
-        let mut ok = true;
+    // Startup callers may collect tables from a HashMap. Take DDL locks in a
+    // stable order so concurrent instances do not lock the same tables backwards.
+    let mut tables: Vec<_> = table_names.iter().collect();
+    tables.sort_unstable();
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin RLS policy installation")?;
+    for table in tables {
         for stmt in policy_statements_for(table) {
-            if let Err(e) = sqlx::query(&stmt).execute(pool).await {
-                tracing::warn!(
-                    table = %table,
-                    error = %e,
-                    statement = %stmt,
-                    "RLS setup failed for table — skipping (server continues without RLS on it)"
-                );
-                ok = false;
-                break;
-            }
-        }
-        if ok {
-            applied += 1;
+            // Dropping an uncommitted sqlx transaction rolls back every DDL
+            // change; a failed replacement never leaves the old policy removed.
+            sqlx::query(&stmt)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| {
+                    format!("RLS policy installation failed for table '{table}'; refusing startup")
+                })?;
         }
     }
+    tx.commit()
+        .await
+        .context("commit RLS policy installation")?;
 
     tracing::info!(
-        tables = applied,
+        tables = table_names.len(),
         setting = TENANT_SETTING,
         "Row-Level Security enabled (ATOMO_ENABLE_RLS) — tenant isolation enforced by Postgres"
     );
@@ -269,5 +274,15 @@ mod tests {
     fn disabled_flag_is_default() {
         std::env::remove_var("ATOMO_ENABLE_RLS");
         assert!(!rls_enabled());
+    }
+
+    #[tokio::test]
+    async fn disabled_installation_never_connects() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        ensure_rls_policies(&pool, &["missing_table".into()], false)
+            .await
+            .unwrap();
     }
 }

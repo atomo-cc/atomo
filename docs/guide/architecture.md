@@ -12,6 +12,8 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
 
 - Core: Rust workspace in `crates/` — high performance, type-safe.
 - Server: `atomo_server` (Axum + async-graphql) with subscriptions.
+  Opt-in RLS policy installation is transactional across model tables; any setup
+  error rolls back the batch and aborts startup before the listener binds.
 - CLI: `atomo_cli` orchestrates codegen, dev runtime, build, deploy.
 - Schema: `atomo_schema` parses `schema.ts` (SWC) and generates code.
 - Projectors: `atomo_projectors` build read models from the event log.

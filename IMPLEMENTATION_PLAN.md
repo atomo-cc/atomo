@@ -1,5 +1,35 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## 2026-10-15 RLS policy installation
+
+Make opt-in policy installation atomic across the entire requested table set:
+begin one PostgreSQL transaction, execute every policy DDL statement on that
+transaction, propagate errors with table context, and commit only after all
+tables succeed. Existing `server.run()` already propagates installation errors
+before binding the listener. Preserve the disabled no-op and role-bypass flag
+(the latter must not suppress installation errors).
+
+First add failing PostgreSQL regressions for a missing table and a later
+CREATE POLICY failure (missing tenant_id) that must preserve every table's prior
+flags/policies. Add a successful/idempotent installation case and a co-located
+disabled/no-connection test. Verify tests against a new owned PostgreSQL database
+and a non-superuser owner role, then workspace tests/check/clippy, server build,
+formatting and docs. Update the multi-tenant/config guides, architecture,
+roadmaps, README, CHANGELOG and existing env comments. No new env/config fields,
+API endpoints, crates, pages or nav entries; API route documentation is unchanged.
+No release/push/merge or unrelated admin changes are included.
+Verification also checks that RLS fixtures drop their model tables; repair the
+existing executor test's leftover `widgets` cleanup if needed.
+
+Verified: both original failure regressions failed before the fix; final RLS
+suite 6/6 and executor 1/1 passed under a non-superuser/no-BYPASSRLS owner. Real
+server.run() failure also passed with an explicitly allowed superuser connection.
+Workspace default tests/check, all-target clippy, server build, fmt/diff and docs
+build passed. The executor fixture now drops its table, including its superuser
+skip path; zero RLS model fixtures remained before removing the owned database
+container and volume. Evidence is in `.tmp/rls-review-20261015/`. At the
+verification checkpoint no remote CI, release, commit or push had been performed.
+
 ## 2026-10-15 constraint parser panic
 
 Reproduced through the real `atomo-cli schema check` entry: a valid CHECK

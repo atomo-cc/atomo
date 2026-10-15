@@ -54,6 +54,7 @@ description: Atomo 的实施状态与未来里程碑（权威版本）。
 - 实时 GraphQL 订阅（WebSocket，按模型过滤）
 - AI 集成（pgvector EmbeddingStore，相似度搜索）
 - 多租户隔离（TenantCtx 行级作用域）
+- RLS 启动保护：全部模型策略在同一事务安装；缺表、缺少 tenant_id 或策略 DDL 权限错误会回滚并拒绝启动。连接角色绕过开关不会忽略安装失败。
 - GraphQL 解析器中基于 schema access 规则的 RBAC 强制
 - 事件溯源：event_log 持久化与回放；CQRS 读投影
 - 工作流引擎：触发器、条件、重试策略、cron 调度

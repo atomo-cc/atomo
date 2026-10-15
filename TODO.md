@@ -1,12 +1,26 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## 2026-10-15 RLS policy installation
+
+- [x] PostgreSQL regressions reproduce both failures on a non-superuser owner: missing table and missing tenant_id return success instead of errors (2 failed / 1 success-idempotence passed). Snapshots cover flags and old policies; disabled/no-connection unit passed in workspace tests. Evidence: `.tmp/rls-review-20261015/regressions-before.log`.
+- [x] Install all requested policies in one transaction, with stable table lock order and contextual errors; final PostgreSQL tests prove full-batch rollback of flags and old policies, successful commit and idempotence.
+- [x] Real server.run() rejects damaged policy installation even with the role-bypass flag enabled. Non-superuser/no-BYPASSRLS owner: RLS integration 6/6 + query-executor tenant isolation 1/1 passed. Evidence: `.tmp/rls-review-20261015/{nonprivileged-final,executor-final}.log`.
+- [x] Updated multi-tenant/config guides, architecture, both roadmaps, README/CHANGELOG and existing env comments. Workspace tests/check, all-target clippy (`-D warnings`), server build, fmt/diff and docs build (17.69s) passed. Evidence: `.tmp/rls-review-20261015/{workspace-tests,workspace-check,workspace-clippy-final,server-build,docs-build}.log`.
+- [x] Verified the real startup failure under both nonprivileged and explicitly allowed superuser roles. Repaired the existing executor fixture to drop widgets (including its superuser skip path); checked zero leftover RLS model tables, then removed the owned PostgreSQL container/volume. Evidence: `.tmp/rls-review-20261015/{bypass-startup,executor-super-skip}.log` and `cleanup.json`.
+
+Next: open a PR and verify the final branch with remote CI before
+release; Docker-image verification and historical E2E timeout attribution remain
+open. No push, merge, version change or publication occurred.
+
 ## 2026-10-15 constraint parser panic
 
 - [x] Reproduce CHECK/partial-index string parsing failures: new parser regression fails with the same slice panic; real `atomo-cli schema check` probe exits 101.
 - [x] Limit constraint scanning to unconsumed entries and preserve SQL literal quotes; schema suite 106/106 and real CLI integration regression passed.
 - [x] Document quoted expression support and Unreleased fix; workspace tests/check, all-target workspace clippy (`-D warnings`), dependent server build, fmt and diff checks passed. Logs: `.tmp/review-constraint-{workspace-test,check,clippy,server-build}.log`.
 
-Schema fix committed as `c9b23b8`. Next: address the separate RLS installation finding; remote CI and Docker-image verification remain open.
+Schema fix: `c9b23b8`. Admin scaffold/runtime coverage: `f9a4cca`.
+The verified RLS installation fix is included in this commit; remote CI and
+Docker-image verification remain open.
 
 ## 2026-10-07 Admin scaffold ownership
 
