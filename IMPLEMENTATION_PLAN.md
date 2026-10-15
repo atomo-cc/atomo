@@ -28,9 +28,11 @@ have the expected x86_64 ELF/Mach-O/PE headers and recorded SHA-256 hashes. Real
 npm tarballs, packed create-app execution, Rust CLI init/version, strict local
 Rust gates, docs build and release-shell checks pass. PR #83 contains the prepared
 release. The subsequent handoff commit changes only TODO/plan evidence. npm
-identity still returns 401; v0.8.0 tag/Release do not exist, and no npm/image/docs
-publication was performed. Next step requires restored npm identity and final
-release approval. Main CI and artifact publishing/verification must follow the
+identity was subsequently restored as hixbuilder using a user-supplied granular
+token stored outside the repository; all three packages list this maintainer.
+Organization-level access listing returns 403; token write/2FA settings remain
+unverified until a publish is attempted. v0.8.0 tag/Release do not exist, and no
+npm/image/docs publication was performed. Next step requires final release approval. Main CI and artifact publishing/verification must follow the
 release checklist after approval; crates.io remains disabled.
 
 ## PR #82 — latest-stable CI follow-up

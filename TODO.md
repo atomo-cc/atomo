@@ -10,11 +10,10 @@
 - [x] Local Rust check and all-target strict clippy pass; all three npm tarballs built and inspected (SDK exports and create-app templates present), real scaffolder tests 9/9. Evidence: `.tmp/release-080/{check,clippy}.log`, `npm-pack-results.json`.
 - [x] Rebuilt real Rust CLI reports atomo 0.8.0; init generates client-sdk ^0.8.0. Docs build (13.31s), fmt/diff checks pass. Evidence: `.tmp/release-080/{cli-version,cli-init,docs}.log`.
 - [x] Open release PR https://github.com/atomo-cc/atomo/pull/83; all five jobs pass on e128a81: https://github.com/atomo-cc/atomo/actions/runs/38751496488 (includes PostgreSQL and all admin modes). This final handoff only updates TODO/plan; tested code/dependencies/workflow remain identical.
-- [ ] Restore npm authentication and confirm expected publishing account.
+- [x] Restore npm authentication using the user-supplied granular token (kept outside the repository). npm whoami succeeds as hixbuilder, listed maintainer for all three packages. Organization-level access listing returns 403; direct publishing and token write/2FA settings are not yet exercised. Evidence: `.tmp/release-080/npm-auth-result.json`.
 - [ ] Obtain final release approval for the concrete prepared version/PR/artifacts; then merge/tag/publish and run post-release checks. No publishing performed yet.
 
-Next: complete npm login (final check still returns 401) and confirm publishing
-v0.8.0; then merge PR #83, rerun main CI, tag/create Release, publish all three npm
+Next: confirm publishing v0.8.0 (npm identity has been restored); then merge PR #83, rerun main CI, tag/create Release, publish all three npm
 packages, dispatch Docker/docs/CLI workflows and verify published artifacts.
 Do not enable crates.io publishing. Historical local timeout attribution remains
 unresolved; post-merge Docker packaging is now verified.
