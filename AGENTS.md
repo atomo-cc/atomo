@@ -156,6 +156,18 @@ skip steps silently — if one doesn't apply, say so.
    cd packages/create-app && npm publish --access public
    ```
    Ensure `npm whoami` shows the right account. `prepublishOnly` rebuilds `dist/`.
+   When package settings allow tokens, a granular token with write permission
+   for all three packages and Bypass 2FA can authenticate the complete batch;
+   keep it outside the repository and load
+   it through a temporary npm user config/environment, never print or commit it.
+   Identity verification alone does not prove publish permissions. A successful
+   upload may be accepted for asynchronous processing: record the submission,
+   poll registry visibility/integrity, and never re-upload a pending version.
+   Compare published `dist.integrity` with the verified tarball and verify each
+   package's dist-tag. Trusted publishing is the longer-term token-free option;
+   direct publishing with bypass-2FA tokens is scheduled to end in January 2027
+   ([npm token policy](https://docs.npmjs.com/about-access-tokens/),
+   [trusted publishing](https://docs.npmjs.com/trusted-publishers/)).
 10. **Dispatch workflows** (all from `--ref main` to avoid Pages protection rules):
     - `docker.yml -f tag=vX.Y.Z` — pushes server image `:vX.Y.Z` **and** moves
       `:latest` in one run (any `v*` tag input publishes both). The `-f tag=` input

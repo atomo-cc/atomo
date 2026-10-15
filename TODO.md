@@ -1,6 +1,6 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
-## v0.8.0 release preparation (2026-10-15)
+## v0.8.0 released (2026-10-15)
 
 - [x] Verify merged product code 084ac35: all five main CI jobs 38746219853 pass; clean Docker build and container admin smoke 9/9, exit 0. Image SHA and cleanup evidence: `.tmp/postmerge-pr82/merge-result.json`. PR #82 merged and its branch deleted.
 - [x] Audit release preflight: registry client/worker 0.7.0, create-app 0.1.3; npm whoami fails 401. Choose 0.8.0 for additive APIs and nullable GraphQL update result.
@@ -10,13 +10,28 @@
 - [x] Local Rust check and all-target strict clippy pass; all three npm tarballs built and inspected (SDK exports and create-app templates present), real scaffolder tests 9/9. Evidence: `.tmp/release-080/{check,clippy}.log`, `npm-pack-results.json`.
 - [x] Rebuilt real Rust CLI reports atomo 0.8.0; init generates client-sdk ^0.8.0. Docs build (13.31s), fmt/diff checks pass. Evidence: `.tmp/release-080/{cli-version,cli-init,docs}.log`.
 - [x] Open release PR https://github.com/atomo-cc/atomo/pull/83; all five jobs pass on e128a81: https://github.com/atomo-cc/atomo/actions/runs/38751496488 (includes PostgreSQL and all admin modes). This final handoff only updates TODO/plan; tested code/dependencies/workflow remain identical.
-- [x] Restore npm authentication using the user-supplied granular token (kept outside the repository). npm whoami succeeds as hixbuilder, listed maintainer for all three packages. Organization-level access listing returns 403; direct publishing and token write/2FA settings are not yet exercised. Evidence: `.tmp/release-080/npm-auth-result.json`.
-- [ ] Obtain final release approval for the concrete prepared version/PR/artifacts; then merge/tag/publish and run post-release checks. No publishing performed yet.
+- [x] Restore npm authentication using the user-supplied granular token (kept outside the repository). npm whoami succeeds as hixbuilder, listed maintainer for all three packages. Organization-level access listing returns 403; subsequent non-interactive publication of all three packages succeeds with the supplied token. Evidence: `.tmp/release-080/npm-auth-result.json`.
+- [x] Final publication approved by the user; PR #83 squash-merged as 27d71bb. Tested release source e128a81 differs only in TODO/plan evidence.
+- [x] All five post-merge main CI jobs 38756500055 pass on 27d71bb, including PostgreSQL and three admin modes. Evidence: `.tmp/release-080/main-ci-result.json`.
+- [x] v0.8.0 tag points to 27d71bb and GitHub Release notes are public: https://github.com/atomo-cc/atomo/releases/tag/v0.8.0. Artifact publication/verification remains separately tracked.
+- [x] Publish and verify client-sdk 0.8.0 using the validated tarball. Registry SHA512 and latest=0.8.0 verified; `.tmp/release-080/npm-publication.json`.
+- [x] Publish and verify worker-sdk 0.8.0 using the validated tarball. Registry SHA512 and latest=0.8.0 verified; `.tmp/release-080/npm-publication.json`.
+- [x] Publish and verify create-app 0.8.0 using the validated tarball. Registry SHA512 and latest=0.8.0 verified; `.tmp/release-080/npm-publication.json`.
+- [x] Dispatch Docker 38757674572 (explicit tag=v0.8.0), docs 38757685942 and CLI 38757696375 (publish=true) from main; all run on 27d71bb.
+- [x] Docker workflow 38757674572 succeeds, publishing v0.8.0 and latest. Public pull/digest/runtime checks are tracked below.
+- [x] Documentation workflow 38757685942 deploys successfully; public HTTPS CLI/modeling/multi-tenant pages return 200 with release content markers, including publish=false. Historical DNS/TLS blocker is no longer observed. Evidence: `.tmp/release-080/docs-live-result.json`.
+- [x] CLI workflow 38757696375 passes; GitHub Release contains Linux/macOS/Windows x86_64 binaries. Published-asset download verification is tracked separately below.
+- [x] Public v0.8.0/latest images pull successfully with the same image ID; release version/SHA and nonroot runtime verified. Published-image admin smoke 9/9 (10.7s), exit 0; nine screenshots and owned-resource cleanup verified. Public docs checked above. Evidence: `.tmp/release-080/{published-image-result,docker-runtime-result,docs-live-result}.json`.
+- [x] All three published CLI assets verified: Linux/macOS digests match reviewed x86_64 artifacts; downloaded Windows PE hash matches Release digest and --version reports atomo 0.8.0. Evidence: `.tmp/release-080/release-assets-result.json`.
+- [x] Final release evidence recorded in `.tmp/release-080/final-release-result.json`; owned verification containers/network are verified absent. Consumer deployments are outside this release; no specific deployment target was authorized.
 
-Next: confirm publishing v0.8.0 (npm identity has been restored); then merge PR #83, rerun main CI, tag/create Release, publish all three npm
-packages, dispatch Docker/docs/CLI workflows and verify published artifacts.
-Do not enable crates.io publishing. Historical local timeout attribution remains
-unresolved; post-merge Docker packaging is now verified.
+Release complete: npm client-sdk/worker-sdk/create-app 0.8.0, Docker v0.8.0/latest,
+three CLI assets and public HTTPS docs are verified. Same token completed the
+three npm submissions without interactive challenges; async registry visibility
+was polled, with no duplicate upload. crates.io remains disabled. No downstream
+deployment was selected. Historical local timeout attribution is still open
+and does not negate the passing release gates. Published artifacts stay pinned
+to 27d71bb; the final handoff changes only maintainer documentation and records.
 
 ## PR #82 — latest-stable CI follow-up
 
