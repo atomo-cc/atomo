@@ -388,3 +388,10 @@ Local checkpoint and merge commits are authorized for the M1 main synchronizatio
 - [x] Merge 039f2f0 incorporates verified local main; SQL literal regression and schema RLS rollback/startup tests passed.
 - [x] Targeted parser (111), RLS (7), HTTP matrix, workspace (325), fresh PG (105), builds, fmt, strict clippy and SDK (23 + type checks) passed; all Rust in WSL Docker.
 - [x] Local report/evidence updated with commit identities, four conflict decisions, exact results and remaining membership/multi-tenant limits.
+
+## M1 access property review revision
+
+- [x] Initial runtime loader regressions failed 4/4; expanded 5-test suite also failed on archived original sources, explicitly including duplicate orders (Cargo 101).
+- [x] Shared structural properties passed runtime cases and schema tests; quoted/escaped keys, comments, duplicates and unsupported syntax covered.
+- [x] Real runtime Atomo build + PostgreSQL/RLS + production HTTP verified admin/owner allow and non-admin/non-owner denial on reads and writes, for both formats (exit 0).
+- [x] Final WSL Docker workspace 333, fresh PG 106, server/CLI build, fmt and strict clippy all passed (exit 0, no exceptions). Local evidence preserves earlier failures and historical 325/105 results; stop for review.

@@ -91,7 +91,7 @@ impl TypeScriptParser {
         // Unified metadata pass: parse tableName / validation / access / relationships from each
         // model's block in the `export const schema` object in ONE place (replaces the prior
         // three near-identical brace-walk passes — the recurring source of parse-layer bugs).
-        let mut meta = Self::parse_model_metadata(content);
+        let mut meta = Self::parse_model_metadata(content)?;
         for model in &mut models {
             if let Some(m) = meta.remove(&model.name) {
                 if let Some(policy) = m.tenant_policy {
@@ -103,7 +103,12 @@ impl TypeScriptParser {
                 if !m.validation.is_empty() {
                     model.validation = m.validation;
                 }
-                // DSL/defineModel access takes precedence if already set.
+                // Multiple independent access sources are ambiguous; never pick a winner.
+                anyhow::ensure!(
+                    model.access.is_none() || m.access.is_none(),
+                    "Multiple access declarations for model {}",
+                    model.name
+                );
                 if model.access.is_none() {
                     model.access = m.access;
                 }
@@ -119,14 +124,11 @@ impl TypeScriptParser {
             }
         }
 
-        if let Some(block) = Self::sub_block(content, "models") {
-            for (name, definition) in Self::top_level_entries(&block) {
+        {
+            for (name, definition) in crate::object_syntax::legacy_models(content)? {
                 if let Some(model) = models.iter_mut().find(|m| m.name == name) {
                     model.tenant_policy =
                         crate::schema_dsl_parser::parse_tenant_policy(&definition)?;
-                    if Self::sub_block(&definition, "access").is_some() {
-                        model.access = crate::schema_dsl_parser::parse_access_block(&definition)?;
-                    }
                     if let Some(access) = &model.access {
                         for rule in [&access.create, &access.read, &access.update, &access.delete]
                             .into_iter()
@@ -145,14 +147,10 @@ impl TypeScriptParser {
     /// `export const schema = { models: { Name: { ... } } }` object. One robust brace-balanced
     /// extractor for ALL features — the prior code had three separate passes that each re-walked
     /// braces and drifted (quote-style, format), causing the validation/RBAC/tableName silent gaps.
-    fn parse_model_metadata(content: &str) -> HashMap<String, ModelMetadata> {
+    fn parse_model_metadata(content: &str) -> Result<HashMap<String, ModelMetadata>> {
         let mut result: HashMap<String, ModelMetadata> = HashMap::new();
         // Locate the `models: {` container and iterate its direct children (model blocks).
-        let models_block = match Self::sub_block(content, "models") {
-            Some(b) => b,
-            None => return result,
-        };
-        for (name, block) in Self::top_level_entries(&models_block) {
+        for (name, block) in crate::object_syntax::legacy_models(content)? {
             let mut m = ModelMetadata::default();
             let tenant = Regex::new(r#"tenant\s*:\s*['"]([^'"]+)['"]"#).unwrap();
             if let Some(c) = tenant.captures(&block) {
@@ -174,32 +172,7 @@ impl TypeScriptParser {
                     m.validation.insert(c[1].to_string(), c[2].to_string());
                 }
             }
-            // access: { create: 'roles', ... }
-            if let Some(ablock) = Self::sub_block(&block, "access") {
-                let op =
-                    Regex::new(r#"(create|read|update|delete)\s*:\s*['"]([^'"]+)['"]"#).unwrap();
-                let mut ac = AccessControl {
-                    create: None,
-                    read: None,
-                    update: None,
-                    delete: None,
-                };
-                let mut any = false;
-                for c in op.captures_iter(&ablock) {
-                    let rule = Some(AccessRule::Boolean(c[2].to_string()));
-                    any = true;
-                    match &c[1] {
-                        "create" => ac.create = rule,
-                        "read" => ac.read = rule,
-                        "update" => ac.update = rule,
-                        "delete" => ac.delete = rule,
-                        _ => {}
-                    }
-                }
-                if any {
-                    m.access = Some(ac);
-                }
-            }
+            m.access = crate::schema_dsl_parser::parse_access_block(&block)?;
             // relationships: { rel: { type: 'belongsTo', model: 'X', foreignKey: 'y' }, ... }
             if let Some(rblock) = Self::sub_block(&block, "relationships") {
                 for (rel_name, rdef) in Self::top_level_entries(&rblock) {
@@ -258,7 +231,7 @@ impl TypeScriptParser {
                 result.insert(name, m);
             }
         }
-        result
+        Ok(result)
     }
 
     /// Return the brace-balanced body of `key: { ... }` (content between the matching braces),
@@ -526,14 +499,11 @@ impl TypeScriptParser {
         // Membership comes from the models block's entry NAMES — an entry with empty
         // metadata (`Note: {}`) is still a declared model. (Previously membership came
         // from parsed metadata keys, so an all-defaults entry silently dropped the model.)
-        let declared: std::collections::HashSet<String> = Self::sub_block(content, "models")
-            .map(|b| {
-                Self::top_level_entries(&b)
-                    .into_iter()
-                    .map(|(n, _)| n)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let declared: std::collections::HashSet<String> =
+            crate::object_syntax::legacy_models(content)?
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
         let mut warnings = Vec::new();
         let mut schema_models = HashMap::new();
         for model in models {
@@ -1213,16 +1183,6 @@ fn model_block_diagnostics(content: &str, models: &HashMap<String, Model>) -> Ve
                 ));
             }
         }
-        if let Some(access_block) = TypeScriptParser::sub_block(&block, "access") {
-            const ACCESS_OPS: &[&str] = &["create", "read", "update", "delete"];
-            for key in top_level_keys(&access_block) {
-                if !ACCESS_OPS.contains(&key.as_str()) {
-                    warnings.push(format!(
-                        "schema.models.{name}.access: unrecognized key '{key}' ignored (known: create, read, update, delete)"
-                    ));
-                }
-            }
-        }
         if let Some(validation_block) = TypeScriptParser::sub_block(&block, "validation") {
             if let Some(model) = models.get(&name) {
                 for key in top_level_keys(&validation_block) {
@@ -1316,7 +1276,7 @@ mod validation_tests {
           }
         };
         "#;
-        let meta = TypeScriptParser::parse_model_metadata(content);
+        let meta = TypeScriptParser::parse_model_metadata(content).unwrap();
         let c = meta.get("Contact").expect("Contact metadata missing");
         // tableName
         assert_eq!(c.table_name.as_deref(), Some("contacts"));
@@ -1831,17 +1791,13 @@ mod validation_tests {
     }
 
     #[test]
-    fn warns_on_spread_in_models() {
+    fn rejects_spread_in_models() {
         let content = r#"
         const base = {};
         export interface Post { id: string; }
         export const schema = { models: { Post: {}, ...base } };
         "#;
-        let schema = TypeScriptParser::new().parse_schema(content).unwrap();
-        assert!(schema
-            .warnings
-            .iter()
-            .any(|w| w.contains("spread expression in schema.models")));
+        assert!(TypeScriptParser::new().parse_schema(content).is_err());
     }
 
     #[test]

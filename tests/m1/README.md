@@ -38,3 +38,5 @@ It does not start a separate listening server or a browser.
 `final-checks.sh` runs the final Rust commands in one container and records each
 actual Cargo exit code in `final-results.jsonl`. Its overall status excludes the
 known strict-lint failure; always inspect the individual results before review.
+
+The access-property revision uses wsl --exec sh tests/m1/access-host.sh targeted and then wsl --exec sh tests/m1/access-host.sh full. Each creates a fresh database without removing any existing database or volume. Individual actual Cargo exit codes are recorded in local access-results.jsonl; the script returns failure if any command fails. Runtime-loader tests include the real Atomo builder's rejection before database initialization; HTTP tests cover roles and owners for both schema formats.

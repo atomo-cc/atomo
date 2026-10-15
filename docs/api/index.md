@@ -176,3 +176,5 @@ Atomo is pre-1.0; APIs may change between releases. There is no hosted API servi
 ### Unreleased request security changes
 
 GraphQL and callable actions bind a verified user tenant when the header is absent; a conflicting tenant returns 403. Worker CRUD requires an active leased job with server-stored delegation. Callable action authentication, input validation, async semantics and retry rules are documented in [Workers](/guide/workers); tenant/global compatibility is documented in [Multi-tenant](/guide/advanced/multi-tenant).
+
+The unreleased security parser shares structural object-property recognition across builder and legacy schemas; quoted keys preserve rules, while duplicate or dynamic security declarations fail loading. See [schema modeling](/guide/modeling).

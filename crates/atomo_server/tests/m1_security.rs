@@ -12,9 +12,9 @@ const SCHEMA: &str = r#"
 import { model, text, number, relation, action, allow } from '@atomo-cc/schema';
 export const Parent = model('m1_parents', {
  fields: { id: text().id(), ownerId: text().fromAuth('userId'), tenantId: text().fromAuth('tenantId'), title: text().required(), quota: number().required().min(0) },
- access: {
+ 'access' /* property separator */ : {
   create: allow.authenticated(),
-  read: allow.any([allow.owner('ownerId'), allow.role('admin')]),
+  'read' : allow.any([allow.owner('ownerId'), allow.role('admin')]),
   update: allow.all([allow.authenticated(), allow.any([allow.owner('ownerId'), allow.role('admin')])]),
   delete: allow.owner('ownerId'),
  },
@@ -100,6 +100,150 @@ async fn create(app: &Router, token: &str, model: &str, fields: &str) -> Value {
         format!("mutation {{ create(model: \"{model}\", data: {{{fields}}}) }}"),
     )
     .await
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; tests/m1/compose.yaml"]
+async fn access_property_variants_enforce_http_roles_and_owners() {
+    let url = std::env::var("DATABASE_URL").unwrap();
+    for builder in [true, false] {
+        let options = [
+            (
+                "AdminNote",
+                "access_admin_notes",
+                r#"'access' /* separator */ : {create: allow.authenticated(), "read" : 'admin', update: 'admin'}"#,
+            ),
+            (
+                "OwnerNote",
+                "access_owner_notes",
+                r#""access" \n : {create: allow.authenticated(), 'read': allow.owner('ownerId'), update: allow.owner('ownerId')}"#,
+            ),
+        ];
+        let mut source = if builder {
+            "import {model,text,allow} from '@atomo-cc/schema';\n".to_owned()
+        } else {
+            String::new()
+        };
+        let mut metadata = Vec::new();
+        for (name, table, access) in options {
+            let access = access.replace("\\n", "\n");
+            if builder {
+                source.push_str(&format!("export const {name} = model('{table}', {{fields: {{id:text().id(),ownerId:text(),title:text()}}, {access}}});\n"));
+            } else {
+                source.push_str(&format!("export interface {name} {{\n id:string;\n ownerId:string;\n title:string;\n}}\n"));
+                metadata.push(format!("'{name}': {{tableName:'{table}', {access}}}"));
+            }
+        }
+        if !builder {
+            source.push_str(&format!(
+                "export const schema = {{'models': {{{}}}}};",
+                metadata.join(",")
+            ));
+        }
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        sqlx::raw_sql("DROP TABLE IF EXISTS access_admin_notes, access_owner_notes")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let atomo = atomo::Atomo::builder()
+            .schema_content(&source)
+            .database_url(&url)
+            .enable_migrations(true)
+            .build()
+            .await
+            .unwrap();
+        atomo_server::ensure_platform_tables(&pool).await.unwrap();
+        atomo_server::rls::ensure_schema_rls(&pool, atomo.schema())
+            .await
+            .unwrap();
+        let auth = atomo_server::auth::HttpAuthService::new(
+            &uuid::Uuid::new_v4().to_string(),
+            pool.clone(),
+        );
+        let mut users = Vec::new();
+        for role in ["viewer", "viewer", "admin"] {
+            let id = atomo_core::EntityId::new().to_string();
+            let email = format!("{id}@example.invalid");
+            sqlx::query("INSERT INTO users (id,email,password_hash,first_name,last_name,role,tenant_id) VALUES ($1,$2,'unused','Test','Principal',$3,'a')")
+                .bind(&id).bind(&email).bind(role).execute(&pool).await.unwrap();
+            let (token, _) = auth.issue_tokens(&id, &email, role).await.unwrap();
+            users.push((id, token));
+        }
+        let redirects = Arc::new(atomo_server::public_read_redirects::RedirectStore::new(
+            pool.clone(),
+        ));
+        redirects.init().await.unwrap();
+        let app = atomo_server::handlers::create_router(
+            atomo_server::handlers::build_extended_schema(&atomo),
+            atomo,
+            auth,
+            atomo_server::audit::HttpAuditService::new(pool.clone()),
+            atomo_server::auth::RegistrationConfig::disabled(),
+            vec![],
+            redirects,
+        );
+        let mut records = Vec::new();
+        for model in ["AdminNote", "OwnerNote"] {
+            let record = create(
+                &app,
+                &users[0].1,
+                model,
+                &format!("ownerId: \"{}\", title: \"private\"", users[0].0),
+            )
+            .await;
+            assert!(
+                record.get("errors").is_none(),
+                "create failed for builder={builder}"
+            );
+            records.push(record["data"]["create"]["id"].as_str().unwrap().to_owned());
+        }
+        for (model, counts) in [("AdminNote", [0, 0, 1]), ("OwnerNote", [1, 0, 0])] {
+            for (user, count) in users.iter().zip(counts) {
+                let result = gql(
+                    &app,
+                    &user.1,
+                    None,
+                    format!("{{records(model:\"{model}\")}}"),
+                )
+                .await;
+                if count == 0 {
+                    assert!(
+                        result.get("errors").is_some()
+                            || result["data"]["records"]
+                                .as_array()
+                                .is_some_and(|rows| rows.is_empty()),
+                        "unauthorized read succeeded, builder={builder}, model={model}"
+                    );
+                } else {
+                    assert!(result.get("errors").is_none());
+                    assert_eq!(
+                        result["data"]["records"].as_array().unwrap().len(),
+                        count,
+                        "builder={builder}, model={model}"
+                    );
+                }
+            }
+        }
+        for (model, id, permitted) in [("AdminNote", &records[0], 2), ("OwnerNote", &records[1], 0)]
+        {
+            for (index, user) in users.iter().enumerate() {
+                let result = gql(&app, &user.1, None, format!("mutation {{update(model:\"{model}\",id:\"{id}\",data:{{title:\"edited\"}})}}")).await;
+                if index == permitted {
+                    assert!(result.get("errors").is_none());
+                    assert_eq!(result["data"]["update"]["title"], "edited");
+                } else {
+                    assert!(
+                        result.get("errors").is_some() || result["data"]["update"].is_null(),
+                        "unauthorized update succeeded, builder={builder}, model={model}"
+                    );
+                }
+            }
+        }
+        sqlx::raw_sql("DROP TABLE access_admin_notes, access_owner_notes")
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
 }
 
 #[tokio::test]

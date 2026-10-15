@@ -135,3 +135,5 @@ The server does not infer membership from an arbitrary model or request header.
 
 See [Access control](/guide/advanced/access-hooks), [Workers](/guide/workers),
 and [GraphQL](/api/graphql).
+
+Access properties in both builder and legacy schema objects are read structurally: bare, single-quoted and double-quoted keys have the same meaning, including whitespace and comments around separators. Duplicate properties (including escaped aliases), dynamic access values, spreads, computed keys, shorthand and methods reject schema loading. Schema/model containers must be inline objects; ambiguous declarations never select the first or last rule. Comments, strings and nested options cannot supply a model's access policy. Missing access retains its existing default semantics; an explicit unsupported declaration never becomes missing access.

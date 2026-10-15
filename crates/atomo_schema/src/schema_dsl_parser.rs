@@ -27,11 +27,15 @@ pub fn is_builder_dsl(content: &str) -> bool {
 /// Parse a builder-DSL schema into a [`Schema`].
 pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
     let actions = parse_action_defs(content)?;
-    let table_to_model = parse_model_names(content);
+    let blocks = crate::object_syntax::model_blocks(content)?;
+    let table_to_model: HashMap<String, String> = blocks
+        .iter()
+        .map(|(name, table, _)| (table.clone(), name.clone()))
+        .collect();
     let mut models = HashMap::new();
     let mut warnings = Vec::new();
 
-    for (model_name, table_name, body) in parse_model_blocks(content) {
+    for (model_name, table_name, body) in blocks {
         let fields = parse_fields_block(&body);
         let access = parse_access_block(&body)?;
         let events = parse_on_block(&body);
@@ -70,7 +74,6 @@ pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
             &body,
             &field_map.keys().cloned().collect(),
         ));
-        warnings.extend(access_block_diagnostics(&model_name, &body, &access));
         warnings.extend(on_block_diagnostics(&model_name, &body));
         warnings.extend(model_option_diagnostics(&model_name, &body));
 
@@ -328,35 +331,6 @@ fn extract_chain_array(chain: &str, method: &str) -> Option<Vec<String>> {
 }
 
 // ── model() parsing ─────────────────────────────────────────────────────────
-
-/// Extract `export const Name = model('table', { ... })` → (ModelName, tableName).
-fn parse_model_names(content: &str) -> HashMap<String, String> {
-    let re =
-        Regex::new(r"export\s+const\s+(\w+)\s*=\s*model\s*\(\s*['\x22]([^'\x22]+)['\x22]").unwrap();
-    let mut map = HashMap::new();
-    for cap in re.captures_iter(content) {
-        map.insert(cap[2].to_string(), cap[1].to_string());
-    }
-    map
-}
-
-/// Extract all model blocks: (ModelName, tableName, objectBody).
-fn parse_model_blocks(content: &str) -> Vec<(String, String, String)> {
-    let re =
-        Regex::new(r"export\s+const\s+(\w+)\s*=\s*model\s*\(\s*['\x22]([^'\x22]+)['\x22]\s*,\s*\{")
-            .unwrap();
-    let mut out = Vec::new();
-
-    for cap in re.captures_iter(content) {
-        let name = cap[1].to_string();
-        let table = cap[2].to_string();
-        let brace_start = cap.get(0).unwrap().end(); // just after the `{`
-        if let Some(body) = balanced_brace_body(content, brace_start) {
-            out.push((name, table, body));
-        }
-    }
-    out
-}
 
 /// Starting right after an opening `{`, return content up to the matching `}`.
 fn balanced_brace_body(content: &str, start: usize) -> Option<String> {
@@ -625,10 +599,14 @@ fn capitalize(s: &str) -> String {
 // ── access block ────────────────────────────────────────────────────────────
 
 pub(crate) fn parse_tenant_policy(body: &str) -> Result<TenantPolicy> {
-    let re = Regex::new(r#"tenant\s*:\s*['"]([^'"]+)['"]"#).unwrap();
-    match re.captures(body).map(|c| c[1].to_string()).as_deref() {
-        None | Some("required") => Ok(TenantPolicy::Required),
-        Some("global") => Ok(TenantPolicy::Global),
+    let props = crate::object_syntax::properties(body)?;
+    match props
+        .iter()
+        .find(|(key, _)| key == "tenant")
+        .map(|(_, value)| value.as_str())
+    {
+        None | Some("'required'" | "\"required\"") => Ok(TenantPolicy::Required),
+        Some("'global'" | "\"global\"") => Ok(TenantPolicy::Global),
         _ => anyhow::bail!("Unsupported tenant policy"),
     }
 }
@@ -709,34 +687,20 @@ fn parse_allow(expr: &str) -> Result<AccessRule> {
 }
 
 pub(crate) fn parse_access_block(body: &str) -> Result<Option<AccessControl>> {
-    let re = Regex::new(r"access\s*:\s*\{").unwrap();
-    let Some(m) = re.find(body) else {
-        anyhow::ensure!(
-            !split_top_level_commas(body)
-                .iter()
-                .any(|entry| entry.trim().starts_with("access:")),
-            "Unsupported access declaration"
-        );
+    let props = crate::object_syntax::properties(body)?;
+    let Some((_, value)) = props.iter().find(|(key, _)| key == "access") else {
         return Ok(None);
     };
-    let inner = balanced_brace_body(body, m.end())
-        .ok_or_else(|| anyhow::anyhow!("Malformed access block"))?;
+    let inner = crate::object_syntax::object_body(value)?;
     let mut rules = HashMap::new();
-    for entry in split_top_level_commas(&inner) {
-        let entry = entry.trim();
-        if entry.is_empty() {
-            continue;
-        }
-        let (op, expr) = entry
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("Malformed access entry"))?;
+    for (op, expr) in crate::object_syntax::properties(inner)? {
         anyhow::ensure!(
             ["read", "create", "update", "delete"].contains(&op.trim()),
             "Unknown access operation"
         );
         anyhow::ensure!(
             rules
-                .insert(op.trim().to_owned(), parse_allow(expr)?)
+                .insert(op.trim().to_owned(), parse_allow(&expr)?)
                 .is_none(),
             "Duplicate access operation"
         );
@@ -907,40 +871,6 @@ fn fields_block_diagnostics(
         if !parsed.contains(&key) {
             warnings.push(format!(
                 "model '{model_name}': field '{key}' uses an unrecognized builder — dropped"
-            ));
-        }
-    }
-    warnings
-}
-
-/// `access: { ... }` entries that didn't parse into a rule leave that operation
-/// UNGATED — previously silent. Warn per op key present but unparsed, and on
-/// non-CRUD keys.
-fn access_block_diagnostics(
-    model_name: &str,
-    body: &str,
-    access: &Option<AccessControl>,
-) -> Vec<String> {
-    let mut warnings = Vec::new();
-    let Some(inner) = dsl_sub_block(body, "access") else {
-        return warnings;
-    };
-    for key in crate::typescript_parser::top_level_keys(&inner) {
-        let parsed_rule = match key.as_str() {
-            "create" => access.as_ref().and_then(|a| a.create.as_ref()),
-            "read" => access.as_ref().and_then(|a| a.read.as_ref()),
-            "update" => access.as_ref().and_then(|a| a.update.as_ref()),
-            "delete" => access.as_ref().and_then(|a| a.delete.as_ref()),
-            _ => {
-                warnings.push(format!(
-                    "model '{model_name}': unrecognized access key '{key}' — ignored"
-                ));
-                continue;
-            }
-        };
-        if parsed_rule.is_none() {
-            warnings.push(format!(
-                "model '{model_name}': access.{key} expression not recognized — operation left ungated"
             ));
         }
     }
@@ -1558,19 +1488,13 @@ export const Empty = model('empties', {
     }
 
     #[test]
-    fn model_call_missing_brace_body_is_skipped() {
-        // `model('x')` without the second arg object — parse_model_blocks regex
-        // requires `, {` so this should just produce no models.
+    fn model_call_missing_brace_body_is_rejected() {
         let dsl = r#"
 import { model } from '@atomo/schema'
 
 export const Broken = model('broken')
 "#;
-        let schema = parse_builder_dsl(dsl).unwrap();
-        assert!(
-            schema.models.is_empty(),
-            "model with no body block should be skipped"
-        );
+        assert!(parse_builder_dsl(dsl).is_err());
     }
 
     #[test]

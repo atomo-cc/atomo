@@ -179,3 +179,10 @@ Immediate next step: reviewer inspects tests/m1/REPORT.md and evidence.json. M1 
 - [x] Merge 039f2f0 resolves four conflicts, preserving upstream parser/CI/version changes and atomic sorted schema RLS; targeted parser (111), RLS (7), HTTP security (1) passed.
 - [x] Targeted parser/security, workspace 325, fresh PostgreSQL 105, server/CLI builds, fmt, strict clippy and SDK 23/type checks passed (all exit 0).
 - [x] Exact commit/test evidence and compatibility recorded locally; stop for review, no M2/M3 or remote operations.
+
+## M1 access property review revision
+
+- [x] Initial runtime loader regressions failed 4/4; expanded 5-test suite also failed on archived original sources, explicitly including duplicate orders (Cargo 101).
+- [x] Shared structural properties passed runtime cases and schema tests; quoted/escaped keys, comments, duplicates and unsupported syntax covered.
+- [x] Real runtime Atomo build + PostgreSQL/RLS + production HTTP verified admin/owner allow and non-admin/non-owner denial on reads and writes, for both formats (exit 0).
+- [x] Final WSL Docker workspace 333, fresh PG 106, server/CLI build, fmt and strict clippy all passed (exit 0, no exceptions). Local evidence preserves earlier failures and historical 325/105 results; stop for review.

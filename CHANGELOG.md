@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- Parse builder and legacy access properties structurally. Quoted keys and whitespace preserve restrictions; duplicate properties, unsupported dynamic values and ambiguous containers reject loading instead of becoming unrestricted. Spreads in schema/model options now fail rather than warn.
 - Preserve owner/sameTenant/any/all access rules; reject unsupported security syntax. Shared request CRUD filters rows before pagination and verifies updates and visible parent tenants transactionally.
 - Bind missing tenant headers to verified identity; reject conflicts. Models now require tenant context by default; explicit global models admit null rows. Existing null rows remain stored and require operator review; no automatic reassignment or deletion.
 - Execute immutable fromAuth userId/tenantId fields; reject forged values. Reject fractional, overflow and unsafe JSON integer input before PostgreSQL BIGINT conversion.
@@ -870,6 +871,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `audit_log.operation_details` bound as `jsonb` (was failing as text → audit writes silently dropped)
 
 ### Security
+- Parse builder and legacy access properties structurally. Quoted keys and whitespace preserve restrictions; duplicate properties, unsupported dynamic values and ambiguous containers reject loading instead of becoming unrestricted. Spreads in schema/model options now fail rather than warn.
 - 无
 
 ## [0.1.0] - 2024-01-XX
