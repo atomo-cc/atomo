@@ -7,8 +7,10 @@
 - [x] Latest-stable workspace tests/check and all-target clippy pass; fmt/diff checks pass. Existing PostgreSQL/admin verification is supplemented by the initial remote green jobs. Logs: `.tmp/pr82-{tests,check,clippy}-rust199.log`.
 - [x] Server build on Rust 1.99 passes: `.tmp/pr82-build-rust199.log`.
 - [x] Resolve smoke output directories against the admin package root; actual Playwright configuration checks pass for default, relative and absolute paths.
-- [ ] Verify remote CI retains a nonempty screenshot artifact (first remote dev/preview/server modes passed 9/9 each but upload found no files).
-- [ ] Push the CI correction, rerun the five-job workflow and verify every result. Next: push the verified correction; first-run results remain evidence, not a passing gate.
+- [x] Remote run 38738387183 retains artifact 11975095386 (1,938,847 bytes); downloaded archive contains 9 screenshots per dev/production/server mode. Smoke passes 9/9 each (21.7s/16.3s/15.6s). Evidence: `.tmp/pr82-e2e-second.log`, `.tmp/pr82-artifact-audit.json`.
+- [x] Push CI correction 349e3aa and verify all five jobs pass on run https://github.com/atomo-cc/atomo/actions/runs/38738387183 (Test Suite including PostgreSQL, Frontend Tests, Admin E2E Smoke, Linting, Build). This handoff only records results in TODO/plan; tested code remains 349e3aa.
+
+Next: review PR #82 for merge. No merge/release performed. Historical timeout attribution and Docker-image packaging verification remain open.
 
 ## 2026-10-15 RLS policy installation
 

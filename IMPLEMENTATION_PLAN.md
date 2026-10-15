@@ -19,6 +19,14 @@ Resolve outputDir explicitly from the admin package root, preserving absolute
 overrides. Verify the resolved configuration and then require a nonempty remote
 artifact. Update the existing contributor instructions; no new spec or env var.
 
+Verified: correction 349e3aa passes all five jobs in CI run 38738387183,
+including PostgreSQL integration and all three admin modes (9/9 each). Artifact
+11975095386 was downloaded and contains 27 screenshots, nine per mode. Local
+Rust 1.99 tests/check/all-target strict clippy/server build and format/diff checks
+also pass. The subsequent handoff commit changes only TODO/plan evidence; runtime
+code and CI configuration remain identical to tested 349e3aa. PR #82 is ready
+for review; merge/release and Docker-image packaging verification are not done.
+
 ## 2026-10-15 RLS policy installation
 
 Make opt-in policy installation atomic across the entire requested table set:
