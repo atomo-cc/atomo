@@ -467,16 +467,23 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 This package publishes to the `@atomo-cc` npm org. It is configured to publish
 publicly (`publishConfig.access = public`) and builds `dist/` automatically before
-publishing (`prepublishOnly: tsc`, with `files` shipping only `dist` + `README`).
+publishing (`prepublishOnly` rebuilds it, with `files` shipping only `dist` + `README`).
 
-Pre-1.0 the API is still moving, so publish under the `next` dist-tag — don't claim
-`latest` until the surface stabilizes:
+Follow the repository release checklist and publish all three public packages
+in lockstep. Normal releases use `latest`; use `next` only for an intentional
+prerelease. The pre-1.0 version does not by itself select a dist-tag:
 
 ```bash
 # from the repo root, after bumping the version + updating the CHANGELOG
-corepack pnpm --filter @atomo-cc/client-sdk publish --tag next --access public
+corepack pnpm --filter @atomo-cc/client-sdk publish --tag latest --access public
 ```
 
-Requires `npm login` to an account with publish rights in the `atomo-cc` org.
+Authenticate with `npm login` or a granular token authorized to publish the
+selected packages. When package settings allow tokens, a token with Bypass 2FA
+can publish the three-package batch without separate interactive publish
+challenges; keep credentials outside Git.
+For durable CI automation, prefer [trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+After an accepted upload, wait for registry processing and verify the published
+version, dist-tag and tarball integrity before recording publication as complete.
 Apps (`@atomo-cc/admin-ui`, `@atomo-cc/docs`) and the monorepo root are
 `private: true` and never publish.

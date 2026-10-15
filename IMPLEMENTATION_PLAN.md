@@ -35,6 +35,31 @@ unverified until a publish is attempted. v0.8.0 tag/Release do not exist, and no
 npm/image/docs publication was performed. Next step requires final release approval. Main CI and artifact publishing/verification must follow the
 release checklist after approval; crates.io remains disabled.
 
+Publication authorized: user confirmed continuing the prepared v0.8.0 release.
+PR #83 merged as 27d71bb; post-merge CI 38756500055 is the next gate. After all
+five jobs pass, publish the source tag/Release, the exact validated npm tarballs
+and the Docker/docs/CLI artifacts. Verify registry integrity and versions,
+versioned/latest image digests and actual image runtime, all CLI assets and live
+docs. Update TODO after each verified phase. Store non-secret evidence under
+.tmp/release-080; credentials stay outside the repository. No consumer deployment
+was selected, and crates.io remains disabled. Final evidence-only repository
+updates must use a follow-up documentation PR, not a direct push to main.
+
+Publication completed on 2026-10-15: v0.8.0 is tagged at 27d71bb and public.
+Post-merge CI 38756500055 and Docker/docs/CLI workflows 38757674572/38757685942/
+38757696375 all pass. All three npm versions/latest tags and SHA512 match the
+prepared tarballs; accepted uploads required async registry processing, not
+repeated submissions. One granular-token configuration handled all three without
+interactive challenges. Public image tags share digest
+sha256:28ee4b32d4925317eedf3ce30bccd44faba62530be4d4dcfc2e28fdaf5d24008;
+actual published-image runtime reports v0.8.0/27d71bb and admin smoke passes 9/9
+(10.7s, exit 0). All release CLI assets are verified, including downloaded Windows
+version 0.8.0; HTTPS docs contain current content. Owned containers/network removed.
+Final evidence is .tmp/release-080/final-release-result.json. A documentation-only
+follow-up reconciles TODO/plan and maintainer batch-authentication guidance,
+including historical next/latest wording; the released tag/artifacts are immutable.
+crates.io and downstream consumer deployment are not part of this publication.
+
 ## PR #82 — latest-stable CI follow-up
 
 Historical PR #82 checkpoint on `refactor/admin-scaffold-ownership`: first CI run
