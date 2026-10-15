@@ -54,6 +54,12 @@ impl TypeScriptParser {
 
     /// Parse TypeScript schema content and extract complete interface definitions
     pub fn parse(&self, content: &str) -> Result<Vec<Model>> {
+        if !crate::object_syntax::model_blocks(content)?.is_empty() {
+            return Ok(crate::schema_dsl_parser::parse_builder_dsl(content)?
+                .models
+                .into_values()
+                .collect());
+        }
         let mut parser = TypeScriptParser::new();
 
         // First pass: collect enums and type definitions
@@ -83,8 +89,10 @@ impl TypeScriptParser {
                 interface_model.access = dsl_model.access;
                 interface_model.hooks = dsl_model.hooks;
             } else {
-                // If no corresponding interface, add the DSL model as-is
-                models.push(dsl_model);
+                anyhow::bail!(
+                    "defineModel target '{}' has no matching interface",
+                    dsl_model.name
+                );
             }
         }
 
@@ -486,6 +494,9 @@ impl TypeScriptParser {
     /// included. Auxiliary interfaces (content blocks, enum pseudo-models) are excluded so
     /// that codegen and migrations only target actual schema-declared models.
     pub fn parse_schema(&self, content: &str) -> Result<Schema> {
+        if !crate::object_syntax::model_blocks(content)?.is_empty() {
+            return crate::schema_dsl_parser::parse_builder_dsl(content);
+        }
         let models = self.parse(content)?;
         let actions = Self::parse_actions(content);
         if let Some(block) = Self::sub_block(content, "actions") {
@@ -615,15 +626,8 @@ impl TypeScriptParser {
                     }
 
                     // Parse the complete interface
-                    let (mut model, lines_consumed) =
+                    let (model, lines_consumed) =
                         parse_interface(&lines, i, interface_name.clone())?;
-
-                    // Parse hooks and access control for this model
-                    let (access, hooks) = self
-                        .dsl_parser
-                        .parse_model_definition(content, &interface_name)?;
-                    model.access = access;
-                    model.hooks = hooks;
 
                     models.push(model);
                     i += lines_consumed;

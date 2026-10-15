@@ -105,8 +105,50 @@ async fn create(app: &Router, token: &str, model: &str, fields: &str) -> Value {
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL; tests/m1/compose.yaml"]
 async fn access_property_variants_enforce_http_roles_and_owners() {
+    access_property_http_formats(&["builder", "legacy"]).await;
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; tests/m1/compose.yaml"]
+async fn define_model_enforces_http_roles_and_owners() {
     let url = std::env::var("DATABASE_URL").unwrap();
-    for builder in [true, false] {
+    let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    for options in [
+        "access : externalPolicy",
+        "'access': {read: ({user}) => user.role === 'admin'}",
+        "access: {read : ({user}) => user.role === 'admin'}",
+        "access:{read:'public'}, access:{read:'admin'}",
+    ] {
+        let source = format!("export interface RejectedNote {{\n id:string;\n}}\nexport const RejectedNoteModel=defineModel({{{options}}});\nexport const schema={{models:{{RejectedNote:{{tableName:'define_reject_notes'}}}}}};");
+        let parser_error = atomo::schema::parse_typescript_schema(&source)
+            .expect_err("must reject")
+            .to_string();
+        let runtime_error = match atomo::Atomo::builder()
+            .schema_content(source)
+            .database_url(&url)
+            .enable_migrations(true)
+            .build()
+            .await
+        {
+            Ok(_) => panic!("unsupported compatibility rule loaded"),
+            Err(error) => error.to_string(),
+        };
+        assert_eq!(parser_error, runtime_error);
+        let table: Option<String> =
+            sqlx::query_scalar("SELECT to_regclass('define_reject_notes')::text")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(table.is_none(), "invalid rules must fail before migration");
+    }
+    access_property_http_formats(&["compatibility"]).await;
+}
+
+async fn access_property_http_formats(formats: &[&str]) {
+    let url = std::env::var("DATABASE_URL").unwrap();
+    for format in formats {
+        let builder = *format == "builder";
+        let compatibility = *format == "compatibility";
         let options = [
             (
                 "AdminNote",
@@ -121,6 +163,8 @@ async fn access_property_variants_enforce_http_roles_and_owners() {
         ];
         let mut source = if builder {
             "import {model,text,allow} from '@atomo-cc/schema';\n".to_owned()
+        } else if compatibility {
+            "import {defineModel as secureModel} from '@atomo-cc/schema';\n".to_owned()
         } else {
             String::new()
         };
@@ -131,7 +175,14 @@ async fn access_property_variants_enforce_http_roles_and_owners() {
                 source.push_str(&format!("export const {name} = model('{table}', {{fields: {{id:text().id(),ownerId:text(),title:text()}}, {access}}});\n"));
             } else {
                 source.push_str(&format!("export interface {name} {{\n id:string;\n ownerId:string;\n title:string;\n}}\n"));
-                metadata.push(format!("'{name}': {{tableName:'{table}', {access}}}"));
+                if compatibility {
+                    source.push_str(&format!(
+                        "export const {name}Model = secureModel /* call */ ({{{access}}});\n"
+                    ));
+                    metadata.push(format!("'{name}': {{tableName:'{table}'}}"));
+                } else {
+                    metadata.push(format!("'{name}': {{tableName:'{table}', {access}}}"));
+                }
             }
         }
         if !builder {

@@ -395,3 +395,10 @@ Local checkpoint and merge commits are authorized for the M1 main synchronizatio
 - [x] Shared structural properties passed runtime cases and schema tests; quoted/escaped keys, comments, duplicates and unsupported syntax covered.
 - [x] Real runtime Atomo build + PostgreSQL/RLS + production HTTP verified admin/owner allow and non-admin/non-owner denial on reads and writes, for both formats (exit 0).
 - [x] Final WSL Docker workspace 333, fresh PG 106, server/CLI build, fmt and strict clippy all passed (exit 0, no exceptions). Local evidence preserves earlier failures and historical 325/105 results; stop for review.
+
+## M1 defineModel compatibility review revision
+
+- [x] New six-test runtime/compatibility regression suite failed 6/6 on the prior candidate (Cargo exit 101), then passed after unification.
+- [x] Shared declaration/access scanning covers all active compatibility calls and parser dispatch; runtime suite 7 and Schema tests passed (exit 0).
+- [x] Real PG/HTTP compatibility matrix verifies role/owner allow/deny and invalid rules rejected before migrations; all 3 security matrices passed (exit 0).
+- [x] Final WSL Docker workspace 340 and fresh PostgreSQL 107 passed; server/CLI builds, fmt and strict clippy all exit 0, no exceptions. Historical evidence retained; local generic revision and review report prepared.

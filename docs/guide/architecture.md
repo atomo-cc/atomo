@@ -48,3 +48,5 @@ Data flows: `schema.ts` → codegen → GraphQL API + Admin UI + SDK types.
 `atomo::security` carries verified request identity and compiles row policies into SQL predicates used by shared CRUD, counts and relation reads. Shared write transactions validate resulting ownership and visible parent tenants before events commit. `atomo_server::auth::request_principal` resolves HTTP tenant selection; Worker CRUD verifies active job delegation stored separately from job payload. No new crate or public transaction API is introduced.
 
 The unreleased security parser shares structural object-property recognition across builder and legacy schemas; quoted keys preserve rules, while duplicate or dynamic security declarations fail loading. See [schema modeling](/guide/modeling).
+
+The unreleased security parser also covers defineModel compatibility declarations and supported aliases. Unsupported access callbacks and ambiguous declarations reject loading; declarative role and owner rules use the shared runtime.

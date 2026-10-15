@@ -18,6 +18,12 @@ use std::collections::HashMap;
 /// Returns `true` if the content looks like the builder DSL (imports from `@atomo/schema`
 /// or `@atomo-cc/schema`, or contains bare `model(` calls with field builders).
 pub fn is_builder_dsl(content: &str) -> bool {
+    if let Ok(blocks) = crate::object_syntax::compatibility_blocks(content) {
+        if !blocks.is_empty() {
+            return crate::object_syntax::model_blocks(content)
+                .is_ok_and(|models| !models.is_empty());
+        }
+    }
     content.contains("from '@atomo/schema'")
         || content.contains("from \"@atomo/schema\"")
         || content.contains("from '@atomo-cc/schema'")
@@ -26,6 +32,12 @@ pub fn is_builder_dsl(content: &str) -> bool {
 
 /// Parse a builder-DSL schema into a [`Schema`].
 pub fn parse_builder_dsl(content: &str) -> Result<Schema> {
+    anyhow::ensure!(
+        crate::dsl_parser::DslParser::new()
+            .parse_define_model(content)?
+            .is_empty(),
+        "defineModel compatibility declarations cannot be mixed with builder schemas"
+    );
     let actions = parse_action_defs(content)?;
     let blocks = crate::object_syntax::model_blocks(content)?;
     let table_to_model: HashMap<String, String> = blocks

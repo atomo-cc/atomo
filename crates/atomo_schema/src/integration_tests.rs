@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{AccessRule, HookAccessGenerator, QueryValue, TypeScriptParser};
+    use crate::{AccessRule, HookAccessGenerator, TypeScriptParser};
     use anyhow::Result;
 
     fn crm_schema_content() -> String {
@@ -171,18 +171,10 @@ export enum ProductStatus {
 
 export const ProductModel = defineModel({
   access: {
-    create: ({ user }: access.Context<User>) => !!user,
-    read: ({ user }: access.Context<User>) => {
-      if (user) {
-        return access.or(
-          access.where('status').equals('published'),
-          access.where('sellerId').equals(user.id)
-        );
-      }
-      return access.where('status').equals('published');
-    },
-    update: ({ user }: access.Context<User>) => access.where('sellerId').equals(user.id),
-    delete: ({ user }: access.Context<User>) => access.where('sellerId').equals(user.id),
+    create: allow.authenticated(),
+    read: allow.any([allow.owner('sellerId'), allow.role('admin')]),
+    update: allow.owner('sellerId'),
+    delete: allow.owner('sellerId'),
   },
   hooks: {
     beforeOperation: [
@@ -265,7 +257,7 @@ export const ProductModel = defineModel({
 
             // Check create rule (simple boolean)
             if let Some(AccessRule::Boolean(code)) = &access.create {
-                assert_eq!(code, "!!user", "Create rule should check user existence");
+                assert_eq!(code, "authenticated", "Create rule should require identity");
             } else {
                 panic!(
                     "Expected Boolean access rule for create, got: {:?}",
@@ -273,17 +265,9 @@ export const ProductModel = defineModel({
                 );
             }
 
-            // Check update rule (query)
-            if let Some(AccessRule::Query(condition)) = &access.update {
-                assert_eq!(
-                    condition.field, "sellerId",
-                    "Update rule should check sellerId"
-                );
-                assert!(
-                    matches!(condition.value, QueryValue::UserProperty(_)),
-                    "Should reference user property"
-                );
-            }
+            assert!(
+                matches!(&access.update, Some(AccessRule::Owner(field)) if field == "sellerId")
+            );
         } else {
             panic!("Product model should have access control defined");
         }
@@ -354,7 +338,14 @@ export const ProductModel = defineModel({
 
         // 6. Generate Rust code
         let generator = HookAccessGenerator::new();
-        let rust_code = generator.generate_module(&models)?;
+        // Row policies must stay in the shared runtime; the legacy hook code
+        // generator must reject them instead of weakening their meaning.
+        assert!(generator.generate_module(&models).is_err());
+        let mut hook_models = models.clone();
+        for model in &mut hook_models {
+            model.access = None;
+        }
+        let rust_code = generator.generate_module(&hook_models)?;
 
         // 7. Verify generated code contains expected structures
         assert!(
@@ -375,10 +366,6 @@ export const ProductModel = defineModel({
         );
 
         // 8. Verify some generated methods exist
-        assert!(
-            rust_code.contains("check_create"),
-            "Should generate check_create method"
-        );
         assert!(
             rust_code.contains("before_operation"),
             "Should generate hook methods"

@@ -175,3 +175,5 @@ If you’re evaluating Atomo, the Guide covers the implemented developer workflo
 - Unreleased M1 schema security candidate: structured row rules, verified source fields, tenant-required/global policy, parent checks, safe integers and authenticated async action admission. Relational membership/multi-tenant identity, atomic commands and CLI codegen remain separate milestones. Acceptance evidence: repository `tests/m1/REPORT.md`.
 
 The unreleased security parser shares structural object-property recognition across builder and legacy schemas; quoted keys preserve rules, while duplicate or dynamic security declarations fail loading. See [schema modeling](/guide/modeling).
+
+The unreleased security parser also covers defineModel compatibility declarations and supported aliases. Unsupported access callbacks and ambiguous declarations reject loading; declarative role and owner rules use the shared runtime.

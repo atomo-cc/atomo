@@ -160,6 +160,7 @@ fn tokens(source: &str) -> Result<Vec<Token<'_>>> {
             continue;
         }
         let start = i;
+        ensure!(c != '\\', "Unsupported escaped identifier");
         let kind = if matches!(c, '\'' | '"' | '`') {
             i = literal_end(source, start)?;
             if c == '`' {
@@ -333,6 +334,135 @@ pub(crate) fn model_blocks(source: &str) -> Result<Vec<(String, String, String)>
             table.clone(),
             source[ts[i + 8].end..ts[end].start].to_owned(),
         ));
+    }
+    Ok(out)
+}
+
+/// Collect every compatibility factory invocation, including named-import and
+/// immutable local aliases. Unknown reference shapes are errors, never ignored.
+pub(crate) fn compatibility_blocks(source: &str) -> Result<Vec<(String, String)>> {
+    let ts = tokens(source)?;
+    let interface_names: HashSet<_> = ts
+        .windows(3)
+        .filter(|window| window[0].raw == "export" && window[1].raw == "interface")
+        .map(|window| window[2].raw)
+        .collect();
+    let mut aliases: HashSet<String> = ["defineModel".to_owned()].into();
+    let mut imports = HashSet::new();
+    for i in 0..ts.len().saturating_sub(1) {
+        if ts[i].raw != "import" || ts[i + 1].raw != "{" {
+            continue;
+        }
+        let end = end_group(&ts, i + 1)?;
+        for j in i + 2..end {
+            imports.insert(j);
+            if ts[j].raw == "defineModel" && ts.get(j + 1).is_some_and(|t| t.raw == "as") {
+                let alias = ts
+                    .get(j + 2)
+                    .ok_or_else(|| anyhow::anyhow!("Missing defineModel import alias"))?;
+                ensure!(
+                    matches!(alias.kind, Kind::Word),
+                    "Unsupported defineModel import alias"
+                );
+                aliases.insert(alias.raw.to_owned());
+            }
+        }
+    }
+    let mut alias_refs = HashSet::new();
+    loop {
+        let mut changed = false;
+        for i in 0..ts.len().saturating_sub(3) {
+            if ts[i].raw == "const"
+                && matches!(ts[i + 1].kind, Kind::Word)
+                && ts[i + 2].raw == "="
+                && aliases.contains(ts[i + 3].raw)
+                && !ts.get(i + 4).is_some_and(|t| t.raw == "(")
+            {
+                ensure!(
+                    ts.get(i + 4)
+                        .is_none_or(|t| matches!(t.raw, ";" | "export" | "const")),
+                    "Unsupported defineModel alias expression"
+                );
+                alias_refs.insert(i + 3);
+                alias_refs.insert(i + 1);
+                changed |= aliases.insert(ts[i + 1].raw.to_owned());
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut out = Vec::new();
+    let mut names = HashSet::new();
+    for i in 0..ts.len().saturating_sub(1) {
+        if ts[i].raw == "const"
+            && ts
+                .get(i + 1)
+                .is_some_and(|t| t.raw.ends_with("Model") || interface_names.contains(t.raw))
+            && ts.get(i + 2).is_some_and(|t| t.raw == "=")
+            && !alias_refs.contains(&(i + 1))
+        {
+            ensure!(
+                ts.get(i + 3)
+                    .is_some_and(|t| aliases.contains(t.raw) || t.raw == "model"),
+                "Unsupported compatibility model factory or alias"
+            );
+        }
+        if matches!(ts[i].raw, "const" | "let" | "var") && ts[i + 1].raw == "{" {
+            let end = end_group(&ts, i + 1)?;
+            ensure!(
+                !ts[i + 2..end].iter().any(|t| aliases.contains(t.raw)),
+                "Unsupported defineModel destructuring alias"
+            );
+        }
+    }
+    for (i, token) in ts.iter().enumerate() {
+        if let Kind::String(name) = &token.kind {
+            if aliases.contains(name)
+                && i >= 2
+                && ts[i - 1].raw == "["
+                && matches!(ts[i - 2].kind, Kind::Word)
+            {
+                bail!("Unsupported computed defineModel reference");
+            }
+        }
+        if !matches!(token.kind, Kind::Word)
+            || !aliases.contains(token.raw)
+            || imports.contains(&i)
+            || alias_refs.contains(&i)
+        {
+            continue;
+        }
+        if ts.get(i + 1).is_some_and(|t| t.raw == ":") {
+            continue;
+        }
+        ensure!(
+            ts.get(i + 1).is_some_and(|t| t.raw == "("),
+            "Unsupported defineModel reference"
+        );
+        ensure!(
+            i >= 3
+                && ts[i - 3].raw == "const"
+                && ts[i - 1].raw == "="
+                && matches!(ts[i - 2].kind, Kind::Word),
+            "defineModel requires a named const declaration"
+        );
+        let name = ts[i - 2].raw;
+        let model = name.strip_suffix("Model").unwrap_or(name);
+        ensure!(
+            !model.is_empty() && names.insert(model.to_owned()),
+            "Duplicate defineModel declaration for {model}"
+        );
+        let end = end_group(&ts, i + 1)?;
+        let args = &source[ts[i + 1].end..ts[end].start];
+        let body = object_body(args)?;
+        ensure!(
+            ts.get(end + 1)
+                .is_none_or(|t| matches!(t.raw, ";" | "export" | "const")),
+            "Unsupported defineModel expression suffix"
+        );
+        properties(body)?;
+        out.push((model.to_owned(), body.to_owned()));
     }
     Ok(out)
 }
