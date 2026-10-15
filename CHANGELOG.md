@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Canonical fullstack scaffolding stays in `create-app`; `fullstack-atomo` is a compatibility alias for `crm` with the packaged `/admin` UI. Real-entry scaffold tests verify package contents and refusal to overwrite existing projects.
-- Admin CI runs one real-backend smoke spec in dev, production preview, and through the native server at `/admin/`, including deep links. Browser page errors fail the smoke, and login lifecycle diagnostics record only status/timing/failure. Dependency and release versions are unchanged.
+- Admin CI runs one real-backend smoke spec in dev, production preview, and through the native server at `/admin/`, including deep links. Browser page errors fail the smoke, and login lifecycle diagnostics record only status/timing/failure. npm dependency and release versions are unchanged.
 
 ### Fixed
+- Keep admin smoke screenshots under the package-root artifact directory in CI while preserving absolute local output overrides.
+- Update async-trait to its generated-code `double_must_use` lint fix so strict Clippy checks pass on current stable Rust.
 - With RLS enabled, any policy installation error now aborts startup and rolls back the entire table batch, preserving existing policies and RLS flags. Previously failed DDL was only warned about. The boot role must be able to manage every model table; `ATOMO_RLS_ALLOW_BYPASS_ROLE` does not suppress installation failures.
 - Admin dev/preview smoke can select an isolated proxy backend with existing `E2E_API_URL` while keeping `VITE_API_URL` empty, avoiding unintended cross-origin login calls.
 - Builder-DSL constraints no longer panic when CHECK expressions or partial-index predicates contain `index(`, `unique(` or `check(` inside SQL strings; nested SQL quotes are preserved.

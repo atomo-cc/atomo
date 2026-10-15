@@ -1,5 +1,15 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## PR #82 — latest-stable CI follow-up
+
+- [x] Push three focused commits and open https://github.com/atomo-cc/atomo/pull/82; dispatch CI 38736776136 on f2173e5. Frontend passed; lint exposed async-trait 0.1.89 generated-code double_must_use under Rust 1.99.
+- [x] Align local stable with CI (Rust 1.99.0) and update async-trait to upstream 0.1.92. All-target workspace clippy passes with -D warnings; lock audit confirms only async-trait replacement and its new syn 3.0.9 dependency. Evidence: `.tmp/pr82-clippy-rust199.log`, `.tmp/pr82-lock-audit.json`.
+- [x] Latest-stable workspace tests/check and all-target clippy pass; fmt/diff checks pass. Existing PostgreSQL/admin verification is supplemented by the initial remote green jobs. Logs: `.tmp/pr82-{tests,check,clippy}-rust199.log`.
+- [x] Server build on Rust 1.99 passes: `.tmp/pr82-build-rust199.log`.
+- [x] Resolve smoke output directories against the admin package root; actual Playwright configuration checks pass for default, relative and absolute paths.
+- [ ] Verify remote CI retains a nonempty screenshot artifact (first remote dev/preview/server modes passed 9/9 each but upload found no files).
+- [ ] Push the CI correction, rerun the five-job workflow and verify every result. Next: push the verified correction; first-run results remain evidence, not a passing gate.
+
 ## 2026-10-15 RLS policy installation
 
 - [x] PostgreSQL regressions reproduce both failures on a non-superuser owner: missing table and missing tenant_id return success instead of errors (2 failed / 1 success-idempotence passed). Snapshots cover flags and old policies; disabled/no-connection unit passed in workspace tests. Evidence: `.tmp/rls-review-20261015/regressions-before.log`.
@@ -8,9 +18,9 @@
 - [x] Updated multi-tenant/config guides, architecture, both roadmaps, README/CHANGELOG and existing env comments. Workspace tests/check, all-target clippy (`-D warnings`), server build, fmt/diff and docs build (17.69s) passed. Evidence: `.tmp/rls-review-20261015/{workspace-tests,workspace-check,workspace-clippy-final,server-build,docs-build}.log`.
 - [x] Verified the real startup failure under both nonprivileged and explicitly allowed superuser roles. Repaired the existing executor fixture to drop widgets (including its superuser skip path); checked zero leftover RLS model tables, then removed the owned PostgreSQL container/volume. Evidence: `.tmp/rls-review-20261015/{bypass-startup,executor-super-skip}.log` and `cleanup.json`.
 
-Next: open a PR and verify the final branch with remote CI before
-release; Docker-image verification and historical E2E timeout attribution remain
-open. No push, merge, version change or publication occurred.
+PR #82 is open and pushed; final-branch remote CI is tracked above.
+Docker-image verification and historical E2E timeout attribution remain open.
+No merge, product version change or publication occurred.
 
 ## 2026-10-15 constraint parser panic
 
@@ -19,7 +29,7 @@ open. No push, merge, version change or publication occurred.
 - [x] Document quoted expression support and Unreleased fix; workspace tests/check, all-target workspace clippy (`-D warnings`), dependent server build, fmt and diff checks passed. Logs: `.tmp/review-constraint-{workspace-test,check,clippy,server-build}.log`.
 
 Schema fix: `c9b23b8`. Admin scaffold/runtime coverage: `f9a4cca`.
-The verified RLS installation fix is included in this commit; remote CI and
+The verified RLS installation fix is f2173e5; final remote CI and
 Docker-image verification remain open.
 
 ## 2026-10-07 Admin scaffold ownership

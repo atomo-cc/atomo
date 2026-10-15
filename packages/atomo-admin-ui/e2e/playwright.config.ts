@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
+const packageDir = fileURLToPath(new URL('..', import.meta.url))
 const production = process.env.E2E_PRODUCTION === '1'
 const port = Number(process.env.E2E_FRONTEND_PORT || (production ? '4173' : '5173'))
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid E2E_FRONTEND_PORT')
@@ -10,7 +13,8 @@ export default defineConfig({
   timeout: 30_000,
   globalTimeout: 300_000,
   retries: 0,
-  outputDir: process.env.E2E_OUTPUT_DIR || 'test-results',
+  // Match CI's package-root artifact path; absolute local overrides stay absolute.
+  outputDir: resolve(packageDir, process.env.E2E_OUTPUT_DIR || 'test-results'),
   use: {
     baseURL,
     headless: true,

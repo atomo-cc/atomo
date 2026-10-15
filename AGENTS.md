@@ -38,6 +38,8 @@
   Dev and preview inherit the Vite API proxy; configure an isolated backend with
   `E2E_API_URL` and keep `VITE_API_URL` empty for same-origin browser calls.
   `E2E_FRONTEND_PORT` and `E2E_OUTPUT_DIR` isolate local runs.
+  Relative `E2E_OUTPUT_DIR` paths are rooted at the admin package (matching CI's
+  screenshot upload path); absolute overrides are preserved.
   For native-server `/admin/` coverage, build with empty `VITE_API_URL` and
   `pnpm build:server`, start the e2e server with `ATOMO_ADMIN_DIR` pointing to
   `dist`, and set `E2E_BASE_URL=http://127.0.0.1:3000/admin/` (plus `E2E_API_URL`

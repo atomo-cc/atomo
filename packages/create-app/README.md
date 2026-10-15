@@ -40,6 +40,8 @@ remains a separate gate.
 
 In dev/preview tests, `E2E_API_URL` also selects the proxy backend. Keep
 `VITE_API_URL` empty to exercise same-origin calls on isolated frontend ports.
+Relative `E2E_OUTPUT_DIR` values resolve from the admin package root so CI can
+collect screenshots; absolute paths can isolate local artifacts elsewhere.
 
 ## Relationship to the `atomo` CLI
 

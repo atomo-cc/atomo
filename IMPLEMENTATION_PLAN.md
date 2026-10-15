@@ -1,5 +1,24 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## PR #82 — latest-stable CI follow-up
+
+PR #82 is open on `refactor/admin-scaffold-ownership`. First CI run
+38736776136 tests f2173e5. Rust 1.99 Clippy rejects `#[must_use]` added by the
+locked async-trait 0.1.89 macro (double_must_use); local verification used 1.97.
+Update the local stable toolchain to match CI and use upstream async-trait 0.1.92,
+whose release fixes this generated-code lint. Keep -D warnings and all existing
+CI assertions. Constrain the workspace minimum and update only its necessary
+lockfile resolution, then verify workspace tests/clippy/build and rerun all five
+CI jobs on the final pushed code. No runtime API/config/env/page changes; only
+the changelog and tracking docs need updates for this dependency correction.
+
+The first remote admin job passed all three 9-test modes but uploaded no
+screenshots: Playwright resolved the newly explicit relative outputDir against
+the e2e config directory, while CI collects the package-root test-results path.
+Resolve outputDir explicitly from the admin package root, preserving absolute
+overrides. Verify the resolved configuration and then require a nonempty remote
+artifact. Update the existing contributor instructions; no new spec or env var.
+
 ## 2026-10-15 RLS policy installation
 
 Make opt-in policy installation atomic across the entire requested table set:
