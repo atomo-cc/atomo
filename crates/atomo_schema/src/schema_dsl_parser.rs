@@ -647,7 +647,9 @@ fn parse_constraints_block(model_name: &str, body: &str) -> (Vec<ModelConstraint
     };
     let entry_re = Regex::new(r"(unique|index|check)\s*\(").unwrap();
     let mut cursor = 0usize;
-    for cap in entry_re.captures_iter(&inner) {
+    // Arguments and .where() predicates can themselves contain words like
+    // `index(`. Resume after the complete entry, never inside its SQL strings.
+    while let Some(cap) = entry_re.captures_at(&inner, cursor) {
         // Anything between the previous entry and this one that isn't
         // whitespace/commas is an unrecognized constraint expression.
         let gap = inner[cursor..cap.get(0).unwrap().start()].trim();
@@ -664,7 +666,7 @@ fn parse_constraints_block(model_name: &str, body: &str) -> (Vec<ModelConstraint
             "check" => {
                 if let Some(expr) = arg {
                     constraints.push(ModelConstraint::Check(
-                        expr.trim_matches(|c| c == '\'' || c == '"').to_string(),
+                        constraint_sql_string(&expr).unwrap_or(expr),
                     ));
                 }
             }
@@ -684,8 +686,11 @@ fn parse_constraints_block(model_name: &str, body: &str) -> (Vec<ModelConstraint
                     ));
                     continue;
                 }
-                let pred = extract_chain_string(&chain, "where")
-                    .map(|w| w.trim_matches(|c| c == '\'' || c == '"').to_string());
+                let pred = Regex::new(r"\.where\s*\(")
+                    .unwrap()
+                    .find(&chain)
+                    .and_then(|m| extract_paren_arg(&chain, m.end()).0)
+                    .and_then(|arg| constraint_sql_string(&arg));
                 constraints.push(match (kind.as_str(), pred) {
                     ("unique", Some(p)) => ModelConstraint::UniqueWhere(fields, p),
                     ("unique", None) => ModelConstraint::Unique(fields),
@@ -703,6 +708,18 @@ fn parse_constraints_block(model_name: &str, body: &str) -> (Vec<ModelConstraint
         ));
     }
     (constraints, warnings)
+}
+
+/// Remove exactly the TypeScript string's enclosing quotes, preserving SQL
+/// literals of the other quote kind at either end of the expression.
+fn constraint_sql_string(arg: &str) -> Option<String> {
+    let arg = arg.trim();
+    let quote = *arg.as_bytes().first()?;
+    if arg.len() >= 2 && matches!(quote, b'\'' | b'"') && arg.as_bytes().last() == Some(&quote) {
+        Some(arg[1..arg.len() - 1].to_string())
+    } else {
+        None
+    }
 }
 
 // ── diagnostics ─────────────────────────────────────────────────────────────
@@ -1564,6 +1581,33 @@ export const Job = model('jobs', {
             "{:?}",
             schema.warnings
         );
+    }
+
+    #[test]
+    fn constraint_call_names_inside_sql_strings_are_not_entries() {
+        let content = r#"
+import { model, text, unique, index, check } from '@atomo/schema'
+export const Note = model('notes', {
+  fields: { id: text().id(), title: text() },
+  constraints: [
+    check("position('index(' in title) > 0"),
+    index(['title']).where("title <> 'check('"),
+    unique(['title']).where("title <> 'unique('"),
+    check("title <> 'check('"),
+  ],
+})
+"#;
+        let schema = parse_builder_dsl(content).unwrap();
+        assert_eq!(
+            schema.models["Note"].constraints,
+            vec![
+                ModelConstraint::Check("position('index(' in title) > 0".into()),
+                ModelConstraint::IndexWhere(vec!["title".into()], "title <> 'check('".into()),
+                ModelConstraint::UniqueWhere(vec!["title".into()], "title <> 'unique('".into()),
+                ModelConstraint::Check("title <> 'check('".into()),
+            ]
+        );
+        assert!(schema.warnings.is_empty(), "{:?}", schema.warnings);
     }
 
     #[test]

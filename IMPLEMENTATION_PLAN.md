@@ -1,5 +1,23 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## 2026-10-15 constraint parser panic
+
+Reproduced through the real `atomo-cli schema check` entry: a valid CHECK
+expression containing `index(` panics with exit 101 because the constraints
+regex scans inside already-consumed arguments. Search only after the previous
+complete constraint and its chained calls. Preserve public types and diagnostics.
+
+Verification: add parser regressions and a real CLI integration test; first
+observe failure, then run schema tests, CLI integration, dependent server build,
+workspace check/clippy and formatting. Document the fix in modeling and Unreleased.
+No new endpoints, config, environment variables, crates or pages; API docs/nav,
+README feature list, architecture/workspace tree and feature-status roadmaps do
+not change for this parser correction. The other review findings are tracked separately.
+
+
+Verified: schema suite 106/106 and the real CLI integration test passed; workspace
+tests/check/clippy, dependent server build, fmt and diff checks passed.
+
 Source: a field report from a consumer that shipped per-user tenants on the
 atomo backend (RLS + PerUser registration + worker tokens). Every item below was
 **verified against this repo's code** before being scheduled — verdicts and code

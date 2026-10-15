@@ -1,5 +1,13 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## 2026-10-15 constraint parser panic
+
+- [x] Reproduce CHECK/partial-index string parsing failures: new parser regression fails with the same slice panic; real `atomo-cli schema check` probe exits 101.
+- [x] Limit constraint scanning to unconsumed entries and preserve SQL literal quotes; schema suite 106/106 and real CLI integration regression passed.
+- [x] Document quoted expression support and Unreleased fix; workspace tests/check, all-target workspace clippy (`-D warnings`), dependent server build, fmt and diff checks passed. Logs: `.tmp/review-constraint-{workspace-test,check,clippy,server-build}.log`.
+
+Next: organize the remaining admin scaffold and RLS review work.
+
 Plan and per-item evidence/verdicts: `IMPLEMENTATION_PLAN.md`.
 Rule: mark `[x]` only after the item's verification passes. Work in plan order
 (F7 → F6 → F4 → F3 → F1 → F5 → F2); one focused commit/PR per item.

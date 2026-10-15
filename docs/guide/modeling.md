@@ -102,3 +102,9 @@ Builder-DSL models also support a `constraints` option —
 `constraints: [unique(['tenantId', 'email']), index(['a']), check('...')]` —
 equivalent to the `@@unique`/`@@index`/`@@check` model annotations, with
 `.where('predicate')` for partial indexes.
+
+SQL strings inside `check(...)` and `.where(...)` may contain names such as
+`index(` or `check(`. They remain part of the SQL expression, not additional
+schema constraints. Use the other quote style to enclose SQL string literals,
+for example `check("position('index(' in title) > 0")` or
+`index(['title']).where("title <> 'check('")`.
