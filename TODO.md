@@ -6,7 +6,8 @@
 - [x] Verify local workspace check and strict all-target workspace Clippy before version edits; both exit 0 (logs: `.tmp/pr85-{check,clippy}.log` in the main worktree).
 - [x] Cut v0.8.1 changelog, bump all nine Rust crates and root/all five package manifests; regenerate both lockfiles. pnpm lock is unchanged after regeneration.
 - [x] Verify version consistency, unchanged dependency resolutions and workspace check after the bump. Audit confirms only nine own-crate version changes in Cargo.lock; real scaffolder tests pass 9/9, exit 0. Post-bump strict all-target Clippy, fmt and diff checks also pass.
-- [ ] Push the version preparation to draft PR #85 and dispatch CI on its exact head; record results.
+- [x] Push version preparation 27d4924 to draft PR #85 and dispatch CI 38832277991 on that exact head.
+- [x] Versioned CI 38832277991 passes all five jobs on 27d4924: PostgreSQL/RLS Test Suite, Frontend Tests, Admin E2E Smoke (all three modes), Linting and Build. Evidence-only handoff changes TODO/plan; tested product code remains 27d4924.
 - [ ] Finish implementation review; merging and publication remain pending.
 
 ## v0.8.0 released (2026-10-15)

@@ -14,6 +14,15 @@ does not authorize merging, tagging or publishing. There are no additional API,
 configuration, environment, schema, UI or documentation-page changes in the
 version-only adjustment.
 
+Verified preparation: 27d4924 synchronizes all nine crates and all six npm
+manifests to 0.8.1. Workspace check, strict all-target Clippy, formatting and
+real scaffolder tests (9/9, exit 0) pass locally. Cargo.lock changes only nine
+own-crate versions; pnpm-lock.yaml is unchanged after regeneration. CI
+38832277991 passes all five jobs on that exact product code, including
+PostgreSQL/RLS and all three Admin modes. This handoff changes only evidence
+in TODO/plan. Draft PR #85 remains unmerged, implementation review remains
+open, and no v0.8.1 tag, Release or artifact publication was performed.
+
 ## v0.8.0 release preparation (2026-10-15)
 
 Prepare v0.8.0 for additive schema/media interfaces and the nullable GraphQL
