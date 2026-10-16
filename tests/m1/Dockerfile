@@ -1,0 +1,2 @@
+FROM public.ecr.aws/docker/library/rust@sha256:2c3a22f0a5533ea2dd5a16627bc841228151faa2d4de2644ac9987e4a2f1f2fa
+RUN rustup component add rustfmt clippy

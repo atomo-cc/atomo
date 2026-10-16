@@ -21,6 +21,7 @@ export interface FieldBuilder<T = unknown> {
   trim(): FieldBuilder<T>;
   unique(): FieldBuilder<T>;
   index(): FieldBuilder<T>;
+  fromAuth(source: "userId" | "tenantId"): FieldBuilder<T>;
 }
 
 function fieldBuilder<T = unknown>(): FieldBuilder<T> {
@@ -37,6 +38,7 @@ function fieldBuilder<T = unknown>(): FieldBuilder<T> {
     trim: () => self,
     unique: () => self,
     index: () => self,
+    fromAuth: () => self,
   };
   return self;
 }
@@ -57,6 +59,10 @@ export function relation(_target: string): FieldBuilder<string> { return fieldBu
 export interface AccessRule { readonly _brand: unique symbol }
 
 export const allow = {
+  owner(_field: string): AccessRule { return { _brand: Symbol() } as unknown as AccessRule; },
+  sameTenant(_field: string): AccessRule { return { _brand: Symbol() } as unknown as AccessRule; },
+  any(_rules: AccessRule[]): AccessRule { return { _brand: Symbol() } as unknown as AccessRule; },
+  all(_rules: AccessRule[]): AccessRule { return { _brand: Symbol() } as unknown as AccessRule; },
   role(roles: string | string[]): AccessRule {
     return { _brand: Symbol() } as unknown as AccessRule;
   },
@@ -76,13 +82,15 @@ export interface ActionRef {
 
 export interface ActionBuilder extends ActionRef {
   from(table: string): ActionBuilder;
-  input(fields: string[]): ActionBuilder;
+  input(fields: string[] | Record<string, FieldBuilder>): ActionBuilder;
+  returns(model: string): ActionBuilder;
 }
 
 export function action(_name: string): ActionBuilder {
   const self: ActionBuilder = {
     from: () => self,
     input: () => self,
+    returns: () => self,
     whenChanged: () => self,
   };
   return self;
@@ -112,6 +120,7 @@ export function check(_expr: string): ModelConstraint { return constraintBuilder
 // ── Model builder ───────────────────────────────────────────────────────────
 
 export interface ModelDef {
+  tenant?: "required" | "global";
   fields: Record<string, FieldBuilder>;
   access?: {
     create?: AccessRule;

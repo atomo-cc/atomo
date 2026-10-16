@@ -68,3 +68,7 @@ GET /public/records/PublicListing?category=design&limit=20
 
 Both return only published rows; a request for `?status=draft` is ignored (status is forced and not
 an allowed query field).
+
+## Unreleased tenant policy
+
+Anonymous public reads also enter the shared principal scope. Operator allowlisting and `allow.public()` remain required; use an explicitly `tenant: "global"` model for shared null-tenant records. Required-tenant models cannot be exposed by omitting identity or tenant context. See [tenant compatibility guidance](/guide/advanced/multi-tenant).

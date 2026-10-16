@@ -138,6 +138,9 @@ impl JobStore {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS delegated_user_id TEXT")
+            .execute(&self.pool)
+            .await?;
         // Idempotent enqueue: at most one live row per (queue, idempotency_key) when a key is given.
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS jobs_idempotency
@@ -181,6 +184,47 @@ impl JobStore {
                 tenant_id,
             )
             .await?;
+        if created {
+            self.emit_enqueued(&id, queue, kind);
+        }
+        Ok(id)
+    }
+
+    /// Server-verified delegation, stored separately from untrusted job payload.
+    /// A caller-controlled `payload.actor` never grants CRUD authority.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn enqueue_as(
+        &self,
+        queue: &str,
+        kind: &str,
+        payload: Value,
+        idempotency_key: Option<&str>,
+        max_attempts: i32,
+        priority: i32,
+        tenant_id: Option<&str>,
+        actor_id: Option<&str>,
+    ) -> Result<String> {
+        let mut tx = self.pool.begin().await?;
+        let (id, created) = self
+            .enqueue_tx(
+                &mut tx,
+                queue,
+                kind,
+                payload,
+                idempotency_key,
+                max_attempts,
+                priority,
+                tenant_id,
+            )
+            .await?;
+        if created {
+            sqlx::query("UPDATE jobs SET delegated_user_id = $2 WHERE id = $1")
+                .bind(&id)
+                .bind(actor_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
         if created {
             self.emit_enqueued(&id, queue, kind);
         }

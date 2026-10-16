@@ -279,6 +279,9 @@ pub struct FieldChangeContext {
                     query_parts.join(",\n            ")
                 )
             }
+            AccessRule::Owner(_) | AccessRule::SameTenant(_) => {
+                anyhow::bail!("Row policies require the shared runtime")
+            }
             AccessRule::And(_) => {
                 // AND combination - similar to OR but with different operator
                 format!(

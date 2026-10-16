@@ -30,6 +30,33 @@ pub struct UserIdCtx(pub String);
 /// Tenant context for multi-tenant isolation
 pub struct TenantCtx(pub String);
 
+/// Apply the same row security to callers executing a built schema directly.
+/// HTTP handlers set a verified principal first; it takes precedence over data.
+pub struct RequestSecurity;
+
+impl async_graphql::extensions::ExtensionFactory for RequestSecurity {
+    fn create(&self) -> Arc<dyn async_graphql::extensions::Extension> {
+        Arc::new(Self)
+    }
+}
+
+#[async_trait::async_trait]
+impl async_graphql::extensions::Extension for RequestSecurity {
+    async fn execute(
+        &self,
+        ctx: &async_graphql::extensions::ExtensionContext<'_>,
+        operation: Option<&str>,
+        next: async_graphql::extensions::NextExecute<'_>,
+    ) -> async_graphql::Response {
+        let principal = crate::security::current().unwrap_or_else(|| crate::security::Principal {
+            user_id: ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone()),
+            role: ctx.data_opt::<UserRoleCtx>().map(|r| r.0.clone()),
+            tenant_id: ctx.data_opt::<TenantCtx>().map(|t| t.0.clone()),
+        });
+        crate::security::with_principal(principal, next.run(ctx, operation)).await
+    }
+}
+
 /// Re-export: set the request's RLS tenant scope around request execution.
 /// Wrap `schema.execute(req)` in this so RLS-enabled queries bind `atomo.tenant_id`.
 pub use crate::client::with_tenant_scope;
@@ -406,7 +433,12 @@ impl Mutation {
     ) -> GraphQLResult<HashMap<String, Value>> {
         check_access(&self.schema, &model, "create", ctx)?;
         let mut data = normalize_input_keys(data, &self.schema, &model);
-        if let Some(t) = ctx.data_opt::<TenantCtx>() {
+        if crate::security::current().is_some() {
+            if let Some(def) = self.schema.models.get(&model) {
+                data = crate::security::prepare(def, &data, false)
+                    .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            }
+        } else if let Some(t) = ctx.data_opt::<TenantCtx>() {
             data.insert("tenant_id".to_string(), Value::String(t.0.clone()));
         }
         if let Some(model_def) = self.schema.models.get(&model) {
@@ -654,12 +686,16 @@ impl Subscription {
         }
         let rx = self.client.subscribe(&model, &[], &[]).await;
         let model_filter = model;
-        // S3a: scope the stream to the subscriber's tenant (from connection_init), so events
-        // don't leak across tenants. None = single-tenant/unscoped → no tenant filtering.
-        let tenant = ctx.data_opt::<TenantCtx>().map(|t| t.0.clone());
+        let policy_model = self.client.schema().models.get(&model_filter).cloned();
+        let principal = crate::security::Principal {
+            user_id: ctx.data_opt::<UserIdCtx>().map(|u| u.0.clone()),
+            role: ctx.data_opt::<UserRoleCtx>().map(|r| r.0.clone()),
+            tenant_id: ctx.data_opt::<TenantCtx>().map(|t| t.0.clone()),
+        };
         Ok(BroadcastStream::new(rx).filter_map(move |result| {
             let m = model_filter.clone();
-            let t = tenant.clone();
+            let principal = principal.clone();
+            let policy_model = policy_model.clone();
             async move {
                 result
                     .ok()
@@ -667,13 +703,9 @@ impl Subscription {
                         if e.model_name != m {
                             return false;
                         }
-                        match &t {
-                            Some(tid) => {
-                                e.data.get("tenant_id").and_then(|v| v.as_str())
-                                    == Some(tid.as_str())
-                            }
-                            None => true,
-                        }
+                        policy_model.as_ref().is_some_and(|model| {
+                            crate::security::row_allowed(model, &principal, &e.data)
+                        })
                     })
                     .map(|mut e| {
                         e.data = camel_keys(e.data);
@@ -697,6 +729,7 @@ pub fn build_schema(
     let subscription = Subscription::new(client.clone());
 
     GraphQLSchema::build(query, mutation, subscription)
+        .extension(RequestSecurity)
         .data(client)
         .data(pool)
         .finish()

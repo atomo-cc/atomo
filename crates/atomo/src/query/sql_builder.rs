@@ -309,6 +309,21 @@ fn build_where(where_clauses: &[WhereClause], param_offset: usize) -> (String, V
     for clause in where_clauses {
         let col = quote_ident(&to_snake_case(&clause.field));
         match &clause.operator {
+            WhereOperator::And(children) | WhereOperator::Or(children) => {
+                let is_and = matches!(&clause.operator, WhereOperator::And(_));
+                let mut nested = Vec::new();
+                for child in children {
+                    let (sql, values) = build_where(std::slice::from_ref(child), idx - 1);
+                    idx += values.len();
+                    params.extend(values);
+                    nested.push(sql);
+                }
+                parts.push(if nested.is_empty() {
+                    if is_and { "TRUE" } else { "FALSE" }.into()
+                } else {
+                    format!("({})", nested.join(if is_and { " AND " } else { " OR " }))
+                });
+            }
             WhereOperator::Equals => {
                 // For string values, cast the column to text so the comparison works
                 // against both TEXT and UUID columns (e.g. id). Numbers/bools compare directly.
@@ -425,6 +440,7 @@ mod tests {
             constraints: Vec::new(),
             events: Default::default(),
             ui: None,
+            tenant_policy: Default::default(),
         }
     }
 

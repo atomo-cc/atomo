@@ -99,7 +99,16 @@ pub fn generate_typescript_client(schema: &Schema) -> String {
                 out.push_str(&format!("export interface {}Input {{\n", aname));
                 for f in fields {
                     let opt = if f.required { "" } else { "?" };
-                    out.push_str(&format!("  {}{}: {};\n", f.name, opt, f.field_type));
+                    out.push_str(&format!(
+                        "  {}{}: {};\n",
+                        f.name,
+                        opt,
+                        if f.field_type == "json" {
+                            "unknown"
+                        } else {
+                            &f.field_type
+                        }
+                    ));
                 }
                 out.push_str("}\n\n");
             }
@@ -247,6 +256,7 @@ mod tests {
             constraints: Vec::new(),
             events,
             ui: None,
+            tenant_policy: Default::default(),
         }
     }
 
@@ -377,16 +387,19 @@ mod tests {
                             name: "to".to_string(),
                             field_type: "string".to_string(),
                             required: true,
+                            validation: Default::default(),
                         },
                         ActionInputField {
                             name: "subject".to_string(),
                             field_type: "string".to_string(),
                             required: true,
+                            validation: Default::default(),
                         },
                         ActionInputField {
                             name: "cc".to_string(),
                             field_type: "string".to_string(),
                             required: false,
+                            validation: Default::default(),
                         },
                     ],
                 },

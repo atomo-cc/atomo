@@ -23,6 +23,7 @@ export const schema = {
   models: {
     Post: {
       tableName: "lifecycle_test_posts",
+      tenant: "global",
       events: {
         created: [{ action: "processPost" }],
         updated: [
@@ -60,6 +61,10 @@ async fn setup() -> (
         .await
         .unwrap();
 
+    atomo_server::ensure_platform_tables(atomo.db_pool())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO users(id,email,password_hash,role) VALUES('user-1','lifecycle@example.invalid','unused','viewer') ON CONFLICT (id) DO NOTHING").execute(atomo.db_pool()).await.unwrap();
     let job_store = Arc::new(atomo_server::jobs::JobStore::new(
         atomo.db_pool().clone(),
         atomo.event_sender(),
@@ -206,7 +211,7 @@ async fn lifecycle_create_enqueue_worker_crud_update_origin_loop_prevention() {
         .body(Body::from(
             json!({
                 "data": { "title": "Processed Title", "status": "published" },
-                "actor": { "userId": "user-1", "role": null },
+                "actor": { "userId": "user-1", "jobId": job_id, "leaseId": lease_id },
                 "origin": "processPost"
             })
             .to_string(),

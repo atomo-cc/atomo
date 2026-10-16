@@ -32,6 +32,7 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
                     FieldAttribute::ForeignKey => "foreignKey",
                     FieldAttribute::Timestamp => "timestamp",
                     FieldAttribute::Default(_) => "default",
+                    FieldAttribute::FromAuth(_) => "fromAuth",
                 })
                 .collect();
             fields.insert(
@@ -61,14 +62,14 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
             None => json!(null),
         };
 
-        // Access rules as plain strings ("admin|manager", "authenticated", ...) so
-        // the admin UI can hide affordances the caller's role can't use. The UI
-        // gate is cosmetic — the server enforces regardless; anything not
-        // expressible as a simple rule string serializes as null (UI fails open).
+        // Keep legacy string metadata consumable by existing admin clients.
+        // Structured expressions are preserved separately; conjunctions unsupported
+        // by those clients use a conservative summary rather than a broader rule.
         let access = model.access.as_ref().map(|ac| {
             let rule = |r: &Option<atomo::schema::AccessRule>| match r {
                 Some(atomo::schema::AccessRule::Boolean(s)) => json!(s),
-                _ => json!(null),
+                Some(other) => json!(access_summary(other)),
+                None => json!(null),
             };
             json!({
                 "create": rule(&ac.create),
@@ -88,6 +89,8 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
                 "validation": model.validation,
                 "ui": ui,
                 "access": access,
+                "accessExpressions": model.access,
+                "tenantPolicy": model.tenant_policy,
             }),
         );
     }
@@ -98,6 +101,23 @@ pub fn extract_schema_metadata(atomo: &Atomo) -> Value {
         "generated_at": chrono::Utc::now().to_rfc3339(),
         "platform": { "name": "Atomo", "version": env!("CARGO_PKG_VERSION") }
     })
+}
+
+/// Preserve the legacy string metadata contract. Full expressions live in
+/// accessExpressions; conjunctions unsupported by older UIs are conservative.
+fn access_summary(rule: &atomo::schema::AccessRule) -> String {
+    use atomo::schema::AccessRule;
+    match rule {
+        AccessRule::Boolean(value) => value.clone(),
+        AccessRule::Owner(_) => "owner".into(),
+        AccessRule::SameTenant(_) => "sameTenant".into(),
+        AccessRule::Or(rules) => rules
+            .iter()
+            .map(access_summary)
+            .collect::<Vec<_>>()
+            .join("|"),
+        AccessRule::And(_) | AccessRule::Query(_) => "never".into(),
+    }
 }
 
 /// Map a Rust FieldType to the UI's field-type string.

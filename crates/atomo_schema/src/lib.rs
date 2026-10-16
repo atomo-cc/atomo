@@ -19,6 +19,7 @@ pub mod dsl_parser;
 pub mod hasura_v2_resolver_generator;
 pub mod hasura_v2_type_generator;
 pub mod hook_access_generator;
+mod object_syntax;
 pub mod operation_definitions;
 pub mod parser;
 pub mod schema_dsl_parser;

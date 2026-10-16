@@ -8,7 +8,7 @@
 //! action that triggered the call; the action dispatcher uses it to avoid re-enqueuing
 //! the originating action (loop prevention).
 
-use atomo::client::{scope_by_tenant, with_action_origin, with_tenant_scope, AtomoClient};
+use atomo::client::{with_action_origin, AtomoClient};
 use atomo::graphql::parse_where;
 use atomo::query::{WhereClause, WhereOperator};
 use atomo::schema::Schema;
@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use crate::job_routes::worker_auth_middleware;
 use crate::jobs::{WorkerIdentity, WorkerTokenStore};
+use atomo::security::{with_principal, Principal};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,8 @@ struct CrudState {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ActorSnapshot {
+    job_id: Option<String>,
+    lease_id: Option<String>,
     user_id: Option<String>,
     role: Option<String>,
     tenant_id: Option<String>,
@@ -145,6 +148,69 @@ fn error_response(e: anyhow::Error) -> Response {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
+async fn verified_actor(
+    state: &CrudState,
+    worker: &WorkerIdentity,
+    actor: Option<&ActorSnapshot>,
+) -> Result<Principal, anyhow::Error> {
+    let Some(actor) = actor else {
+        return Ok(Principal::default());
+    };
+    let job_id = actor
+        .job_id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Access denied: verified job delegation required"))?;
+    let lease_id = actor
+        .lease_id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Access denied: active job lease required"))?;
+    let (id, tenant, queue): (Option<String>, Option<String>, String) = sqlx::query_as("SELECT delegated_user_id, tenant_id, queue FROM jobs WHERE id=$1 AND lease_id=$2 AND status='leased' AND visible_at > NOW()")
+        .bind(job_id).bind(lease_id).fetch_optional(state.client.db_pool()).await?.ok_or_else(|| anyhow::anyhow!("Access denied: invalid or expired job delegation"))?;
+    if !worker.may_lease(&queue) {
+        anyhow::bail!("Access denied: worker queue scope");
+    }
+    let id = id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("Access denied: job has no verified delegation"))?;
+    if actor
+        .user_id
+        .as_deref()
+        .is_some_and(|claimed| claimed != id)
+    {
+        anyhow::bail!("Access denied: forged actor identity");
+    }
+    if actor
+        .tenant_id
+        .as_deref()
+        .is_some_and(|claimed| tenant.as_deref() != Some(claimed))
+    {
+        anyhow::bail!("Access denied: forged job tenant");
+    }
+    let (role, bound): (String, Option<String>) =
+        sqlx::query_as("SELECT role, tenant_id FROM users WHERE id = $1 AND is_active = true")
+            .bind(id)
+            .fetch_optional(state.client.db_pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Access denied: actor not active"))?;
+    if actor
+        .role
+        .as_deref()
+        .is_some_and(|claimed| !claimed.eq_ignore_ascii_case(&role))
+    {
+        anyhow::bail!("Access denied: forged actor role");
+    }
+    let tenant_id = atomo::security::resolve_tenant(
+        bound.as_deref(),
+        tenant.as_deref(),
+        role.eq_ignore_ascii_case("admin"),
+    )?;
+    Ok(Principal {
+        user_id: Some(id.into()),
+        role: Some(role),
+        tenant_id,
+    })
+}
+
 async fn create(
     State(state): State<CrudState>,
     Extension(worker): Extension<WorkerIdentity>,
@@ -158,14 +224,17 @@ async fn create(
         return r;
     }
     let actor = req.actor.as_ref();
-    let role = actor.and_then(|a| a.role.as_deref());
-    let user_id = actor.and_then(|a| a.user_id.as_deref());
-    let tenant_id = actor.and_then(|a| a.tenant_id.as_deref());
+    let principal = match verified_actor(&state, &worker, actor).await {
+        Ok(p) => p,
+        Err(e) => return error_response(e),
+    };
+    let role = principal.role.as_deref();
+    let user_id = principal.user_id.as_deref();
 
     let result = with_action_origin(
         req.origin,
-        with_tenant_scope(
-            tenant_id.map(String::from),
+        with_principal(
+            principal.clone(),
             state
                 .client
                 .create_checked(role, &model, &req.data, &[], user_id),
@@ -194,8 +263,11 @@ async fn find_by_id(
         .actor
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
-    let role = actor.as_ref().and_then(|a| a.role.as_deref());
-    let tenant_id = actor.as_ref().and_then(|a| a.tenant_id.as_deref());
+    let principal = match verified_actor(&state, &worker, actor.as_ref()).await {
+        Ok(p) => p,
+        Err(e) => return error_response(e),
+    };
+    let role = principal.role.as_deref();
 
     if let Err(e) = state.client.enforce_access(&model, "read", role) {
         return error_response(e);
@@ -206,10 +278,9 @@ async fn find_by_id(
         operator: WhereOperator::Equals,
         value: Value::String(id),
     }];
-    let where_clauses = scope_by_tenant(&where_clauses, tenant_id);
 
-    let result = with_tenant_scope(
-        tenant_id.map(String::from),
+    let result = with_principal(
+        principal.clone(),
         state.client.find_unique(&model, &where_clauses, &[]),
     )
     .await;
@@ -233,23 +304,23 @@ async fn update(
         return r;
     }
     let actor = req.actor.as_ref();
-    let role = actor.and_then(|a| a.role.as_deref());
-    let user_id = actor.and_then(|a| a.user_id.as_deref());
-    let tenant_id = actor.and_then(|a| a.tenant_id.as_deref());
+    let principal = match verified_actor(&state, &worker, actor).await {
+        Ok(p) => p,
+        Err(e) => return error_response(e),
+    };
+    let role = principal.role.as_deref();
+    let user_id = principal.user_id.as_deref();
 
-    let where_clauses = scope_by_tenant(
-        &[WhereClause {
-            field: "id".to_string(),
-            operator: WhereOperator::Equals,
-            value: Value::String(id),
-        }],
-        tenant_id,
-    );
+    let where_clauses = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: Value::String(id),
+    }];
 
     let result = with_action_origin(
         req.origin,
-        with_tenant_scope(
-            tenant_id.map(String::from),
+        with_principal(
+            principal.clone(),
             state
                 .client
                 .update_many_checked(role, &model, &where_clauses, &req.data, &[], user_id),
@@ -278,24 +349,24 @@ async fn delete_one(
         return r;
     }
     let actor = body.as_ref().and_then(|b| b.actor.as_ref());
-    let role = actor.and_then(|a| a.role.as_deref());
-    let user_id = actor.and_then(|a| a.user_id.as_deref());
-    let tenant_id = actor.and_then(|a| a.tenant_id.as_deref());
+    let principal = match verified_actor(&state, &worker, actor).await {
+        Ok(p) => p,
+        Err(e) => return error_response(e),
+    };
+    let role = principal.role.as_deref();
+    let user_id = principal.user_id.as_deref();
 
-    let where_clauses = scope_by_tenant(
-        &[WhereClause {
-            field: "id".to_string(),
-            operator: WhereOperator::Equals,
-            value: Value::String(id),
-        }],
-        tenant_id,
-    );
+    let where_clauses = vec![WhereClause {
+        field: "id".to_string(),
+        operator: WhereOperator::Equals,
+        value: Value::String(id),
+    }];
 
     let origin = body.as_ref().and_then(|b| b.origin.clone());
     let result = with_action_origin(
         origin,
-        with_tenant_scope(
-            tenant_id.map(String::from),
+        with_principal(
+            principal.clone(),
             state
                 .client
                 .delete_many_checked(role, &model, &where_clauses, user_id),
@@ -324,26 +395,28 @@ async fn find_many(
         .actor
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
-    let role = actor.as_ref().and_then(|a| a.role.as_deref());
-    let tenant_id = actor.as_ref().and_then(|a| a.tenant_id.as_deref());
+    let principal = match verified_actor(&state, &worker, actor.as_ref()).await {
+        Ok(p) => p,
+        Err(e) => return error_response(e),
+    };
+    let role = principal.role.as_deref();
 
     if let Err(e) = state.client.enforce_access(&model, "read", role) {
         return error_response(e);
     }
 
-    let mut where_clauses: Vec<WhereClause> = params
+    let where_clauses: Vec<WhereClause> = params
         .where_json
         .as_deref()
         .and_then(|s| serde_json::from_str::<Value>(s).ok())
         .map(|v| parse_where(&v))
         .unwrap_or_default();
-    where_clauses = scope_by_tenant(&where_clauses, tenant_id);
 
     let limit = params.limit.unwrap_or(50).min(200) as usize;
     let offset = params.offset.unwrap_or(0).max(0) as usize;
 
-    let result = with_tenant_scope(
-        tenant_id.map(String::from),
+    let result = with_principal(
+        principal.clone(),
         state
             .client
             .find_many(&model, &where_clauses, &[], Some(limit), Some(offset), &[]),
@@ -459,6 +532,7 @@ mod tests {
                 constraints: vec![],
                 events: Default::default(),
                 ui: None,
+                tenant_policy: Default::default(),
             },
         );
         let schema = Schema {

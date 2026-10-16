@@ -90,6 +90,11 @@ export interface User {
 }
 
 export interface createLeadAndContactInput {
+  email: string;
+  firstName: string;
+  lastName: string;
+  companyName: string;
+  source: string;
 }
 
 export type enrichCompanyInput = Pick<Company, 'id' | 'name' | 'website' | 'tenantId'>;

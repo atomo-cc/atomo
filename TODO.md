@@ -1,5 +1,15 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## PR #85 — v0.8.1 preparation
+
+- [x] Locate the originating worktree and preserve its local changes; independent review checkout matches e993bc4. Source CI 38827258246 passed all five jobs.
+- [x] Verify local workspace check and strict all-target workspace Clippy before version edits; both exit 0 (logs: `.tmp/pr85-{check,clippy}.log` in the main worktree).
+- [x] Cut v0.8.1 changelog, bump all nine Rust crates and root/all five package manifests; regenerate both lockfiles. pnpm lock is unchanged after regeneration.
+- [x] Verify version consistency, unchanged dependency resolutions and workspace check after the bump. Audit confirms only nine own-crate version changes in Cargo.lock; real scaffolder tests pass 9/9, exit 0. Post-bump strict all-target Clippy, fmt and diff checks also pass.
+- [x] Push version preparation 27d4924 to draft PR #85 and dispatch CI 38832277991 on that exact head.
+- [x] Versioned CI 38832277991 passes all five jobs on 27d4924: PostgreSQL/RLS Test Suite, Frontend Tests, Admin E2E Smoke (all three modes), Linting and Build. Evidence-only handoff changes TODO/plan; tested product code remains 27d4924.
+- [ ] Finish implementation review; merging and publication remain pending.
+
 ## v0.8.0 released (2026-10-15)
 
 - [x] Verify merged product code 084ac35: all five main CI jobs 38746219853 pass; clean Docker build and container admin smoke 9/9, exit 0. Image SHA and cleanup evidence: `.tmp/postmerge-pr82/merge-result.json`. PR #82 merged and its branch deleted.
@@ -151,3 +161,45 @@ Rule: mark `[x]` only after the item's verification passes. Work in plan order
 - [x] `cargo test --workspace` green (52 suites, 0 failures) + `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [x] `pnpm test` green (worker-sdk, client-sdk, admin-ui)
 - [x] `ci.yml` dispatched on `fix/consumer-field-report` (run 34708183958): all five jobs green — Test Suite, Linting, Frontend Tests, Admin E2E Smoke, Build
+
+## M1 — Schema security repair (2026-10-15)
+
+Active milestone. Existing F-series evidence above belongs to prior work.
+Only check an item after its verification passes in WSL Docker.
+
+- [x] Reproduce parser owner/composition, fromAuth and action gaps: 3 failures on baseline; initial repair passed 3/3; final parser regression suite passes 5/5 (exit 0).
+- [x] Preserve and execute owner/tenant/any/all; reject unsupported security syntax: parser suite + SQL/HTTP negatives passed.
+- [x] Unify tenant resolution, mismatch rejection, missing-header binding and explicit global policy: PostgreSQL + production HTTP routers passed (exit 0).
+- [x] Execute fromAuth; reject spoofing/updates/unknown sources: parser and PostgreSQL HTTP regressions passed (exit 0).
+- [x] Enforce parent visibility/tenant agreement: create, rebind, explicit global-parent and bulk rollback PostgreSQL regressions passed.
+- [x] Reject fractional/overflow/unsafe integer input before conversion: GraphQL and Worker HTTP regressions passed (exit 0); additional boundary checks pending below.
+- [x] Parse action input/returns and secure queue admission: HTTP auth/role/tenant/input rejection, no-enqueue assertions and scoped retry checks passed.
+- [x] Parser/unit (322), isolated PostgreSQL (100), GraphQL/Worker CRUD/action negatives and dependent server/CLI build passed; exact commands in tests/m1/REPORT.md.
+- [x] Strict clippy gate passes after main synchronization (exit 0, no exceptions); prior macro failure is retained as historical evidence.
+- [x] Applicable docs/changelog and generic report updated; artifact/count/secret checks passed. VitePress rendering and admin e2e not run (see report).
+- [x] Remaining relational membership/multi-tenant identity, action policy limits and M2/M3 boundaries recorded explicitly in tests/m1/REPORT.md.
+
+Immediate next step: reviewer inspects tests/m1/REPORT.md and evidence.json. M1 stops for review. Main synchronization resolves strict lint; relational membership/multi-tenant identity and M2/M3 are not implemented. Local checkpoint and merge commits were authorized; no remote operations were performed.
+
+- [x] Boundary, bulk rollback, raw owner-field and legacy action equivalence checks passed in WSL Docker.
+
+## M1 main synchronization
+
+- [x] Checkpoint generic implementation: 33cf529; local provenance, credentials and logs excluded, staged diff checked.
+- [x] Merge 039f2f0 resolves four conflicts, preserving upstream parser/CI/version changes and atomic sorted schema RLS; targeted parser (111), RLS (7), HTTP security (1) passed.
+- [x] Targeted parser/security, workspace 325, fresh PostgreSQL 105, server/CLI builds, fmt, strict clippy and SDK 23/type checks passed (all exit 0).
+- [x] Exact commit/test evidence and compatibility recorded locally; stop for review, no M2/M3 or remote operations.
+
+## M1 access property review revision
+
+- [x] Initial runtime loader regressions failed 4/4; expanded 5-test suite also failed on archived original sources, explicitly including duplicate orders (Cargo 101).
+- [x] Shared structural properties passed runtime cases and schema tests; quoted/escaped keys, comments, duplicates and unsupported syntax covered.
+- [x] Real runtime Atomo build + PostgreSQL/RLS + production HTTP verified admin/owner allow and non-admin/non-owner denial on reads and writes, for both formats (exit 0).
+- [x] Final WSL Docker workspace 333, fresh PG 106, server/CLI build, fmt and strict clippy all passed (exit 0, no exceptions). Local evidence preserves earlier failures and historical 325/105 results; stop for review.
+
+## M1 defineModel compatibility review revision
+
+- [x] New six-test runtime/compatibility regression suite failed 6/6 on the prior candidate (Cargo exit 101), then passed after unification.
+- [x] Shared declaration/access scanning covers all active compatibility calls and parser dispatch; runtime suite 7 and Schema tests passed (exit 0).
+- [x] Real PG/HTTP compatibility matrix verifies role/owner allow/deny and invalid rules rejected before migrations; all 3 security matrices passed (exit 0).
+- [x] Final WSL Docker workspace 340 and fresh PostgreSQL 107 passed; server/CLI builds, fmt and strict clippy all exit 0, no exceptions. Historical evidence retained; local generic revision and review report prepared.

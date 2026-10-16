@@ -9,6 +9,7 @@ use tower::ServiceExt;
 const SCHEMA: &str = r#"
 import { model, text, allow } from '@atomo/schema'
 export const Article = model('pr_articles', {
+  tenant: 'global',
   fields: {
     id: text().id(),
     slug: text().required(),

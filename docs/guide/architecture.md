@@ -15,7 +15,7 @@ Atomo is a Content Core: a schema-driven, event-sourced platform.
   Opt-in RLS policy installation is transactional across model tables; any setup
   error rolls back the batch and aborts startup before the listener binds.
 - CLI: `atomo_cli` orchestrates codegen, dev runtime, build, deploy.
-- Schema: `atomo_schema` parses `schema.ts` (SWC) and generates code.
+- Schema: `atomo_schema` parses builder and interface `schema.ts` declarations and generates code.
 - Projectors: `atomo_projectors` build read models from the event log.
 - Realtime: `atomo_realtime` is a transport-agnostic, in-memory hub for the
   ephemeral, high-frequency tier (channels, presence, fan-out); `atomo_server`
@@ -42,3 +42,11 @@ Data flows: `schema.ts` → codegen → GraphQL API + Admin UI + SDK types.
 `atomo::cache` owns bounded process-local read caching and weakly-owned expiration maintenance. `atomo::history` defines generic history/audit policy; `atomo::event_store::EventStore` applies model-history policy transactionally and persists coverage metadata. `atomo_server::audit` applies independent audit payload/retention policy. Server-owned tasks perform bounded maintenance; the aggregate store in `atomo_core` is unaffected.
 
 `atomo_projectors` checks all source-model replay capabilities before destructive rebuild, coordinating with retention through database locks. `atomo_server::storage_lifecycle_routes` exposes administrator-only, read-only usage and capability diagnostics. See [Storage lifecycle](/guide/storage-lifecycle) and [Storage API](/api/storage).
+
+## Request security
+
+`atomo::security` carries verified request identity and compiles row policies into SQL predicates used by shared CRUD, counts and relation reads. Shared write transactions validate resulting ownership and visible parent tenants before events commit. `atomo_server::auth::request_principal` resolves HTTP tenant selection; Worker CRUD verifies active job delegation stored separately from job payload. No new crate or public transaction API is introduced.
+
+The unreleased security parser shares structural object-property recognition across builder and legacy schemas; quoted keys preserve rules, while duplicate or dynamic security declarations fail loading. See [schema modeling](/guide/modeling).
+
+The unreleased security parser also covers defineModel compatibility declarations and supported aliases. Unsupported access callbacks and ambiguous declarations reject loading; declarative role and owner rules use the shared runtime.

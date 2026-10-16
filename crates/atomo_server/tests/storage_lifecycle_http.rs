@@ -42,7 +42,7 @@ async fn request(
 #[ignore]
 async fn authenticated_diagnostics_and_history_off_http_mutations() {
     let schema = r#"export interface StorageProbe { id: string; title: string; }
-        export const schema={models:{StorageProbe:{tableName:"storage_http_probes"}}}; export default schema;"#;
+        export const schema={models:{StorageProbe:{tableName:"storage_http_probes",tenant:"global"}}}; export default schema;"#;
     let mut history = atomo::history::HistoryConfig::default();
     history.models.insert(
         "StorageProbe".into(),

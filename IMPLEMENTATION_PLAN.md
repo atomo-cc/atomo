@@ -1,5 +1,28 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## PR #85: prepare the next patch version
+
+Prepare v0.8.1 on top of the published v0.8.0 without changing that release.
+Use the exact source from PR #85 in an independent worktree; preserve the
+originating worktree's local reports and changes. Source CI 38827258246 passed
+all five jobs on e993bc4. Finish local workspace check and strict Clippy, cut
+the current Security changelog into v0.8.1, bump all nine Rust crates and all
+root/package npm manifests, and regenerate both lockfiles. Verify version
+consistency and dependency stability, then push the preparation to the existing
+draft PR and dispatch CI on its new head. Review remains open; this preparation
+does not authorize merging, tagging or publishing. There are no additional API,
+configuration, environment, schema, UI or documentation-page changes in the
+version-only adjustment.
+
+Verified preparation: 27d4924 synchronizes all nine crates and all six npm
+manifests to 0.8.1. Workspace check, strict all-target Clippy, formatting and
+real scaffolder tests (9/9, exit 0) pass locally. Cargo.lock changes only nine
+own-crate versions; pnpm-lock.yaml is unchanged after regeneration. CI
+38832277991 passes all five jobs on that exact product code, including
+PostgreSQL/RLS and all three Admin modes. This handoff changes only evidence
+in TODO/plan. Draft PR #85 remains unmerged, implementation review remains
+open, and no v0.8.1 tag, Release or artifact publication was performed.
+
 ## v0.8.0 release preparation (2026-10-15)
 
 Prepare v0.8.0 for additive schema/media interfaces and the nullable GraphQL
@@ -363,3 +386,42 @@ Feature Change Checklist:
 Every item: unit tests co-located + integration test where wired, `cargo test`,
 `cargo clippy -- -D warnings`, docs page, `CHANGELOG.md [Unreleased]` entry.
 Final gate: dispatch `ci.yml` on the merged result and confirm all five jobs.
+
+## M1 — Schema security repair (2026-10-15)
+
+Work only in the authorized task worktree at base 8042c4f. Read-only external
+acceptance material has been inspected; all implementation fixtures stay generic.
+Rust compilation, formatting, tests and execution run inside WSL Docker only.
+
+- [x] Negative parser regressions recorded failing at baseline; data/HTTP acceptance negatives and final whole-workspace gates executed.
+- [x] Structured permissions and fail-closed declarations verified.
+- [x] Verified request identity/tenant resolution and job delegation verified.
+- [x] Source fields, safe integers and parent/tenant invariants verified.
+- [x] Action contracts and secure async admission verified.
+- [x] Isolated PostgreSQL/HTTP, dependent build, compatibility report and qualified lint diagnostic completed.
+- [x] Strict clippy now passes after integrating the upstream async-trait fix (exit 0, no lint exceptions); earlier M1 failure is historical.
+
+Relational membership and multi-tenant identity are a separate design item, not an
+alias for authenticated. M2/M3 and old-data migrations are outside this milestone.
+Local checkpoint and merge commits are authorized for the M1 main synchronization. No remote changes, consumer changes or volume deletion are authorized.
+
+## M1 main synchronization
+
+- [x] Preserve generic M1 changes: checkpoint 33cf529; explicit files reviewed and git diff --cached --check passed.
+- [x] Merge 039f2f0 incorporates verified local main; SQL literal regression and schema RLS rollback/startup tests passed.
+- [x] Targeted parser (111), RLS (7), HTTP matrix, workspace (325), fresh PG (105), builds, fmt, strict clippy and SDK (23 + type checks) passed; all Rust in WSL Docker.
+- [x] Local report/evidence updated with commit identities, four conflict decisions, exact results and remaining membership/multi-tenant limits.
+
+## M1 access property review revision
+
+- [x] Initial runtime loader regressions failed 4/4; expanded 5-test suite also failed on archived original sources, explicitly including duplicate orders (Cargo 101).
+- [x] Shared structural properties passed runtime cases and schema tests; quoted/escaped keys, comments, duplicates and unsupported syntax covered.
+- [x] Real runtime Atomo build + PostgreSQL/RLS + production HTTP verified admin/owner allow and non-admin/non-owner denial on reads and writes, for both formats (exit 0).
+- [x] Final WSL Docker workspace 333, fresh PG 106, server/CLI build, fmt and strict clippy all passed (exit 0, no exceptions). Local evidence preserves earlier failures and historical 325/105 results; stop for review.
+
+## M1 defineModel compatibility review revision
+
+- [x] New six-test runtime/compatibility regression suite failed 6/6 on the prior candidate (Cargo exit 101), then passed after unification.
+- [x] Shared declaration/access scanning covers all active compatibility calls and parser dispatch; runtime suite 7 and Schema tests passed (exit 0).
+- [x] Real PG/HTTP compatibility matrix verifies role/owner allow/deny and invalid rules rejected before migrations; all 3 security matrices passed (exit 0).
+- [x] Final WSL Docker workspace 340 and fresh PostgreSQL 107 passed; server/CLI builds, fmt and strict clippy all exit 0, no exceptions. Historical evidence retained; local generic revision and review report prepared.

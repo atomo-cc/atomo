@@ -13,7 +13,7 @@ export interface Note {
   id: string;
   title: string;
 }
-export const schema = { models: { Note: { tableName: 'notes', access: { read: 'authenticated', create: 'admin', update: 'admin', delete: 'admin' } } } };
+export const schema = { models: { Note: { tableName: 'notes', tenant: 'global', access: { read: 'authenticated', create: 'admin', update: 'admin', delete: 'admin' } } } };
 export default schema;
 "#;
     let atomo = atomo::Atomo::builder()
@@ -674,7 +674,7 @@ export interface Note {
   id: string;
   title: string;
 }
-export const schema = { models: { Note: { tableName: 'notes', access: { read: 'authenticated', create: 'admin' } } } };
+export const schema = { models: { Note: { tableName: 'notes', tenant: 'global', access: { read: 'authenticated', create: 'admin' } } } };
 export default schema;
 "#;
     let atomo = atomo::Atomo::builder()
@@ -721,7 +721,7 @@ export interface Note {
   id: string;
   title: string;
 }
-export const schema = { models: { Note: { tableName: 'notes', access: { read: 'public', create: 'public' } } } };
+export const schema = { models: { Note: { tableName: 'notes', tenant: 'required', access: { read: 'public', create: 'public' } } } };
 export default schema;
 "#;
     let atomo = atomo::Atomo::builder()
@@ -832,6 +832,11 @@ async fn test_crm_mutation_audited_with_actor() {
     use std::collections::HashMap;
 
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let cleanup = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::query("DROP TABLE IF EXISTS users CASCADE")
+        .execute(&cleanup)
+        .await
+        .unwrap();
     let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../services/crm-service/schema.ts")
         .to_string_lossy()
@@ -1071,9 +1076,7 @@ async fn test_update_zero_match_returns_null() {
         "zero-match update must return null, got: {json}"
     );
 
-    // 2. Create an unscoped row (tenant_id NULL), then a tenant-scoped update
-    //    must NOT match it — this is the reported footgun — and must say so
-    //    via null rather than a fake success.
+    // 2. Explicit global models admit global rows regardless of selected tenant.
     let create = serde_json::json!({
         "query": r#"mutation { create(model: "Note", data: { title: "global" }) }"#
     });
@@ -1092,13 +1095,12 @@ async fn test_update_zero_match_returns_null() {
         ),
     )
     .await;
-    assert!(
-        scoped["data"]["update"].is_null(),
-        "tenant-scoped update on a NULL-tenant row must return null, got: {scoped}"
+    assert_eq!(
+        scoped["data"]["update"]["title"], "zeroed",
+        "explicit global policy must remain usable"
     );
 
-    // 3. The same update unscoped still matches — the row exists; only the
-    //    tenant scope excluded it.
+    // 3. The same update without a header still matches the global row.
     let (_, unscoped) = send(
         &app,
         gql(

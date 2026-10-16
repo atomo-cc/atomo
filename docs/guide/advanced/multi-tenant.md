@@ -1,66 +1,100 @@
 ---
 title: Multi-tenant
-description: Tenant-scoped reads, writes, and subscriptions via a generated tenant_id column.
+description: Verified request identity, tenant isolation and explicit global models.
 ---
 
 # Multi-tenant
 
-Atomo scopes data per tenant at the **application layer** today: every generated table gets a
-nullable `tenant_id` column, and requests carrying a tenant are scoped to it.
+The unreleased M1 security repair makes generated models tenant-required by default.
+A verified user's `users.tenant_id` binds requests even without `X-Tenant-ID`.
+A conflicting header returns 403. An unbound non-admin cannot select a tenant;
+an unbound administrator may explicitly select one. This is single-tenant identity
+binding, not relational membership or multi-tenant identity support.
 
-## How it works
+## Schema policy
 
-- **Column:** migrations add `tenant_id TEXT` to every model table (nullable — single-tenant
-  deployments simply leave it `NULL` and nothing is scoped, so it's fully backward compatible).
-- **Request scoping:** send the tenant on each request:
-
-  ```
-  X-Tenant-ID: <tenant-id>
-  ```
-
-  When present (and the request is authenticated), reads filter by `tenant_id`, writes stamp it,
-  and subscriptions only deliver that tenant's events.
-- **Per-user binding:** a user row may have a `tenant_id`. If it does, the `X-Tenant-ID` header
-  **must match the user's tenant** — a user bound to tenant A cannot act as tenant B (a mismatched
-  header is dropped). Users with no binding may pass any tenant (single-tenant / admin use).
-
-## Example
-
-```bash
-# Tenant A only ever sees tenant A's contacts
-curl -s -X POST http://localhost:3000/graphql \
-  -H "authorization: Bearer $JWT" -H "x-tenant-id: tenant-a" \
-  -H 'content-type: application/json' \
-  -d '{"query":"{ records(model: \"Contact\") }"}'
+```ts
+export const Record = model('records', {
+  tenant: 'required', // default
+  fields: {
+    id: text().id(),
+    tenantId: text().fromAuth('tenantId'),
+    ownerId: text().fromAuth('userId'),
+    title: text().required(),
+  },
+  access: {
+    create: allow.authenticated(),
+    read: allow.owner('ownerId'),
+    update: allow.any([allow.owner('ownerId'), allow.role('admin')]),
+  },
+});
 ```
 
-Tenant A creating a record and Tenant B listing will not see each other's rows (verified by the
-`test_two_tenant_isolation` integration test).
+Use `tenant: 'global'` only for a model deliberately containing shared, null-tenant
+records. The legacy metadata format accepts the same `tenant` option. A global
+model admits only null-tenant rows; it does not expose tenant-owned rows to everyone.
+Model access rules still apply. A tenant-required model rejects requests without
+an authorized tenant and stamps the tenant on creates. Tenant changes are rejected.
 
-## Opt-in DB-enforced RLS (defense-in-depth)
+`.fromAuth('userId')` and `.fromAuth('tenantId')` use the verified request context.
+A conflicting supplied value is rejected; updating a source field is rejected,
+even if the supplied value is unchanged. Unknown sources reject schema loading.
+Authentication sources in action input declarations are rejected; action workers
+receive the verified actor separately.
 
-Postgres **Row-Level Security** is available as an **opt-in, additive** layer on top of the
-app-layer scoping. It is **off by default** — when disabled, behavior is byte-for-byte unchanged.
+`owner`, `sameTenant`, `any` and `all` remain structured rules. Reads, point
+lookups, counts, includes and pagination use SQL predicates. Updates check old
+rows in the UPDATE predicate and check the resulting row before commit. A caller
+cannot claim an existing row by changing its owner first. Unknown access syntax
+fails schema loading; legacy arbitrary query expressions are rejected when loading a runtime schema.
 
-### Enable it
+## Relationships
 
-```bash
-ATOMO_ENABLE_RLS=true   # accepts true / 1; default false
-```
+Shared writes verify belongs-to parents inside the write transaction using the
+parent's read policy and a shared row lock. Parents must be visible and have the
+same tenant. An explicitly global parent is allowed only when its read policy
+allows the reference. Creation, rebinding and shared bulk writes use this path;
+a failed check rolls back the rows and their events. Tenant fields cannot change
+through these request paths. Trusted Rust system APIs outside a principal scope
+remain privileged; do not expose them as request handlers.
 
-On boot (after tables exist) the server runs, for every model table:
+## Upgrade and existing null rows
+
+Existing rows are not deleted, reassigned or backfilled. Null rows in a required
+model become inaccessible through request CRUD. Inventory them using a separately
+authorized maintenance role before upgrading. If an entire model is deliberately
+global, explicitly declare it global. Mixed global/tenant rows in one model are
+not supported by this initial policy. There is no automatic fallback to legacy
+unscoped access. A header cannot substitute for membership authorization.
+
+## PostgreSQL RLS
+
+`ATOMO_ENABLE_RLS=true` enables database enforcement in addition to shared-layer
+filtering. It remains opt-in; application filtering applies independently.
+Server startup generates ENABLE/FORCE ROW LEVEL SECURITY and replaces each
+model's `atomo_tenant_isolation` policy. Required models use:
 
 ```sql
-ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
-ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;   -- also constrains the table-owning role
-DROP POLICY IF EXISTS atomo_tenant_isolation ON <t>;
-CREATE POLICY atomo_tenant_isolation ON <t>
-  USING      (tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true))
-  WITH CHECK (tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true));
+USING (tenant_id IS NOT NULL AND tenant_id = current_setting('atomo.tenant_id', true))
+WITH CHECK (tenant_id IS NOT NULL AND tenant_id = current_setting('atomo.tenant_id', true))
 ```
 
-Setup is **idempotent** (safe on every boot). The policy is **permissive**: rows with
-`tenant_id IS NULL` stay visible/writable, so single-tenant deployments are unaffected.
+Global models use `tenant_id IS NULL` for both clauses. Setup is idempotent;
+policy failures abort startup. The legacy low-level `policy_statements_for` helper
+retains its permissive policy for explicit library callers; the server uses
+`ensure_schema_rls` and the schema policies above.
+
+Tenant binding uses `SET LOCAL` in the same transaction as the protected SQL,
+so it resets on commit/rollback and works with transaction pooling. Read cache
+keys include the actual policy predicates and tenant. WebSocket connection init
+uses the same tenant resolver; model events are also checked against row access
+and tenant before delivery. Events without sufficient row fields are withheld.
+
+`FORCE` constrains the table owner, but superusers/BYPASSRLS bypass policies.
+Startup therefore rejects such roles when RLS is enabled. Use a non-superuser,
+non-BYPASSRLS application role that can own/migrate its schema.
+`ATOMO_RLS_ALLOW_BYPASS_ROLE=true` explicitly overrides the boot refusal and logs
+an error; it does not make PostgreSQL enforce policies for privileged roles.
 
 All model policies are installed in **one transaction**, in a stable table order.
 Any installation error (including a missing table, missing `tenant_id`, or insufficient
@@ -93,43 +127,15 @@ This flag only bypasses the connection-role check; it never suppresses policy
 installation errors. For an existing database, check ownership of each managed
 table before enabling RLS; granting database access does not transfer table ownership.
 
-### What it enforces
+## Remaining scope
 
-A forgotten `WHERE tenant_id = …` cannot leak across tenants: Postgres filters every row against
-the `atomo.tenant_id` session variable set for the request, so cross-tenant reads/writes are
-rejected by the database itself — not just the application.
+Relational membership, a user belonging to several tenants, event-store tenant
+APIs, synchronous atomic commands and old-data migration need separate work.
+The server does not infer membership from an arbitrary model or request header.
 
-### Pooling note (important)
+See [Access control](/guide/advanced/access-hooks), [Workers](/guide/workers),
+and [GraphQL](/api/graphql).
 
-The session variable is set with `SET LOCAL atomo.tenant_id = …` (via `set_config(…, true)`), which
-is **transaction-scoped** — it resets at COMMIT/ROLLBACK. This makes it **safe under PgBouncer
-transaction pooling**: the binding can never leak onto another tenant's request reusing the same
-physical connection. The bind and the queries it protects **must run in the same transaction**.
+Access properties in both builder and legacy schema objects are read structurally: bare, single-quoted and double-quoted keys have the same meaning, including whitespace and comments around separators. Duplicate properties (including escaped aliases), dynamic access values, spreads, computed keys, shorthand and methods reject schema loading. Schema/model containers must be inline objects; ambiguous declarations never select the first or last rule. Comments, strings and nested options cannot supply a model's access policy. Missing access retains its existing default semantics; an explicit unsupported declaration never becomes missing access.
 
-Helper: `atomo_server::rls::bind_tenant(&mut tx, tenant_id)`.
-
-### Per-transaction wiring status — **wired**
-
-Per-request enforcement is now active end to end:
-
-- **Request boundary:** `graphql_handler` wraps execution in
-  `atomo::graphql::with_tenant_scope(tenant, schema.execute(req))` — the tenant is the same
-  header value that gates `TenantCtx`, so app-layer scoping and RLS binding can never disagree.
-- **Executor:** when `ATOMO_ENABLE_RLS` is on and a scope is active, `AtomoClient`'s read/write
-  methods run each statement inside `pool.begin()` + `SET LOCAL atomo.tenant_id` on the same
-  connection, then commit. The read cache is **tenant-keyed** so a cached read can't cross tenants.
-- **Off / unscoped callers** (SDK, projectors, seeding) run directly on the pool — unchanged.
-
-Proven against Postgres by `crates/atomo_server/tests/rls_enforcement.rs` (policy + primitive) and
-`crates/atomo/tests/rls_executor.rs` (`find_many` under scope, incl. the "forgot the WHERE" case and
-the tenant-keyed cache).
-
-**Not yet scoped:** the GraphQL **subscription/WS** path, and event-store per-tenant scoping (below).
-
-## Limits & roadmap
-
-- **Event-store tenant scoping** (per-event tenant metadata) is planned.
-
-## See also
-- [Access Control (RBAC)](/guide/advanced/access-hooks)
-- [Security & Auth](/guide/advanced/security)
+The defineModel compatibility entry now shares the structural access parser with builder models and schema.models. Use inline declarative role strings or allow rules; legacy JavaScript access callbacks are rejected for every key/operation spelling. Named-import aliases and simple immutable const aliases are recognized; unsupported factory references, unresolved targets, duplicate normalized model definitions and mixed builder/compatibility declarations fail loading. A compatibility binding must name its interface directly or use the InterfaceNameModel convention. Hooks retain their existing compatibility behavior; this does not add callback execution or standalone row-policy code generation.

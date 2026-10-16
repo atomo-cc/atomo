@@ -1,38 +1,7 @@
-//! Opt-in, DB-enforced multi-tenant **Row-Level Security (RLS)**.
-//!
-//! This is the *defense-in-depth* half of Atomo's multi-tenant story (the
-//! "pool" model: shared schema + `tenant_id` + Postgres RLS). The application
-//! layer already scopes reads/writes by `tenant_id` (see `auth.rs` +
-//! `handlers.rs`); RLS makes a **forgotten `WHERE tenant_id = …` clause unable
-//! to leak across tenants** because the database itself filters every row.
-//!
-//! # Opt-in / additive
-//!
-//! Everything here is gated behind the `ATOMO_ENABLE_RLS` env flag (default
-//! **false**). When the flag is off, [`ensure_rls_policies`] is a no-op and
-//! behavior is byte-for-byte unchanged. Turning it on is additive: the policy
-//! `tenant_id IS NULL OR tenant_id = current_setting('atomo.tenant_id', true)`
-//! is permissive for `NULL` tenants, so single-tenant deployments (which leave
-//! `tenant_id` NULL) keep working untouched.
-//!
-//! # The four pieces (see docs/guide/advanced/multi-project-design.md)
-//!
-//! 1. **Policy generation + setup** — [`ensure_rls_policies`] runs, per model
-//!    table: `ENABLE ROW LEVEL SECURITY` + a `CREATE POLICY` keyed on the
-//!    `atomo.tenant_id` session var (with `WITH CHECK` for writes). Idempotent.
-//! 2. **Per-transaction binding** — [`bind_tenant`] runs `SET LOCAL
-//!    atomo.tenant_id = $1` inside a transaction, so the policy resolves to the
-//!    request's tenant. `SET LOCAL` is transaction-scoped → safe under PgBouncer
-//!    transaction pooling.
-//! 3. **Boot hook** — called from `server.rs run()` after tables exist.
-//! 4. **Event-store scoping** — out of scope here (planned follow-up).
-//!
-//! # Caveat: table owners / superusers bypass RLS
-//!
-//! Table owners bypass RLS by default. The boot role needs table-management
-//! privileges to install policies; we emit `FORCE ROW LEVEL SECURITY` so the
-//! owning role is constrained too. Superusers/BYPASSRLS roles still bypass
-//! FORCE, so [`check_connection_role`] rejects them unless explicitly allowed.
+//! Database tenant isolation. Server boot uses schema-aware required/global
+//! policies through ensure_schema_rls. Legacy low-level policy helpers retain
+//! their explicit permissive behavior for library callers. Application row
+//! permissions are separately enforced by atomo::security; RLS is defense in depth.
 
 use anyhow::Context;
 use sqlx::PgPool;
@@ -249,8 +218,52 @@ pub async fn bind_tenant(
 //   - `atomo/tests/rls_executor.rs` (`find_many` under `with_tenant_scope`, incl. the
 //     "forgot the WHERE" case and tenant-keyed cache).
 //
-// Remaining follow-ups: the GraphQL *subscription/WS* path is not yet scoped, and
-// event-store per-tenant scoping (step 4) is still planned.
+// GraphQL WebSocket delivery applies verified tenant and row rules.
+// Event-store per-tenant APIs remain a separate follow-up.
+
+/// Schema-aware policies: existing null rows stay stored but are inaccessible in
+/// required-tenant models. Only an explicit global model admits global rows.
+/// Install the whole schema atomically, locking tables in stable name order.
+/// An error restores all previous policies and flags and refuses startup.
+pub async fn ensure_schema_rls(
+    pool: &PgPool,
+    schema: &atomo::schema::Schema,
+) -> anyhow::Result<()> {
+    let mut models: Vec<_> = schema
+        .models
+        .values()
+        .filter(|m| m.fields.contains_key("id") && !m.fields.contains_key("_enum_type"))
+        .map(|model| (atomo::query::sql_builder::table_name_for(model), model))
+        .collect();
+    models.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin schema RLS policy installation")?;
+    for (table, model) in models {
+        let mut statements = policy_statements_for(&table);
+        let condition = if model.tenant_policy == atomo::schema::TenantPolicy::Global {
+            "tenant_id IS NULL".to_owned()
+        } else {
+            format!(
+                "tenant_id IS NOT NULL AND tenant_id = current_setting('{TENANT_SETTING}', true)"
+            )
+        };
+        let qt = atomo::query::sql_builder::quote_ident(&table);
+        let qp = atomo::query::sql_builder::quote_ident(POLICY_NAME);
+        *statements.last_mut().unwrap() =
+            format!("CREATE POLICY {qp} ON {qt} USING ({condition}) WITH CHECK ({condition})");
+        for sql in statements {
+            sqlx::query(&sql).execute(&mut *tx).await.with_context(|| {
+                format!("RLS policy installation failed for table '{table}'; refusing startup")
+            })?;
+        }
+    }
+    tx.commit()
+        .await
+        .context("commit schema RLS policy installation")?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

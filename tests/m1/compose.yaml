@@ -1,0 +1,33 @@
+name: atomo-m1-8ba42721
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: m1
+      POSTGRES_DB: m1
+      POSTGRES_PASSWORD: ${M1_PASSWORD:?local credential required}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U m1 -d m1]
+      interval: 2s
+      retries: 30
+  rust:
+    image: atomo-m1-tools:8ba42721
+    build: .
+    working_dir: /work
+    volumes:
+      - ../..:/work
+      - cargo:/usr/local/cargo/registry
+      - target:/work/target
+    environment:
+      DATABASE_URL: postgres://m1_app:${M1_PASSWORD}@db:5432/${M1_DATABASE:-m1_accept}
+      CARGO_BUILD_JOBS: 4
+      ATOMO_ENABLE_RLS: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  database:
+  cargo:
+  target:

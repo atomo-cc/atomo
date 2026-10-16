@@ -108,3 +108,13 @@ SQL strings inside `check(...)` and `.where(...)` may contain names such as
 schema constraints. Use the other quote style to enclose SQL string literals,
 for example `check("position('index(' in title) > 0")` or
 `index(['title']).where("title <> 'check('")`.
+
+## Unreleased security semantics
+
+Builder `allow.owner(field)` and `allow.sameTenant(field)` retain their fields; `allow.any([...])` and `allow.all([...])` preserve their complete expression trees. Unknown security declarations fail loading. `.fromAuth("userId" | "tenantId")` fills immutable source fields from verified identity. Models default to `tenant: "required"`; use `tenant: "global"` deliberately for shared null-tenant records. See [tenant isolation and upgrade policy](/guide/advanced/multi-tenant).
+
+`number()` still maps to PostgreSQL BIGINT. Shared writes and action input validation accept JSON integer tokens only, within JavaScript safe integer bounds (-9007199254740991 through 9007199254740991). Fractional values, numeric strings, floating-point tokens and larger integers are rejected before SQL conversion. Full-range BIGINT string encoding and decimal/float types are not introduced here. Declared nullable fields retain null behavior and existing required/min/max constraints still apply.
+
+Access properties in both builder and legacy schema objects are read structurally: bare, single-quoted and double-quoted keys have the same meaning, including whitespace and comments around separators. Duplicate properties (including escaped aliases), dynamic access values, spreads, computed keys, shorthand and methods reject schema loading. Schema/model containers must be inline objects; ambiguous declarations never select the first or last rule. Comments, strings and nested options cannot supply a model's access policy. Missing access retains its existing default semantics; an explicit unsupported declaration never becomes missing access.
+
+The defineModel compatibility entry now shares the structural access parser with builder models and schema.models. Use inline declarative role strings or allow rules; legacy JavaScript access callbacks are rejected for every key/operation spelling. Named-import aliases and simple immutable const aliases are recognized; unsupported factory references, unresolved targets, duplicate normalized model definitions and mixed builder/compatibility declarations fail loading. A compatibility binding must name its interface directly or use the InterfaceNameModel convention. Hooks retain their existing compatibility behavior; this does not add callback execution or standalone row-policy code generation.

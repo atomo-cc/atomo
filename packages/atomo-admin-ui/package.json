@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/admin-ui",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "description": "Universal admin interface for Atomo applications",
   "type": "module",

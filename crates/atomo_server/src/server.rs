@@ -84,7 +84,7 @@ impl AtomoServer {
         info!("🚀 Starting Atomo Content Core Server");
         info!("   Host: {}", self.config.host);
         info!("   Port: {}", self.config.port);
-        info!("   Database: {}", self.config.database_url);
+        info!("   Database: PostgreSQL (connection details redacted)");
         if !self.config.public_read_models.is_empty() {
             info!(
                 "   Public-read models: {:?}",
@@ -182,17 +182,7 @@ impl AtomoServer {
                     self.config.rls_allow_bypass_role,
                 )
                 .await?;
-                let table_names: Vec<String> = self
-                    .atomo
-                    .schema()
-                    .models
-                    .values()
-                    // Real entities only: skip enum-derived pseudo-models and block sub-types.
-                    .filter(|m| !m.fields.contains_key("_enum_type") && m.fields.contains_key("id"))
-                    .map(atomo::query::sql_builder::table_name_for)
-                    .collect();
-                crate::rls::ensure_rls_policies(self.atomo.db_pool(), &table_names, enabled)
-                    .await?;
+                crate::rls::ensure_schema_rls(self.atomo.db_pool(), self.atomo.schema()).await?;
                 info!("   ✓ Row-Level Security policies ensured (ATOMO_ENABLE_RLS)");
             }
         }
@@ -476,8 +466,11 @@ impl AtomoServer {
             None
         };
 
-        let action_router =
-            crate::action_routes::action_router(self.atomo.schema().clone(), job_store.clone());
+        let action_router = crate::action_routes::action_router(
+            self.atomo.schema().clone(),
+            job_store.clone(),
+            auth_service.clone(),
+        );
 
         let crud_router = crate::crud_routes::crud_router(
             std::sync::Arc::new(self.atomo.client().clone()),

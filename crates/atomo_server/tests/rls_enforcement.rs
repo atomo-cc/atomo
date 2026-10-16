@@ -135,6 +135,66 @@ const TABLE: &str = "rls_test_widgets";
 
 #[tokio::test]
 #[ignore]
+async fn schema_rls_batch_restores_required_and_global_policies_on_failure() {
+    let pool = sqlx::PgPool::connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "CREATE TABLE rls_schema_a (id TEXT, tenant_id TEXT); \
+         CREATE TABLE rls_schema_b (id TEXT, tenant_id TEXT); \
+         CREATE TABLE rls_schema_z (id TEXT, tenant_id TEXT); \
+         ALTER TABLE rls_schema_a ENABLE ROW LEVEL SECURITY; \
+         CREATE POLICY atomo_tenant_isolation ON rls_schema_a USING (false);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let schema = atomo::schema::parse_typescript_schema(
+        r#"
+import { model, text } from '@atomo-cc/schema';
+export const First = model('rls_schema_a', { fields: { id: text().id() } });
+export const Second = model('rls_schema_b', { tenant: 'global', fields: { id: text().id() } });
+export const Last = model('rls_schema_z', { fields: { id: text().id() } });
+"#,
+    )
+    .unwrap();
+    assert_eq!(schema.models.len(), 3);
+    // Break the final table in this schema's iteration order, so the old
+    // per-table installer necessarily commits earlier tables before failing.
+    let broken = atomo::query::sql_builder::table_name_for(schema.models.values().last().unwrap());
+    sqlx::query(&format!("ALTER TABLE {broken} DROP COLUMN tenant_id"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before = (
+        policy_snapshot(&pool, "rls_schema_a").await,
+        policy_snapshot(&pool, "rls_schema_b").await,
+        policy_snapshot(&pool, "rls_schema_z").await,
+    );
+    let mut changed = false;
+    for _ in 0..2 {
+        assert!(atomo_server::rls::ensure_schema_rls(&pool, &schema)
+            .await
+            .is_err());
+        let after = (
+            policy_snapshot(&pool, "rls_schema_a").await,
+            policy_snapshot(&pool, "rls_schema_b").await,
+            policy_snapshot(&pool, "rls_schema_z").await,
+        );
+        changed |= before != after;
+    }
+    sqlx::raw_sql("DROP TABLE rls_schema_a, rls_schema_b, rls_schema_z")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        !changed,
+        "a failed schema installation must roll back the entire batch"
+    );
+}
+
+#[tokio::test]
+#[ignore]
 async fn server_startup_propagates_policy_installation_errors() {
     let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();

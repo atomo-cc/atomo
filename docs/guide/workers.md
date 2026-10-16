@@ -34,6 +34,7 @@ export const schema = {
   models: {
     Post: {
       tableName: "posts",
+      tenant: "global", // deliberately shared example; tenant-owned models default to required
       events: {
         created: [{ action: "processPost" }],
       },
@@ -55,7 +56,7 @@ export default schema;
 atomo codegen
 ```
 
-This produces `generated/client.ts` with typed interfaces for your models, actions, and worker context.
+The library generator emits typed interfaces for models, actions and worker context. The current CLI `atomo codegen` command is still a placeholder and does not emit this file; implementing that CLI path is a separate milestone. Committed examples are regenerated through the library generator.
 
 ### 3. Write a worker
 
@@ -166,7 +167,7 @@ export type processPostInput = Pick<Post, 'id' | 'title' | 'content'>;
 
 ### Object inputs
 
-For actions not tied to a single model, define the shape directly:
+For actions not tied to a single model, define the shape directly. Plain type strings are required fields; `{ type: "string", required: false }` declares an optional field:
 
 ```ts
 actions: {
@@ -690,3 +691,15 @@ Each handler should do one thing. If an action needs multiple steps, break them 
 - `examples/action-worker-demo/` -- minimal end-to-end example with schema, worker, and generated types
 - `services/crm-service/workers/` -- multi-model CRM workers demonstrating cross-model writes, Activity logging, and least-privilege capabilities
 - [Architecture overview](/guide/architecture) -- how workers fit into the broader Atomo platform
+
+## Unreleased callable action and delegation security
+
+Builder actions now parse `.input({ recordId: text().required() })` and `.returns("records")`. The returns table is resolved to a schema model; legacy pick-field declarations with `returns: "Record"` are equivalent. A return declaration enables an asynchronous queue endpoint, not a synchronous model return or transaction command.
+
+`POST /api/actions/:name` requires a user Bearer token. Admission conservatively requires the return model's **create** permission against the verified principal (row-dependent branches without a row do not grant admission). Tenant-required return models require tenant context; global return models follow explicit global policy. There is no independently configurable action access DSL in this milestone. Input must be an object with declared keys, required values, declared scalar types, safe integer encoding and applicable required/min/max/enum rules. Unknown keys and invalid fields return 422; anonymous calls return 401 and unauthorized calls 403, before enqueue. Action source fields are unsupported and reject loading.
+
+Success returns `{ "jobId": "...", "mode": "async" }`. Optional `Idempotency-Key` (1-200 characters) is scoped to actor, tenant and action. Same input returns the same job; changed input returns 409. Without a key each call creates a new job. Jobs retain the effective tenant and verified actor. Lifecycle dispatch remains asynchronous broadcast-based delivery, not a transactional outbox.
+
+Worker CRUD still requires `X-Worker-Token` with the model/operation capability. It additionally requires `actor: { jobId, leaseId }` (or the same JSON in the GET actor query parameter). The server checks an active, unexpired lease, queue scope and server-stored delegation, then reloads the actor's current active status, role and tenant binding. Optional claimed userId/role/tenantId must agree. `createWorker` now supplies job/lease references automatically. A caller-controlled payload.actor never establishes delegation. Requests using a stale lease, a fabricated actor, old actor-only SDKs, or jobs with no verified delegation are denied. Standalone CrudClient users must supply the job references explicitly. Existing queued jobs are preserved, not silently assigned an actor; they need an operator-reviewed retry from an authenticated source.
+
+Explicitly global models whose rules permit anonymous access can still be accessed by a capability-authorized worker without a user delegation. Identity-protected operations require the verified job delegation described above. Raw trusted Rust system APIs outside a principal scope remain privileged; checked mutation APIs establish a scope and do not infer an owner from a role alone.
