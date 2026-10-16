@@ -26,12 +26,14 @@ export const schema = {
   models: {
     Article: {
       tableName: 'e2e_articles',
+      tenant: 'global',
       access: { create: 'admin', read: 'authenticated', update: 'admin', delete: 'admin' },
       validation: { title: 'required|min:1|max:200', status: 'required|in:draft,published' },
       ui: { listView: ['title', 'status', 'coverImage', 'createdAt'] },
     },
     AuditEvent: {
       tableName: 'e2e_audit_events',
+      tenant: 'global',
       access: { create: 'system', read: 'admin', update: 'never', delete: 'never' },
       ui: { listView: ['event', 'createdAt'] },
     },
