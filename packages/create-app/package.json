@@ -1,6 +1,6 @@
 {
   "name": "@atomo-cc/create-app",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Scaffold a new Atomo project and run it with no Rust (Docker)",
   "type": "module",
   "bin": {

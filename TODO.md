@@ -1,5 +1,14 @@
 # TODO — consumer field-report fixes (multi-tenant adoption)
 
+## PR #85 — v0.8.1 preparation
+
+- [x] Locate the originating worktree and preserve its local changes; independent review checkout matches e993bc4. Source CI 38827258246 passed all five jobs.
+- [x] Verify local workspace check and strict all-target workspace Clippy before version edits; both exit 0 (logs: `.tmp/pr85-{check,clippy}.log` in the main worktree).
+- [x] Cut v0.8.1 changelog, bump all nine Rust crates and root/all five package manifests; regenerate both lockfiles. pnpm lock is unchanged after regeneration.
+- [x] Verify version consistency, unchanged dependency resolutions and workspace check after the bump. Audit confirms only nine own-crate version changes in Cargo.lock; real scaffolder tests pass 9/9, exit 0. Post-bump strict all-target Clippy, fmt and diff checks also pass.
+- [ ] Push the version preparation to draft PR #85 and dispatch CI on its exact head; record results.
+- [ ] Finish implementation review; merging and publication remain pending.
+
 ## v0.8.0 released (2026-10-15)
 
 - [x] Verify merged product code 084ac35: all five main CI jobs 38746219853 pass; clean Docker build and container admin smoke 9/9, exit 0. Image SHA and cleanup evidence: `.tmp/postmerge-pr82/merge-result.json`. PR #82 merged and its branch deleted.

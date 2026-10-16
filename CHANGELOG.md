@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-15
+
 ### Security
 - Unify defineModel compatibility access parsing with all runtime schema entries. Reject legacy callbacks, duplicate/ambiguous declarations and unsupported aliases; preserve declarative role/owner rules and fail before migrations.
 - Parse builder and legacy access properties structurally. Quoted keys and whitespace preserve restrictions; duplicate properties, unsupported dynamic values and ambiguous containers reject loading instead of becoming unrestricted. Spreads in schema/model options now fail rather than warn.

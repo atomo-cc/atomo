@@ -1,5 +1,19 @@
 # Implementation Plan — consumer field-report fixes (multi-tenant adoption)
 
+## PR #85: prepare the next patch version
+
+Prepare v0.8.1 on top of the published v0.8.0 without changing that release.
+Use the exact source from PR #85 in an independent worktree; preserve the
+originating worktree's local reports and changes. Source CI 38827258246 passed
+all five jobs on e993bc4. Finish local workspace check and strict Clippy, cut
+the current Security changelog into v0.8.1, bump all nine Rust crates and all
+root/package npm manifests, and regenerate both lockfiles. Verify version
+consistency and dependency stability, then push the preparation to the existing
+draft PR and dispatch CI on its new head. Review remains open; this preparation
+does not authorize merging, tagging or publishing. There are no additional API,
+configuration, environment, schema, UI or documentation-page changes in the
+version-only adjustment.
+
 ## v0.8.0 release preparation (2026-10-15)
 
 Prepare v0.8.0 for additive schema/media interfaces and the nullable GraphQL
